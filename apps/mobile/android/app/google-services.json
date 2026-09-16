@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "71490924274",
+    "project_id": "agrovercity-bafec",
+    "storage_bucket": "agrovercity-bafec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:71490924274:android:76ea4d00584fa96da46a6b",
+        "android_client_info": {
+          "package_name": "com.agrovercity.kisan_setu"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2HR7EAI35uqEIr5Pf6wi1JOfeShoD9yU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

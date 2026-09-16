@@ -1,0 +1,12 @@
+services:
+  api:
+    build: ../backend
+    ports:
+      - "8000:8000"
+    env_file: ../backend/.env
+    depends_on:
+      - redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

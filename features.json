@@ -1,0 +1,375 @@
+{
+  "product": {
+    "name": "AGROVERCITY — Kisan Setu",
+    "tagline": "Aapki Zameen, Aapka Business Aapka Control",
+    "type": "Smart agriculture & farming super app (India)",
+    "platform": "Flutter (Android, iOS, web, desktop)",
+    "languageDefault": "hi",
+    "languagesDeclared": ["hi", "mr", "gu", "pa", "te", "ta", "en"],
+    "languagesPlanned": "15+ Indian languages",
+    "moduleCount": 24,
+    "personaCount": 6,
+    "designSystem": {
+      "background": "#F5F7FA",
+      "card": "#FFFFFF",
+      "primary": "#43A047",
+      "primaryDark": "#2E7D32",
+      "primaryLight": "#81C784",
+      "accent": "#E8F5E9",
+      "textPrimary": "#263238",
+      "textSecondary": "#90A4AE",
+      "divider": "#ECEFF1",
+      "font": "Mukta (headings: Baloo 2, body: Hind)",
+      "accessibility": "48x48dp tap targets, WCAG 2.1 AA, high-contrast mode, sunlight-optimized"
+    },
+    "source": "flutter-prototype (package kisan_setu_app); all data is demo/mock, no backend yet"
+  },
+  "roles": [
+    {
+      "id": "farmer",
+      "labelEn": "Farmer",
+      "labelHi": "किसान",
+      "color": "#43A047",
+      "icon": "agriculture",
+      "defaultHomeRoute": "home",
+      "superUser": true,
+      "accessibleRoutes": ["home", "gyanHub", "krishiRatna", "mandi", "marketplace", "buyers", "advisory", "profitLoss", "water", "schemes", "finance", "womenFarmer", "fpo", "equipment", "landLegal", "climate", "postHarvest", "treePlantation", "liveChannels", "agriNews", "livestockDairy", "farmDiary", "referEarn", "cropInsurance"]
+    },
+    {
+      "id": "farmLandlord",
+      "labelEn": "Farm Landlord",
+      "labelHi": "खेत मालिक",
+      "color": "#8B5CF6",
+      "icon": "landscape",
+      "defaultHomeRoute": "landlordHome",
+      "accessibleRoutes": ["landlordHome", "landLegal", "schemes", "finance", "cropInsurance", "profitLoss", "krishiRatna", "gyanHub", "marketplace", "treePlantation", "agriNews", "farmDiary", "referEarn"]
+    },
+    {
+      "id": "transport",
+      "labelEn": "Transporter",
+      "labelHi": "परिवहन",
+      "color": "#0284C7",
+      "icon": "local_shipping",
+      "defaultHomeRoute": "transportHome",
+      "accessibleRoutes": ["transportHome", "postHarvest", "marketplace", "finance", "krishiRatna", "gyanHub", "liveChannels", "agriNews", "referEarn"]
+    },
+    {
+      "id": "seller",
+      "labelEn": "Seller / Vyapari",
+      "labelHi": "व्यापारी",
+      "color": "#EA580C",
+      "icon": "storefront",
+      "defaultHomeRoute": "sellerHome",
+      "accessibleRoutes": ["sellerHome", "mandi", "buyers", "marketplace", "finance", "profitLoss", "krishiRatna", "gyanHub", "postHarvest", "livestockDairy", "treePlantation", "agriNews", "referEarn"]
+    },
+    {
+      "id": "equipmentRental",
+      "labelEn": "Equipment Owner",
+      "labelHi": "यंत्र किराया",
+      "color": "#F59E0B",
+      "icon": "construction",
+      "defaultHomeRoute": "equipmentOwnerHome",
+      "accessibleRoutes": ["equipmentOwnerHome", "equipment", "finance", "profitLoss", "krishiRatna", "gyanHub", "liveChannels", "agriNews", "referEarn"]
+    },
+    {
+      "id": "broker",
+      "labelEn": "Broker / Dalal",
+      "labelHi": "दलाल",
+      "color": "#14B8A6",
+      "icon": "handshake",
+      "defaultHomeRoute": "brokerHome",
+      "accessibleRoutes": ["brokerHome", "mandi", "buyers", "finance", "profitLoss", "krishiRatna", "gyanHub", "liveChannels", "agriNews", "referEarn"]
+    }
+  ],
+  "onboarding": [
+    {
+      "step": 1,
+      "id": "splash",
+      "name": "Two-phase splash",
+      "features": ["Phase 1: parent company logo pop-up (tap to skip)", "Phase 2: brand reveal with gradient title + Get Started CTA", "Auto-advance ~1.8s; total ~4.5s; logos bundled locally"]
+    },
+    {
+      "step": 2,
+      "id": "language",
+      "name": "Language selection",
+      "features": ["GPS region suggestion (reverse-geocode -> top-2 regional languages)", "Full regional language grid", "Per-language audio preview", "Manual override"]
+    },
+    {
+      "step": 3,
+      "id": "profileSelect",
+      "name": "Multi-profile selection",
+      "features": ["2-col grid of 6 persona cards", "Multi-select with one starred primary profile", "Min 1 selection enforced", "Staggered fade-in animation"]
+    },
+    {
+      "step": 4,
+      "id": "auth",
+      "name": "Login / Register",
+      "features": ["Login: mobile + 4-digit MPIN", "Forgot MPIN via OTP", "Register wizard: (1) name/state/mobile+OTP with 30s resend, (2) set MPIN twice, (3) farm details: village/tehsil, land slider 0.5-25 acres, soil chips, irrigation chips, crop multi-select + custom crops", "Region-wise crop suggestions by district (planned: ICRISAT/State data)"]
+    },
+    {
+      "step": 5,
+      "id": "map",
+      "name": "Farm geofencing",
+      "features": ["Satellite map canvas, 4 corner pins (lat/lng)", "Polygon area calc (acres/hectares)", "Soil-moisture layer toggle", "Khasra number display", "GPS locate + confirm"]
+    }
+  ],
+  "modules": [
+    {
+      "id": "home",
+      "route": "home",
+      "name": "Farmer Home Dashboard",
+      "purpose": "Central hub for the farmer persona",
+      "features": ["Hero header (name/village/land, LIVE APMC beacon, chat + notifications, active-role capsule, voice search)", "Profile switcher chips + add-role", "Weather strip with rain radar badge", "Our Services grid (transport, market price, Kisan Mitra chat, agri loan)", "Special Modules grid (insurance, plantation, live channels, livestock, diary, news, gyan hub)", "Hot-offer banner", "Aaj ke Bhav live vyapari-rate widget (waveform, up/down change, offline cache notice)", "Today's Action urgent task (+50 coins)", "Refer & Earn banner"],
+      "entities": ["FarmerProfile", "VyapariRate"],
+      "roles": ["farmer"]
+    },
+    {
+      "id": "mandi",
+      "route": "mandi",
+      "name": "Mandi Prices & Profit Maximizer",
+      "purpose": "Live APMC prices and best-mandi net-profit comparison",
+      "features": ["Crop filter chips", "Mandi cards (modal/min/max price, MSP, arrivals, trend, distance, updated time)", "Audio readout", "Smart Mandi Selection calculator (quantity slider, net profit after transport)"],
+      "entities": ["MandiPrice", "VyapariRate"],
+      "roles": ["farmer", "seller", "broker"]
+    },
+    {
+      "id": "advisory",
+      "route": "advisory",
+      "name": "AI Crop Advisory & Market Risk",
+      "purpose": "AI-driven crop, disease, and market-risk guidance",
+      "features": ["Market saturation tab (sowing intent -> 5-20km sowing count, arrival spike, 3-month risk meter, alternative crops)", "Leaf disease scan (camera, confidence %, chemical + organic treatment)", "NPK soil calculator", "5km pest radar alerts", "Kisan Mitra chatbot launcher"],
+      "entities": ["PestDisease", "KisanMitraMessage"],
+      "roles": ["farmer"]
+    },
+    {
+      "id": "marketplace",
+      "route": "marketplace",
+      "name": "Agri Input Marketplace",
+      "purpose": "E-commerce for seeds, fertilizer, pesticide, tools, vehicles",
+      "features": ["Search with mic", "5 categories", "Product cards (brand, dealer, batch no, rating, MRP/discount, delivery time, BNPL)", "QR authenticity certificate dialog", "Cart bar with 0% BNPL checkout"],
+      "entities": ["InputProduct"],
+      "roles": ["farmer", "farmLandlord", "transport", "seller"]
+    },
+    {
+      "id": "buyers",
+      "route": "buyers",
+      "name": "Buyer Contracts & Vehicle Booking",
+      "purpose": "Pre-sowing price-lock contracts and agri transport",
+      "features": ["Contract cards (locked rate, premium above MSP, min quantity, payment terms)", "Terms dialog + E-sign acceptance", "Vehicle booking (type dropdown, distance slider, live fare estimate)"],
+      "entities": ["BuyerContract"],
+      "roles": ["farmer", "seller", "broker"]
+    },
+    {
+      "id": "profitLoss",
+      "route": "profitLoss",
+      "name": "Farm CEO — Profit & Loss",
+      "purpose": "Per-crop P&L and break-even planning",
+      "features": ["3 KPI cards (gross income, cost, net profit)", "Per-crop statement with expense breakdown", "Add-expense dialog", "Pre-sowing break-even calculator (min safe price/quintal)"],
+      "entities": ["CropPandL"],
+      "roles": ["farmer", "farmLandlord", "seller", "equipmentRental", "broker"]
+    },
+    {
+      "id": "water",
+      "route": "water",
+      "name": "Water Intelligence",
+      "purpose": "Irrigation scheduling and water resources",
+      "features": ["Plot-wise irrigation schedule (moisture %, 1-tap drip timer)", "CGWB groundwater gauge", "Canal rotation schedule", "PMKSY 55% drip subsidy calculator"],
+      "entities": [],
+      "roles": ["farmer"]
+    },
+    {
+      "id": "schemes",
+      "route": "schemes",
+      "name": "Government Scheme Intelligence",
+      "purpose": "Scheme discovery, eligibility, and application",
+      "features": ["Encrypted document vault (Aadhaar, 7/12, passbook, soil health card, AES-256)", "Scheme cards (benefit, eligibility, deadline, documents)", "Dual apply: in-app or official portal deep-link (Custom Tabs, security banner, no Aadhaar caching)"],
+      "entities": ["GovtScheme"],
+      "roles": ["farmer", "farmLandlord"]
+    },
+    {
+      "id": "finance",
+      "route": "finance",
+      "name": "Embedded Finance",
+      "purpose": "Credit score, loans, Kisan Credit Card",
+      "features": ["Kisan credit score card (score, tier, limit, RBI note)", "Instant input-loan calculator (amount/tenure sliders, live EMI, 7%)", "Digital KCC visual"],
+      "entities": ["FarmerProfile"],
+      "roles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker"]
+    },
+    {
+      "id": "cropInsurance",
+      "route": "cropInsurance",
+      "name": "Crop Insurance (PMFBY/RWBCIS)",
+      "purpose": "Policy management, claims, premium calculation",
+      "features": ["Policies tab: digital passbook, e-certificate PDF, quick-apply, PMFBY portal", "72h claim intimation (calamity, crop stage, loss %, geo-tagged photos, auto claim number)", "Premium calculator (season, crop, acreage -> sum insured, farmer share, govt subsidy, cutoff)", "Claim tracker (intimation -> surveyor -> assessment -> DBT approval -> payout)"],
+      "entities": ["CropInsurancePolicy", "InsuranceClaimRecord", "CropPremiumRate"],
+      "roles": ["farmer", "farmLandlord"]
+    },
+    {
+      "id": "landLegal",
+      "route": "landLegal",
+      "name": "Land & Legal — 7/12 Records",
+      "purpose": "Maharashtra land record search and import",
+      "features": ["Search by Gat number or village (fuzzy)", "7/12 vs 8A toggle, multi-match disambiguation", "Record cards (owner, khata/ferfar, area, soil, irrigation, crop history)", "PDF view/download/share", "Auto-store area into farm profile", "Planned: mahabhulekh/Aaple Sarkar APIs, other states"],
+      "entities": ["LandRecord712"],
+      "roles": ["farmer", "farmLandlord"]
+    },
+    {
+      "id": "fpo",
+      "route": "fpo",
+      "name": "FPO Growth Engine",
+      "purpose": "Farmer Producer Org collective buying and shared machinery",
+      "features": ["FPO banner (members)", "Bulk procurement pool (group buy progress, discount, join with units)", "Shared machinery calendar (per-hour/per-acre rates)"],
+      "entities": ["YantraSlot"],
+      "roles": ["farmer"]
+    },
+    {
+      "id": "womenFarmer",
+      "route": "womenFarmer",
+      "name": "Mahila Kisan Hub",
+      "purpose": "Women farmer empowerment (also global women-mode theme)",
+      "features": ["SHG savings group (corpus, loan fund, monthly deposit)", "Kitchen garden planner", "Livestock health (milk, eggs, vaccinations)", "Home enterprise income (pickle/papad/ghee profits)"],
+      "entities": [],
+      "roles": ["farmer"]
+    },
+    {
+      "id": "climate",
+      "route": "climate",
+      "name": "Climate-Smart Farming & Carbon Credits",
+      "purpose": "Carbon income potential and resilient varieties",
+      "features": ["Carbon income hero card (Rs/yr, CO2e MT via biochar/zero-till/green manure)", "Climate-resilient variety list"],
+      "entities": [],
+      "roles": ["farmer"]
+    },
+    {
+      "id": "postHarvest",
+      "route": "postHarvest",
+      "name": "Post-Harvest Supply Chain",
+      "purpose": "Cold storage and AI quality grading",
+      "features": ["Cold storage cards (distance, temp range, capacity MT, rate/q/month)", "AI quality grading (AGMARK grade, uniformity, shelf life, recommended price)"],
+      "entities": [],
+      "roles": ["farmer", "transport", "seller"]
+    },
+    {
+      "id": "krishiRatna",
+      "route": "krishiRatna",
+      "name": "Krishi Ratna Gamification",
+      "purpose": "Levels, AgriCoins, rewards store",
+      "features": ["Level banner (level, title, coins, streak, XP)", "Rewards store (vouchers, soil test, scientist video call) with coin redemption"],
+      "entities": ["FarmerProfile"],
+      "roles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker"]
+    },
+    {
+      "id": "referEarn",
+      "route": "referEarn",
+      "name": "Refer & Earn",
+      "purpose": "Referral program",
+      "features": ["Personal referral code (copy, WhatsApp share)", "Invite dialog (+100 coins)", "Milestone rewards (1/5/10 referrals)", "Referred farmers list with status"],
+      "entities": ["ReferralUser"],
+      "roles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker"]
+    },
+    {
+      "id": "farmDiary",
+      "route": "farmDiary",
+      "name": "Farm Diary",
+      "purpose": "Daily income/expense/activity log",
+      "features": ["Financial summary + PDF report", "Add entry (type, category, amount, crop, notes) +15 coins", "Filter pills, timeline, delete"],
+      "entities": ["FarmDiaryEntry"],
+      "roles": ["farmer", "farmLandlord"]
+    },
+    {
+      "id": "agriNews",
+      "route": "agriNews",
+      "name": "Agri News",
+      "purpose": "News feed with audio",
+      "features": ["Breaking banner with audio", "Category filters", "News cards (impact rating, source, audio readout)", "Detail sheet + WhatsApp share"],
+      "entities": ["AgriNewsItem"],
+      "roles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker"]
+    },
+    {
+      "id": "liveChannels",
+      "route": "liveChannels",
+      "name": "Live Channels",
+      "purpose": "Live agri TV, auctions, expert streams",
+      "features": ["Live player (LIVE badge, viewers, HD/fullscreen)", "Channel info + schedule", "Live chat box", "Channel list (DD Kisan, KVK, mandi auctions)"],
+      "entities": ["AgriLiveChannel"],
+      "roles": ["farmer", "transport", "equipmentRental", "broker"]
+    },
+    {
+      "id": "livestockDairy",
+      "route": "livestockDairy",
+      "name": "Livestock & Dairy Ecosystem",
+      "purpose": "Gaushala, nursery, vet, dairy marketplace",
+      "features": ["Gaushala tab (breeds, facilities, manure/slurry ordering)", "Nursery tab (govt-certified, saplings, price range)", "Vet tab (24x7 helpline, doctor cards, farm-visit/clinic booking)", "Dairy products tab (A2 ghee/milk/paneer, purity cert, direct buy)"],
+      "entities": ["GaushalaItem", "PlantNursery", "VetDoctor", "DairyProductItem"],
+      "roles": ["farmer", "seller"]
+    },
+    {
+      "id": "gyanHub",
+      "route": "gyanHub",
+      "name": "Gyan Hub — Knowledge",
+      "purpose": "Workshops, expert talks, videos, blogs",
+      "features": ["Paid workshops (ICAR-certified, seats, fee with coin discount, enroll)", "Expert talks (register +25 coins, ask-the-scientist)", "Video tutorials (player modal, key takeaways)", "Agronomy blogs (bookmark, likes, audio)"],
+      "entities": ["PaidWorkshop", "ExpertTalk", "VideoGuide", "BlogArticle"],
+      "roles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker"]
+    },
+    {
+      "id": "treePlantation",
+      "route": "treePlantation",
+      "name": "Tree Plantation & Biofuel",
+      "purpose": "Tree economy: articles, NGOs, biofuel, care",
+      "features": ["Articles tab with request-saplings CTA", "NGO tab (ratings, free saplings, request dialog)", "Biofuel trees (oil %, return/acre, gestation, subsidy, buyers)", "Care guides (watering, fertilizer, pest steps)"],
+      "entities": ["TreeArticle", "NgoOrganization", "BiofuelTree", "TreeCareGuide"],
+      "roles": ["farmer", "farmLandlord", "seller"]
+    },
+    {
+      "id": "equipment",
+      "route": "equipment",
+      "name": "Equipment Rental — Yantra Time-Slots",
+      "purpose": "Slot-based machinery booking",
+      "features": ["Weekly calendar, 4 default 4h slots (owner-configurable)", "Slot status (available/booked/pending), per-slot pricing, recommended task", "Rules: max 2 slots/farmer/day, cancel up to 2h before (SMS), FPO auto-confirm vs private manual, 30min reminders, waitlist", "+50 coins per booking"],
+      "entities": ["YantraSlot"],
+      "roles": ["farmer", "equipmentRental"]
+    }
+  ],
+  "personaDashboards": {
+    "landlordHome": {"metrics": ["acresOwned", "activeTenants", "monthlyRent"], "quickActions": ["landLegal", "schemes", "profitLoss", "marketplace"], "activityList": "active leases (plot, tenant, rent, verified)"},
+    "transportHome": {"metrics": ["vehicles", "tripsToday", "dailyFreight"], "quickActions": ["postHarvest", "marketplace", "finance", "gyanHub"], "activityList": "live trips (vehicle, route, fare, status)"},
+    "sellerHome": {"metrics": ["turnover", "stockQuintals", "buyers"], "quickActions": ["mandi", "buyers", "profitLoss", "marketplace"], "activityList": "procurement ledger (commodity, rate, trend)"},
+    "equipmentOwnerHome": {"metrics": ["machines", "bookedHours", "weeklyIncome"], "quickActions": ["equipment", "finance", "profitLoss", "krishiRatna"], "activityList": "fleet status (machine, booking, fare, status)"},
+    "brokerHome": {"metrics": ["activeDeals", "farmerLeads", "commission"], "quickActions": ["buyers", "mandi", "profitLoss", "finance"], "activityList": "deal pipeline (deal, commission, status)"}
+  },
+  "aiAssistant": {
+    "name": "Kisan Mitra",
+    "surfaces": ["Floating FAB on every screen (pulse + halo + online beacon)", "Voice sheet (Bhashini AI branding, mic orb, transcript, quick prompts)", "Chatbot sheet (bubbles, voice input, quick replies, rich cards, expert handoff)"],
+    "capabilities": ["Text + voice input", "Quick-reply chips (weather, bhav, pest, water)", "Rich cards (market saturation, weather, mandi, pest)", "Multi-turn context (24h session memory)", "Mid-chat language switching", "Human expert handoff (sends chat + farm data to agronomist)"],
+    "plannedBackend": {"llm": "OpenRouter API with fine-tuned agri prompts", "stt": "Sarvam AI (15+ dialects)", "tts": "Bhashini", "offline": "message queue"}
+  },
+  "crossCutting": {
+    "auth": ["Mobile + OTP", "Mobile + 4-digit MPIN (set/confirm/reset)", "Biometric (planned)", "Phones normalized to +91"],
+    "i18n": {"declared": ["hi", "mr", "gu", "pa", "te", "ta", "en"], "implemented": ["hi", "mr", "en"], "regionalMapping": {"north": ["Punjabi", "Hindi", "Haryanvi"], "central": ["Hindi", "Bhojpuri", "Bundelkhandi"], "west": ["Marathi", "Gujarati", "Rajasthani"], "east": ["Bengali", "Odia", "Maithili"], "northeast": ["Assamese", "Bengali"], "south": ["Tamil", "Malayalam", "Kannada", "Telugu"]}},
+    "offline": "Offline/sync pill + queue counter; cached rates with timestamps; backend must support idempotent queued writes (diary, claims, bookings)",
+    "agriCoins": {"earn": {"urgentTask": 50, "diaryEntry": 15, "equipmentBooking": 50, "expertTalkRegistration": 25, "referral": 100}, "spend": ["rewards store", "workshop discounts"]},
+    "audio": "TTS readout buttons across screens; news items carry audioText scripts",
+    "video": "video_player dependency present; placeholder URLs; plan HLS for live channels",
+    "navigation": "State-machine router (AppState.currentRoute), luxury top bar, floating dock -> All Tools sheet (role-filtered), back-stack history, radial orbit menu (alternative, unwired)",
+    "womenMode": "Global rose theme overlay (#BE123C), not a profile type"
+  },
+  "entities": ["FarmerProfile", "CropPandL", "MandiPrice", "VyapariRate", "PestDisease", "InputProduct", "BuyerContract", "GovtScheme", "BlogArticle", "VideoGuide", "ExpertTalk", "KisanMitraMessage", "YantraSlot", "LandRecord712", "TreeArticle", "NgoOrganization", "BiofuelTree", "TreeCareGuide", "AgriLiveChannel", "AgriNewsItem", "GaushalaItem", "PlantNursery", "VetDoctor", "DairyProductItem", "PaidWorkshop", "FarmDiaryEntry", "ReferralUser", "CropInsurancePolicy", "InsuranceClaimRecord", "CropPremiumRate"],
+  "roadmap": {
+    "changeRequests": [
+      "CR1: Mukta font migration (15+ languages, Android 6+/2GB testing)",
+      "CR2: Two-step splash (group logo -> brand, 4.5s, offline logos)",
+      "CR3: Light theme migration (#F5F7FA/#43A047 palette, WCAG AA)",
+      "CR4: Region-wise language selection (GPS reverse-geocode, audio preview)",
+      "CR5: Region-wise crop suggestions (district mapping, seasonal smart defaults)",
+      "CR6: Govt scheme deep-linking (Custom Tabs, portal mapping, vault attach, security)",
+      "CR7: Live vyapari rate widget (2h refresh 6AM-8PM, Agmarknet/eNAM fallback, offline cache)",
+      "CR8: Kisan Mitra chatbot (OpenRouter, Sarvam STT, expert handoff, offline queue)",
+      "CR9: Market saturation advisory (privacy-preserving counts, risk meter, alternatives)",
+      "CR10: Time-slot yantra booking (4x4h slots, max 2/day, waitlist, SMS rules)",
+      "CR11: 7/12 search by Gat/village (mahabhulekh/Aaple Sarkar, PDF, auto-import)"
+    ],
+    "sprints": ["S1 (wk1-2): CR1-3 design system", "S2 (wk3-4): CR4-5 regionalization", "S3 (wk5-7): CR6+8 scheme portal + chatbot", "S4 (wk6-8): CR7+9 vyapari rates + saturation", "S5 (wk8-10): CR10+11 yantra slots + 7/12"],
+    "phases": ["P1: multi-profile system (done in prototype)", "P2: backend profile sync, rich dashboards, unlinking, persona notifications", "P3 monetization: seller analytics, broker CRM, transporter fleet mgmt, commission payments", "P4 intelligence: role-based AI advisory, demand forecasting, cross-persona recommendations", "P5: team/org accounts (cooperatives, FPO admin/member)"]
+  }
+}
