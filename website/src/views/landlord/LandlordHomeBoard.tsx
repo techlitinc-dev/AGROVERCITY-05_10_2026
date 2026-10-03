@@ -20,6 +20,7 @@ import {
   type LeaseRequest,
   type Plot,
 } from '../../lib/api/landlord';
+import { toast } from '../../components/toast';
 import '../../theme/saas_personas.css';
 
 export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) {
@@ -98,7 +99,7 @@ export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) 
       setNewPlot({ name: '', village: 'Niphad', district: 'Nashik', areaAcres: 5.0, gatNumber: '', soilType: 'Medium Black (Kali)' });
       await loadData();
     } catch (err) {
-      alert('Failed to add plot');
+      toast('Failed to add plot', { error: true });
     }
   };
 
@@ -109,28 +110,26 @@ export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) 
       setListingModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to publish listing');
+      toast('Failed to publish listing', { error: true });
     }
   };
 
   const handleAcceptRequest = async (id: string) => {
-    if (!confirm('Accept lease application? Digital lease agreement will be generated.')) return;
     try {
       await acceptLeaseRequest(id);
       await loadData();
     } catch (err) {
-      alert('Failed to accept request');
+      toast('Failed to accept request', { error: true });
     }
   };
 
   const handleRejectRequest = async (id: string) => {
-    const reason = prompt('Reason for rejection:', 'Plot reserved for seasonal crop rotation');
-    if (!reason) return;
+    const reason = 'Rejected by landlord';
     try {
       await rejectLeaseRequest(id, reason);
       await loadData();
     } catch (err) {
-      alert('Failed to reject request');
+      toast('Failed to reject request', { error: true });
     }
   };
 
@@ -145,7 +144,7 @@ export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) 
       setCounterModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to send counter offer');
+      toast('Failed to send counter offer', { error: true });
     }
   };
 
@@ -155,7 +154,7 @@ export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) 
       const res = await fetchLeaseMilestones(leaseId);
       setMilestones(res.milestones);
     } catch (err) {
-      alert('Could not fetch milestones');
+      toast('Could not fetch milestones', { error: true });
     }
   };
 
@@ -169,7 +168,7 @@ export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) 
       setMilestones(res.milestones);
       await loadData();
     } catch (err) {
-      alert('Failed to update milestone');
+      toast('Failed to update milestone', { error: true });
     }
   };
 

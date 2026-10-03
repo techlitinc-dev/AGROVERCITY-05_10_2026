@@ -129,6 +129,7 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
     'home', 'mandi', 'sellProduce', 'marketplace', 'orderTracking', 'addressBook', 'buyers',
     'brokerOffers', 'myContracts',
     'advisory', 'profitLoss', 'water', 'schemes', 'loanTracking', 'loanDetail', 'landlordPlots',
+    'landListings', 'leaseRequests',
     'landlordLeases', 'landlordRent', 'womenFarmer', 'fpo', 'equipment', 'landLegal', 'climate',
     'postHarvest', 'treePlantation', 'liveChannels', 'livestockDairy', 'farmDiary', 'cropInsurance',
     'myBookings', 'loadBoard', 'liveTracking', 'biltyView', 'buyDemands', 'myOffers', 'purchases',

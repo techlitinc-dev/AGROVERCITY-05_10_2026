@@ -31,7 +31,7 @@ async def test_due_lease_notifies_landlord(client, user_store, monkeypatch):
     monkeypatch.setattr("app.services.fcm.notify", notify)
     _seed_lease(user_store)
     result = await run_rent_reminders(today=TODAY)
-    assert result == {"reminded": 1}
+    assert result["reminded"] == 1
     notify.assert_called_once()
     assert notify.call_args.args[0] == "uid-1"
     assert notify.call_args.args[3]["type"] == "rent_reminder"
@@ -48,7 +48,7 @@ async def test_paid_month_skips(client, user_store, monkeypatch):
         "amountRupees": 5000,
     }
     result = await run_rent_reminders(today=TODAY)
-    assert result == {"reminded": 0}
+    assert result["reminded"] == 0
     notify.assert_not_called()
 
 
@@ -57,7 +57,7 @@ async def test_grace_window(client, user_store, monkeypatch):
     monkeypatch.setattr("app.services.fcm.notify", notify)
     _seed_lease(user_store)
     result = await run_rent_reminders(today=date(2026, 9, 3))
-    assert result == {"reminded": 0}
+    assert result["reminded"] == 0
     notify.assert_not_called()
 
 
@@ -72,7 +72,7 @@ async def test_dedup_same_month(client, user_store, monkeypatch):
         "data": {"type": "rent_reminder", "leaseId": "lease-1", "dueMonth": DUE_MONTH},
     }
     result = await run_rent_reminders(today=TODAY)
-    assert result == {"reminded": 0}
+    assert result["reminded"] == 0
     notify.assert_not_called()
 
 

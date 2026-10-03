@@ -278,6 +278,7 @@ Per-persona dashboard content is specced in each §6 section under
   without leaving the website, and his dashboard summarizes all of it.
 
 ### 6.2 FARM LANDLORD (खेत मालिक) — "LandBank": the land-leasing app
+- **Mahabhulekh/e-District integration deferred (2026-10-03, phase-02 WS-01):** the real government land-registry integration is deferred; the adapter interface (`services/land_records/base.py`) + "unverified" labeling for mock records shipped in phase-02 WS-01.
 - **Status:** backend complete-ish (plots, listings, lease requests with
   counter-offers, leases, rent payments, agreement PDF, escrow milestones,
   analytics, 7/12 mock adapter). Web: one monolithic `LandlordHomeBoard.tsx`

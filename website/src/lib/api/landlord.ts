@@ -38,6 +38,8 @@ export interface LeaseRequest {
   message: string;
   durationMonths: number;
   status: 'pending' | 'accepted' | 'rejected' | 'countered';
+  /** Populated by the KYC pipeline once the farmer's documents are verified. */
+  farmerKycVerified?: boolean;
   proposedRentRupees?: number;
   counterRentRupees?: number;
   negotiationRounds?: number;
@@ -171,5 +173,73 @@ export async function recordRentPayment(
   data: { amountRupees: number; month: string; method: 'cash' | 'upi' | 'bank'; paidAt: string }
 ) {
   const res = await api.post(`/land/leases/${leaseId}/payments`, data);
+  return res.data;
+}
+
+export async function fetchLeaseAgreement(leaseId: string): Promise<{ agreementUrl: string }> {
+  const res = await api.get<{ agreementUrl: string }>(`/land/leases/${leaseId}/agreement-pdf`);
+  return res.data;
+}
+
+/** Authenticated PDF fetch → object URL for download. */
+export async function downloadRentReceipt(paymentId: string): Promise<Blob> {
+  const res = await api.get(`/land/rent-payments/${paymentId}/receipt`, { responseType: 'blob' });
+  return res.data as Blob;
+}
+
+export async function downloadRentLedger(leaseId: string): Promise<Blob> {
+  const res = await api.get(`/land/leases/${leaseId}/ledger`, {
+    params: { format: 'pdf' },
+    responseType: 'blob',
+  });
+  return res.data as Blob;
+}
+
+export async function browseLandListings(params: {
+  near?: string;
+  acres?: number;
+} = {}): Promise<LandListing[]> {
+  const res = await api.get<{ data: LandListing[] }>('/land/listings', { params });
+  return res.data.data;
+}
+
+export async function createLeaseRequest(data: {
+  listingId: string;
+  message?: string;
+  durationMonths: number;
+}): Promise<LeaseRequest> {
+  const res = await api.post<LeaseRequest>('/land/lease-requests', data);
+  return res.data;
+}
+
+export async function fetchMyLeaseRequests(): Promise<LeaseRequest[]> {
+  const res = await api.get<{ data: LeaseRequest[] }>('/land/lease-requests/mine');
+  return res.data.data;
+}
+
+export interface LandRecord {
+  id: string;
+  gatNumber: string;
+  village: string;
+  district: string;
+  ownerName: string;
+  khataNumber: string;
+  totalAreaHectares: number;
+  totalAreaAcres: number;
+  landClass: string;
+  ferfarNumber: string;
+  cropHistory: string;
+}
+
+export async function searchLandRecords(params: {
+  gatNumber?: string;
+  village?: string;
+}): Promise<LandRecord[]> {
+  const res = await api.get<{ data: LandRecord[] }>('/land-records/search', { params });
+  return res.data.data;
+}
+
+export async function importLandRecord(recordId: string): Promise<{ record: LandRecord }> {
+  const res = await api.post<{ record: LandRecord }>(`/land-records/${recordId}/import`);
   return res.data;
 }

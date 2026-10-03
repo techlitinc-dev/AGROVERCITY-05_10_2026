@@ -1,8 +1,9 @@
 import math
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from pydantic import BaseModel, Field
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -25,7 +26,8 @@ from app.models.land import (
     MilestoneUpdateIn,
 )
 from app.routers.users import require_role
-from app.services import reports
+from app.services import billing, idempotency, reports
+from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/land", tags=["land"])
@@ -60,6 +62,76 @@ async def _farmer(uid: str = Depends(current_user_id)) -> str:
         _error(404, "NOT_FOUND", "user not found")
     require_role(user, "farmer")
     return uid
+
+
+RETENTION_YEARS = 7
+
+RENT_LATE_FEE_DAYS = 15
+RENT_DISPUTE_OFFER_DAYS = 30
+RENT_LATE_FEE_RATE = 0.02
+
+
+class LandDisputeIn(BaseModel):
+    category: str = Field(..., min_length=2)
+    note: str | None = None
+
+
+def _retain_until() -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=365 * RETENTION_YEARS)).isoformat()
+
+
+async def _audit(uid: str, action: str, payload: dict) -> None:
+    now = datetime.now(timezone.utc)
+    await set_doc(
+        "audit_logs",
+        f"aud_{action.lower()}_{uid}_{now.strftime('%Y%m%d%H%M%S%f')}",
+        {"action": action, "adminId": uid, "at": now.isoformat(), **payload},
+    )
+
+
+async def _landlord_plan(uid: str) -> dict:
+    return await billing.effective_plan(uid, "farmLandlord")
+
+
+async def _require_pro(uid: str, feature: str) -> None:
+    plan = await _landlord_plan(uid)
+    if plan.get("tier") == "free":
+        _error(
+            402,
+            "UPGRADE_REQUIRED",
+            f"{feature} is available on the Pro plan (₹299/mo)",
+            {feature: "upgrade required"},
+        )
+
+
+async def _enforce_plot_limit(uid: str) -> None:
+    plan = await _landlord_plan(uid)
+    limit = (plan.get("limits") or {}).get("plots")
+    if limit is None:
+        return
+    plots = await list_subdocs(f"users/{uid}/land_plots")
+    if len(plots) >= int(limit):
+        _error(
+            402,
+            "ENTITLEMENT_EXCEEDED",
+            "your plan's plot limit is reached — upgrade to add more",
+            {"plots": f"limit {limit} reached"},
+        )
+
+
+async def _enforce_active_lease_limit(uid: str) -> None:
+    plan = await _landlord_plan(uid)
+    limit = (plan.get("limits") or {}).get("activeLeases")
+    if limit is None:
+        return
+    active = [l for l in await _leases(uid) if l.get("status") == "active"]
+    if len(active) >= int(limit):
+        _error(
+            402,
+            "ENTITLEMENT_EXCEEDED",
+            "your plan's active-lease limit is reached — upgrade to add more",
+            {"activeLeases": f"limit {limit} reached"},
+        )
 
 
 async def list_subdocs(path: str) -> list[dict]:
@@ -102,6 +174,7 @@ async def list_plots(uid: str = Depends(_owner)):
 
 @router.post("/plots", status_code=201, response_model=PlotOut)
 async def create_plot(body: PlotIn, uid: str = Depends(_owner)):
+    await _enforce_plot_limit(uid)
     plot = PlotOut(id=uuid.uuid4().hex, status="vacant", **body.model_dump())
     await set_doc(f"users/{uid}/land_plots", plot.id, plot.model_dump())
     return plot
@@ -137,6 +210,7 @@ async def list_leases(status: str | None = None, uid: str = Depends(_owner)):
 
 @router.post("/leases", status_code=201, response_model=LeaseOut)
 async def create_lease(body: LeaseIn, uid: str = Depends(_owner)):
+    await _enforce_active_lease_limit(uid)
     await _require_plot(uid, body.plotId)
     if body.endDate <= body.startDate:
         _error(
@@ -148,7 +222,8 @@ async def create_lease(body: LeaseIn, uid: str = Depends(_owner)):
     lease = LeaseOut(
         id=uuid.uuid4().hex, status="active", verified=False, **body.model_dump()
     )
-    await set_doc(f"users/{uid}/land_leases", lease.id, lease.model_dump())
+    lease_doc = {**lease.model_dump(), "retainUntil": _retain_until()}
+    await set_doc(f"users/{uid}/land_leases", lease.id, lease_doc)
     await _set_plot_status(uid, body.plotId, "leased")
     return lease
 
@@ -174,13 +249,48 @@ async def delete_lease(lease_id: str, uid: str = Depends(_owner)):
 
 @router.post("/leases/{lease_id}/payments", status_code=201, response_model=RentPaymentOut)
 async def add_payment(lease_id: str, body: RentPaymentIn, uid: str = Depends(_owner)):
-    await _require_lease(uid, lease_id)
-    payments = await list_subdocs(f"users/{uid}/land_leases/{lease_id}/payments")
-    if any(p.get("month") == body.month for p in payments):
+    """Record a (possibly partial) rent payment; integer paisa ledger.
+
+    The month's ledger doc tracks amountPaidPaisa vs amountDuePaisa and stays
+    payable until fully paid (phase-02 WS-01 step 3, rule 3)."""
+    lease = await _require_lease(uid, lease_id)
+    amount_paisa = int(round(float(body.amountRupees) * 100))
+    if amount_paisa <= 0:
+        _error(422, "VALIDATION_ERROR", "amount must be greater than 0", {"amountRupees": "must be > 0"})
+    due_paisa = int(round(float(lease.get("monthlyRentRupees", 0) or 0) * 100))
+    ledger_collection = f"users/{uid}/land_leases/{lease_id}/rent_ledger"
+    ledger = await get_doc(ledger_collection, body.month) or {
+        "month": body.month,
+        "amountDuePaisa": due_paisa,
+        "amountPaidPaisa": 0,
+        "status": "due",
+    }
+    if int(ledger.get("amountPaidPaisa", 0)) >= int(ledger.get("amountDuePaisa", due_paisa)):
         _error(409, "DUPLICATE_PAYMENT_MONTH", "payment already recorded for this month")
     payment = RentPaymentOut(id=uuid.uuid4().hex, leaseId=lease_id, **body.model_dump())
-    await set_doc(
-        f"users/{uid}/land_leases/{lease_id}/payments", payment.id, payment.model_dump()
+    payment_doc = {
+        **payment.model_dump(),
+        "amountPaidPaisa": amount_paisa,
+        "retainUntil": _retain_until(),
+    }
+    await set_doc(f"users/{uid}/land_leases/{lease_id}/payments", payment.id, payment_doc)
+    paid = int(ledger.get("amountPaidPaisa", 0)) + amount_paisa
+    ledger.update(
+        amountPaidPaisa=paid,
+        status="paid" if paid >= int(ledger.get("amountDuePaisa", due_paisa)) else "partial",
+        updatedAt=datetime.now(timezone.utc).isoformat(),
+        retainUntil=_retain_until(),
+    )
+    await set_doc(ledger_collection, body.month, ledger)
+    await _audit(
+        uid,
+        "RENT_PAYMENT_RECORDED",
+        {
+            "leaseId": lease_id,
+            "month": body.month,
+            "amountPaidPaisa": amount_paisa,
+            "balancePaisa": max(0, int(ledger.get("amountDuePaisa", due_paisa)) - paid),
+        },
     )
     return payment
 
@@ -191,7 +301,15 @@ async def list_payments(lease_id: str, uid: str = Depends(_owner)):
     payments = await list_subdocs(f"users/{uid}/land_leases/{lease_id}/payments")
     payments.sort(key=lambda p: p.get("month", ""), reverse=True)
     total = sum(p.get("amountRupees", 0) for p in payments)
+    ledgers = await list_subdocs(f"users/{uid}/land_leases/{lease_id}/rent_ledger")
     paid_months = {p.get("month") for p in payments}
+    for ledger in ledgers:
+        due_paisa = int(ledger.get("amountDuePaisa", 0))
+        paid_paisa = int(ledger.get("amountPaidPaisa", 0))
+        if due_paisa and paid_paisa >= due_paisa:
+            paid_months.add(ledger.get("month"))
+        else:
+            paid_months.discard(ledger.get("month"))
     year, month = int(lease["startDate"][:4]), int(lease["startDate"][5:7])
     current = date.today().strftime("%Y-%m")
     pending = []
@@ -325,6 +443,18 @@ async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)
         **body.model_dump(),
     )
     await set_doc("lease_requests", request.id, request.model_dump())
+    await emit_task(
+        listing["landlordId"],
+        persona="farmLandlord",
+        module="land",
+        kind="lease_request",
+        title_en="New lease request",
+        title_hi="नया पट्टा अनुरोध",
+        subtitle=f"{request.farmerName} · {request.durationMonths} months · ₹{request.proposedRentRupees or listing['expectedRentRupees']}/mo",
+        priority="today",
+        deep_link=DEEP_LINKS["land"],
+        source_id=request.id,
+    )
     return request
 
 
@@ -343,6 +473,7 @@ async def accept_lease_request(request_id: str, uid: str = Depends(_landlord)):
         _error(403, "NOT_LISTING_OWNER", "request belongs to another landlord")
     if request.get("status") != "pending":
         _error(409, "REQUEST_ALREADY_RESOLVED", "request already resolved")
+    await _enforce_active_lease_limit(uid)
     listing = await _require_listing(request["listingId"])
     farmer = await get_doc("users", request["farmerId"]) or {}
     start = date.today()
@@ -357,9 +488,23 @@ async def accept_lease_request(request_id: str, uid: str = Depends(_landlord)):
         status="active",
         verified=False,
     )
-    await set_doc(f"users/{uid}/land_leases", lease.id, lease.model_dump())
+    await set_doc(
+        f"users/{uid}/land_leases", lease.id, {**lease.model_dump(), "retainUntil": _retain_until()}
+    )
     if lease.plotId:
         await _set_plot_status(uid, lease.plotId, "leased")
+    await emit_task(
+        uid,
+        persona="farmLandlord",
+        module="land",
+        kind="esign_pending",
+        title_en="Lease e-sign pending",
+        title_hi="पट्टा ई-साइन बाकी",
+        subtitle=f"{lease.tenantName} · ₹{lease.monthlyRentRupees}/mo from {lease.startDate}",
+        priority="today",
+        deep_link=DEEP_LINKS["land"],
+        source_id=lease.id,
+    )
     listing["status"] = "leased"
     await set_doc("land_listings", listing["id"], listing)
     request["status"] = "accepted"
@@ -399,6 +544,8 @@ async def lease_agreement_pdf(lease_id: str, uid: str = Depends(_owner)):
                 break
         if lease is None or lease.get("tenantPhone") != caller.get("phone"):
             _error(404, "LEASE_NOT_FOUND", "lease not found")
+    # PDF generation is a Pro-plan feature, gated on the lease owner's plan.
+    await _require_pro(landlord_id, "agreement PDFs")
     landlord = await get_doc("users", landlord_id) or {}
     tenant = {"name": lease.get("tenantName", ""), "phone": lease.get("tenantPhone", "")}
     if lease.get("plotId"):
@@ -412,6 +559,7 @@ async def lease_agreement_pdf(lease_id: str, uid: str = Depends(_owner)):
 
 @router.get("/analytics")
 async def get_landlord_analytics(uid: str = Depends(_landlord)):
+    await _require_pro(uid, "land analytics")
     plots = await list_subdocs(f"users/{uid}/land_plots")
     leases = await _leases(uid)
     listings = await query("land_listings", [("landlordId", "==", uid)], limit=1000)
@@ -573,3 +721,144 @@ async def update_lease_milestone(
         await set_doc(f"leases/{lease_id}/escrow", "milestones", milestones_doc)
 
     return milestones_doc
+
+
+@router.get("/rent-payments/{payment_id}/receipt")
+async def rent_payment_receipt(payment_id: str, uid: str = Depends(_owner)):
+    """PDF receipt for one recorded rent payment (Pro plan)."""
+    await _require_pro(uid, "rent receipts")
+    lease = None
+    payment = None
+    for candidate in await _leases(uid):
+        found = await get_doc(
+            f"users/{uid}/land_leases/{candidate['id']}/payments", payment_id
+        )
+        if found is not None:
+            lease, payment = candidate, found
+            break
+    if payment is None or lease is None:
+        _error(404, "PAYMENT_NOT_FOUND", "rent payment not found")
+    landlord = await get_doc("users", uid) or {}
+    file_path = reports.build_rent_receipt_pdf(lease, payment, landlord)
+    with open(file_path, "rb") as handle:
+        content = handle.read()
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="rent-receipt-{payment_id}.pdf"'},
+    )
+
+
+@router.get("/leases/{lease_id}/ledger")
+async def rent_ledger_export(
+    lease_id: str,
+    format: str = "csv",
+    uid: str = Depends(_owner),
+):
+    """Rent ledger export (Pro plan): csv (default) or pdf."""
+    await _require_pro(uid, "rent ledger export")
+    lease = await _require_lease(uid, lease_id)
+    payments = await list_subdocs(f"users/{uid}/land_leases/{lease_id}/payments")
+    payments.sort(key=lambda p: p.get("month", ""))
+    if format == "csv":
+        lines = ["month,amountPaidPaisa,amountRupees,method,paidAt"]
+        for payment in payments:
+            paid_paisa = int(payment.get("amountPaidPaisa", 0) or 0)
+            if not paid_paisa:
+                paid_paisa = int(round(float(payment.get("amountRupees", 0) or 0) * 100))
+            lines.append(
+                f"{payment.get('month', '')},{paid_paisa},{payment.get('amountRupees', 0)},"
+                f"{payment.get('method', '')},{payment.get('paidAt', '')}"
+            )
+        return Response(
+            content="\n".join(lines) + "\n",
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="rent-ledger-{lease_id}.csv"'},
+        )
+    if format == "pdf":
+        file_path = reports.build_rent_ledger_pdf(lease, payments)
+        with open(file_path, "rb") as handle:
+            content = handle.read()
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="rent-ledger-{lease_id}.pdf"'},
+        )
+    _error(422, "VALIDATION_ERROR", "format must be csv or pdf", {"format": "csv | pdf"})
+
+
+@router.post("/leases/{lease_id}/disputes", status_code=201)
+async def open_lease_dispute(
+    lease_id: str,
+    body: LandDisputeIn,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    uid: str = Depends(_owner),
+):
+    """Open a lease dispute record consumable by the phase-07 admin console."""
+    if not idempotency_key:
+        _error(400, "IDEMPOTENCY_KEY_REQUIRED", "an Idempotency-Key header is required")
+    stored = await idempotency.replay("land.dispute", idempotency_key)
+    if stored is not None:
+        return stored
+    await _require_lease(uid, lease_id)
+    dispute_id = f"dsp_{uuid.uuid4().hex[:10]}"
+    now = datetime.now(timezone.utc).isoformat()
+    await set_doc(
+        "land_disputes",
+        dispute_id,
+        {
+            "id": dispute_id,
+            "leaseId": lease_id,
+            "createdBy": uid,
+            "category": body.category,
+            "note": body.note,
+            "status": "open",
+            "createdAt": now,
+        },
+    )
+    await _audit(uid, "LEASE_DISPUTE_OPENED", {"leaseId": lease_id, "disputeId": dispute_id})
+    response = {"disputeId": dispute_id, "leaseId": lease_id, "status": "open"}
+    await idempotency.store("land.dispute", idempotency_key, response)
+    return response
+
+
+@router.get("/summary")
+async def landlord_summary(uid: str = Depends(_landlord)):
+    """Landlord dashboard summary feeding the phase-01 grid."""
+    plots = await list_subdocs(f"users/{uid}/land_plots")
+    leases = await _leases(uid)
+    listings = await query("land_listings", [("landlordId", "==", uid)], limit=1000)
+    requests = await query("lease_requests", [("landlordId", "==", uid)], limit=1000)
+    active_leases = [l for l in leases if l.get("status") == "active"]
+    today = date.today()
+    this_month = today.strftime("%Y-%m")
+    horizon = (today + timedelta(days=30)).isoformat()
+    rent_due_paisa = 0
+    for lease in active_leases:
+        due_paisa = int(round(float(lease.get("monthlyRentRupees", 0) or 0) * 100))
+        ledger = await get_doc(
+            f"users/{uid}/land_leases/{lease['id']}/rent_ledger", this_month
+        )
+        paid_paisa = int((ledger or {}).get("amountPaidPaisa", 0))
+        rent_due_paisa += max(0, due_paisa - paid_paisa)
+    return {
+        "acresOwned": round(sum(p.get("areaAcres", 0) for p in plots), 2),
+        "acresLeased": round(
+            sum(p.get("areaAcres", 0) for p in plots if p.get("status") == "leased"), 2
+        ),
+        "activeLeases": len(active_leases),
+        "rentDueThisMonthPaisa": rent_due_paisa,
+        "pendingRequests": len([r for r in requests if r.get("status") in ("pending", "countered")]),
+        "expiringLeases": len(
+            [
+                l
+                for l in active_leases
+                if l.get("endDate") and today.isoformat() <= l["endDate"] <= horizon
+            ]
+        ),
+        "totalListings": len(listings),
+        "plotOccupancy": [
+            {"plotId": p.get("id"), "name": p.get("name", ""), "status": p.get("status", "vacant")}
+            for p in plots
+        ],
+    }

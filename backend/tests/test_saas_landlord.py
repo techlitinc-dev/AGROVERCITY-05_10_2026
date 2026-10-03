@@ -12,6 +12,20 @@ PLOT_1 = {
 
 async def test_landlord_analytics(client, user_store):
     token = seed_user(user_store, uid="landlord-1", active_profile="farm_landlord")
+    # Analytics is a Pro-plan feature (phase-02 WS-01 entitlement gate).
+    from app.services.billing import seed_plans
+
+    await seed_plans()
+    user_store["subscriptions/sub_pro_landlord"] = {
+        "subId": "sub_pro_landlord",
+        "userId": "landlord-1",
+        "planId": "farmLandlord_pro",
+        "status": "active",
+        "provider": "razorpay_sub",
+        "providerRef": "sub_test_1",
+        "currentPeriodEnd": "2027-01-01T00:00:00+00:00",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
     # Add a plot
     resp = await client.post("/v1/land/plots", json=PLOT_1, headers=auth(token))
     assert resp.status_code == 201

@@ -13,7 +13,7 @@ from app.core.db import get_doc, query, set_doc
 # (persona, tier, priceRupeesPerMonth, limits)
 TIER_MATRIX = [
     ("farmer", "free", 0, {}),
-    ("farmLandlord", "free", 0, {"listings": 5}),
+    ("farmLandlord", "free", 0, {"plots": 1, "activeLeases": 1, "listings": 5}),
     ("farmLandlord", "pro", 299, {"listings": 100}),
     ("transport", "free", 0, {"vehicles": 3}),
     ("transport", "pro", 499, {"vehicles": 25}),
@@ -63,6 +63,11 @@ def plan_doc(persona: str, tier: str, rupees: int, limits: dict) -> dict:
 PLANS = [plan_doc(*row) for row in TIER_MATRIX]
 
 
+def _matrix_plan(plan_id: str) -> dict | None:
+    """Fallback to the in-code tier matrix when the plans collection is empty."""
+    return next((dict(plan) for plan in PLANS if plan["planId"] == plan_id), None)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -103,11 +108,11 @@ async def get_subscription(user_id: str) -> dict | None:
 async def effective_plan(user_id: str, persona: str | None = None) -> dict:
     subscription = await get_subscription(user_id)
     if subscription is not None:
-        plan = await get_plan(subscription["planId"])
+        plan = await get_plan(subscription["planId"]) or _matrix_plan(subscription["planId"])
         if plan is not None:
             return plan
     persona = persona or "farmer"
-    free = await get_plan(f"{persona}_free")
+    free = await get_plan(f"{persona}_free") or _matrix_plan(f"{persona}_free")
     return free or {"planId": f"{persona}_free", "persona": persona, "tier": "free", "priceMonthlyPaisa": 0, "limits": {}}
 
 

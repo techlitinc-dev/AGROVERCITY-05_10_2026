@@ -29,6 +29,16 @@ import { DealDetailPage, DealFormPage } from './views/broker';
 import { ContractDetailPage, ContractFormPage } from './views/directbuyer';
 import { FarmerContractDetailPage, FarmerDealDetailPage } from './views/farmer';
 import {
+  LandAnalyticsPageRoute,
+  LeasesPageRoute,
+  ListingsPageRoute,
+  ListingWizardRoute,
+  PlotsPageRoute,
+  RequestsInboxPageRoute,
+  RentTrackerPageRoute,
+  Vault712PageRoute,
+} from './views/landlord';
+import {
   BatchDetailPage,
   CollectionEntryPage,
   CollectionsPage,
@@ -141,6 +151,39 @@ export default function App() {
             path="/dashboard/p/courses" (courses).
             Static deep routes (myOffers, transport/trips, purchases,
             broker/deals, contracts, chats, dairy/console) are registered above. */}
+        {/* Landlord LandBank deep routes (phase-02 WS-01) */}
+        <Route
+          path="/dashboard/p/landlord/plots"
+          element={loggedIn ? <PlotsPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/listings"
+          element={loggedIn ? <ListingsPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/listings/new"
+          element={loggedIn ? <ListingWizardRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/requests"
+          element={loggedIn ? <RequestsInboxPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/leases"
+          element={loggedIn ? <LeasesPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/rent"
+          element={loggedIn ? <RentTrackerPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/analytics"
+          element={loggedIn ? <LandAnalyticsPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/landlord/vault"
+          element={loggedIn ? <Vault712PageRoute /> : <Navigate to="/auth" replace />}
+        />
         <Route
           path="/dashboard/p/:toolId"
           element={loggedIn ? <ToolPage /> : <Navigate to="/auth" replace />}

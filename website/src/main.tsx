@@ -44,6 +44,8 @@ import './lib/i18n/locales/en.dashboard';
 import './lib/i18n/locales/hi.dashboard';
 import './lib/i18n/locales/en.chatbot';
 import './lib/i18n/locales/hi.chatbot';
+import './lib/i18n/locales/en.landlord';
+import './lib/i18n/locales/hi.landlord';
 import { initSentry } from './lib/observability';
 import './theme/tokens.css';
 import './theme/layout.css';

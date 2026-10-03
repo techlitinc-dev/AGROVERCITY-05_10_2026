@@ -112,6 +112,85 @@ def build_lease_agreement_pdf(lease: dict, landlord: dict, tenant: dict) -> str:
     return path
 
 
+def build_rent_receipt_pdf(lease: dict, payment: dict, landlord: dict) -> str:
+    """PDF receipt for one recorded rent payment (phase-02 WS-01)."""
+    path = f"/tmp/rent_receipt_{payment.get('id', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Rent Payment Receipt / किराया भुगतान रसीद", styles["Title"]),
+        Paragraph(
+            f"Generated on: {datetime.now(timezone.utc).date().isoformat()}", styles["Normal"]
+        ),
+        Spacer(1, 12),
+    ]
+    paid_paisa = int(payment.get("amountPaidPaisa", 0) or 0)
+    if not paid_paisa:
+        paid_paisa = int(round(float(payment.get("amountRupees", 0) or 0) * 100))
+    rows = [
+        ["Receipt No", payment.get("id", "")],
+        ["Landlord", landlord.get("name", "")],
+        ["Tenant", lease.get("tenantName", "")],
+        ["Plot", lease.get("plotId", "")],
+        ["Rent Month", payment.get("month", "")],
+        ["Amount Paid", f"Rs {paid_paisa / 100:.2f} ({paid_paisa} paisa)"],
+        ["Method", payment.get("method", "")],
+        ["Paid At", payment.get("paidAt", "")],
+    ]
+    table = Table(rows, colWidths=[140, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
+def build_rent_ledger_pdf(lease: dict, payments: list[dict]) -> str:
+    """PDF rent ledger for a lease (phase-02 WS-01)."""
+    path = f"/tmp/rent_ledger_{lease.get('id', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Rent Ledger / किराया खाता", styles["Title"]),
+        Paragraph(f"Tenant: {lease.get('tenantName', '')}", styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    rows = [["Month", "Amount Paid (paisa)", "Method", "Paid At"]]
+    for payment in sorted(payments, key=lambda p: p.get("month", "")):
+        paid_paisa = int(payment.get("amountPaidPaisa", 0) or 0)
+        if not paid_paisa:
+            paid_paisa = int(round(float(payment.get("amountRupees", 0) or 0) * 100))
+        rows.append(
+            [
+                payment.get("month", ""),
+                str(paid_paisa),
+                payment.get("method", ""),
+                payment.get("paidAt", ""),
+            ]
+        )
+    table = Table(rows, colWidths=[90, 130, 100, 130])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#43A047")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ]
+        )
+    )
+    story.append(table)
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
 def build_policy_certificate_pdf(policy: dict) -> str:
     path = f"/tmp/policy_certificate_{policy['id']}_{uuid.uuid4().hex[:8]}.pdf"
     if HINDI_FONT != "Helvetica":

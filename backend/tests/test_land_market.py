@@ -135,7 +135,25 @@ async def _make_lease(client, landlord, tenant_phone):
     return resp.json()["id"]
 
 
+
+async def _make_pro(user_store, uid="uid-l1"):
+    """Activate the Pro plan so PDF/analytics endpoints are reachable."""
+    from app.services.billing import seed_plans
+
+    await seed_plans()
+    user_store["subscriptions/sub_pro_landlord"] = {
+        "subId": "sub_pro_landlord",
+        "userId": uid,
+        "planId": "farmLandlord_pro",
+        "status": "active",
+        "provider": "razorpay_sub",
+        "providerRef": "sub_test_1",
+        "currentPeriodEnd": "2027-01-01T00:00:00+00:00",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+
 async def test_agreement_pdf_returns_url(client, user_store, monkeypatch):
+    await _make_pro(user_store)
     landlord = _landlord(user_store)
     lease_id = await _make_lease(client, landlord, "+919822200001")
     monkeypatch.setattr(
@@ -154,6 +172,7 @@ async def test_agreement_pdf_returns_url(client, user_store, monkeypatch):
 
 
 async def test_tenant_can_fetch_agreement(client, user_store, monkeypatch):
+    await _make_pro(user_store)
     monkeypatch.setattr(
         "app.services.reports.upload_to_storage",
         lambda local_path, dest_path: f"file://{local_path}",
