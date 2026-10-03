@@ -34,6 +34,8 @@ DEEP_LINKS: dict[str, str] = {
     "equipment": "/dashboard/p/machineManage",
     "land": "/dashboard/p/landlordLeases",
     "courses": "/dashboard/p/courses",
+    "farmer_deals": "/dashboard/p/farmer/deals",
+    "my_contracts": "/dashboard/p/myContracts",
 }
 
 # Modules whose route accepts a trailing source-doc id (parameterized routes).

@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from app.services.tokens import create_access_token
 from tests.test_direct_buyer import _lot, _register_buyer, _seed_user
 from tests.test_users import _auth
@@ -329,3 +330,24 @@ async def test_offer_participant_only_read(client, user_store):
     assert resp.status_code == 403
     resp = await client.get(f"/v1/offers/{offer_id}", headers=_auth(farmer_token))
     assert resp.status_code == 200
+
+
+async def test_offer_created_emits_task(client, user_store):
+    token = await _buyer_token(client)
+    _seed_user(user_store, "uid-f1", "Ram Patel")
+    user_store["market_lots/lot_1"] = _lot("lot_1", "uid-f1", "Wheat", "2026-09-10T00:00:00+00:00")
+    resp = await client.post(
+        "/v1/offers",
+        json={"targetType": "lot", "targetId": "lot_1", "pricePerUnit": 2300, "quantity": 4},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 201
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["userId"] == "uid-f1"
+    assert task["module"] == "trade"
+    assert task["kind"] == "new_offers"
+    assert task["status"] == "open"
+    assert task["title"]["en"] and task["title"]["hi"]
+    assert task["deepLink"] in DEEP_LINKS.values()

@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from tests.test_diary import auth, seed_user
 
 FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -587,3 +588,16 @@ async def test_broker_cancel_stores_reason(client, user_store):
     resp = await client.delete(f"/v1/broker/deals/{deal_id}", headers=auth(broker))
     assert resp.status_code == 200
     assert "cancelReason" not in user_store[f"broker_deals/{deal_id}"]
+
+
+async def test_deal_creation_emits_task(client, user_store):
+    farmer = _seed_farmer(user_store)
+    broker = _seed_broker(user_store)
+    deal_id = await _create_deal(client, broker)
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["module"] == "broker"
+    assert task["kind"] == "deal_confirmation_pending"
+    assert task["deepLink"] == f"{DEEP_LINKS['farmer_deals']}/{deal_id}"
+    assert task["userId"] == "uid-f1"

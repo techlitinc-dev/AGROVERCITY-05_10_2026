@@ -16,6 +16,7 @@ from app.models.broker import (
 from app.routers.users import require_role
 from app.services import storage
 from app.services.notify import notify_user
+from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/broker", tags=["broker"])
@@ -111,6 +112,20 @@ async def create_deal(body: DealCreate, ctx: tuple = Depends(_broker_user)):
     if buyer_uid:
         doc["buyerUid"] = buyer_uid
     await set_doc("broker_deals", deal_id, doc)
+    # WS-05 task emission (module: broker) — seller confirmation.
+    if seller_uid:
+        await emit_task(
+            seller_uid,
+            persona="farmer",
+            module="broker",
+            kind="deal_confirmation_pending",
+            title_en="Deal awaiting your confirmation",
+            title_hi="सौदा आपकी पुष्टि की प्रतीक्षा में",
+            subtitle=f"{body.commodity} · {body.quantityQuintals}q @ ₹{body.agreedRate}/quintal",
+            priority="today",
+            deep_link=f"{DEEP_LINKS['farmer_deals']}/{deal_id}",
+            source_id=deal_id,
+        )
     await _notify(
         seller_uid,
         type="deal_offer_received",

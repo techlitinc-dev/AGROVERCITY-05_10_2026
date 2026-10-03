@@ -18,6 +18,7 @@ from app.models.contracts import (
 )
 from app.routers.users import require_role
 from app.services.notify import notify_user
+from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/contracts", tags=["contracts"])
@@ -425,6 +426,21 @@ async def create_delivery(
     contract["deliveriesGenerated"] = (contract.get("deliveriesGenerated") or 0) + 1
     contract["updatedAt"] = now
     await set_doc("contracts", contract_id, contract)
+    # WS-05 task emission (module: contracts) — delivery due for the farmer.
+    if contract.get("farmerId"):
+        await emit_task(
+            contract["farmerId"],
+            persona="farmer",
+            module="contracts",
+            kind="contract_delivery_due",
+            title_en="Contract delivery due",
+            title_hi="अनुबंध डिलीवरी देय",
+            subtitle=f"{contract.get('crop', '')} — {qty}q on {body.slotDate}",
+            priority="today",
+            deep_link=f"{DEEP_LINKS['my_contracts']}/{contract_id}",
+            source_id=f"{contract_id}:{body.slotDate}",
+            due_at=body.slotDate,
+        )
 
     await _notify(
         contract.get("farmerId"),

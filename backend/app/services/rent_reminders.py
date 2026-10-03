@@ -2,7 +2,7 @@ from datetime import date
 
 from app.core.db import query
 from app.services import fcm
-from app.services.tasks import DEEP_LINKS
+from app.services.tasks import DEEP_LINKS, emit_task
 
 GRACE_DAY = 5
 
@@ -62,6 +62,19 @@ async def run_rent_reminders(today: date | None = None) -> dict:
                 "dueMonth": due_month,
                 "deepLink": DEEP_LINKS["land"],
             },
+        )
+        await emit_task(
+            uid,
+            persona="farmLandlord",
+            module="land",
+            kind="rent_due",
+            title_en="Rent due from tenant",
+            title_hi="किराया लंबित है",
+            subtitle=f"{lease.get('tenantName', '')} · ₹{lease.get('monthlyRentRupees', 0)} for {due_month}",
+            priority="today",
+            deep_link=DEEP_LINKS["land"],
+            source_id=f"{lease['id']}:{due_month}",
+            due_at=f"{due_month}-05",
         )
         reminded += 1
     return {"reminded": reminded}

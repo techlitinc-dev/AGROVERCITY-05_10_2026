@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from tests.test_diary import auth, seed_user
 
 MANAGER = {"uid": "mgr-1", "active_profile": "dairyManager"}
@@ -578,3 +579,21 @@ async def test_pl_report_math(client, user_store):
     assert body["grossProfit"] == 0.0
     assert body["collectionsCount"] == 2
     assert body["ordersCount"] == 1
+
+
+async def test_payment_batch_ready_emits_task(client, user_store):
+    token, _member_a, _member_b = await _setup_batch_scenario(client, user_store)
+    resp = await client.post(
+        "/v1/livestock/dairy/payments/batches",
+        json={"periodFrom": "2026-09-01", "periodTo": "2026-09-25"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 201
+    batch_id = resp.json()["id"]
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["module"] == "dairy"
+    assert task["kind"] == "payment_batch_ready"
+    assert task["sourceId"] == batch_id
+    assert task["deepLink"] == f"{DEEP_LINKS['dairy']}/payments/{batch_id}"

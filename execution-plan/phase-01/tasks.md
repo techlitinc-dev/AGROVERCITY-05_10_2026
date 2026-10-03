@@ -397,98 +397,98 @@
 - RUN: `ls backend/app/services/chatbot.py backend/app/routers/chatbot.py backend/tests/test_chatbot.py website/src/views/trade/ChatRoomPage.tsx website/src/components/ModalSheet.tsx && grep -n "expert_tickets\|expert-handoff\|/messages\|/history\|/experts" backend/app/routers/chatbot.py | head`
 - EXPECT: exit 0; all files listed; grep prints the existing chatbot endpoints (`POST /messages`, `GET /history`, `POST /expert-handoff` writing `expert_tickets`, `GET /experts`).
 - IF FAIL: a cited file or endpoint is missing/renamed → STOP the phase (playbook §5) and report the contradiction.
-- [ ]
+- [x]
 
 ### Task 4.2 — Register chatbot.intent.v1 with golden fixture
 - DO: In `backend/app/services/ai/question_sets.py`, register `chatbot.intent.v1` per AI plan §2: output schema = `intent` as choice(`agronomy`/`market`/`app_help`/`money`/`human_needed`) plus an `answerable` score (0–1); set `confidence_threshold` and `automation_level: "suggest"`. Create the golden fixture `backend/tests/fixtures/ai/golden/chatbot.intent.v1.jsonl` (new) with input/output pairs covering all five intents plus a low-answerable case (format matching task 3.8's fixture).
 - RUN: `cd backend && .venv/bin/python -c "import json; [json.loads(l) for l in open('tests/fixtures/ai/golden/chatbot.intent.v1.jsonl') if l.strip()]; print('valid jsonl')" && .venv/bin/python -c "from app.services.ai import question_sets; print('import ok')"`
 - EXPECT: exit 0; prints `valid jsonl` and `import ok`.
 - IF FAIL: fix the fixture/registration error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.3 — Register chatbot.safety.v1 with golden fixture
 - DO: In `backend/app/services/ai/question_sets.py`, register `chatbot.safety.v1` per AI plan §2: output schema = booleans `has_contact_info`, `has_financial_advice`, `has_medical_certainty`. Create `backend/tests/fixtures/ai/golden/chatbot.safety.v1.jsonl` (new) with cases: a phone-number-sharing reply (`has_contact_info: true`), a loan-advice reply (`has_financial_advice: true`), a medical-certainty reply, and a clean reply (all false).
 - RUN: `cd backend && .venv/bin/python -c "import json; [json.loads(l) for l in open('tests/fixtures/ai/golden/chatbot.safety.v1.jsonl') if l.strip()]; print('valid jsonl')"`
 - EXPECT: exit 0; prints `valid jsonl`.
 - IF FAIL: fix the malformed line or registration, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.4 — Add intent routing to the message flow
 - DO: In `backend/app/services/chatbot.py` and `backend/app/routers/chatbot.py` (keep the split of responsibilities the files already have): on each user message to `POST /v1/chatbot/messages`, call `gateway.decide(state, "chatbot.intent.v1", ctx)` (gateway only — never Gemini/OpenRouter directly, rule 10). Routing: if `intent == "human_needed"` OR `answerable < 0.6` → take the EXISTING `expert_tickets` handoff path already used by `POST /v1/chatbot/expert-handoff` (M2 step 1) instead of a bot answer. Log the decision to `ai_decisions` with cost + confidence.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py`
 - EXPECT: exit 0; existing chatbot tests pass on shim.
 - IF FAIL: fix the flow wiring (never weaken tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.5 — Handle money intent with neutral-explanation-only replies
 - DO: In `backend/app/services/chatbot.py`: when the task-4.4 intent is `money`, the bot answers ONLY with a neutral explanation plus an offer of expert handoff — never prescriptive money/credit/insurance/legal advice (rule 12: these topics never exceed `require_confirm`; the bot explains and routes to a human, it never advises a decision). Add the neutral-answer + handoff-offer copy as constants keyed by user language (en/hi at minimum) in the service, not inline in the router.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py`
 - EXPECT: exit 0; tests pass on shim.
 - IF FAIL: fix the branch (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.6 — Prepend persona-aware system prompt
 - DO: In `backend/app/services/chatbot.py` (M2 step 2): build the system prompt as [active persona + a compact `/intelligence` summary snippet (reuse the numbers-layer call, trimmed to a few lines) + user language] prepended to the EXISTING Kisan Mitra prompt (keep that prompt text unchanged). Pseudonymize the user id via `privacy.py` (`HMAC(user_id, AI_HASH_SALT)`); the payload must contain no phone numbers, emails, or Aadhaar (rule 11).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py`
 - EXPECT: exit 0; tests pass on shim.
 - IF FAIL: fix the prompt builder (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.7 — Add safety post-check with strip/regenerate/fallback
 - DO: In `backend/app/services/chatbot.py` (M2 step 3 + SDR step 5): after the model generates a reply, run `gateway.decide(state, "chatbot.safety.v1", ctx)` on the reply text. On ANY flag: strip the offending content and regenerate ONCE; if the regeneration is still flagged, return the static safe fallback text in the user's language (add en/hi fallback constants in the service). The bot must never emit phone numbers, UPI IDs, or external links (rule 4). Log every safety decision to `ai_decisions` with cost + confidence.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py`
 - EXPECT: exit 0; tests pass on shim.
 - IF FAIL: fix the post-check wiring (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.8 — Test intent routing and handoff triggers
 - DO: In `backend/tests/test_chatbot.py` (extend — do not remove existing tests), add: `test_intent_human_needed_creates_ticket` (shim intent `human_needed` on a message → an `expert_tickets` doc created, same shape as the existing handoff path) and `test_low_answerable_triggers_handoff` (shim `answerable < 0.6` → handoff path taken instead of a bot answer). Reuse the shim/golden mechanisms from WS-03 tests for controlling `gateway.decide` outputs.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py -k "intent or answerable or handoff"`
 - EXPECT: exit 0; the new tests (and any existing handoff tests) pass.
 - IF FAIL: fix the routing code (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.9 — Test safety post-check and persona prompt
 - DO: In `backend/tests/test_chatbot.py`, add: `test_safety_flag_strips_and_regenerates` (first reply flagged → stripped/regenerated clean reply returned), `test_safety_double_flag_returns_fallback` (both attempts flagged → static safe fallback text in the user's language), `test_persona_snippet_in_prompt_state` (the prompt state sent to the gateway contains the active persona and the intelligence snippet, and contains no phone/email/Aadhaar), and `test_chatbot_golden_fixtures_on_shim` (both task-4.2/4.3 fixtures replay clean on shim).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py`
 - EXPECT: exit 0; the full `test_chatbot.py` file passes on shim.
 - IF FAIL: fix the chatbot code (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.10 — Create chatbot API wrapper
 - DO: Create `website/src/lib/api/chatbot.ts` (new) following the conventions of the existing wrappers (e.g. `website/src/lib/api/chat.ts`): export `sendMessage(text)` → `POST /v1/chatbot/messages`, `getHistory()` → `GET /v1/chatbot/history`, `requestHandoff(...)` → `POST /v1/chatbot/expert-handoff`, `listExperts()` → `GET /v1/chatbot/experts`, with TypeScript types for messages and expert tickets matching the backend payloads. Do NOT add an `Idempotency-Key` header — `client.ts` injects it on writes.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the type errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.11 — Build Kisan Mitra chat sheet with FAB
 - DO: Create the Kisan Mitra chat sheet: a floating action button (FAB) on `website/src/views/dashboard/DashboardHome.tsx` that opens a `website/src/components/ModalSheet.tsx`-based chat panel (new component `website/src/components/chatbot/KisanMitraSheet.tsx` (new)) with a message list, text input, send action via `sendMessage`, and a typing/awaiting state while the reply is in flight. Follow the chat UI patterns in `website/src/views/trade/ChatRoomPage.tsx`. All strings via `t()`; no `alert()`/`prompt()`/`confirm()` — use `components/toast.ts`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.12 — Build expert-handoff thread view
 - DO: In `website/src/components/chatbot/KisanMitraSheet.tsx`: when a handoff happens (bot routes to expert, or the user taps the handoff action calling `requestHandoff`), render a persistent thread block bound to the `expert_tickets` record showing the "expert se jawab aayega" status string (ai.md flow 5.3 step 3) with the ticket status; on sheet open, reload history via `getHistory()` so the thread is visible on return (persistence comes from the history endpoint, not local state only).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.13 — Add chat i18n keys (en + hi + mr)
 - DO: Add the chat-surface strings — FAB label, sheet title, input placeholder, send, typing state, handoff offer, "expert se jawab aayega" thread status, safe-fallback display, empty history — to a locale module pair: either the WS-02 `en.dashboard.ts`/`hi.dashboard.ts` pair or a new `website/src/lib/i18n/locales/en.chatbot.ts` + `hi.chatbot.ts` pair (pick one; if new, register it in `website/src/lib/i18n/index.ts` per task 2.5's pattern). ALSO add Marathi coverage for every chat-surface key in `website/src/lib/i18n/locales/mr.ts` (Marathi round-trip is an acceptance requirement).
 - RUN: `cd website && pnpm exec tsc --noEmit && for k in $(grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/en.chatbot.ts 2>/dev/null || grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/en.dashboard.ts); do grep -q "$k" src/lib/i18n/locales/mr.ts || echo "MISSING_IN_MR: $k"; done; echo MR_CHECK_DONE`
 - EXPECT: `tsc` exits 0; the loop prints no `MISSING_IN_MR` lines (every chat key exists in `mr.ts`); ends with `MR_CHECK_DONE`.
 - IF FAIL: add the missing keys to `mr.ts` (Marathi translations), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.14 — Wire dashboard Kisan Mitra tile to the sheet
 - DO: In `website/src/lib/dashboard.ts` and the tile-rendering code that consumes it (`website/src/components/dashboard/tiles.tsx` / `DashboardHome.tsx` — wherever the `chats` toolId currently renders): add/rename a "Chat (Kisan Mitra)" tile entry for the existing `chats` toolId (line ~77 of `lib/dashboard.ts`) and point its action at opening the task-4.11 chat sheet. Remove any "coming soon" behavior for this toolId — tapping the tile opens the sheet, always.
 - RUN: `cd website && grep -n "coming soon\|comingSoon\|coming_soon" src/components/dashboard/tiles.tsx src/views/dashboard/DashboardHome.tsx src/lib/dashboard.ts; pnpm exec tsc --noEmit`
 - EXPECT: grep prints nothing for the `chats`/Kisan Mitra tile path (no coming-soon behavior left for it); `tsc` exits 0.
 - IF FAIL: remove the coming-soon branch for the tile and wire the sheet open action, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.15 — HUMAN CHECK: chat round-trips, red team, persistence
 - DO: Human: with the app running via `./run.sh --no-mobile` and the backend on `AI_PROVIDER=shim` (or dev Gemini config from the human operator for the language checks): (1) open the dashboard FAB → ask an agronomy question in Hindi, then in Marathi → confirm the replies come back in the same language and are persona-aware; (2) send "mujhe loan chahiye, kya karun" → confirm a neutral explanation + handoff offer, never advice; (3) try sharing a phone number in a reply context → confirm it is filtered/stripped; (4) request an expert → confirm the "expert se jawab aayega" thread appears; reload the page and reopen the sheet → confirm the thread persists.
@@ -502,7 +502,7 @@
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_chatbot.py && cd ../website && pnpm exec tsc --noEmit && pnpm build`
 - EXPECT: `test_chatbot.py` fully green on shim; `tsc` clean; `pnpm build` exits 0; then the commit succeeds (if git identity is missing, note it and continue — playbook §6).
 - IF FAIL: fix the failure shown (never weaken tests), re-run; only commit when green — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-05 — Module task emission sweep  (see instructions.md §WS-05)
 

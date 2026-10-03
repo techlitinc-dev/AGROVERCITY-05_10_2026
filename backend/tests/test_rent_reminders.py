@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from datetime import date
 from unittest.mock import AsyncMock
 
@@ -92,3 +93,21 @@ async def test_cron_secret_required(client, user_store, monkeypatch):
     )
     assert resp.status_code == 200
     assert "reminded" in resp.json()
+
+
+async def test_rent_reminder_job_emits_task(client, user_store, monkeypatch):
+    notify = AsyncMock()
+    monkeypatch.setattr("app.services.fcm.notify", notify)
+    _seed_lease(user_store)
+    await run_rent_reminders(today=TODAY)
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["userId"] == "uid-1"
+    assert task["module"] == "land"
+    assert task["kind"] == "rent_due"
+    assert task["status"] == "open"
+    assert task["deepLink"] == DEEP_LINKS["land"]
+    # idempotent rerun: the remembered notification also dedupes the task
+    await run_rent_reminders(today=TODAY)
+    assert len([key for key in user_store if key.startswith("tasks/")]) == 1

@@ -9,6 +9,7 @@ from app.models.direct import OfferCounter, OfferCreate
 from app.routers.purchases import create_purchase_from_offer
 from app.services.chat import ensure_offer_room
 from app.services.notify import notify_user
+from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
 
 router = APIRouter(prefix="/offers", tags=["offers"])
@@ -140,6 +141,20 @@ async def create_offer(body: OfferCreate, response: Response, uid: str = Depends
         title="New offer / नया ऑफर",
         body=offer_body,
         path=f"/dashboard/p/myOffers/{doc['id']}",
+    )
+    # WS-05 task emission (module: trade).
+    await emit_task(
+        doc["toId"],
+        persona="farmer",
+        module="trade",
+        kind="new_offers",
+        title_en="New offer on your listing",
+        title_hi="आपकी लिस्टिंग पर नया ऑफर",
+        subtitle=f"₹{body.pricePerUnit}/{doc['unit']} for {body.quantity} {doc['unit']}",
+        priority="today",
+        deep_link=module_deep_link("trade"),
+        source_id=doc["id"],
+        due_at=doc.get("expiresAt"),
     )
     return doc
 

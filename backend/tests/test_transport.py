@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from app.services.tokens import create_access_token
 from tests.test_lots import LOT_BODY
 from tests.test_users import _auth, _register
@@ -347,3 +348,22 @@ async def test_booking_with_sold_lot_409(client, user_store):
     resp = await _book(client, token, lotId=lot["id"])
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "LOT_NOT_OPEN"
+
+
+async def test_accept_booking_emits_task(client, user_store):
+    token = await _token(client)
+    booking = (await _book(client, token)).json()
+    await _activate(client, token)
+    vehicle = await _add_vehicle(client, token)
+    _verify_vehicle(user_store, vehicle["id"])
+    resp = await client.post(
+        f"/v1/transport/bookings/{booking['id']}/accept",
+        json={"vehicleId": vehicle["id"], "vehicleNo": vehicle["registrationNo"]},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    assert tasks[0]["module"] == "transport"
+    assert tasks[0]["kind"] == "trip_starting"
+    assert tasks[0]["deepLink"] == f"{DEEP_LINKS['transport']}/{booking['id']}"

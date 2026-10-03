@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from datetime import datetime, timedelta, timezone
 
 from app.services.tokens import create_access_token
@@ -193,3 +194,17 @@ async def test_pending_inbox_lists_owner_pending_only(client, user_store):
     assert data[0]["priceRupees"] == 800
     resp = await client.get("/v1/equipment/bookings/pending", headers=_auth(other_owner))
     assert [row["bookingId"] for row in resp.json()["data"]] == [booking_other["id"]]
+
+
+async def test_booking_approval_emits_task(client, user_store):
+    await _owner_token(client)
+    user_store["equipment/eq-own"] = dict(OWNER_MACHINE)
+    farmer_token = second_farmer_token(user_store)
+    await _book_pending(client, farmer_token, "eq-own")
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["userId"] == "uid-1"
+    assert task["module"] == "equipment"
+    assert task["kind"] == "booking_approval_needed"
+    assert task["deepLink"] in DEEP_LINKS.values()

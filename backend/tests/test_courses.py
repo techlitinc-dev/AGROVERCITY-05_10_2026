@@ -263,3 +263,38 @@ async def test_feature_and_report(client, user_store):
     report = await client.get("/v1/admin/courses/report", headers=admin_headers(admin))
     assert report.json()["totalSales"] == 1
     assert report.json()["freeClaims"] == 1
+
+
+async def test_certificate_ready_emits_task(client, user_store, razorpay):
+    instructor = _instructor_token(user_store)
+    farmer = seed_user(user_store, uid="uid-farmer")
+    course = (await _create(client, instructor)).json()
+    admin = _seed_admin(user_store)
+    await client.post(
+        f"/v1/admin/courses/{course['id']}/review",
+        json={"action": "publish"},
+        headers=admin_headers(admin),
+    )
+    purchase = await client.post(f"/v1/courses/{course['id']}/purchase", headers=auth(farmer))
+    order_id = purchase.json()["paymentOrderId"]
+    verified = await client.post(
+        "/v1/courses/purchases/verify",
+        json={
+            "razorpayOrderId": order_id,
+            "razorpayPaymentId": "pay_test_1",
+            "razorpaySignature": rzp_signature(order_id, "pay_test_1"),
+        },
+        headers=auth(farmer),
+    )
+    assert verified.status_code == 200
+    resp = await client.post(
+        f"/v1/courses/{course['id']}/lessons/lesson-1/progress",
+        json={"completed": True},
+        headers=auth(farmer),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["isCompleted"] is True
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    assert tasks[0]["module"] == "courses"
+    assert tasks[0]["kind"] == "certificate_ready"

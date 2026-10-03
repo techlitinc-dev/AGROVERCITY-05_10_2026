@@ -18,6 +18,7 @@ from app.models.livestock_mgmt import (
 )
 from app.routers.users import require_role
 from app.services.notifications import send_fcm_to_user
+from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
 router = APIRouter(tags=["livestock"])
@@ -343,6 +344,19 @@ async def generate_payment_batch(body: PaymentBatchGenerateIn, uid: str = Depend
     await set_doc("payment_batches", batch_id, batch)
     for entry in entries:
         await set_doc("payment_entries", entry["id"], entry)
+    # WS-05 task emission (module: dairy) — batch ready to approve.
+    await emit_task(
+        uid,
+        persona="dairyManager",
+        module="dairy",
+        kind="payment_batch_ready",
+        title_en="Milk payment batch ready",
+        title_hi="दूध भुगतान बैच तैयार",
+        subtitle=f"₹{batch['totalNet']} across {len(entries)} members",
+        priority="today",
+        deep_link=f"{DEEP_LINKS['dairy']}/payments/{batch_id}",
+        source_id=batch_id,
+    )
     return {**batch, "entries": entries}
 
 

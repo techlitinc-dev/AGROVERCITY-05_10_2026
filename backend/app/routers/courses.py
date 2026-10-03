@@ -19,6 +19,7 @@ from app.models.courses import (
 )
 from app.services.coins import InsufficientCoins, spend_coins
 from app.services.payments import create_razorpay_order, verify_razorpay_signature
+from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
 
 router = APIRouter(tags=["courses"])
@@ -587,6 +588,20 @@ async def update_lesson_progress(
         purchase["completedAt"] = _now()
 
     await set_doc("course_purchases", pid, purchase)
+    # WS-05 task emission (module: courses) — certificate ready for the student.
+    if is_completed and certificate_id and not is_owner:
+        await emit_task(
+            user["id"],
+            persona=user.get("activeProfile") or "farmer",
+            module="courses",
+            kind="certificate_ready",
+            title_en="Certificate ready",
+            title_hi="प्रमाणपत्र तैयार",
+            subtitle=course.get("title", ""),
+            priority="today",
+            deep_link=module_deep_link("courses"),
+            source_id=pid,
+        )
 
     return {
         "success": True,

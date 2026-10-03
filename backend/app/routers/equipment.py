@@ -9,6 +9,7 @@ from app.models.equipment import BookSlotRequest, EquipmentOut, SlotOut
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
 from app.services.users import get_user
+from app.services.tasks import emit_task, module_deep_link
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 
@@ -177,6 +178,22 @@ async def book_slot(slot_id: str, body: BookSlotRequest, uid: str = Depends(_far
     if equipment is None:
         _error(404, "EQUIPMENT_NOT_FOUND", "equipment not found")
     booking = await create_booking_for_slot(equipment, slot, uid, body.farmerName)
+    # WS-05 task emission (module: equipment) — owner approval needed.
+    owner_uid = equipment.get("ownerId")
+    if owner_uid:
+        await emit_task(
+            owner_uid,
+            persona="equipmentRental",
+            module="equipment",
+            kind="booking_approval_needed",
+            title_en="Booking approval needed",
+            title_hi="बुकिंग स्वीकृति चाहिए",
+            subtitle=f"{equipment.get('name', '')} · {slot.get('date', '')}",
+            priority="urgent",
+            deep_link=module_deep_link("equipment"),
+            source_id=booking.get("id", slot_id),
+            due_at=slot.get("date"),
+        )
     user = await get_user(uid)
     user["agriCoins"] = user.get("agriCoins", 0) + BOOKING_COINS
     await set_doc("users", uid, user)

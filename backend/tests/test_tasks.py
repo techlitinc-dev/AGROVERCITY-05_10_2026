@@ -353,3 +353,23 @@ async def test_done_outcome_hook_records_within_24h(client, user_store):
     assert resp.status_code == 200
     assert f"ai_outcomes/{decision_id}" in user_store
     assert user_store[f"ai_outcomes/{decision_id}"]["outcome"] == "task-completed-within-24h"
+
+
+# ---------------- WS-05 coverage (task 5.34) ----------------
+
+
+async def test_summary_covers_every_wired_module(client, user_store):
+    """Every module wired in the WS-05 sweep appears in the summary counts.
+
+    Deferred modules (no working web screen yet) carry dated notes in
+    missing-features/robust.md §7 instead of emitting tasks.
+    """
+    wired = ["trade", "transport", "equipment", "land", "dairy", "contracts", "courses", "broker"]
+    for index, module in enumerate(wired):
+        await _emit(module=module, kind="coverage", source_id=f"cov-{index}")
+    token = seed_user(user_store)
+    resp = await client.get("/v1/tasks/summary?persona=all", headers=auth(token))
+    assert resp.status_code == 200
+    counts = resp.json()["personas"]["farmer"]["moduleCounts"]
+    for module in wired:
+        assert counts.get(module, 0) >= 1, module

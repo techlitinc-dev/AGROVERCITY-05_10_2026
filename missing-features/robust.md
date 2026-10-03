@@ -618,6 +618,7 @@ Backend ✅ (prices, mandis, vyapari rates, compare, history) / Web ✅
   estimate join), Agmarknet/eNAM sync job hardening, audio readout.
 
 ### 7.2 AI Advisory (`advisory`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ (saturation, sowing-intent, disease-scan, pest radar, NPK — some
 hardcoded base prices) / Web ❌.
 - Build the 5-tab advisory hub: Market Saturation (with opt-in consent),
@@ -658,6 +659,7 @@ Backend ✅ (schedules, groundwater, canal rotation, PMKSY calc) / Web ❌.
   deep-link to scheme application. Emit irrigation tasks (weather-aware).
 
 ### 7.7 Government Schemes (`schemes`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ (+ eligibility service) / Web ❌.
 - Build scheme discovery (matched-to-profile first), detail with eligibility
   checklist, dual apply paths (in-app tracked application vs official portal
@@ -665,12 +667,14 @@ Backend ✅ (+ eligibility service) / Web ❌.
   Admin scheme editor (A3) into admin console.
 
 ### 7.8 Finance (`finance`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ (credit score, loan calc, KCC, apply/list) / Web ❌.
 - Build credit score page (score + tier + improvement tips), loan marketplace
   (compare offers), EMI calculator, KCC visual card, application wizard +
   status tracker (F17). This is the farmer face of persona 6.11.
 
 ### 7.9 Crop Insurance PMFBY (`cropInsurance`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ / Web ❌.
 - Build 4 tabs per spec: policy passbook + e-certificate, 72-h claim
   intimation (geo-tagged photos + guidelines overlay), premium calculator,
@@ -697,6 +701,7 @@ Backend 🟡 (hardcoded SHG/garden data) / Web ❌.
   future Enterprise tier.
 
 ### 7.13 Climate & Carbon (`climate`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend 🟡 (hardcoded) / Web ❌.
 - Real carbon-potential calculator (per-plot, practice-based), resilient
   variety catalog, carbon-program enrollment pipeline (partner MRV
@@ -704,12 +709,14 @@ Backend 🟡 (hardcoded) / Web ❌.
   labeling until MRV exists.
 
 ### 7.14 Post-Harvest (`postHarvest`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ (cold storage, warehouse receipts, grading stub) / Web ❌.
 - Farmer face of persona 6.13: directory, booking (F11), my bookings,
   warehouse receipts vault, AI grading flow (photo → grade → recommended
   price → one-tap "list as lot" — beautiful farmer-link loop).
 
 ### 7.15 Krishi Ratna Gamification (`krishiRatna`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ (coins, rewards, leaderboard) / Web ❌.
 - Build coin wallet (ledger, tiers, streaks, badges), rewards store with
   redemption flow, leaderboard. Abuse guards (X11): 200 coins/day earn cap,
@@ -717,6 +724,7 @@ Backend ✅ (coins, rewards, leaderboard) / Web ❌.
   Coins must never be redeemable for cash (regulatory).
 
 ### 7.16 Refer & Earn (`referEarn`)
+- **Task-engine emission deferred (2026-10-03, phase-01 WS-05):** no working web screen exists for this module yet, so emitting a dashboard task would dead-end at a placeholder (robust §4.3 bans 'coming soon' from a task). Emission wires in when this module's web UI lands (phases 02–05).
 Backend ✅ (attribution, milestones) / Web ❌.
 - Build referral hub (code card, WhatsApp share deep-link, milestone tracker,
   leaderboard). Verify register wizard captures referral code (F1). Referral
@@ -764,6 +772,7 @@ Backend ✅ / Web ❌ (farmer side).
 - Covered in 6.5 build item 2 — listed here so the module is not missed.
 
 ### 7.24 All-Tools launcher + search
+- **KYC / account task emission deferred (2026-10-03, phase-01 WS-05):** the KYC status screen (`/dashboard/profile`) is still a placeholder; tasks emit once the phase-04 KYC status page ships.
 - The persona-filtered tools grid exists on web (`lib/dashboard.ts` registry)
   — after Phases 2–3 every tile must resolve to a real page (zero "coming
   soon").

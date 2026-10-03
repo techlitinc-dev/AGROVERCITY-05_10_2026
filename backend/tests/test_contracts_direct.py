@@ -1,3 +1,4 @@
+from app.services.tasks import DEEP_LINKS  # noqa: F401
 from app.core.security import hash_mpin
 from tests.test_diary import auth, seed_user
 
@@ -440,3 +441,25 @@ async def test_delivery_list_and_fulfilment(client, user_store):
     user_store[f"purchases/{purchase_id}"]["status"] = "completed"
     resp = await client.get(f"/v1/contracts/{contract_id}/deliveries", headers=auth(buyer))
     assert resp.json()["fulfilment"] == {"total": 1, "completed": 1, "cancelled": 0, "pending": 0}
+
+
+async def test_contract_delivery_emits_task(client, user_store):
+    buyer = _seed_buyer(user_store)
+    farmer = _seed_farmer(user_store)
+    user_store["mandi_prices/m1"] = MANDI_TOMATO
+    user_store["users/uid-b1/role_profiles/directBuyer"] = {"companyName": "Shree Foods Pvt Ltd"}
+    contract_id = await _active_contract(client, user_store, buyer, farmer)
+    resp = await client.post(
+        f"/v1/contracts/{contract_id}/deliveries",
+        json={"slotDate": "2026-10-07"},
+        headers=auth(buyer),
+    )
+    assert resp.status_code == 201
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["userId"] == "uid-f1"
+    assert task["module"] == "contracts"
+    assert task["kind"] == "contract_delivery_due"
+    assert task["deepLink"] == f"{DEEP_LINKS['my_contracts']}/{contract_id}"
+    assert task["dueAt"] == "2026-10-07"

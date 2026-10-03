@@ -27,6 +27,7 @@ from app.services.billing import entitlement_guard, record_usage
 from app.services.chat import ensure_transport_room
 from app.services.notifications import send_fcm_to_user
 from app.services.notify import notify_user
+from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
 
 router = APIRouter(prefix="/transport", tags=["transport"])
@@ -550,6 +551,20 @@ async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str =
     })
     booking["waypointsLog"] = waypoints
     await set_doc("transport_bookings", booking_id, booking)
+    # WS-05 task emission (module: transport) — trip reminder for the transporter.
+    await emit_task(
+        uid,
+        persona="transport",
+        module="transport",
+        kind="trip_starting",
+        title_en="Trip scheduled — be ready",
+        title_hi="यात्रा तय — तैयार रहें",
+        subtitle=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} · {booking.get('date', '')}",
+        priority="urgent",
+        deep_link=module_deep_link("transport", booking_id),
+        source_id=booking_id,
+        due_at=booking.get("date"),
+    )
     vehicle_label = booking.get("vehicleNo") or "वाहन"
     await send_fcm_to_user(
         booking["userId"],
