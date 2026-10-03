@@ -65,6 +65,26 @@ async def client(monkeypatch, user_store, fake_redis):
                 out.append(doc)
         return out[:limit]
 
+    async def fake_query_cursor(
+        collection, filters=None, order_field="createdAt", descending=True, cursor_value=None, limit=20
+    ):
+        if filters is None:
+            filters = []
+        prefix = f"{collection}/"
+        out = []
+        for key, doc in user_store.items():
+            if not key.startswith(prefix) or "/" in key[len(prefix):]:
+                continue
+            if all(doc.get(field) == value for field, op, value in filters if op == "=="):
+                out.append(doc)
+        out.sort(key=lambda d: d.get(order_field) or "", reverse=descending)
+        if cursor_value is not None:
+            if descending:
+                out = [d for d in out if (d.get(order_field) or "") < cursor_value]
+            else:
+                out = [d for d in out if (d.get(order_field) or "") > cursor_value]
+        return out[:limit]
+
     async def fake_delete_doc(collection, doc_id):
         user_store.pop(_key(collection, doc_id), None)
 
@@ -80,6 +100,7 @@ async def client(monkeypatch, user_store, fake_redis):
             ("get_doc", fake_get_doc),
             ("set_doc", fake_set_doc),
             ("query", fake_query),
+            ("query_cursor", fake_query_cursor),
             ("delete_doc", fake_delete_doc),
             ("db_query", fake_query),
         ):

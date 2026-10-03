@@ -151,7 +151,16 @@ async def _broker_intel(uid: str, now: datetime) -> dict:
                     "params": {"crop": crop, "pct": round((modal - avg_rate) / avg_rate * 100, 1)},
                 }
             )
-    return {"kpis": kpis, "series": series, "breakdowns": breakdowns, "insights": insights}
+    pending_receivables_paisa = int(
+        round(sum(max(0.0, d.get("commissionAmount", 0) or 0) for d in active) * 100)
+    )
+    return {
+        "kpis": kpis,
+        "series": series,
+        "breakdowns": breakdowns,
+        "insights": insights,
+        "pendingReceivablesPaisa": pending_receivables_paisa,
+    }
 
 
 async def _buyer_intel(uid: str, now: datetime) -> dict:
@@ -230,7 +239,14 @@ async def _buyer_intel(uid: str, now: datetime) -> dict:
         insights.append(
             {"severity": "info", "labelKey": "balance_due", "params": {"amount": pending_balance}}
         )
-    return {"kpis": kpis, "series": series, "breakdowns": breakdowns, "insights": insights[:4]}
+    pending_payables_paisa = int(round(sum(max(0.0, _billable(p) - _paid(p)) for p in live) * 100))
+    return {
+        "kpis": kpis,
+        "series": series,
+        "breakdowns": breakdowns,
+        "insights": insights[:4],
+        "pendingPayablesPaisa": pending_payables_paisa,
+    }
 
 
 async def _farmer_intel(uid: str, now: datetime) -> dict:
@@ -346,7 +362,23 @@ async def _farmer_intel(uid: str, now: datetime) -> dict:
             insights.append(
                 {"severity": "info", "labelKey": "sold_below_mandi", "params": {"crop": crop}}
             )
-    return {"kpis": kpis, "series": series, "breakdowns": breakdowns, "insights": insights[:4]}
+    pending_receivables_paisa = int(
+        round(
+            sum(
+                max(0.0, _billable(p) - _paid(p))
+                for p in live_sales
+                if p.get("status") != "completed" or _paid(p) < _billable(p)
+            )
+            * 100
+        )
+    )
+    return {
+        "kpis": kpis,
+        "series": series,
+        "breakdowns": breakdowns,
+        "insights": insights[:4],
+        "pendingReceivablesPaisa": pending_receivables_paisa,
+    }
 
 
 async def _transport_intel(uid: str, now: datetime) -> dict:
@@ -417,7 +449,14 @@ async def _transport_intel(uid: str, now: datetime) -> dict:
         insights.append(
             {"severity": "info", "labelKey": "settlement_pending", "params": {"amount": pending}}
         )
-    return {"kpis": kpis, "series": series, "breakdowns": breakdowns, "insights": insights}
+    pending_settlements_paisa = int(round(pending * 100))
+    return {
+        "kpis": kpis,
+        "series": series,
+        "breakdowns": breakdowns,
+        "insights": insights,
+        "pendingSettlementsPaisa": pending_settlements_paisa,
+    }
 
 
 @router.get("")

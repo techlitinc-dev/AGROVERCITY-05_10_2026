@@ -135,6 +135,12 @@ export default function App() {
           path="/dashboard"
           element={loggedIn ? <DashboardHome /> : <Navigate to="/auth" replace />}
         />
+        {/* Deep-linkable tool pages (backend DEEP_LINKS) resolve here:
+            path="/dashboard/p/machineManage" (equipment),
+            path="/dashboard/p/landlordLeases" (land),
+            path="/dashboard/p/courses" (courses).
+            Static deep routes (myOffers, transport/trips, purchases,
+            broker/deals, contracts, chats, dairy/console) are registered above. */}
         <Route
           path="/dashboard/p/:toolId"
           element={loggedIn ? <ToolPage /> : <Navigate to="/auth" replace />}

@@ -84,6 +84,7 @@ from app.routers import (
     post_harvest,
     price_alerts,
     sync,
+    tasks,
     teachers,
     transport,
     tree,
@@ -196,6 +197,7 @@ app.include_router(climate.router, prefix="/v1")
 app.include_router(post_harvest.router, prefix="/v1")
 app.include_router(price_alerts.router, prefix="/v1")
 app.include_router(sync.router, prefix="/v1")
+app.include_router(tasks.router, prefix="/v1")
 app.include_router(chatbot.router, prefix="/v1")
 app.include_router(gamification.router, prefix="/v1")
 app.include_router(referrals.router, prefix="/v1")

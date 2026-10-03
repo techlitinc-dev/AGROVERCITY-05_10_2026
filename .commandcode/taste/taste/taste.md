@@ -16,3 +16,5 @@
 - Prefers the website to mirror the mobile app's structure and design (menubar, profile switcher, tool grids, persona homes) rather than diverging, when building equivalent web features. Confidence: 0.7
 - Prefers placeholder-first UI scaffolding — build out the navigation, pages, and layout with static stubs and explicitly no data/API wiring until the structure is approved. Confidence: 0.8
 - Expects existing functionality to be preserved when rebuilding or replacing a component/page — called out that the assistant silently dropped onboarding prompts during a dashboard rebuild. Confidence: 0.7
+- Organizes large work as structured, phase-based execution plans (readme.md + instructions.md + a tasks.md checklist) and directs the assistant to execute them end-to-end, ticking off completed tasks as it goes. Confidence: 0.6
+- Expects a written completion summary document (e.g. summary.md) after finishing a multi-step plan — status per workstream, verification-gate results, and explicit open/deferred items rather than a chat-only recap. Confidence: 0.6

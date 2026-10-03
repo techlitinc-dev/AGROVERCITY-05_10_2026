@@ -40,3 +40,27 @@ async def query(collection: str, filters: list[tuple[str, str, Any]] | None = No
         for field, op, value in filters:
             q = q.where(field, op, value)
     return [doc.to_dict() async for doc in q.limit(limit).stream()]
+
+
+async def query_cursor(
+    collection: str,
+    filters: list[tuple[str, str, Any]] | None = None,
+    order_field: str = "createdAt",
+    descending: bool = True,
+    cursor_value: Any | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Ordered Firestore query with real cursor semantics (start_after).
+
+    The shared pagination helper (`app/core/pagination.py`) calls this; the
+    fake store in tests mirrors the same contract. Never limit-100-then-slice.
+    """
+    q = get_db().collection(collection)
+    if filters:
+        for field, op, value in filters:
+            q = q.where(field, op, value)
+    direction = firestore.Query.DESCENDING if descending else firestore.Query.ASCENDING
+    q = q.order_by(order_field, direction=direction)
+    if cursor_value is not None:
+        q = q.start_after({order_field: cursor_value})
+    return [doc.to_dict() async for doc in q.limit(limit).stream()]
