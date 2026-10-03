@@ -7,11 +7,54 @@ import hashlib
 import json
 import logging
 import os
+import re
 
 from app.services.ai import question_sets, privacy
 from app.services.ai.question_sets import _due_date_order
 
 log = logging.getLogger(__name__)
+
+_INTENT_KEYWORDS = {
+    "human_needed": ("expert", "doctor", "डॉक्टर", "विशेषज्ञ", "human", "insaan"),
+    "money": (
+        "loan", "kcc", "credit", "emi", "insurance", "interest", "कर्ज", "ऋण", "लोन", "बीमा", "ब्याज",
+    ),
+    "market": ("mandi", "bhav", "price", "rate", "sell", "bech", "मंडी", "भाव", "बेच", "दाम"),
+    "agronomy": (
+        "crop", "fasal", "keeda", "pest", "disease", "rog", "bimari", "sow", "boyi", "khad",
+        "urea", "spray", "फसल", "कीड़ा", "रोग", "खाद", "बुवाई", "छिड़काव", "मौसम",
+    ),
+    "app_help": ("app", "login", "mpin", "password", "kaise", "कैसे", "लॉगिन"),
+}
+
+_CONTACT_RE = re.compile(r"(?:(?:\+?91[\s-]?)?[6-9]\d{9})|(?:[\w.+-]+@[\w-]+\.[\w.-]+)|(?:https?://|www\.)")
+_FINANCIAL_ADVICE_RE = re.compile(r"\b(loan|interest|emi|कर्ज|ब्याज|लोन)\b", re.IGNORECASE)
+_MEDICAL_CERTAINTY_RE = re.compile(r"\b(cancer cure|guaranteed cure|100% इलाज|पक्का इलाज)\b", re.IGNORECASE)
+
+
+def _intent_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic intent classifier for the shim (keyword routing)."""
+    text = (state.get("message") or "").lower()
+    for intent, keywords in _INTENT_KEYWORDS.items():
+        if any(keyword in text for keyword in keywords):
+            answerable = 0.75 if intent != "human_needed" else 0.2
+            return {"intent": intent, "answerable": answerable}, 0.8
+    if len(text.strip()) >= 12:
+        return {"intent": "agronomy", "answerable": 0.65}, 0.7
+    return {"intent": "human_needed", "answerable": 0.3}, 0.6
+
+
+def _safety_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic safety classifier for the shim (regex guardrails)."""
+    text = state.get("reply") or ""
+    return (
+        {
+            "has_contact_info": bool(_CONTACT_RE.search(text)),
+            "has_financial_advice": bool(_FINANCIAL_ADVICE_RE.search(text)),
+            "has_medical_certainty": bool(_MEDICAL_CERTAINTY_RE.search(text)),
+        },
+        0.9,
+    )
 
 GOLDEN_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "tests", "fixtures", "ai", "golden")
@@ -66,6 +109,10 @@ def _rank_answers(state: dict) -> tuple[dict, float]:
 async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
     if question_set_id == "tasks.rank.v1":
         return _rank_answers(state)
+    if question_set_id == "chatbot.intent.v1":
+        return _intent_answers(state)
+    if question_set_id == "chatbot.safety.v1":
+        return _safety_answers(state)
     record = _load_fixtures().get(question_set_id)
     if record is not None:
         return dict(record.get("answers") or {}), float(record.get("confidence", 0.9))

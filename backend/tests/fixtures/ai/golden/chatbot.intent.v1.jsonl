@@ -1,0 +1,6 @@
+{"input": {"message": "tamatar ki boyi kab karun", "persona": "farmer", "language": "hi"}, "output": {"intent": "agronomy", "answerable": 0.75}}
+{"input": {"message": "aaj mandi bhav kya hai", "persona": "farmer", "language": "hi"}, "output": {"intent": "market", "answerable": 0.75}}
+{"input": {"message": "mujhe loan chahiye kya karun", "persona": "farmer", "language": "hi"}, "output": {"intent": "money", "answerable": 0.75}}
+{"input": {"message": "app me login kaise karun", "persona": "farmer", "language": "hi"}, "output": {"intent": "app_help", "answerable": 0.75}}
+{"input": {"message": "kripya doctor se baat karni hai", "persona": "farmer", "language": "hi"}, "output": {"intent": "human_needed", "answerable": 0.2}}
+{"input": {"message": "haan", "persona": "farmer", "language": "hi"}, "output": {"intent": "human_needed", "answerable": 0.3}}

@@ -452,6 +452,23 @@ const mr: Record<string, string> = {
   legalRefundsTitle: 'रिफंड व रद्दीकरण धोरण',
   legalCommunityTitle: 'समुदाय नियम',
   legalLastUpdated: 'शेवटचे अपडेट: सप्टेंबर 2026',
+  // ---- Kisan Mitra chat (phase-01 WS-04) ----
+  kmFab: 'किसान मित्र',
+  kmTitle: 'किसान मित्र — AI सल्लागार',
+  kmInputPlaceholder: 'पिके, मंडी, हवामान याबद्दल विचारा…',
+  kmSend: 'पाठवा',
+  kmTyping: 'किसान मित्र लिहित आहे…',
+  kmClose: 'बंद करा',
+  kmEmpty: 'तुमचा पहिला प्रश्न विचारा — किसान मित्र तुमच्या भाषेत उत्तर देईल.',
+  kmHistoryFailed: 'संभाषण लोड होऊ शकले नाही',
+  kmSendFailed: 'संदेश पाठवता आला नाही — कृपया पुन्हा प्रयत्न करा',
+  kmHandoffOffer: 'तज्ञांशी बोला',
+  kmHandoffRequested: 'तज्ञ विनंती पाठवली',
+  kmHandoffFailed: 'तज्ञ डेस्कपर्यंत पोहोचता आले नाही — कृपया पुन्हा प्रयत्न करा',
+  kmHandoffThreadTitle: 'तज्ञांचे उत्तर प्रतीक्षेत',
+  kmHandoffStatus: 'स्थिती: {status}',
+  kmHandoffDesk: 'डेस्क: {desk}',
+  kmSafeFallbackNote: 'या उत्तरावर सुरक्षा फिल्टर लावला',
 };
 
 registerLocale('mr', mr);

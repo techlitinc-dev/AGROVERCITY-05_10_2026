@@ -282,98 +282,98 @@
 - RUN: `ls backend/app/services/ai/gateway.py backend/app/services/ai/question_sets.py backend/app/services/ai/privacy.py backend/app/services/ai/outcomes.py backend/app/services/ai/shim.py && grep -n "def emit_task" backend/app/services/tasks.py`
 - EXPECT: exit 0; all five `services/ai` files listed; grep prints the `emit_task` definition line.
 - IF FAIL: any missing file → STOP the phase (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.2 — Register tasks.rank.v1 question set
 - DO: In `backend/app/services/ai/question_sets.py`, register the question set `tasks.rank.v1` exactly per AI plan §2 (see `missing-features/ai_implementation_plan.md`): output schema = per-task `impact` score (0–1) plus a single `headline_task` choice (the taskId of the next-best action); set `confidence_threshold`, `automation_level: "suggest"` (ranking annotates, the user still taps — never auto-acts), and `fallback_fn` = due-date sort. Follow the registration pattern of the question sets already in that file.
 - RUN: `cd backend && .venv/bin/python -c "from app.services.ai import question_sets as q; s=[x for x in dir(q) if 'rank' in x.lower()]; print(s)" && .venv/bin/python -m pytest -q tests/ -k "question_set or questionset" 2>/dev/null | tail -2`
 - EXPECT: exit 0; the first command prints a non-empty list referencing `tasks.rank.v1` (or the registry getter returns it); any existing question-set tests still pass (or print "no tests ran").
 - IF FAIL: fix the registration to match the file's existing pattern, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.3 — Build ranking state builder with privacy + batching
 - DO: In `backend/app/services/tasks.py` (or a new `backend/app/services/task_ranking.py` (new) if it keeps `tasks.py` focused — pick one and use it consistently), add the `tasks.rank.v1` state builder: pseudonymized user id via `privacy.py` (`HMAC(user_id, AI_HASH_SALT)` — never the raw uid, no phones/emails/Aadhaar in the payload), the task list (per task: `module`, `kind`, `priority`, `dueAt`, localized `title`), plus `persona` and a compact `/intelligence` money-context snippet — target ≤1,500 tokens. Add the batching wrapper: at most 10 tasks per `decide()` call; chunk larger lists and merge the ranked results (M5 step 1).
 - RUN: `cd backend && .venv/bin/python -c "import app.services.tasks as t; print('ok')" && .venv/bin/python -m pytest -q tests/test_tasks.py`
 - EXPECT: exit 0; import prints `ok`; all `test_tasks.py` tests still pass.
 - IF FAIL: fix the error shown (never weaken tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.4 — Rank GET /v1/tasks/today before return
 - DO: In `backend/app/routers/tasks.py`, in the `GET /today` handler: after building the open-task list, call `gateway.decide(state, "tasks.rank.v1", ctx)` with the task-3.3 state builder; order the response by the returned ranking; attach `headline_task: true` to the chosen task and `decisionId` on each ranked item (fields reserved in WS-01). The model call goes ONLY through `backend/app/services/ai/gateway.py` — never OpenRouter/Gemini from the router (rule 10).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_tasks.py -k "today"`
 - EXPECT: exit 0; the today tests pass with `AI_PROVIDER=shim`.
 - IF FAIL: fix the handler (never the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.5 — Rank GET /v1/tasks/summary before return
 - DO: In `backend/app/routers/tasks.py`, in the `GET /summary` handler: rank each persona's open tasks with `tasks.rank.v1` the same way as task 3.4 — attach `headline_task: true` to the per-persona chosen task and `decisionId` on ranked items; keep the `moduleCounts`/`topUrgent` response shape from WS-01 unchanged otherwise.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_tasks.py -k "summary"`
 - EXPECT: exit 0; the summary tests pass with `AI_PROVIDER=shim`.
 - IF FAIL: fix the handler (never the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.6 — Implement deterministic fallback and flag-off path
 - DO: In `backend/app/routers/tasks.py` (and/or the ranking helper from task 3.3): wrap every `gateway.decide` call so that on gateway exception, timeout, or budget trip the endpoints fall back to plain due-date sort (urgent-first then dueAt, same as WS-01 ordering) and log the call with `fallbackUsed` per the SDR recipe; when the module flag in `platform_config/ai.modules` is off, skip the AI call entirely — plain due-date ordering, no errors, no `headline_task`. Every AI call (success or fallback) is logged to `ai_decisions` with cost + confidence.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_tasks.py`
 - EXPECT: exit 0; the full `test_tasks.py` file passes with `AI_PROVIDER=shim`.
 - IF FAIL: fix the fallback wiring (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.7 — Wire outcome hook into done handler
 - DO: In `backend/app/routers/tasks.py`, in `POST /{task_id}/done`: when the request carried a `decisionId` (WS-01 stored it) and the task is being completed within 24 h of when it was headlined (compare completion time to the decision's `createdAt` in `ai_decisions` via `outcomes.py`'s lookup), call `record_outcome(decision_id, "task-completed-within-24h")` from `backend/app/services/ai/outcomes.py`. No outcome write when `decisionId` is absent or the window has passed.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_tasks.py -k "done"`
 - EXPECT: exit 0; the done tests pass with `AI_PROVIDER=shim`.
 - IF FAIL: fix the hook wiring (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.8 — Create golden fixture for tasks.rank.v1
 - DO: Create `backend/tests/fixtures/ai/golden/tasks.rank.v1.jsonl` (new): golden input/output pairs for the shim provider following the format of any existing golden fixtures under `backend/tests/fixtures/ai/golden/` (match that format exactly if files exist; otherwise one JSON object per line with `input` state and expected `output` ranking + `headline_task`). Cases: a clear-urgent-winner list, an all-equal-priority list (deterministic tie-break), and a >10-task list exercising the task-3.3 chunking.
 - RUN: `cd backend && .venv/bin/python -c "import json; [json.loads(l) for l in open('tests/fixtures/ai/golden/tasks.rank.v1.jsonl') if l.strip()]; print('valid jsonl')"`
 - EXPECT: exit 0; prints `valid jsonl`.
 - IF FAIL: fix the malformed JSONL line, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.9 — Test shim ranking determinism
 - DO: In `backend/tests/test_tasks.py` (or the phase-00 AI test file if one exists for golden fixtures — use it if present), add `test_rank_v1_shim_is_deterministic`: with `AI_PROVIDER=shim`, call the ranked `GET /v1/tasks/today` twice over the same seeded tasks and assert identical ordering and identical `headline_task`; add `test_rank_v1_golden_fixture` replaying the task-3.8 fixture through the shim and asserting the expected outputs.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_tasks.py -k "rank or golden or deterministic"`
 - EXPECT: exit 0; the new tests pass.
 - IF FAIL: fix the ranking code to be deterministic (never the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.10 — Test fallback and flag-off behavior
 - DO: In `backend/tests/test_tasks.py`, add `test_rank_fallback_on_gateway_error` (monkeypatch `gateway.decide` to raise; `GET /v1/tasks/today` still returns 200 with due-date ordering and no `headline_task`) and `test_rank_flag_off_due_date_order` (module flag off in `platform_config/ai`; endpoints work with plain due-date order and zero AI calls — assert no new `ai_decisions` docs).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_tasks.py -k "fallback or flag"`
 - EXPECT: exit 0; the new tests pass.
 - IF FAIL: fix the fallback/flag code (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.11 — Build AiBadge primitive component
 - DO: Create `website/src/components/ai/AiBadge.tsx` (new) — the shared confidence-tinted "AI sujhav" badge primitive from AI plan §6, built here and exported for reuse by later briefs: props `confidence: number` and optional `labelKey`; tint varies by confidence band; label via `t()` (no hardcoded strings). Export it from the component module for reuse.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the type errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.12 — Implement ConfidenceGate behavior
 - DO: In `website/src/views/dashboard/DashboardHome.tsx` (or a small `website/src/components/ai/ConfidenceGate.tsx` (new) — pick one and use it consistently), implement the ConfidenceGate behavior for ranked tasks: when the ranking `confidence` meets the question set's threshold → the hero task's primary action is preselected/highlighted; below threshold → neutral display, no nudge (suggest-level automation only — the user always taps). Attach the task-3.11 `<AiBadge>` to AI-ranked items.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.13 — Build hero next-best-action card
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, replace the task-2.13 placeholder mount point with the full hero next-best-action card: renders the task carrying `headline_task === true` at the top of the dashboard with its localized title/subtitle, the `<AiBadge>`, the ConfidenceGate behavior from task 3.12, and a primary action navigating to the task's `deepLink` (subject to the task-2.15 route-integrity guard). Hidden entirely when no `headline_task` is present (flag-off state renders nothing here, no errors). The today's-tasks list renders in the ranked order returned by the API.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.14 — Add hero + badge i18n keys (en + hi)
 - DO: In `website/src/lib/i18n/locales/en.dashboard.ts` AND `website/src/lib/i18n/locales/hi.dashboard.ts`, add the keys for the hero card (title, subtitle template, primary action) and the `<AiBadge>` label — identical key sets in both files, Hindi translations in `hi.dashboard.ts`.
 - RUN: `cd website && grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/en.dashboard.ts | sort > /tmp/en3.keys; grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/hi.dashboard.ts | sort > /tmp/hi3.keys; diff /tmp/en3.keys /tmp/hi3.keys && echo PARITY_OK && pnpm exec tsc --noEmit`
 - EXPECT: output contains `PARITY_OK` and `tsc` exits 0.
 - IF FAIL: fix locale parity or the type errors, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.15 — HUMAN CHECK: hero stability, flag-off, outcome
 - DO: Human: with the app running via `./run.sh --no-mobile` and `AI_PROVIDER=shim` for the backend: (1) open a persona dashboard, note the hero card, reload — confirm the SAME hero card renders (shim-stable); (2) disable the ranking module flag in `platform_config/ai` and reload — confirm the list falls back to due-date order with no errors and the hero is hidden or neutral; re-enable the flag; (3) complete the hero task from its card → confirm in Firestore (or the admin tooling) that an `ai_decisions` outcome `task-completed-within-24h` was recorded for that `decisionId`.
@@ -387,7 +387,7 @@
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build`
 - EXPECT: backend suite fully green with `AI_PROVIDER=shim`; `tsc` clean; `pnpm build` exits 0; then the commit succeeds (if git identity is missing, note it and continue — playbook §6).
 - IF FAIL: fix the failure shown (never weaken tests), re-run; only commit when green — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-04 — Kisan Mitra 2.0  (see instructions.md §WS-04)
 

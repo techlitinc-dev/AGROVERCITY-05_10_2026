@@ -1,14 +1,12 @@
 """FastAPI Router for Kisan Mitra Gemini AI Chatbot & Agronomist Expert Handoff."""
-import uuid
-from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.db import get_doc, set_doc, query
+from app.core.db import query
 from app.core.deps import current_user_id
 from app.models.chatbot import ChatMessageIn, ChatMessageOut, ExpertHandoffIn, ExpertHandoffOut
-from app.services.chatbot import process_chat_message
+from app.services.chatbot import create_expert_ticket, process_chat_message
 from app.services.users import get_user
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
@@ -44,47 +42,33 @@ async def request_expert_handoff(
     body: ExpertHandoffIn,
     uid: str = Depends(current_user_id),
 ):
-    ticket_id = f"tkt_{uuid.uuid4().hex[:8]}"
-    now_iso = datetime.now(timezone.utc).isoformat()
-    
-    # Assign desk based on category
-    desk_map = {
-        "crop_health": "Krishi Vigyan Kendra (KVK) Plant Pathology Desk",
-        "soil": "District Soil Testing & Chemistry Laboratory",
-        "irrigation": "Micro-Irrigation & Water Engineering Cell",
-        "livestock": "Animal Husbandry & Veterinary Service Desk",
-        "finance": "Lead District Bank & KCC Facilitation Center",
-    }
-    assigned_desk = desk_map.get(body.category, "General Agricultural Advisory Cell")
-    
-    ticket = {
-        "id": ticket_id,
-        "userId": uid,
-        "sessionId": body.sessionId,
-        "query": body.query,
-        "category": body.category,
-        "urgency": body.urgency,
-        "crop": body.crop,
-        "photoUrl": body.photoUrl,
-        "notes": body.notes,
-        "status": "queued",
-        "assignedDesk": assigned_desk,
-        "createdAt": now_iso,
-        "estimatedWaitMinutes": 15 if body.urgency in ("high", "emergency") else 45,
-    }
-    
-    await set_doc("expert_tickets", ticket_id, ticket)
-    await set_doc(f"users/{uid}/expert_tickets", ticket_id, ticket)
-    
-    return ExpertHandoffOut(
-        ticketId=ticket_id,
-        status="queued",
+    ticket = await create_expert_ticket(
+        uid,
+        body.query,
         category=body.category,
         urgency=body.urgency,
-        assignedDesk=assigned_desk,
-        estimatedWaitMinutes=ticket["estimatedWaitMinutes"],
-        createdAt=now_iso,
+        session_id=body.sessionId,
+        crop=body.crop,
+        photo_url=body.photoUrl,
+        notes=body.notes,
     )
+    return ExpertHandoffOut(
+        ticketId=ticket["id"],
+        status=ticket["status"],
+        category=ticket["category"],
+        urgency=ticket["urgency"],
+        assignedDesk=ticket["assignedDesk"],
+        estimatedWaitMinutes=ticket["estimatedWaitMinutes"],
+        createdAt=ticket["createdAt"],
+    )
+
+
+@router.get("/handoffs")
+async def list_my_handoffs(uid: str = Depends(current_user_id)):
+    """The caller's expert-handoff tickets (thread view for Kisan Mitra 2.0)."""
+    tickets = await query(f"users/{uid}/expert_tickets", [], limit=100)
+    tickets.sort(key=lambda t: t.get("createdAt", ""), reverse=True)
+    return {"data": tickets, "total": len(tickets)}
 
 
 @router.get("/experts")

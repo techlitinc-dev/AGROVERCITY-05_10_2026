@@ -1,0 +1,4 @@
+{"input": {"reply": "Mera number +919812345678 hai, call karein"}, "output": {"has_contact_info": true, "has_financial_advice": false, "has_medical_certainty": false}}
+{"input": {"reply": "Aap SBI se 50000 loan le lo, interest kam hai"}, "output": {"has_contact_info": false, "has_financial_advice": true, "has_medical_certainty": false}}
+{"input": {"reply": "Yeh bimari ka 100% इलाज pakka hai"}, "output": {"has_contact_info": false, "has_financial_advice": false, "has_medical_certainty": true}}
+{"input": {"reply": "Neem oil 5 ml/L ka spray karein, 7 din me sudhar dikhega"}, "output": {"has_contact_info": false, "has_financial_advice": false, "has_medical_certainty": false}}

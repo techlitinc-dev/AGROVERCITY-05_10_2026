@@ -94,3 +94,31 @@ register(
         fallback_fn=_rank_fallback,
     )
 )
+
+# Brief M2 — Kisan Mitra intent routing: routes human_needed / low-answerable
+# messages to the existing expert-ticket path; money intent stays neutral.
+register(
+    QuestionSet(
+        id="chatbot.intent.v1",
+        version="v1",
+        schema={"intent": "human_needed", "answerable": 0.0},
+        confidence_threshold=0.6,
+        automation_level="suggest",
+    )
+)
+
+# Brief M2 — safety post-check on bot replies (contact info / financial
+# advice / medical certainty). Any flag strips + regenerates once.
+register(
+    QuestionSet(
+        id="chatbot.safety.v1",
+        version="v1",
+        schema={
+            "has_contact_info": False,
+            "has_financial_advice": False,
+            "has_medical_certainty": False,
+        },
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)

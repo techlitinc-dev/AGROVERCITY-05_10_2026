@@ -10,6 +10,7 @@ import ProfileSwitcherSheet from '../../components/dashboard/ProfileSwitcherShee
 import { PersonaBanner, PromoBanner, SectionTitle, ToolTile } from '../../components/dashboard/tiles';
 import AiBadge from '../../components/ai/AiBadge';
 import ConfidenceGate from '../../components/ai/ConfidenceGate';
+import KisanMitraSheet from '../../components/chatbot/KisanMitraSheet';
 import InsightsPanel from '../../components/intelligence/InsightsPanel';
 import SellerHomeBoard from '../../components/dashboard/SellerHomeBoard';
 import { toast } from '../../components/toast';
@@ -136,6 +137,7 @@ export default function DashboardHome() {
   const linkedProfiles = useDashboardStore((s) => s.linkedProfiles);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [mitraOpen, setMitraOpen] = useState(false);
 
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [summaryData, setSummaryData] = useState<TaskSummary | null>(null);
@@ -275,6 +277,9 @@ export default function DashboardHome() {
             onClick={() => setAggregate((value) => !value)}
           >
             👥 {t('dashAllProfiles')}
+          </button>
+          <button type="button" className="dash-aggregate-toggle" onClick={() => setMitraOpen(true)}>
+            💬 {t('kmFab')}
           </button>
           <span className="dash-aggregate-hint">{t('dashAggregateHint')}</span>
         </div>
@@ -483,6 +488,15 @@ export default function DashboardHome() {
       <BottomMenuBar />
       <ProfileSwitcherSheet open={switchOpen} onClose={() => setSwitchOpen(false)} />
       <AllToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} />
+      <KisanMitraSheet open={mitraOpen} onClose={() => setMitraOpen(false)} />
+      <button
+        type="button"
+        className="km-fab"
+        aria-label={t('kmFab')}
+        onClick={() => setMitraOpen(true)}
+      >
+        💬
+      </button>
     </div>
   );
 }
