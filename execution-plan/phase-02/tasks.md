@@ -10,7 +10,7 @@
 - RUN: `test -f website/src/views/landlord/LandlordHomeBoard.tsx && test -f website/src/views/landlord/index.tsx && test -f website/src/lib/api/landlord.ts && test -f backend/app/routers/land.py && test -f backend/app/routers/land_records.py && test -f backend/app/routers/vault.py && test -f backend/app/services/land_records/base.py && test -f backend/app/services/land_records/mock_adapter.py && test -f backend/app/services/rent_reminders.py && test -f backend/tests/test_land.py && test -f backend/tests/test_land_market.py && test -f backend/tests/test_land_records.py && test -f website/src/lib/dashboard.ts && test -f features/farm_farmlandlord.md`
 - EXPECT: exit 0.
 - IF FAIL: a "Read first" file is missing — STOP the phase (playbook §5) with the failing path.
-- [ ]
+- [x]
 
 ### Task 1.2 — Verify phase-01 task engine dependency
 - PRECONDITION: `grep -rn "def emit_task" backend/app/ | head -1` — if this returns nothing, STOP the phase (playbook §5): phase-01 task engine is missing.
@@ -18,161 +18,161 @@
 - RUN: `grep -n "tasks" backend/app/main.py`
 - EXPECT: output contains a line mounting a tasks router (e.g. `include_router(tasks.router`).
 - IF FAIL: re-check with `grep -rn "v1/tasks" backend/app/routers/ | head -3` — if still nothing, STOP the phase (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.3 — Create landlord PlotsPage view
 - DO: Create `website/src/views/landlord/PlotsPage.tsx` (new). Move the plots list + add-plot form out of `LandlordHomeBoard.tsx` into this page, calling the existing wrappers in `website/src/lib/api/landlord.ts`. Every user-facing string via `t()` — no hardcoded strings, no `?? <number>` fallbacks, no `alert()`/`confirm()`. Do not delete `LandlordHomeBoard.tsx` yet.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the type errors in `PlotsPage.tsx` only — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.4 — Create landlord ListingsPage and wizard
 - DO: Create `website/src/views/landlord/ListingsPage.tsx` (new, land listings list) and `website/src/views/landlord/ListingWizard.tsx` (new, create-listing wizard) using `website/src/lib/api/landlord.ts`. Strings via `t()` only.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the two new files only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.5 — Create landlord RequestsInboxPage view
 - DO: Create `website/src/views/landlord/RequestsInboxPage.tsx` (new): lease-request inbox with accept / reject / counter actions; each application row shows the farmer profile summary and a verified-KYC badge (spec L2/L3, see instructions.md §WS-01 step 1). Strings via `t()` only.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.6 — Create landlord LeasesPage view
 - DO: Create `website/src/views/landlord/LeasesPage.tsx` (new): lease list + detail showing agreement PDF view, escrow milestones, and dual e-sign status for each lease. Strings via `t()` only.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.7 — Create landlord RentTrackerPage view
 - DO: Create `website/src/views/landlord/RentTrackerPage.tsx` (new): due/overdue rent list with a record-payment action per row. Strings via `t()` only.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.8 — Create landlord LandAnalyticsPage view
 - DO: Create `website/src/views/landlord/LandAnalyticsPage.tsx` (new): per-plot occupancy and rent analytics view fed by the landlord summary API. Strings via `t()` only.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.9 — Create landlord Vault712Page view
 - DO: Create `website/src/views/landlord/Vault712Page.tsx` (new): 7/12 record vault view listing records from `backend/app/routers/land_records.py` via `website/src/lib/api/landlord.ts`. Strings via `t()` only.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.10 — Register LANDLORD_PAGES and deep routes
 - DO: In `website/src/views/landlord/index.tsx` export a `LANDLORD_PAGES` map (toolId → component) for the pages from tasks 1.3–1.9 plus the existing `LandlordHomeBoard` (pattern: `website/src/views/transport/index.ts` `TRANSPORT_PAGES`). In `website/src/views/dashboard/ToolPage.tsx` import `LANDLORD_PAGES` and merge it into the page registry like `TRANSPORT_PAGES` is merged. In `website/src/App.tsx` add deep routes for the new landlord pages following the transport deep-route pattern (`/dashboard/p/landlord/...`). Trim the moved sections out of `LandlordHomeBoard.tsx` so each section renders in exactly one place.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the registry/route wiring only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.11 — Add landlord locale split files
 - DO: Create `website/src/lib/i18n/locales/en.landlord.ts` (new) and `website/src/lib/i18n/locales/hi.landlord.ts` (new) in the exact shape of `en.broker.ts`/`hi.broker.ts` (`registerLocale`, flat `Record<string,string>`), containing every `t()` key introduced by tasks 1.3–1.10 in BOTH languages. Import both files in `website/src/main.tsx` directly below the existing `./lib/i18n/locales/en.trade` / `hi.trade` imports. Zero English-only keys (rule 6).
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: add the missing key(s) to whichever locale file lacks them — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.12 — Label unverified 7/12 records
 - DO: In `website/src/views/landlord/Vault712Page.tsx` render an "unverified" badge on every record returned by the mock adapter (`backend/app/services/land_records/mock_adapter.py`), using a `t()` key present in both `en.landlord.ts` and `hi.landlord.ts`. Keep the mock adapter behind `backend/app/services/land_records/base.py` — do not modify the adapter interface.
 - RUN: `grep -n "unverified" website/src/lib/i18n/locales/en.landlord.ts website/src/lib/i18n/locales/hi.landlord.ts`
 - EXPECT: both files each return at least one matching line.
 - IF FAIL: add the badge key to the missing locale file — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.13 — Write Mahabhulekh deferral note
 - DO: Edit `missing-features/robust.md` §6.2 (landlord section) appending a dated deferral note: the real Mahabhulekh/e-District integration is deferred; the adapter interface + "unverified" labeling shipped in phase-02 WS-01. Use today's date from `date +%F` (rule 10: no silent deferrals).
 - RUN: `grep -n "$(date +%F)" missing-features/robust.md`
 - EXPECT: at least one matching line inside the §6.2 area.
 - IF FAIL: re-add the note with the correct date — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.14 — Add rent overdue escalation stages
 - DO: Edit `backend/app/services/rent_reminders.py`: extend the scheduled job with the escalation ladder reminder → late-fee notice → dispute-lane offer (instructions.md §WS-01 step 3). Create `backend/tests/test_rent_escalation.py` (new) covering: first overdue → reminder, continued overdue → late-fee notice, further overdue → dispute-lane offer record. Money fields integer paisa only.
 - RUN: `.venv/bin/python -m pytest tests/test_rent_escalation.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix `rent_reminders.py` until the new tests pass — never weaken the test — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.15 — Add partial rent payment tracking
 - DO: Edit the rent payment code path in `backend/app/routers/land.py`: the rent doc tracks `amountPaidPaisa` vs `amountDuePaisa` (integer paisa, no floats — rule 3/6); recording a payment increments `amountPaidPaisa` and the doc stays payable until `amountPaidPaisa >= amountDuePaisa`. Create `backend/tests/test_rent_payments.py` (new) covering a partial payment followed by a final payment.
 - RUN: `.venv/bin/python -m pytest tests/test_rent_payments.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the payment code path — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.16 — Add rent receipt PDF endpoint
 - DO: Edit `backend/app/routers/land.py`: add `GET /land/rent-payments/{paymentId}/receipt` returning a PDF receipt (`application/pdf`) for one recorded payment, with the standard `{"error":{code,...}}` envelope on failure (rule 7). Add a test to `backend/tests/test_rent_payments.py` asserting 200 + PDF content type.
 - RUN: `.venv/bin/python -m pytest tests/test_rent_payments.py -q` (cwd `backend/`)
 - EXPECT: all tests pass incl. the receipt test.
 - IF FAIL: fix the endpoint — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.17 — Add rent-ledger CSV/PDF export
 - DO: Edit `backend/app/routers/land.py`: add `GET /land/leases/{leaseId}/ledger?format=csv` and `?format=pdf` exporting the full rent ledger for the lease. Add tests to `backend/tests/test_rent_payments.py` asserting the CSV contains a header row and one row per payment.
 - RUN: `.venv/bin/python -m pytest tests/test_rent_payments.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the export endpoint — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.18 — Assert audit_logs on rent mutations
 - DO: Edit `backend/app/routers/land.py` so every rent financial mutation (record payment, late-fee notice) writes an `audit_logs` entry (rule 3). Add a test to `backend/tests/test_rent_payments.py` asserting an `audit_logs` doc exists after recording a payment.
 - RUN: `.venv/bin/python -m pytest tests/test_rent_payments.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: add the missing audit write — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.19 — Create farmer land-browse view
 - DO: Create `website/src/views/farmer/LandBrowsePage.tsx` (new): "land for rent near me" browser over open land listings (L2/L3 mirror, instructions.md §WS-01 step 4), calling `website/src/lib/api/landlord.ts`. Strings via `t()` with en+hi keys.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.20 — Create farmer lease-request tracking view
 - DO: Create `website/src/views/farmer/LeaseRequestsPage.tsx` (new): farmer applies to a listing and tracks his application's accept / reject / counter state. In `website/src/lib/dashboard.ts` confirm the farmer `PROFILE_ROUTES` includes the `landListings` and `leaseRequests` toolIds routed to these views — add them if absent. Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the new view / registry entry — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.21 — Add lease dispute endpoint
 - DO: Edit `backend/app/routers/land.py`: add `POST /land/leases/{leaseId}/disputes` creating a dispute doc with fields `{leaseId, createdBy, category, status: "open", createdAt}` consumable by the phase-07 admin console; accepts `Idempotency-Key` and returns the `{"error":{code,...}}` envelope on failure (rule 7). Create `backend/tests/test_land_disputes.py` (new) covering create + status field.
 - RUN: `.venv/bin/python -m pytest tests/test_land_disputes.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoint — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.22 — Add 7-year retention on lease docs
 - DO: Edit `backend/app/routers/land.py`: every lease doc and rent doc gets a `retainUntil` ISO-string field set to creation date + 7 years (landlord spec: 7-year audit retention). Add a test to `backend/tests/test_land_disputes.py` asserting the field exists on a created lease.
 - RUN: `.venv/bin/python -m pytest tests/test_land_disputes.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: add the missing field — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.23 — Emit landlord dashboard tasks
 - DO: Edit `backend/app/routers/land.py` (and `backend/app/services/rent_reminders.py` for the overdue case): call `emit_task()` for request received, lease expiring, rent overdue, and e-sign pending (instructions.md §WS-01 step 6). Create `backend/tests/test_landlord_tasks.py` (new) asserting a task doc is emitted when a lease request is created.
 - RUN: `.venv/bin/python -m pytest tests/test_landlord_tasks.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the emit call — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.24 — Add landlord dashboard summary
 - DO: Edit `backend/app/routers/land.py`: landlord dashboard summary returns acres owned/leased, active leases + rent due this month (integer paisa), pending requests, expiring leases, and plot-level occupancy, feeding the phase-01 grid + `PERSONA_HOME_CONFIG.farmLandlord` (instructions.md §WS-01 step 6). Add a test asserting the summary fields exist.
 - RUN: `.venv/bin/python -m pytest tests/test_land.py tests/test_landlord_tasks.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the summary — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.25 — Enforce landlord entitlements server-side
 - PRECONDITION: `grep -rln "entitlement" backend/app/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 billing entitlements missing.
@@ -180,21 +180,21 @@
 - RUN: `.venv/bin/python -m pytest tests/test_landlord_entitlements.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.26 — Sweep landlord dialogs and locale parity
 - DO: No new features. Verify zero `alert()`/`confirm()`/`prompt()` in the landlord module and full en/hi key parity in the new locale split.
 - RUN: `grep -rn "alert(\|confirm(\|prompt(" website/src/views/landlord/ ; diff <(grep -oE "^  [a-zA-Z0-9_]+:" website/src/lib/i18n/locales/en.landlord.ts | sort) <(grep -oE "^  [a-zA-Z0-9_]+:" website/src/lib/i18n/locales/hi.landlord.ts | sort)`
 - EXPECT: the grep returns nothing; the diff produces no output.
 - IF FAIL: replace dialogs with the toast/modal system or add the missing locale keys — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.27 — Start backend dev server
 - DO: Start the API in the background exactly as `run.sh` does: `cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000` (leave it running for the next task).
 - RUN: `curl -s http://localhost:8000/v1/health`
 - EXPECT: output contains `"status":"ok"`.
 - IF FAIL: read the uvicorn log output, fix the boot error — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.28 — HUMAN CHECK: landlord zero-offline flow
 - DO: HUMAN CHECK: with the dev server (task 1.27) and `cd website && pnpm dev` running: (1) as landlord, add a plot with a 7/12 record and confirm the "unverified" badge renders; (2) create a listing via the wizard; (3) as farmer, open "land for rent near me", apply to the listing; (4) as landlord, counter the request in RequestsInboxPage; (5) complete dual e-sign on LeasesPage and confirm escrow milestones show; (6) open the dashboard "rent overdue" task → deep-link → record a partial then full payment on RentTrackerPage; (7) download the receipt PDF; (8) confirm a Free-tier account is blocked from adding a 2nd plot with an upgrade prompt.
@@ -208,7 +208,7 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`) then `pnpm exec tsc --noEmit && pnpm build` (cwd `website/`) then `git add -A && git commit -m "phase-02 WS-01: Landlord LandBank close-out"` (repo root)
 - EXPECT: pytest fully green; tsc + build clean; commit created.
 - IF FAIL: fix the failing check — never weaken a test; if only the git commit fails (identity etc.), note it and continue (playbook §6) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ## WS-02 — Transporter "AgriFleet" close-out  (see instructions.md §WS-02)
 
