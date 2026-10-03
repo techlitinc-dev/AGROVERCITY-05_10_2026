@@ -3,18 +3,13 @@
 Powered by Google Gemini 2.5 Flash / Pro models for conversational agronomy,
 crop diagnostics, mandi rate interpretation, and weather advisory.
 """
-import json
-import logging
-import os
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
 
 from app.core.config import settings
-from app.core.db import get_doc, set_doc, query
+from app.core.db import set_doc
 from app.models.chatbot import ChatMessageIn, ChatMessageOut
-
-logger = logging.getLogger(__name__)
+from app.services.ai import gateway
 
 KISAN_MITRA_SYSTEM_PROMPT = """
 You are Kisan Mitra (किसान मित्र), an expert rural smart-agriculture AI advisor for India.
@@ -36,37 +31,25 @@ async def process_chat_message(user_id: str, payload: ChatMessageIn, user_name: 
     msg_id = f"msg_{uuid.uuid4().hex[:12]}"
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    api_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     bot_text = ""
     rich_card_type = None
     rich_card_data = None
     quick_replies = []
     suggested_actions = []
 
-    # Check if Gemini API is configured
-    if api_key:
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=api_key)
-            prompt = f"User: {user_name}\nLocation/Context: {payload.context}\nQuery: {payload.text}"
-            
-            response = client.models.generate_content(
-                model=settings.gemini_model or "gemini-2.5-flash",
-                contents=[
-                    types.Part.from_text(text=KISAN_MITRA_SYSTEM_PROMPT),
-                    types.Part.from_text(text=prompt),
-                ],
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    max_output_tokens=800,
-                )
-            )
-            bot_text = response.text or ""
-        except Exception as exc:
-            logger.warning("Gemini generate_content failed: %s; falling back to agronomy engine.", exc)
-            bot_text = ""
+    # All model calls go through the AI gateway (global rule 10). In dev/test the
+    # provider is `shim` and the agronomic rule engine below is the response.
+    if settings.ai_provider == "live":
+        bot_text = await gateway.generate(
+            f"User: {user_name}\nLocation/Context: {payload.context}\nQuery: {payload.text}",
+            {
+                "system": KISAN_MITRA_SYSTEM_PROMPT,
+                "temperature": 0.3,
+                "max_output_tokens": 800,
+                "module": "chatbot",
+                "fallback_text": "",
+            },
+        )
 
     # Agronomic Rule Engine Fallback or Enrichment
     if not bot_text:

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     jwt_refresh_ttl_days: int = 30
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
     openrouter_api_key: str = ""
     sarvam_api_key: str = ""
     weather_api_key: str = ""
@@ -22,6 +23,14 @@ class Settings(BaseSettings):
     cron_secret: str = ""
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    ai_provider: str = "shim"
+    ai_jev_model: str = "typesafe/jev-1.13"
+    ai_gemini_model: str = "gemini-2.5-flash"
+    ai_gemini_model_lite: str = "gemini-2.5-flash-lite"
+    ai_gemini_model_pro: str = "gemini-2.5-pro"
+    ai_gemini_embed_model: str = "gemini-embedding-001"
+    ai_daily_budget_usd: float = 50.0
+    ai_hash_salt: str = "dev-ai-salt"
     web_origins: list[str] = ["http://localhost:5173"]
 
     @model_validator(mode="after")
