@@ -95,14 +95,33 @@ async def test_admin_mutation_requires_audit_reason(client, user_store):
 
 
 async def test_admin_kyc_and_expert_ticket_flow(client, user_store):
-    # review kyc
+    # seed a real kyc case (WS-04: the queue reads kyc_cases, not samples)
+    user_store["kyc_cases/kyc_uid-kyc1_transport"] = {
+        "caseId": "kyc_uid-kyc1_transport",
+        "userId": "uid-kyc1",
+        "persona": "transport",
+        "docs": [
+            {"docId": "kyc_uid-kyc1_transport:rc", "type": "rc", "storagePath": "kyc/rc.pdf", "status": "pending", "reason": None},
+            {"docId": "kyc_uid-kyc1_transport:dl", "type": "dl", "storagePath": "kyc/dl.pdf", "status": "pending", "reason": None},
+        ],
+        "status": "pending",
+        "submittedAt": "2026-10-01T00:00:00+00:00",
+    }
+    queue = await client.get("/v1/admin/kyc/queue", headers=ADMIN_HEADERS)
+    assert queue.status_code == 200
+    assert queue.json()["total"] == 2
+    assert queue.json()["data"][0]["caseId"] == "kyc_uid-kyc1_transport"
+
     resp = await client.post(
-        "/v1/admin/kyc/doc-101/review",
-        json={"status": "verified", "auditNotes": "7/12 matches land revenue registry"},
+        "/v1/admin/kyc/kyc_uid-kyc1_transport:rc/review",
+        json={"status": "verified"},
         headers=ADMIN_MUTATION_HEADERS,
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "verified"
+    assert resp.json()["caseStatus"] == "pending"  # dl still pending
+    stored = user_store["kyc_cases/kyc_uid-kyc1_transport"]
+    assert stored["docs"][0]["status"] == "verified"
 
     # seed expert ticket
     user_store["expert_tickets/tkt-demo-1"] = {

@@ -135,3 +135,12 @@ async def release_due_escrow_job(x_cron_secret: str | None = Header(None, alias=
     """Release held escrows whose dispute window closed silently (WS-03)."""
     _check_cron_secret(x_cron_secret)
     return await release_due_escrows()
+
+
+@router.post("/kyc/expiry-reminders")
+async def kyc_expiry_reminders_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Notify holders 30 days before a KYC document expires (WS-04)."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.kyc import expiry_reminders
+
+    return await expiry_reminders()

@@ -51,6 +51,7 @@ from app.routers import (
     insurance_claims,
     intelligence,
     jobs,
+    kyc,
     land,
     land_records,
     livestock,
@@ -167,6 +168,7 @@ app.include_router(finance.router, prefix="/v1")
 app.include_router(loans.router, prefix="/v1")
 app.include_router(land.router, prefix="/v1")
 app.include_router(bank_accounts.router, prefix="/v1")
+app.include_router(kyc.router, prefix="/v1")
 app.include_router(jobs.router, prefix="/v1")
 app.include_router(settlements.router, prefix="/v1")
 app.include_router(schemes.router, prefix="/v1")

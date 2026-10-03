@@ -8,6 +8,7 @@ from app.core.db import get_doc, set_doc, query
 from app.core.deps import admin_action, admin_user
 from app.models.loans import LoanStatus
 from app.routers.analytics import _line_factor, last_12_months, month_key
+from app.services import kyc as kyc_service
 from app.services import loans as loans_service
 from app.services.users import get_user
 
@@ -73,7 +74,7 @@ async def get_admin_overview(user: dict = Depends(admin_user)):
         "activeUsersTotal": len(users_list),
         "personaBreakdown": persona_counts,
         "marketplaceGMV": total_gmv,
-        "pendingKycCount": 8,
+        "pendingKycCount": await kyc_service.pending_doc_count(),
         "pendingClaimsCount": pending_claims,
         "pendingSettlementsAmount": pending_settlements_volume,
         "activeFarmlandLeases": 42,
@@ -147,29 +148,26 @@ async def update_user_status(
 
 @router.get("/kyc/queue")
 async def get_kyc_queue(user: dict = Depends(admin_user)):
-    """List pending verification items across user document vaults."""
-    queue = [
-        {
-            "id": "kyc-01",
-            "userId": "uid-farmer-demo",
-            "userName": "Ram Patil",
-            "docType": "land_712",
-            "docName": "7/12 Gat No. 142/A Utara",
-            "fileUrl": "https://storage.agrovercity.in/vault/712_sample.pdf",
-            "submittedAt": "2026-09-18T14:20:00Z",
-            "status": "pending",
-        },
-        {
-            "id": "kyc-02",
-            "userId": "uid-seller-demo",
-            "userName": "Kailash Agro Traders",
-            "docType": "mandi_license",
-            "docName": "APMC Trader License 2026",
-            "fileUrl": "https://storage.agrovercity.in/vault/license_sample.pdf",
-            "submittedAt": "2026-09-18T16:00:00Z",
-            "status": "pending",
-        },
-    ]
+    """Live KYC review queue from the `kyc_cases` collection (WS-04)."""
+    cases = await query("kyc_cases", [], limit=1000)
+    queue = []
+    for case in cases:
+        for doc in case.get("docs") or []:
+            if doc.get("status") != "pending":
+                continue
+            queue.append(
+                {
+                    "id": doc.get("docId"),
+                    "caseId": case.get("caseId"),
+                    "userId": case.get("userId"),
+                    "persona": case.get("persona"),
+                    "docType": doc.get("type"),
+                    "docName": doc.get("type"),
+                    "fileUrl": doc.get("storagePath") or "",
+                    "submittedAt": case.get("submittedAt"),
+                    "status": "pending",
+                }
+            )
     return {"data": queue, "total": len(queue)}
 
 
@@ -180,16 +178,44 @@ async def review_kyc_document(
     user: dict = Depends(admin_user),
     _audit: dict = Depends(admin_action("REVIEW_KYC_DOC")),
 ):
+    cases = await query("kyc_cases", [], limit=1000)
+    target_case = None
+    for case in cases:
+        if any(
+            doc.get("docId") == doc_id or doc.get("type") == doc_id
+            for doc in case.get("docs") or []
+        ):
+            target_case = case
+            break
+    if target_case is None:
+        _error(404, "KYC_DOC_NOT_FOUND", "kyc document not found")
+    try:
+        updated = await kyc_service.review_doc(
+            target_case["caseId"],
+            doc_id,
+            body.status,
+            body.rejectionReason or body.auditNotes,
+            user["uid"],
+        )
+    except ValueError as exc:
+        _error(422, "VALIDATION_ERROR", str(exc))
     audit_id = f"aud_kyc_{doc_id}"
     await set_doc("audit_logs", audit_id, {
         "action": "REVIEW_KYC_DOC",
         "adminId": user["uid"],
         "docId": doc_id,
+        "caseId": updated["caseId"],
         "status": body.status,
         "rejectionReason": body.rejectionReason,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    return {"success": True, "docId": doc_id, "status": body.status}
+    return {
+        "success": True,
+        "caseId": updated["caseId"],
+        "docId": doc_id,
+        "status": body.status,
+        "caseStatus": updated["status"],
+    }
 
 
 @router.get("/expert-handoffs")
