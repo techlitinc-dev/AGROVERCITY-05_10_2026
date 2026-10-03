@@ -32,6 +32,7 @@ from app.models.livestock import (
     VetRecord,
     VetRecordIn,
 )
+from app.routers.livestock_dairy import dairy_agent_record
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
 from app.services.users import get_user
@@ -50,6 +51,8 @@ async def _any_livestock_user(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
+    if await dairy_agent_record(uid) is not None:
+        return uid
     require_role(user, "farmer", "seller", "dairyManager")
     return uid
 

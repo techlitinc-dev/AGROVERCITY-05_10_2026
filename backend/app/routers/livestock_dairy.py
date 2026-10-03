@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.livestock_mgmt import (
+    DairyAgentIn,
     DairyMemberIn,
     MilkSaleCustomerIn,
     MilkSaleOrderIn,
@@ -17,6 +18,8 @@ from app.models.livestock_mgmt import (
     StockItemIn,
 )
 from app.routers.users import require_role
+from app.services import idempotency
+from app.services.billing import entitlement_guard, record_usage
 from app.services.notifications import send_fcm_to_user
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
@@ -57,6 +60,34 @@ async def _manager(uid: str = Depends(current_user_id)) -> str:
     return uid
 
 
+async def dairy_agent_record(uid: str) -> dict | None:
+    """Active pickup-agent sub-account for this identity, if any (agents are scoped to a center)."""
+    docs = await query("dairy_agents", [("uid", "==", uid)], limit=10)
+    return next((d for d in docs if d.get("active")), None)
+
+
+async def forbid_dairy_agent(uid: str) -> None:
+    if await dairy_agent_record(uid) is not None:
+        _error(
+            403,
+            "AGENT_ROLE_FORBIDDEN",
+            "pickup agents may only record collections and collection checks",
+            {"deepLink": "/dashboard/p/dairyDashboard"},
+        )
+
+
+async def _manager_no_agents(uid: str = Depends(current_user_id)) -> str:
+    await forbid_dairy_agent(uid)
+    return await _manager(uid)
+
+
+async def _manager_or_agent(uid: str = Depends(current_user_id)) -> str:
+    """Manager identity that also lets an active pickup agent through (collection writes)."""
+    if await dairy_agent_record(uid) is not None:
+        return uid
+    return await _manager(uid)
+
+
 async def _livestock_user(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
@@ -89,7 +120,7 @@ async def list_members(
 
 
 @router.post("/livestock/dairy/members", status_code=201)
-async def create_member(body: DairyMemberIn, uid: str = Depends(_manager)):
+async def create_member(body: DairyMemberIn, uid: str = Depends(_manager_no_agents)):
     member_id = f"mem_{uuid.uuid4().hex[:12]}"
     doc = {
         "id": member_id,
@@ -110,7 +141,7 @@ async def create_member(body: DairyMemberIn, uid: str = Depends(_manager)):
 
 
 @router.put("/livestock/dairy/members/{member_id}")
-async def update_member(member_id: str, body: DairyMemberIn, uid: str = Depends(_manager)):
+async def update_member(member_id: str, body: DairyMemberIn, uid: str = Depends(_manager_no_agents)):
     doc = await get_doc("dairy_members", member_id)
     if not doc or doc.get("centerId") != uid:
         _error(404, "MEMBER_NOT_FOUND", "member not found")
@@ -132,7 +163,7 @@ async def update_member(member_id: str, body: DairyMemberIn, uid: str = Depends(
 
 
 @router.delete("/livestock/dairy/members/{member_id}")
-async def delete_member(member_id: str, uid: str = Depends(_manager)):
+async def delete_member(member_id: str, uid: str = Depends(_manager_no_agents)):
     doc = await get_doc("dairy_members", member_id)
     if not doc or doc.get("centerId") != uid:
         _error(404, "MEMBER_NOT_FOUND", "member not found")
@@ -174,6 +205,63 @@ async def member_statement(
             "paid": round(sum(p.get("netAmount", 0.0) for p in payments if p.get("status") == "paid"), 2),
         },
     }
+
+
+# =========================================================================
+# Pickup agents (Pro-tier sub-accounts, R2)
+# =========================================================================
+
+@router.get("/livestock/dairy/agents")
+async def list_dairy_agents(uid: str = Depends(_manager)):
+    docs = await query("dairy_agents", [("centerId", "==", uid)], limit=200)
+    docs.sort(key=lambda d: d.get("createdAt", ""))
+    return {"data": docs, "total": len(docs)}
+
+
+@router.post("/livestock/dairy/agents", status_code=201)
+async def create_dairy_agent(
+    body: DairyAgentIn,
+    uid: str = Depends(_manager),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    _plan: dict = Depends(entitlement_guard("dairyManager", "agentSeats")),
+):
+    stored = await idempotency.replay("dairy.agent.create", idempotency_key)
+    if stored is not None:
+        return stored
+    invitee = await get_user(body.uid)
+    if invitee is None:
+        _error(404, "NOT_FOUND", "agent user not registered")
+    existing = await dairy_agent_record(body.uid)
+    if existing is not None and existing.get("centerId") == uid:
+        _error(409, "AGENT_EXISTS", "user is already an agent for this center")
+    agent_id = f"agt_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id": agent_id,
+        "uid": body.uid,
+        "centerId": uid,
+        "name": body.name,
+        "phone": body.phone,
+        "routeIds": body.routeIds,
+        "active": True,
+        "createdAt": _now(),
+    }
+    await set_doc("dairy_agents", agent_id, doc)
+    await record_usage(uid, "agentSeats")
+    if idempotency_key:
+        await idempotency.store("dairy.agent.create", idempotency_key, doc)
+    return doc
+
+
+@router.delete("/livestock/dairy/agents/{agent_uid}")
+async def deactivate_dairy_agent(agent_uid: str, uid: str = Depends(_manager)):
+    docs = await query("dairy_agents", [("uid", "==", agent_uid), ("centerId", "==", uid)], limit=5)
+    doc = next((d for d in docs if d.get("active")), None)
+    if doc is None:
+        _error(404, "AGENT_NOT_FOUND", "agent not found")
+    doc["active"] = False
+    doc["updatedAt"] = _now()
+    await set_doc("dairy_agents", doc["id"], doc)
+    return doc
 
 
 # =========================================================================
@@ -228,7 +316,7 @@ async def list_rate_chart_versions(
 
 
 @router.post("/livestock/dairy/rate-chart", status_code=201)
-async def create_rate_chart(body: RateChartIn, uid: str = Depends(_manager)):
+async def create_rate_chart(body: RateChartIn, uid: str = Depends(_manager_no_agents)):
     chart_id = f"rc_{uuid.uuid4().hex[:12]}"
     doc = {
         "id": chart_id,
@@ -253,7 +341,7 @@ async def create_rate_chart(body: RateChartIn, uid: str = Depends(_manager)):
 
 
 @router.put("/livestock/dairy/rate-chart/{chart_id}")
-async def update_rate_chart(chart_id: str, body: RateChartIn, uid: str = Depends(_manager)):
+async def update_rate_chart(chart_id: str, body: RateChartIn, uid: str = Depends(_manager_no_agents)):
     doc = await get_doc("rate_charts", chart_id)
     if not doc or doc.get("centerId") != uid:
         _error(404, "RATE_CHART_NOT_FOUND", "rate chart not found")
@@ -293,7 +381,7 @@ async def list_payment_batches(
 
 
 @router.post("/livestock/dairy/payments/batches", status_code=201)
-async def generate_payment_batch(body: PaymentBatchGenerateIn, uid: str = Depends(_manager)):
+async def generate_payment_batch(body: PaymentBatchGenerateIn, uid: str = Depends(_manager_no_agents)):
     members = await _center_members(uid)
     member_ids = {m["id"] for m in members}
     collections = await query("milk_collections", [], limit=2000)
@@ -361,7 +449,7 @@ async def generate_payment_batch(body: PaymentBatchGenerateIn, uid: str = Depend
 
 
 @router.post("/livestock/dairy/payments/batches/{batch_id}/mark-paid")
-async def mark_batch_paid(batch_id: str, body: PaymentBatchMarkPaidIn, uid: str = Depends(_manager)):
+async def mark_batch_paid(batch_id: str, body: PaymentBatchMarkPaidIn, uid: str = Depends(_manager_no_agents)):
     batch = await get_doc("payment_batches", batch_id)
     if not batch or batch.get("centerId") != uid:
         _error(404, "BATCH_NOT_FOUND", "payment batch not found")

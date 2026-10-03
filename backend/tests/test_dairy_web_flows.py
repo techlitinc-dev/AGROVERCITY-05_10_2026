@@ -180,3 +180,149 @@ async def test_full_center_day_payment_cycle(client, user_store):
     slips = resp.json()
     assert slips["total"] == 2
     assert slips["memberCode"] == "F-042"
+
+
+async def test_accept_bid_creates_purchase(client, user_store):
+    token = seed_user(user_store, **MGR_1)
+    demand_resp = await client.post(
+        "/v1/dairy-manager/demands",
+        json={
+            "milkType": "Buffalo",
+            "minFatPercent": 6.0,
+            "minSnfPercent": 9.0,
+            "dailyQuantityLiters": 500.0,
+            "targetRatePerLiter": 62.0,
+        },
+        headers=auth(token),
+    )
+    assert demand_resp.status_code == 201
+    demand = demand_resp.json()
+
+    bid_ids = []
+    for farmer, name, rate in (("farmer-1", "Ramesh", 63.5), ("farmer-2", "Suresh", 64.25)):
+        resp = await client.post(
+            "/v1/dairy-manager/bids",
+            json={
+                "rfqId": demand["id"],
+                "farmerId": farmer,
+                "farmerName": name,
+                "offeredRatePerLiter": rate,
+                "dailyLiters": 200.0,
+            },
+            headers=auth(token),
+        )
+        assert resp.status_code == 201
+        bid_ids.append(resp.json()["id"])
+
+    accept = await client.post(
+        f"/v1/dairy-manager/bids/{bid_ids[0]}/accept",
+        headers={**auth(token), "Idempotency-Key": "dairy-accept-1"},
+    )
+    assert accept.status_code in (200, 201)
+    body = accept.json()
+    purchase = body["purchase"]
+    assert purchase["source"]["type"] == "dairy"
+    assert purchase["source"]["refId"] == demand["id"]
+    assert purchase["farmerId"] == "farmer-1"
+    assert purchase["agreedPricePerUnit"] == 6350
+    assert isinstance(purchase["totalAmount"], int)
+    assert purchase["totalAmount"] == 6350 * 200
+    assert body["bid"]["status"] == "accepted"
+    assert body["demand"]["status"] == "fulfilled"
+
+    replay = await client.post(
+        f"/v1/dairy-manager/bids/{bid_ids[0]}/accept",
+        headers={**auth(token), "Idempotency-Key": "dairy-accept-1"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["purchase"]["id"] == purchase["id"]
+
+
+async def _make_dairy_pro(user_store, uid="mgr-1"):
+    from app.services.billing import seed_plans
+
+    await seed_plans()
+    user_store["subscriptions/sub_pro_dairy"] = {
+        "subId": "sub_pro_dairy",
+        "userId": uid,
+        "planId": "dairyManager_pro",
+        "status": "active",
+        "provider": "razorpay_sub",
+        "providerRef": "sub_test_dairy",
+        "currentPeriodEnd": "2027-01-01T00:00:00+00:00",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+
+
+async def test_agent_records_collection_but_forbidden_writes(client, user_store):
+    manager_token = seed_user(user_store, **MGR_1)
+    agent_token = seed_user(user_store, uid="agent-1", active_profile="farmer")
+    await _make_dairy_pro(user_store)
+
+    created = await client.post(
+        "/v1/livestock/dairy/agents",
+        json={"uid": "agent-1", "name": "Ganesh Chavan", "routeIds": ["rt-1"]},
+        headers={**auth(manager_token), "Idempotency-Key": "agent-create-1"},
+    )
+    assert created.status_code == 201
+    assert created.json()["active"] is True
+
+    listed = await client.get("/v1/livestock/dairy/agents", headers=auth(manager_token))
+    assert listed.json()["total"] == 1
+
+    collection = await client.post(
+        "/v1/livestock/procurement/collections",
+        json=_collection_payload(),
+        headers=auth(agent_token),
+    )
+    assert collection.status_code == 201
+
+    check = await client.post(
+        "/v1/dairy-manager/collection-check",
+        json={
+            "farmerId": "farmer-1",
+            "farmerName": "Ramesh",
+            "milkType": "cow",
+            "quantityLiters": 12.0,
+            "fatPercent": 4.1,
+            "snfPercent": 9.0,
+            "ratePerLiter": 34.0,
+        },
+        headers=auth(agent_token),
+    )
+    assert check.status_code == 201
+
+    chart = await client.post(
+        "/v1/livestock/dairy/rate-chart", json=COW_CHART, headers=auth(agent_token)
+    )
+    assert chart.status_code == 403
+    assert chart.json()["error"]["code"] == "AGENT_ROLE_FORBIDDEN"
+
+    batch = await client.post(
+        "/v1/livestock/dairy/payments/batches",
+        json={"periodFrom": "2026-10-01", "periodTo": "2026-10-31"},
+        headers=auth(agent_token),
+    )
+    assert batch.status_code == 403
+    assert batch.json()["error"]["code"] == "AGENT_ROLE_FORBIDDEN"
+
+    members = await client.get("/v1/livestock/dairy/members", headers=auth(agent_token))
+    assert members.status_code in (200, 403)
+    if members.status_code == 200:
+        assert members.json()["total"] == 0
+
+    deactivated = await client.delete("/v1/livestock/dairy/agents/agent-1", headers=auth(manager_token))
+    assert deactivated.status_code == 200
+    assert deactivated.json()["active"] is False
+
+
+async def test_agent_seats_free_tier_blocked(client, user_store):
+    manager_token = seed_user(user_store, **MGR_1)
+    seed_user(user_store, uid="agent-1", active_profile="farmer")
+    resp = await client.post(
+        "/v1/livestock/dairy/agents",
+        json={"uid": "agent-1", "name": "Ganesh Chavan"},
+        headers=auth(manager_token),
+    )
+    assert resp.status_code == 402
+    assert resp.json()["error"]["code"] == "ENTITLEMENT_EXCEEDED"

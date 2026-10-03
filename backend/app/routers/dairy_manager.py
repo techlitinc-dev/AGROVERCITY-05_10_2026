@@ -2,12 +2,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.routers.livestock_dairy import _manager_or_agent
+from app.routers.purchases import _new_purchase
 from app.routers.users import require_role
+from app.services import idempotency
 from app.services.users import get_user
 
 router = APIRouter(prefix="/dairy-manager", tags=["dairy-manager"])
@@ -257,6 +260,59 @@ async def counter_dairy_bid(bid_id: str, body: DairyBidCounterIn, user: dict = D
     return bid
 
 
+@router.post("/bids/{bid_id}/accept")
+async def accept_dairy_bid(
+    bid_id: str,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    user: dict = Depends(_manager),
+):
+    stored = await idempotency.replay("dairy.bid.accept", idempotency_key)
+    if stored is not None:
+        return stored
+
+    bid = await get_doc("dairy_bids", bid_id)
+    if bid is None:
+        _error(404, "BID_NOT_FOUND", "bid not found")
+    if bid.get("status") not in ("pending", "countered"):
+        _error(409, "BID_NOT_OPEN", f"bid is already {bid.get('status')}")
+
+    demand_id = bid.get("rfqId") or bid.get("demandId")
+    demand = await get_doc("dairy_demands", demand_id) if demand_id else None
+    if demand is None:
+        _error(404, "DEMAND_NOT_FOUND", "demand not found for this bid")
+
+    rate_paisa = int(round(float(bid.get("offeredRatePerLiter") or 0) * 100))
+    liters = float(bid.get("dailyLiters") or demand.get("dailyQuantityLiters") or 0)
+    purchase = await _new_purchase(
+        buyer_id=demand.get("managerId", user["id"]),
+        buyer_name=demand.get("managerName") or user.get("name", ""),
+        farmer_id=bid["farmerId"],
+        farmer_name=bid.get("farmerName", ""),
+        source={"type": "dairy", "refId": demand["id"]},
+        crop="Milk",
+        variety=bid.get("milkType") or demand.get("milkType") or "Buffalo",
+        quantity=liters,
+        unit="litre",
+        price=rate_paisa,
+    )
+    await set_doc("purchases", purchase["id"], purchase)
+
+    bid["status"] = "accepted"
+    bid["acceptedAt"] = datetime.now(timezone.utc).isoformat()
+    bid["purchaseId"] = purchase["id"]
+    await set_doc("dairy_bids", bid_id, bid)
+
+    demand["status"] = "fulfilled"
+    demand["acceptedBidId"] = bid_id
+    demand["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("dairy_demands", demand["id"], demand)
+
+    response = {"bid": bid, "demand": demand, "purchase": purchase}
+    if idempotency_key:
+        await idempotency.store("dairy.bid.accept", idempotency_key, response)
+    return response
+
+
 @router.get("/routes")
 async def list_procurement_routes(user: dict = Depends(_manager)):
     routes = await query("dairy_routes", [("managerId", "==", user["id"])], limit=200)
@@ -310,7 +366,8 @@ async def list_collection_checks(user: dict = Depends(_manager)):
 
 
 @router.post("/collection-check", status_code=201)
-async def record_collection_check(body: CollectionCheckIn, user: dict = Depends(_manager)):
+async def record_collection_check(body: CollectionCheckIn, uid: str = Depends(_manager_or_agent)):
+    user = await get_user(uid)
     cid = f"col_{uuid.uuid4().hex[:10]}"
     total_amt = round(body.quantityLiters * body.ratePerLiter, 2)
     doc = {

@@ -15,6 +15,8 @@ from app.services.users import get_user
 router = APIRouter(prefix="/offers", tags=["offers"])
 
 NEGOTIABLE_STATUSES = ("pending", "countered")
+# Spec P2: alternating counters, capped at three rounds per offer.
+MAX_NEGOTIATION_ROUNDS = 3
 # Spec V5: offer expiry timer (24-48h configurable) — default window.
 OFFER_EXPIRY_HOURS = 24
 
@@ -121,6 +123,8 @@ async def create_offer(body: OfferCreate, response: Response, uid: str = Depends
         "message": body.message,
         "status": "pending",
         "counter": None,
+        "rounds": 0,
+        "negotiationLog": [],
         "expiresAt": _expiry_iso(),
         "createdAt": now,
         "updatedAt": now,
@@ -204,8 +208,8 @@ async def accept_offer(offer_id: str, uid: str = Depends(current_user_id)):
         _error(400, "OFFER_NOT_ACCEPTABLE", f"offer is {offer.get('status')}")
     if offer.get("status") == "pending" and uid != offer.get("toId"):
         _error(403, "FORBIDDEN", "only the target owner can accept a pending offer")
-    if offer.get("status") == "countered" and uid != offer.get("fromId"):
-        _error(403, "FORBIDDEN", "only the offer maker can accept the counter")
+    if offer.get("status") == "countered" and uid == (offer.get("counter") or {}).get("by"):
+        _error(403, "FORBIDDEN", "only the other party can accept the latest counter")
     purchase = await create_purchase_from_offer(offer)
     offer["status"] = "accepted"
     offer["updatedAt"] = _now_iso()
@@ -276,23 +280,37 @@ async def counter_offer(offer_id: str, body: OfferCounter, uid: str = Depends(cu
     offer = await _expire_if_due(await _participant_offer(offer_id, uid))
     if offer.get("status") == "expired":
         _error(400, "OFFER_EXPIRED", "offer has expired")
-    if uid != offer.get("toId"):
-        _error(403, "FORBIDDEN", "only the target owner can counter")
     if offer.get("status") == "countered":
-        _error(400, "NEGOTIATION_CLOSED", "counter already made; accept, reject or withdraw")
-    if offer.get("status") != "pending":
+        if (offer.get("counter") or {}).get("by") == uid:
+            _error(400, "NEGOTIATION_CLOSED", "counter already made; accept, reject or withdraw")
+    elif offer.get("status") == "pending":
+        if uid != offer.get("toId"):
+            _error(403, "FORBIDDEN", "only the target owner can counter")
+    else:
         _error(400, "OFFER_NOT_NEGOTIABLE", f"offer is {offer.get('status')}")
-    offer["counter"] = {"pricePerUnit": body.pricePerUnit, "by": uid, "note": body.note, "at": _now_iso()}
+    rounds = int(offer.get("rounds") or 0)
+    if rounds >= MAX_NEGOTIATION_ROUNDS:
+        _error(400, "NEGOTIATION_CLOSED", "three counter rounds used; accept, reject or withdraw")
+    rounds += 1
+    counter = {"pricePerUnit": body.pricePerUnit, "by": uid, "note": body.note, "at": _now_iso(), "round": rounds}
+    offer["counter"] = counter
+    offer["rounds"] = rounds
+    history = offer.get("negotiationLog") or []
+    history.append(
+        {"round": rounds, "by": uid, "pricePerUnit": body.pricePerUnit, "note": body.note, "at": counter["at"]}
+    )
+    offer["negotiationLog"] = history
     offer["status"] = "countered"
     # A counter restarts the negotiation clock.
     offer["expiresAt"] = _expiry_iso()
     offer["updatedAt"] = _now_iso()
     await set_doc("offers", offer_id, offer)
+    other = offer.get("fromId") if uid == offer.get("toId") else offer.get("toId")
     await notify_user(
-        offer.get("fromId"),
+        other,
         type="offer_countered",
         title="Counter-offer / काउंटर ऑफर",
-        body=f"₹{body.pricePerUnit}/{offer.get('unit', 'quintal')} for {offer.get('quantity')} {offer.get('unit', 'quintal')}",
+        body=f"₹{body.pricePerUnit}/{offer.get('unit', 'quintal')} for {offer.get('quantity')} {offer.get('unit', 'quintal')} (round {rounds}/{MAX_NEGOTIATION_ROUNDS})",
         path=f"/dashboard/p/myOffers/{offer_id}",
     )
     return offer

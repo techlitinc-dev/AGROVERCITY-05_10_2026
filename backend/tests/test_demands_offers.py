@@ -351,3 +351,32 @@ async def test_offer_created_emits_task(client, user_store):
     assert task["status"] == "open"
     assert task["title"]["en"] and task["title"]["hi"]
     assert task["deepLink"] in DEEP_LINKS.values()
+
+
+async def test_three_round_counter_cap(client, user_store):
+    token = await _buyer_token(client)
+    demand = (await _create_demand(client, token, crop="Tomato", quantity=20)).json()
+    farmer_token = _seed_user(user_store, "uid-f1", "Ram Patel")
+    offer = {"targetType": "demand", "targetId": demand["id"], "pricePerUnit": 2000, "quantity": 20}
+    offer_id = (await client.post("/v1/offers", json=offer, headers=_auth(farmer_token))).json()["id"]
+
+    r1 = await client.post(f"/v1/offers/{offer_id}/counter", json={"pricePerUnit": 1900}, headers=_auth(token))
+    assert r1.status_code == 200
+    assert r1.json()["rounds"] == 1
+
+    r2 = await client.post(f"/v1/offers/{offer_id}/counter", json={"pricePerUnit": 1950}, headers=_auth(farmer_token))
+    assert r2.status_code == 200
+    assert r2.json()["rounds"] == 2
+
+    r3 = await client.post(f"/v1/offers/{offer_id}/counter", json={"pricePerUnit": 1925}, headers=_auth(token))
+    assert r3.status_code == 200
+    assert r3.json()["rounds"] == 3
+
+    r4 = await client.post(f"/v1/offers/{offer_id}/counter", json={"pricePerUnit": 1999}, headers=_auth(farmer_token))
+    assert r4.status_code == 400
+    assert r4.json()["error"]["code"] == "NEGOTIATION_CLOSED"
+
+    acc = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(farmer_token))
+    assert acc.status_code == 200
+    assert acc.json()["purchase"]["agreedPricePerUnit"] == 1925
+    assert acc.json()["offer"]["negotiationLog"][-1]["round"] == 3

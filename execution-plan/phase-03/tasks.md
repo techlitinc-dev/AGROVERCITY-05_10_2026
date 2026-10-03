@@ -20,21 +20,21 @@ Conventions used below:
 - RUN: `grep -n 'demands\|/bids\|counter\|collection-check\|/routes' backend/app/routers/dairy_manager.py | head -20 && grep -n 'farmer/payments\|farmer/slips\|payments/batches\|mark-paid\|procurement/collections' backend/app/routers/livestock_dairy.py | head -20`
 - EXPECT: both greps print at least one line each (demands, bids, counter, collection-check, routes in dairy_manager.py; farmer/payments, farmer/slips, batches/mark-paid in livestock_dairy.py).
 - IF FAIL: the repo contradicts instructions.md §WS-01 "Read first" — STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.2 — Add farmer bid-accept endpoint creating purchase
 - DO: in `backend/app/routers/dairy_manager.py` add endpoint `POST /bids/{bid_id}/accept`. Reuse the exact ownership/auth pattern of the existing `POST /bids/{bid_id}/counter` handler in the same file. Handler: load the bid and its demand; on accept create a purchase through the existing settlement engine used by `backend/app/routers/purchases.py` (same service call that router's create-purchase path uses), with purchase doc fields `source: {"type": "dairy", "refId": <demandId>}`. Money fields integer paisa (no floats, no `?? <number>` fallbacks). Standard error envelope `{"error":{code,...}}`; accept `Idempotency-Key` header like the existing write handlers in this file.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/routers/dairy_manager.py`
 - EXPECT: exit 0.
 - IF FAIL: fix the syntax error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.3 — Test bid-accept creates dairy-sourced purchase
 - DO: in `backend/tests/test_dairy_web_flows.py` add a test `test_accept_bid_creates_purchase`: create demand → two bids → accept one via `POST /dairy-manager/bids/{bid_id}/accept` → assert response 200/201 and the created purchase doc has `source.type == "dairy"` and `source.refId == <demandId>`. Follow the existing fixture/auth patterns already used in this test file; do not weaken or delete any existing test.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0, all tests in the file pass including the new one.
 - IF FAIL: fix the new endpoint/test until green — never delete a failing assertion (playbook §3.2) — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.4 — Extend dairyMarketplace API wrapper for farmer side
 - DO: in `website/src/lib/api/dairyMarketplace.ts` add typed thin wrappers (same style as existing exports in the file; all calls via `client.ts`, which attaches `Idempotency-Key` on writes): `listOpenDemands()` → `GET /dairy-manager/demands`, `listBids(demandId: string)` → `GET /dairy-manager/bids?demandId=<id>` (use the exact query param the router exposes — verify in `dairy_manager.py` first), `acceptBid(bidId: string)` → `POST /dairy-manager/bids/{bidId}/accept`. Surface the standard `{"error":{code,...}}` envelope, no swallowing.
@@ -97,14 +97,14 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m py_compile app/routers/livestock_dairy.py && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0 both; existing tests stay green.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.13 — Enforce agent write-scope (403 AGENT_ROLE_FORBIDDEN)
 - DO: in `backend/app/routers/livestock_dairy.py` (and `dairy_manager.py` collection-check handler) add a role check helper following the file's existing auth-helper pattern: a `dairy_agents` identity may call collection recording (`POST /livestock/procurement/collections`) and `POST /dairy-manager/collection-check`, but any agent call to rate-chart writes, payment-batch writes, or member writes returns 403 with envelope code `AGENT_ROLE_FORBIDDEN`.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.14 — Gate agent seats behind Pro entitlement
 - PRECONDITION: `grep -q "def require_entitlement" backend/app/services/billing.py` — if this fails, phase-00 billing is missing: STOP the phase (playbook §5).
@@ -112,14 +112,14 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.15 — Test agent role gating
 - DO: in `backend/tests/test_dairy_web_flows.py` add tests: agent records a collection (200), agent gets 403 `AGENT_ROLE_FORBIDDEN` on rate-chart write and on payment-batch write, non-agent manager unaffected. Use existing fixtures.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code (not the test) until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.16 — Add FSSAI KYC gate on dairy writes
 - PRECONDITION: `test -f backend/app/routers/kyc.py` — if this fails, phase-00 KYC pipeline is missing: STOP the phase (playbook §5).
@@ -265,14 +265,14 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_demands_offers.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green (adjust existing fixtures only if they relied on >3 rounds; never delete assertions) — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.3 — Test 4th counter round blocked
 - DO: in `backend/tests/test_demands_offers.py` add test `test_counter_cap_negotiation_closed`: three alternating counters succeed, the 4th returns 400 `NEGOTIATION_CLOSED`, and accept after the cap still works.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_demands_offers.py -q -k counter`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.4 — Show round n/3 and last-offer banner in CounterOfferForm
 - DO: in `website/src/components/trade/CounterOfferForm.tsx` display "round n/3" from the offer's `rounds` field; when `rounds >= 3` hide the counter input and render a "last offer" banner leaving only accept/reject/withdraw actions. Strings via `t()` — add keys to the locale pair this component already uses (check its existing `t()` keys' section file, e.g. `en.trade.ts`/`hi.trade.ts`) in BOTH en and hi.

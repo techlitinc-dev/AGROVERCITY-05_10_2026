@@ -16,6 +16,13 @@ class DairyMemberIn(BaseModel):
     status: Literal["active", "inactive"] = "active"
 
 
+class DairyAgentIn(BaseModel):
+    uid: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=120)
+    phone: str = ""
+    routeIds: list[str] = Field(default_factory=list)
+
+
 class RateChartIn(BaseModel):
     species: Literal["cow", "buffalo"] = "cow"
     effectiveFrom: str
