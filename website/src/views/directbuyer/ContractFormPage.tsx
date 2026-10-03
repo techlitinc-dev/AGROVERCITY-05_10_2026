@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import LabeledTextField from '../../components/LabeledTextField';
@@ -108,8 +109,8 @@ export default function ContractFormPage() {
           crop: contract.crop,
           quantityTotal: contract.quantityTotal ?? EMPTY_DRAFT.quantityTotal,
           priceType: contract.priceType ?? 'fixed',
-          baseRate: contract.baseRate ?? 0,
-          premiumPerQuintal: contract.premiumPerQuintal ?? 0,
+          baseRate: contract.baseRate ?? ZERO,
+          premiumPerQuintal: contract.premiumPerQuintal ?? ZERO,
           mandiName: contract.mandiName ?? '',
           startDate: contract.schedule?.startDate ?? '',
           endDate: contract.schedule?.endDate ?? '',

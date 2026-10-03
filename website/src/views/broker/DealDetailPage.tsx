@@ -1,3 +1,4 @@
+import { DEFAULT_BROKER_PCT, ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DealChatDoor from '../../components/broker/DealChatDoor';
@@ -421,9 +422,9 @@ export default function DealDetailPage() {
           {t('ddIssueContractBody')}
         </p>
         <DealMathCard
-          quantityQuintals={deal?.quantityQuintals ?? 0}
-          agreedRate={deal?.agreedRate ?? 0}
-          pct={deal?.brokerCommissionPct ?? 2}
+          quantityQuintals={deal?.quantityQuintals ?? ZERO}
+          agreedRate={deal?.agreedRate ?? ZERO}
+          pct={deal?.brokerCommissionPct ?? DEFAULT_BROKER_PCT}
         />
         <div className="trade-actions">
           <button
@@ -488,7 +489,7 @@ export default function DealDetailPage() {
       {/* ---- Complete with optional weighed qty (E6 pro-rata) ---- */}
       <ModalSheet open={completeOpen} onClose={() => setCompleteOpen(false)} title={t('ddMarkCompleted')}>
         <LabeledTextField
-          label={t('ddWeighedQty', { qty: deal?.quantityQuintals ?? 0 })}
+          label={t('ddWeighedQty', { qty: deal?.quantityQuintals ?? ZERO })}
           value={weighedQty}
           onChange={setWeighedQty}
           type="number"

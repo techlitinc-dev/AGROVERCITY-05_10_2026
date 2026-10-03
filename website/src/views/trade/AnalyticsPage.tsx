@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EmptyState from '../../components/trade/EmptyState';
@@ -99,7 +100,7 @@ export default function AnalyticsPage() {
   const commissionPaid = useMemo(
     () =>
       (extra?.purchases ?? []).reduce(
-        (sum, p) => sum + (p.escrow?.status === 'released' ? (p.escrow.commission ?? 0) : 0),
+        (sum, p) => sum + (p.escrow?.status === 'released' ? (p.escrow.commission ?? ZERO) : 0),
         0
       ),
     [extra]

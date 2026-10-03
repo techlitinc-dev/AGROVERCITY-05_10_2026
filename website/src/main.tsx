@@ -40,6 +40,8 @@ import './lib/i18n/locales/en.dairy';
 import './lib/i18n/locales/hi.dairy';
 import './lib/i18n/locales/en.intel';
 import './lib/i18n/locales/hi.intel';
+import './lib/i18n/locales/en.dashboard';
+import './lib/i18n/locales/hi.dashboard';
 import { initSentry } from './lib/observability';
 import './theme/tokens.css';
 import './theme/layout.css';

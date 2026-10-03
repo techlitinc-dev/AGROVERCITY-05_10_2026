@@ -208,7 +208,7 @@ export default function LandlordHomeBoard({ embedded }: { embedded?: boolean }) 
             <span className="saas-metric-label">Active Tenants</span>
             <span className="saas-metric-value">{analytics?.activeTenants ?? leases.filter((l) => l.status === 'active').length}</span>
             <span className="saas-metric-sub">
-              {analytics?.occupancyRatePercent ?? 80}% Occupancy Rate
+              {analytics?.occupancyRatePercent !== undefined ? `${analytics.occupancyRatePercent}%` : '…'} Occupancy Rate
             </span>
           </div>
           <div className="saas-metric-card">

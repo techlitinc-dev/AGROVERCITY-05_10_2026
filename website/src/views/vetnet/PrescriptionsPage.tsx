@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useState } from 'react';
 import ModalSheet from '../../components/ModalSheet';
 import ToolShell from '../../components/trade/ToolShell';
@@ -162,7 +163,7 @@ export default function PrescriptionsPage() {
               <div className="vetnet-card-sub">{rxItem.diagnosis}</div>
               <div className="vetnet-card-row">
                 <span className="vetnet-card-sub">
-                  {t('vetnetRxMedsCount', { count: rxItem.medicines?.length ?? 0 })}
+                  {t('vetnetRxMedsCount', { count: rxItem.medicines?.length ?? ZERO })}
                 </span>
                 {rxItem.milkWithdrawalDays > 0 ? (
                   <span className="vetnet-pill vetnet-pill-warn">

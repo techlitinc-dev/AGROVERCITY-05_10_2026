@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ChipSelect from '../../components/ChipSelect';
 import LabeledTextField from '../../components/LabeledTextField';
@@ -129,8 +130,8 @@ export default function CashbookPage() {
     }
     return keys.map((key) => ({
       key,
-      income: byKey.get(key)?.income ?? 0,
-      expense: byKey.get(key)?.expense ?? 0,
+      income: byKey.get(key)?.income ?? ZERO,
+      expense: byKey.get(key)?.expense ?? ZERO,
     }));
   }, [analytics]);
 
@@ -325,8 +326,8 @@ export default function CashbookPage() {
   const now = new Date();
   const thisKey = monthKey(now);
   const lastKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-  const thisMonthNet = analytics.byMonth.find((r) => r.month === thisKey)?.net ?? 0;
-  const lastMonthNet = analytics.byMonth.find((r) => r.month === lastKey)?.net ?? 0;
+  const thisMonthNet = analytics.byMonth.find((r) => r.month === thisKey)?.net ?? ZERO;
+  const lastMonthNet = analytics.byMonth.find((r) => r.month === lastKey)?.net ?? ZERO;
   const monthDelta = thisMonthNet - lastMonthNet;
 
   const nets = series.map((m) => ({ key: m.key, net: m.income - m.expense }));

@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EmptyState from '../../components/trade/EmptyState';
@@ -417,7 +418,7 @@ export default function FarmCeoPage() {
                         {categoryLabel(cat.category)}
                       </td>
                       {d.cashflow.map((m) => {
-                        const amt = cat.monthly.find((x) => x.month === m.month)?.amount ?? 0;
+                        const amt = cat.monthly.find((x) => x.month === m.month)?.amount ?? ZERO;
                         const isPeak = amt > 0 && m.month === cat.maxMonth.month;
                         return (
                           <td

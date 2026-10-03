@@ -1,3 +1,4 @@
+import { ZERO } from '../../../lib/numDefaults';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ToolShell from '../../../components/trade/ToolShell';
@@ -102,12 +103,12 @@ export default function AnalyticsPage() {
   const prev = data?.previousMonth;
 
   const speciesData = [
-    { label: t('dairyMilk_cow'), value: col?.bySpecies.cow?.liters ?? 0, color: COW },
-    { label: t('dairyMilk_buffalo'), value: col?.bySpecies.buffalo?.liters ?? 0, color: BUFFALO },
+    { label: t('dairyMilk_cow'), value: col?.bySpecies.cow?.liters ?? ZERO, color: COW },
+    { label: t('dairyMilk_buffalo'), value: col?.bySpecies.buffalo?.liters ?? ZERO, color: BUFFALO },
   ];
   const shiftData = [
-    { label: t('dairyShift_morning'), value: col?.byShift.morning?.liters ?? 0, color: AM },
-    { label: t('dairyShift_evening'), value: col?.byShift.evening?.liters ?? 0, color: PM },
+    { label: t('dairyShift_morning'), value: col?.byShift.morning?.liters ?? ZERO, color: AM },
+    { label: t('dairyShift_evening'), value: col?.byShift.evening?.liters ?? ZERO, color: PM },
   ];
   const litersFmt = (v: number) => `${fmtL(v)} L`;
 

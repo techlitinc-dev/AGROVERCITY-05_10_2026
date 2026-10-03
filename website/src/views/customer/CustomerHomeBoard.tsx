@@ -197,21 +197,21 @@ export default function CustomerHomeBoard({ embedded }: { embedded?: boolean }) 
           <div className="saas-metric-card">
             <span className="saas-metric-label">Total Spend</span>
             <span className="saas-metric-value">
-              ₹{(analytics?.totalSpendRupees ?? 160000).toLocaleString('en-IN')}
+              {analytics?.totalSpendRupees !== undefined ? `₹${analytics.totalSpendRupees.toLocaleString('en-IN')}` : '…'}
             </span>
             <span className="saas-metric-sub">
-              {analytics?.mandiSavingsPercent ?? 14.8}% Savings vs Mandi
+              {analytics?.mandiSavingsPercent !== undefined ? `${analytics.mandiSavingsPercent}%` : '…'} Savings vs Mandi
             </span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Procured Volume</span>
-            <span className="saas-metric-value">{analytics?.totalTonnageMT ?? 16.0} MT</span>
-            <span className="saas-metric-sub">{analytics?.totalVolumeQuintals ?? 160} Quintals</span>
+            <span className="saas-metric-value">{analytics?.totalTonnageMT !== undefined ? `${analytics.totalTonnageMT} MT` : '…'}</span>
+            <span className="saas-metric-sub">{analytics?.totalVolumeQuintals !== undefined ? `${analytics.totalVolumeQuintals} Quintals` : '…'}</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Active Orders</span>
-            <span className="saas-metric-value">{analytics?.activeOrdersCount ?? orders.length}</span>
-            <span className="saas-metric-sub">{analytics?.fulfillmentSlaPercent ?? 96}% On-Time Delivery</span>
+            <span className="saas-metric-value">{analytics?.activeOrdersCount !== undefined ? analytics.activeOrdersCount : orders.length}</span>
+            <span className="saas-metric-sub">{analytics?.fulfillmentSlaPercent !== undefined ? `${analytics.fulfillmentSlaPercent}%` : '…'} On-Time Delivery</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Standing Demands</span>

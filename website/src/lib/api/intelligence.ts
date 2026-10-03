@@ -74,6 +74,10 @@ export interface IntelligenceResponse {
   series: Series[];
   breakdowns: Breakdown[];
   insights: Insight[];
+  /** Phase-01 WS-01 money aggregates (integer paisa) — present when available. */
+  pendingReceivablesPaisa?: number;
+  pendingPayablesPaisa?: number;
+  pendingSettlementsPaisa?: number;
 }
 
 export async function getIntelligence(): Promise<IntelligenceResponse> {

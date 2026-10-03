@@ -10,119 +10,119 @@
 - RUN: `ls backend/app/routers/intelligence.py backend/app/main.py backend/app/core/db.py backend/app/core/deps.py backend/app/services/rent_reminders.py backend/app/routers/jobs.py backend/tests/conftest.py && grep -rln "cursor" backend/app | head -5 && grep -rln "dempotency" backend/app | head -5`
 - EXPECT: `ls` prints all 7 paths with no error; each grep prints at least one file path (phase-00 helpers exist).
 - IF FAIL: if `ls` errors, a cited file is missing → STOP the phase (playbook §5). If either grep prints nothing, phase-00 deliverables are missing → STOP the phase (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.2 — Create tasks service: constants and deep-link table
 - DO: Create `backend/app/services/tasks.py` (new). Contents: (a) a module docstring stating the `tasks` doc shape verbatim from instructions.md §WS-01 step 1 — `{ taskId, userId, persona, module, kind, title: {en, hi}, subtitle, priority: urgent|today|upcoming, deepLink, actionEndpoint?, dueAt, status: open|done|dismissed, sourceId, createdAt }` — plus the allowed additions `updatedAt`, `dedupeKey` (`userId:module:kind:sourceId`, for idempotent emission), `decisionId` (set later by WS-03 ranking), `coinsAwarded` (for WS-02 celebration), each with a one-line why; (b) `COLLECTION = "tasks"`; (c) `DEEP_LINKS: dict[str, str]` — the canonical module → website route table (X3 prep, instructions.md §WS-01 step 6) — seeded with these entries verified against `website/src/App.tsx`: `"trade": "/dashboard/p/myOffers"`, `"transport": "/dashboard/p/transport/trips"`, `"purchases": "/dashboard/p/purchases"`, `"broker": "/dashboard/p/broker/deals"`, `"contracts": "/dashboard/p/contracts"`, `"dairy": "/dairy/console"`, `"chats": "/dashboard/p/chats"`. Values are route prefixes exactly as they appear in `App.tsx`; parameterized routes append the source doc id at emission time.
 - RUN: `cd backend && .venv/bin/python -c "from app.services.tasks import COLLECTION, DEEP_LINKS; print(COLLECTION, sorted(DEEP_LINKS))"`
 - EXPECT: exit 0; output starts with `tasks [` and lists the 7 keys above.
 - IF FAIL: fix the Python syntax/import error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.3 — Complete deep-link table from App.tsx
 - DO: In `backend/app/services/tasks.py`, add one `DEEP_LINKS` entry for each remaining module in the instructions.md §WS-05 table (`advisory`, `weather`, `equipment`, `land`, `loans`, `insurance`, `schemes`, `courses`, `post_harvest`, `gamification`, `kyc`) whose website route exists. For each module: run `grep -n "path=" website/src/App.tsx` and pick the route prefix that serves that module (e.g. equipment routes under `/dashboard/p/...`, dairy-style consoles under `/<module>/console`). Add an entry ONLY when a matching route exists; do not invent paths. Modules with no route get no entry (WS-05 records dated deferral notes for them).
 - RUN: `cd backend && .venv/bin/python -c "from app.services.tasks import DEEP_LINKS; [print(k, v) for k, v in sorted(DEEP_LINKS.items())]" && grep -F "path=\"" website/src/App.tsx | grep -F -f <(.venv/bin/python -c "from app.services.tasks import DEEP_LINKS; [print(v) for v in DEEP_LINKS.values()]") | head -20`
 - EXPECT: exit 0; every value printed by the first command appears in a `path="..."` line in the grep output (no deep-link value is absent from `App.tsx`).
 - IF FAIL: remove or correct the DEEP_LINKS value that has no matching `App.tsx` path, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.4 — Implement emit_task with dedupe upsert
 - DO: In `backend/app/services/tasks.py`, add `async def emit_task(user_id, persona, module, kind, title_en, title_hi, subtitle, priority, deep_link, source_id, due_at=None, action_endpoint=None)`. Exact behavior, using the same db helpers other services in `backend/app/services/` use: compute `dedupe_key = f"{user_id}:{module}:{kind}:{source_id}"`; query `COLLECTION` where `dedupeKey == dedupe_key`. If a doc exists: update only `subtitle`, `priority`, `dueAt`, `deepLink`, `actionEndpoint`, `title`, and `updatedAt`; do NOT change `status` (a `done`/`dismissed` task is never resurrected — reset to `open` only if the caller is re-opening the underlying condition, which callers signal by simply not calling emit for closed conditions); return the existing doc id. If no doc exists: create one with exactly these fields — `taskId` (the new Firestore doc id), `userId`, `persona`, `module`, `kind`, `title: {"en": title_en, "hi": title_hi}`, `subtitle`, `priority`, `deepLink`, `actionEndpoint` (only when given), `dueAt` (ISO string or None), `status: "open"`, `sourceId`, `dedupeKey`, `decisionId: None`, `coinsAwarded: 0`, `createdAt`, `updatedAt`. All datetimes are ISO strings. Return the doc id.
 - RUN: `cd backend && .venv/bin/python -c "import inspect; from app.services.tasks import emit_task; print(inspect.signature(emit_task))"`
 - EXPECT: exit 0; output is exactly `(user_id, persona, module, kind, title_en, title_hi, subtitle, priority, deep_link, source_id, due_at=None, action_endpoint=None)`.
 - IF FAIL: fix the signature/implementation error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.5 — Create tasks router with GET /today
 - DO: Create `backend/app/routers/tasks.py` (new). Contents: `router = APIRouter(prefix="/tasks", tags=["tasks"])`; an `_error(status_code, code, message, field_errors=None)` helper copied from the pattern in `backend/app/routers/intelligence.py` (raises `HTTPException(status_code, detail={"code": code, "message": message, "fieldErrors": field_errors or {}})` — this is the error envelope; every error path in this router must use it); `GET /today` — authenticated via the same `current_user_id` dependency `routers/intelligence.py` uses; query `tasks` where `userId == uid` and `status == "open"`, then in Python keep docs where `priority` is `urgent` or `today`, or `dueAt <= ` end of today (local ISO); sort urgent-first, then `dueAt` ascending; return `{"items": [...]}`.
 - RUN: `cd backend && .venv/bin/python -c "from app.routers.tasks import router; print([r.path for r in router.routes])"`
 - EXPECT: exit 0; output contains `/today`.
 - IF FAIL: fix the error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.6 — Add GET /tasks list with filters and cursor pagination
 - DO: In `backend/app/routers/tasks.py`, add `GET ""` (i.e. `GET /v1/tasks`) with query params `persona` (optional), `status` (optional, one of `open|done|dismissed`), and `cursor` (optional). Filter by `userId == uid` plus the given filters, and paginate with the phase-00 cursor-pagination helper located in task 1.1 — do NOT limit-100-then-slice. Invalid `status` → `_error(400, "INVALID_STATUS", ...)`. Response shape: the helper's standard `{"items": [...], "nextCursor": ...}`.
 - RUN: `cd backend && .venv/bin/python -c "from app.routers.tasks import router; print([r.path for r in router.routes])"`
 - EXPECT: exit 0; output contains both `/today` and `/tasks` (or `` path on the `/tasks` prefix route).
 - IF FAIL: fix the error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.7 — Add POST /tasks/{id}/done
 - DO: In `backend/app/routers/tasks.py`, add `POST /{task_id}/done`: require the `Idempotency-Key` header via the phase-00 idempotency helper located in task 1.1 (same key replayed → return the stored first response, no second transition); fetch the doc, `_error(404, "TASK_NOT_FOUND", ...)` when missing or `userId != uid` (ownership check); accept optional JSON body `{"decisionId": str}` and store it on the doc when present; transition `open → done`, set `updatedAt`; if already `done`, return the current doc unchanged (idempotent); if `dismissed`, `_error(409, "TASK_ALREADY_DISMISSED", ...)`. The `decisionId` field is the WS-03 outcome-hook input — keep it on the doc.
 - RUN: `cd backend && .venv/bin/python -c "from app.routers.tasks import router; print([ (r.path, sorted(r.methods)) for r in router.routes])"`
 - EXPECT: exit 0; output contains `/{task_id}/done` with `POST`.
 - IF FAIL: fix the error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.8 — Add POST /tasks/{id}/dismiss
 - DO: In `backend/app/routers/tasks.py`, add `POST /{task_id}/dismiss` — identical structure to task 1.7's `done` handler (Idempotency-Key required via the phase-00 helper, 404 ownership check, optional `{"decisionId"}` body, `updatedAt`), transitioning `open → dismissed`; if already `dismissed` return the doc unchanged; if already `done`, `_error(409, "TASK_ALREADY_DONE", ...)`.
 - RUN: `cd backend && .venv/bin/python -c "from app.routers.tasks import router; print([ (r.path, sorted(r.methods)) for r in router.routes])"`
 - EXPECT: exit 0; output contains `/{task_id}/dismiss` with `POST`.
 - IF FAIL: fix the error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.9 — Add GET /tasks/summary
 - DO: In `backend/app/routers/tasks.py`, add `GET /summary` with query param `persona` (a persona id, or the literal `all`). Query open tasks for the caller; when `persona` is a persona id, restrict to it; when `all`, union across all of the caller's personas present in their open tasks. Response: `{"personas": { "<persona>": {"moduleCounts": {"<module>": <int>}, "topUrgent": [<up to 3 urgent open tasks, urgent-first then dueAt>] } }}`. Counts come from real docs only — no hardcoded numbers anywhere.
 - RUN: `cd backend && .venv/bin/python -c "from app.routers.tasks import router; print([r.path for r in router.routes])"`
 - EXPECT: exit 0; output contains `/summary`.
 - IF FAIL: fix the error shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.10 — Mount tasks router in main.py
 - DO: In `backend/app/main.py`, add the import for the new tasks router following the exact style of the existing router imports, and add `app.include_router(tasks.router, prefix="/v1")` (use the imported module name as written) immediately after the existing `include_router` block, so all five routes live under `/v1/tasks`.
 - RUN: `cd backend && .venv/bin/python -c "from app.main import app; print(sorted({r.path for r in app.routes if r.path.startswith('/v1/tasks')}))"`
 - EXPECT: exit 0; output lists `/v1/tasks`, `/v1/tasks/summary`, `/v1/tasks/today`, `/v1/tasks/{task_id}/dismiss`, `/v1/tasks/{task_id}/done`.
 - IF FAIL: fix the import/mount line (name mismatch is the usual cause), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.11 — Extend intelligence money aggregates
 - DO: In `backend/app/routers/intelligence.py`, extend the persona intel builders (`_farmer_intel`, `_broker_intel`, `_buyer_intel`, `_transport_intel`) ONLY where the dashboard money snapshot is missing an aggregate: pending receivables, pending payables, pending settlements. Add each missing aggregate as a NEW field named `pendingReceivablesPaisa` / `pendingPayablesPaisa` / `pendingSettlementsPaisa` (integer paisa — no floats for money), computed from the same collections the existing builder already queries; do not rename or re-type existing fields, and do not copy any task logic into this router (`/intelligence` = numbers layer, `/tasks` = action layer). If a builder already exposes an equivalent number, skip that field for that builder.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_intelligence.py`
 - EXPECT: exit 0, all tests in `tests/test_intelligence.py` pass.
 - IF FAIL: read the failure, fix the new aggregate code (never weaken the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.12 — Add Firestore composite indexes
 - DO: In `infra/firestore.indexes.json`, add composite indexes on the `tasks` collection for every shipped query: `(userId, status, priority, dueAt)`, `(userId, persona, status)`, `(userId, module, status)`, and a single-field entry for `dedupeKey` (unique-equivalent lookup). Match the JSON shape of the existing index entries in that file; do not remove existing entries.
 - RUN: `python3 -c "import json; d=json.load(open('infra/firestore.indexes.json')); print(sum(1 for i in d.get('indexes',[]) if i.get('collectionGroup')=='tasks'))"`
 - EXPECT: exit 0; printed number is ≥ 3 and the file parses as valid JSON.
 - IF FAIL: fix the JSON syntax or add the missing `tasks` indexes, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.13 — Align rent-reminders notification payload deepLinks
 - DO: In `backend/app/services/rent_reminders.py` (X3 prep, instructions.md §WS-01 step 6): where the service writes notification docs with `data` payloads like `{"type": "rent_reminder", "leaseId", "dueMonth"}`, add a `deepLink` key to that `data` payload whose value is the `land` entry from `DEEP_LINKS` in `backend/app/services/tasks.py` (import it; if no `land` entry exists, use the closest working land route from `website/src/App.tsx`). Push → dashboard → action must be one tap; payload values only — no FCM per-token push work (that is phase-06).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_rent_reminders.py`
 - EXPECT: exit 0, all tests in `tests/test_rent_reminders.py` pass.
 - IF FAIL: read the failure and fix the payload change (never weaken the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.14 — Write emit + dedupe tests
 - DO: Create `backend/tests/test_tasks.py` (new) using the existing `client` fixture in `backend/tests/conftest.py` (fake Firestore + fake auth; follow the style of `backend/tests/test_rent_reminders.py`). Add tests `test_emit_task_creates_doc` (call `emit_task(...)` directly, assert a `tasks` doc exists with all fields from the task-1.4 shape, `status == "open"`, `title.en`/`title.hi` set) and `test_emit_task_dedupes_on_source` (call `emit_task` twice with the same `source_id`, assert exactly one doc exists and the second call updated mutable fields without creating a doc).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py -k "emit"`
 - EXPECT: exit 0; 2 tests pass.
 - IF FAIL: fix the service code (never the test assertions), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.15 — Write today + summary shape tests
 - DO: In `backend/tests/test_tasks.py`, add `test_today_returns_urgent_and_due_open_tasks` (seed tasks via `emit_task` with mixed priorities/dueAt/status; `GET /v1/tasks/today`; assert only open urgent/today/due-today items, urgent-first then dueAt order) and `test_summary_counts_and_top_urgent` (seed tasks across ≥2 modules and ≥2 personas with ≥4 urgent in one persona; `GET /v1/tasks/summary?persona=all`; assert per-module open counts per persona and that `topUrgent` has at most 3 items; also call with a single persona and assert restriction).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py -k "today or summary"`
 - EXPECT: exit 0; the 2 new tests pass.
 - IF FAIL: fix the router code (never the test assertions), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.16 — Write done/dismiss, replay, ownership tests
 - DO: In `backend/tests/test_tasks.py`, add: `test_done_transition` (open → done via `POST /v1/tasks/{id}/done` with an `Idempotency-Key` header), `test_dismiss_transition` (open → dismissed), `test_done_idempotent_replay` (same `Idempotency-Key` sent twice → exactly one transition, second response equals the first, doc not double-mutated), `test_done_cross_user_404` (a different user's task id → 404 with the error envelope), and `test_done_then_dismiss_409`.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py -k "done or dismiss"`
 - EXPECT: exit 0; the 5 new tests pass.
 - IF FAIL: fix the router code (never the test assertions), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.17 — Write pagination + error-envelope tests
 - DO: In `backend/tests/test_tasks.py`, add: `test_list_cursor_round_trip` (seed more open tasks than one page; `GET /v1/tasks?status=open`, follow `nextCursor` with a second request; assert no duplicate items across pages and all items eventually returned) and `test_error_envelope_shape` (`GET /v1/tasks?status=bogus` → 400; assert body matches `{"detail": {"code": ..., "message": ..., "fieldErrors": ...}}` exactly as `_error` produces).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py`
 - EXPECT: exit 0; all tests in `tests/test_tasks.py` pass (the full file).
 - IF FAIL: fix the code under test (never the test assertions), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.18 — HUMAN CHECK: manual tasks API flow
 - DO: Human: start the backend with `./run.sh --backend-only` from the repo root (API on :8000). Using a dev token (`Authorization: Bearer dev-user-1` — dev- prefixed tokens are accepted by `backend/app/routers/auth.py` in dev): (1) trigger the rent-reminders job: `curl -X POST http://localhost:8000/jobs/rent-reminders/run -H "X-Cron-Secret: <value from the human operator's env>"`; (2) `curl http://localhost:8000/v1/tasks/today -H "Authorization: Bearer dev-user-1"`; (3) `curl "http://localhost:8000/v1/tasks/summary?persona=all" -H "Authorization: Bearer dev-user-1"`; (4) pick a task id from (2) and run `curl -X POST http://localhost:8000/v1/tasks/<id>/done -H "Authorization: Bearer dev-user-1" -H "Idempotency-Key: check-123"` twice.
@@ -136,7 +136,7 @@
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py`
 - EXPECT: exit 0, all `test_tasks.py` tests pass; then the commit succeeds (if git identity is missing, note it in the report and continue — playbook §6).
 - IF FAIL: fix the failing test's code (never the test), re-run; only commit when green — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-02 — Website Action Center  (see instructions.md §WS-02)
 

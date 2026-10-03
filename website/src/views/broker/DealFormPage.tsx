@@ -1,3 +1,4 @@
+import { DEFAULT_BROKER_PCT } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import CommissionStepper from '../../components/broker/CommissionStepper';
@@ -65,7 +66,7 @@ function loadPrefs(uid: string): { pct: number; paymentTerms: string } {
     const raw = localStorage.getItem(prefsKey(uid));
     if (raw) {
       const parsed = JSON.parse(raw) as { pct?: number; paymentTerms?: string };
-      return { pct: parsed.pct ?? 2, paymentTerms: parsed.paymentTerms ?? EMPTY_DRAFT.paymentTerms };
+      return { pct: parsed.pct ?? DEFAULT_BROKER_PCT, paymentTerms: parsed.paymentTerms ?? EMPTY_DRAFT.paymentTerms };
     }
   } catch {
     // fall through to defaults

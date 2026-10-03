@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ToolShell from '../../components/trade/ToolShell';
@@ -191,7 +192,7 @@ export default function DairyConsoleHome() {
                             })
                           : alert.kind === 'expired'
                             ? t('dairyHintExpired', { name: alert.item.name })
-                            : t('dairyHintExpiring', { name: alert.item.name, days: alert.days ?? 0 })}
+                            : t('dairyHintExpiring', { name: alert.item.name, days: alert.days ?? ZERO })}
                       </span>
                     </Link>
                   ))}

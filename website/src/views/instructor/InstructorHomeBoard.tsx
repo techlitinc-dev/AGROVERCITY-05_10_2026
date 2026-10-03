@@ -213,19 +213,19 @@ export default function InstructorHomeBoard({ embedded }: { embedded?: boolean }
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Completion & Pass Rate</span>
-            <span className="saas-metric-value">{analytics?.completionRatePercent ?? 92.4}%</span>
+            <span className="saas-metric-value">{analytics?.completionRatePercent !== undefined ? `${analytics.completionRatePercent}%` : '…'}</span>
             <span className="saas-metric-sub">Certified Proficiency</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Tuition Earnings</span>
             <span className="saas-metric-value">
-              ₹{(earnings?.grossRevenueRupees ?? 71500).toLocaleString('en-IN')}
+              {earnings?.grossRevenueRupees !== undefined ? `₹${earnings.grossRevenueRupees.toLocaleString('en-IN')}` : '…'}
             </span>
-            <span className="saas-metric-sub">Net: ₹{(earnings?.netPayoutRupees ?? 64350).toLocaleString('en-IN')} (T+3)</span>
+            <span className="saas-metric-sub">Net: {earnings?.netPayoutRupees !== undefined ? `₹${earnings.netPayoutRupees.toLocaleString('en-IN')}` : '…'} (T+3)</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Instructor Trust Score</span>
-            <span className="saas-metric-value">★ {analytics?.averageRating ?? 4.9}</span>
+            <span className="saas-metric-value">★ {analytics?.averageRating !== undefined ? analytics.averageRating : '…'}</span>
             <span className="saas-metric-sub">ICAR / DGCA Co-Brand</span>
           </div>
         </div>
@@ -577,19 +577,19 @@ export default function InstructorHomeBoard({ embedded }: { embedded?: boolean }
             <div style={{ padding: '1rem', background: '#0f172a', borderRadius: '0.5rem', border: '1px solid #334155' }}>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Gross Fees Collected</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f8fafc' }}>
-                ₹{(earnings?.grossRevenueRupees ?? 71500).toLocaleString('en-IN')}
+                {earnings?.grossRevenueRupees !== undefined ? `₹${earnings.grossRevenueRupees.toLocaleString('en-IN')}` : '…'}
               </div>
             </div>
             <div style={{ padding: '1rem', background: '#0f172a', borderRadius: '0.5rem', border: '1px solid #334155' }}>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Platform Commission (10%)</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f87171' }}>
-                -₹{(earnings?.platformCommissionRupees ?? 7150).toLocaleString('en-IN')}
+                -{earnings?.platformCommissionRupees !== undefined ? `₹${earnings.platformCommissionRupees.toLocaleString('en-IN')}` : '…'}
               </div>
             </div>
             <div style={{ padding: '1rem', background: '#0f172a', borderRadius: '0.5rem', border: '1px solid #334155' }}>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Net Instructor Payout</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#10b981' }}>
-                ₹{(earnings?.netPayoutRupees ?? 64350).toLocaleString('en-IN')}
+                {earnings?.netPayoutRupees !== undefined ? `₹${earnings.netPayoutRupees.toLocaleString('en-IN')}` : '…'}
               </div>
             </div>
           </div>

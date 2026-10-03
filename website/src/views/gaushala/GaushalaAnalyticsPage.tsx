@@ -47,6 +47,9 @@ export default function GaushalaAnalyticsPage() {
     return analytics.monthly.find((m) => m.month === analytics.month) ?? null;
   }, [analytics]);
 
+  /** Net = donations − expenses for the selected month; null when unavailable. */
+  const net = selected ? selected.donations - selected.expenses : null;
+
   const chartData = useMemo(
     () =>
       (analytics?.monthly ?? []).map((m) => ({
@@ -101,11 +104,11 @@ export default function GaushalaAnalyticsPage() {
               <div className="gaushala-stats-grid">
                 <div className="gaushala-stat">
                   <div className="gaushala-stat-label">{t('gaushalaAnExpenses')}</div>
-                  <div className="gaushala-stat-value">{fmtINR(selected?.expenses ?? 0)}</div>
+                  <div className="gaushala-stat-value">{selected ? fmtINR(selected.expenses) : '—'}</div>
                 </div>
                 <div className="gaushala-stat">
                   <div className="gaushala-stat-label">{t('gaushalaAnDonations')}</div>
-                  <div className="gaushala-stat-value">{fmtINR(selected?.donations ?? 0)}</div>
+                  <div className="gaushala-stat-value">{selected ? fmtINR(selected.donations) : '—'}</div>
                 </div>
                 <div className="gaushala-stat">
                   <div className="gaushala-stat-label">{t('gaushalaAnNet')}</div>
@@ -113,33 +116,33 @@ export default function GaushalaAnalyticsPage() {
                     className="gaushala-stat-value"
                     style={{
                       color:
-                        (selected?.donations ?? 0) - (selected?.expenses ?? 0) >= 0
-                          ? 'var(--av-green-dark)'
-                          : 'var(--av-error)',
+                        net === null
+                          ? 'var(--av-slate-1)'
+                          : net >= 0
+                            ? 'var(--av-green-dark)'
+                            : 'var(--av-error)',
                     }}
                   >
-                    {fmtINR((selected?.donations ?? 0) - (selected?.expenses ?? 0))}
+                    {net === null ? '—' : fmtINR(net)}
                   </div>
                   <div className="gaushala-stat-sub">
-                    {(selected?.donations ?? 0) - (selected?.expenses ?? 0) >= 0
-                      ? t('gaushalaAnNetSurplus', {
-                          amount: fmtINR((selected?.donations ?? 0) - (selected?.expenses ?? 0)),
-                        })
-                      : t('gaushalaAnNetBurn', {
-                          amount: fmtINR((selected?.expenses ?? 0) - (selected?.donations ?? 0)),
-                        })}
+                    {net === null
+                      ? '—'
+                      : net >= 0
+                        ? t('gaushalaAnNetSurplus', { amount: fmtINR(net) })
+                        : t('gaushalaAnNetBurn', { amount: fmtINR(-net) })}
                   </div>
                 </div>
                 <div className="gaushala-stat">
                   <div className="gaushala-stat-label">{t('gaushalaAnAdoptions')}</div>
-                  <div className="gaushala-stat-value">{selected?.adoptions ?? 0}</div>
+                  <div className="gaushala-stat-value">{selected ? selected.adoptions : '—'}</div>
                   <div className="gaushala-stat-sub">
-                    {t('gaushalaAnAdoptionAmount')}: {fmtINR(selected?.adoptionAmount ?? 0)}
+                    {t('gaushalaAnAdoptionAmount')}: {selected ? fmtINR(selected.adoptionAmount) : '—'}
                   </div>
                 </div>
                 <div className="gaushala-stat">
                   <div className="gaushala-stat-label">{t('gaushalaAnIntakes')}</div>
-                  <div className="gaushala-stat-value">{selected?.intakes ?? 0}</div>
+                  <div className="gaushala-stat-value">{selected ? selected.intakes : '—'}</div>
                 </div>
               </div>
             </div>

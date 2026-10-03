@@ -28,11 +28,12 @@ export function SectionTitle({ title }: { title: string }) {
 
 interface PersonaBannerProps {
   persona: Persona;
-  metrics: string[];
+  /** Optional extra pills; live metrics are rendered by the dashboard sections. */
+  metrics?: string[];
   onSwitch: () => void;
 }
 
-/** Gradient persona header with metric pills + switch-role button. */
+/** Gradient persona header with optional metric pills + switch-role button. */
 export function PersonaBanner({ persona, metrics, onSwitch }: PersonaBannerProps) {
   return (
     <div
@@ -47,7 +48,7 @@ export function PersonaBanner({ persona, metrics, onSwitch }: PersonaBannerProps
         </div>
       </div>
       <div className="dash-persona-metrics">
-        {metrics.map((label) => (
+        {(metrics ?? []).map((label) => (
           <span key={label} className="dash-metric-pill">
             {label}
           </span>

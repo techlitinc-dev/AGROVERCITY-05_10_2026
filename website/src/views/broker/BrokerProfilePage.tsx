@@ -1,3 +1,4 @@
+import { DEFAULT_BROKER_PCT } from '../../lib/numDefaults';
 import { useCallback, useEffect, useState } from 'react';
 import MultiChipWithCustom from '../../components/MultiChipWithCustom';
 import LabeledTextField from '../../components/LabeledTextField';
@@ -24,7 +25,7 @@ function loadPrefs(uid: string): BrokerPrefs {
     const raw = localStorage.getItem(prefsKey(uid));
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<BrokerPrefs>;
-      return { pct: parsed.pct ?? 2, paymentTerms: parsed.paymentTerms ?? '' };
+      return { pct: parsed.pct ?? DEFAULT_BROKER_PCT, paymentTerms: parsed.paymentTerms ?? '' };
     }
   } catch {
     // fall through

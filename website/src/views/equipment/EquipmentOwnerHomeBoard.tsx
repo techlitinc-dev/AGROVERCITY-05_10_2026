@@ -192,20 +192,20 @@ export default function EquipmentOwnerHomeBoard({ embedded }: { embedded?: boole
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Fleet Utilization</span>
-            <span className="saas-metric-value">{analytics?.utilizationRatePercent ?? 74.2}%</span>
+            <span className="saas-metric-value">{analytics?.utilizationRatePercent !== undefined ? `${analytics.utilizationRatePercent}%` : '…'}</span>
             <span className="saas-metric-sub">Weekly Peak Demand</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Total Realized Revenue</span>
             <span className="saas-metric-value">
-              ₹{(analytics?.totalRevenueRupees ?? 58400).toLocaleString('en-IN')}
+              {analytics?.totalRevenueRupees !== undefined ? `₹${analytics.totalRevenueRupees.toLocaleString('en-IN')}` : '…'}
             </span>
-            <span className="saas-metric-sub">{analytics?.totalHoursLogged ?? 68} Hours Logged</span>
+            <span className="saas-metric-sub">{analytics?.totalHoursLogged !== undefined ? `${analytics.totalHoursLogged} Hours Logged` : '…'}</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Job Queue & Quotes</span>
-            <span className="saas-metric-value">{analytics?.pendingRequestsCount ?? bookings.length}</span>
-            <span className="saas-metric-sub">{analytics?.repeatHireRatePercent ?? 42}% Repeat Hire</span>
+            <span className="saas-metric-value">{analytics?.pendingRequestsCount !== undefined ? analytics.pendingRequestsCount : bookings.length}</span>
+            <span className="saas-metric-sub">{analytics?.repeatHireRatePercent !== undefined ? `${analytics.repeatHireRatePercent}%` : '…'} Repeat Hire</span>
           </div>
         </div>
       </div>

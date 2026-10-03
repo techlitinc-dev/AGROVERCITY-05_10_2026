@@ -235,25 +235,25 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
         <div className="saas-metrics-grid">
           <div className="saas-metric-card">
             <span className="saas-metric-label">Today's Milk Collection</span>
-            <span className="saas-metric-value">{analytics?.todayCollectionLiters ?? 1240} L</span>
-            <span className="saas-metric-sub">Across {analytics?.activeFarmerSuppliers ?? 28} Farmers</span>
+            <span className="saas-metric-value">{analytics?.todayCollectionLiters !== undefined ? `${analytics.todayCollectionLiters} L` : '…'}</span>
+            <span className="saas-metric-sub">Across {analytics?.activeFarmerSuppliers !== undefined ? analytics.activeFarmerSuppliers : '…'} Farmers</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Average Quality (FAT/SNF)</span>
-            <span className="saas-metric-value">{analytics?.averageFatPercent ?? 6.5}% / {analytics?.averageSnfPercent ?? 9.1}%</span>
+            <span className="saas-metric-value">{analytics?.averageFatPercent !== undefined ? `${analytics.averageFatPercent}%` : '…'} / {analytics?.averageSnfPercent !== undefined ? `${analytics.averageSnfPercent}%` : '…'}</span>
             <span className="saas-metric-sub">Grade A Pure Milk Quality</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Daily Procurement Spend</span>
             <span className="saas-metric-value">
-              ₹{(analytics?.todaySpendRupees ?? 79360).toLocaleString('en-IN')}
+              {analytics?.todaySpendRupees !== undefined ? `₹${analytics.todaySpendRupees.toLocaleString('en-IN')}` : '…'}
             </span>
             <span className="saas-metric-sub">Avg Realized: ₹64.0/L</span>
           </div>
           <div className="saas-metric-card">
             <span className="saas-metric-label">Route Efficiency</span>
-            <span className="saas-metric-value">{analytics?.routeEfficiencyPercent ?? 94.6}%</span>
-            <span className="saas-metric-sub">{analytics?.activeRoutesCount ?? routes.length} Active Dispatch Vans</span>
+            <span className="saas-metric-value">{analytics?.routeEfficiencyPercent !== undefined ? `${analytics.routeEfficiencyPercent}%` : '…'}</span>
+            <span className="saas-metric-sub">{analytics?.activeRoutesCount !== undefined ? analytics.activeRoutesCount : routes.length} Active Dispatch Vans</span>
           </div>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EmptyState from '../../components/trade/EmptyState';
@@ -153,7 +154,7 @@ export default function ContractsPage() {
                       total: c.schedule
                         ? Math.max(
                             c.deliveriesGenerated,
-                            Math.ceil((c.quantityTotal ?? 0) / (c.schedule.qtyPerDelivery || 1))
+                            Math.ceil((c.quantityTotal ?? ZERO) / (c.schedule.qtyPerDelivery || 1))
                           )
                         : c.deliveriesGenerated,
                     })

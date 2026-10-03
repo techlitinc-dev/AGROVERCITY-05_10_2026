@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useState } from 'react';
 import ChipSelect from '../../components/ChipSelect';
 import LabeledTextField from '../../components/LabeledTextField';
@@ -124,15 +125,15 @@ export default function TransporterProfilePage() {
           <div className="trade-stats-grid">
             <div className="trade-stat">
               <div className="trade-stat-label">{t('trHomeVehicles')}</div>
-              <div className="trade-stat-value">{stats.totalVehicles ?? 0}</div>
+              <div className="trade-stat-value">{stats.totalVehicles ?? ZERO}</div>
             </div>
             <div className="trade-stat">
               <div className="trade-stat-label">{t('trHomeTrips')}</div>
-              <div className="trade-stat-value">{stats.totalTrips ?? 0}</div>
+              <div className="trade-stat-value">{stats.totalTrips ?? ZERO}</div>
             </div>
             <div className="trade-stat">
               <div className="trade-stat-label">{t('trHomeEarnings')}</div>
-              <div className="trade-stat-value">{inr(stats.lifetimeEarnings ?? 0)}</div>
+              <div className="trade-stat-value">{inr(stats.lifetimeEarnings ?? ZERO)}</div>
             </div>
             <div className="trade-stat">
               <div className="trade-stat-label">{t('trHomeRating')}</div>

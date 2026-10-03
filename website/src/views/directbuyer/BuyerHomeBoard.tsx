@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import InsightsPanel from '../../components/intelligence/InsightsPanel';
@@ -89,7 +90,7 @@ export default function BuyerHomeBoard({ embedded }: { embedded?: boolean }) {
         <Link className="trade-stat" to="/dashboard/p/purchases">
           <p className="trade-stat-label">{t('dbHomeSpend')}</p>
           <p className="trade-stat-value">
-            {data ? inr(data.stats?.totalSpend ?? 0) : '…'}
+            {data ? inr(data.stats?.totalSpend ?? ZERO) : '…'}
           </p>
         </Link>
         <Link className="trade-stat" to="/dashboard/p/purchases">

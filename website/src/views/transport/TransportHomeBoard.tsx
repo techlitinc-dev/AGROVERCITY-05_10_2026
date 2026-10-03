@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusPill from '../../components/trade/StatusPill';
@@ -96,7 +97,7 @@ export default function TransportHomeBoard() {
         >
           <div className="trade-stat-label">{t('trHomeEarnings')}</div>
           <div className="trade-stat-value">
-            {data ? inr(data.analytics.totalGrossRevenue ?? 0) : '…'}
+            {data ? inr(data.analytics.totalGrossRevenue ?? ZERO) : '…'}
           </div>
         </button>
         <button

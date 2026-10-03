@@ -1,3 +1,4 @@
+import { ZERO } from '../../lib/numDefaults';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import LabeledTextField from '../../components/LabeledTextField';
@@ -99,7 +100,7 @@ export default function ContractDetailPage() {
   const livePrice =
     contract?.currentPrice ??
     (contract?.priceType === 'mandiLinked' && mandiModal !== null
-      ? mandiModal + (contract.premiumPerQuintal ?? 0)
+      ? mandiModal + (contract.premiumPerQuintal ?? ZERO)
       : null);
 
   const createPurchase = async () => {
