@@ -293,6 +293,7 @@ const hi: Record<string, string> = {
   dashBuyDemandsSub: 'खरीद ज़रूरतें पोस्ट करें या खोजें',
   dashLiveMandi: 'लाइव मंडी',
   dashActiveLeases: 'सक्रिय भूमि पट्टे',
+  dashActiveTrips: 'आज की सक्रिय यात्राएँ',
   dashProcurementLedger: 'खरीद खाता-बही',
   dashFleetStatus: 'बेड़ा स्थिति और बुकिंग',
   dashActiveDeals: 'सक्रिय सौदा अनुबंध',

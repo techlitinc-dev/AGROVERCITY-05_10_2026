@@ -197,6 +197,7 @@ const en: Record<string, string> = {
   machineDetails: 'Machine Details',
   machineType: 'Machine Type',
   machineUnit: 'machines',
+  errMachineRequired: 'Add at least one machine',
   instructorDetails: 'Instructor Details',
   qualificationOptional: 'Qualification (Optional)',
   expertiseAreas: 'Subject Areas (at least one)',

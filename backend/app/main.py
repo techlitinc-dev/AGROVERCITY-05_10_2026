@@ -206,7 +206,16 @@ app.include_router(admin.router, prefix="/v1")
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if isinstance(exc.detail, dict):
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": f"HTTP_{exc.status_code}",
+                "message": str(exc.detail),
+                "fieldErrors": {},
+            }
+        },
+    )
 
 
 @app.exception_handler(RequestValidationError)

@@ -15,7 +15,7 @@ def prod_env(monkeypatch):
 async def test_quick_login_forbidden_in_prod(client, prod_env):
     resp = await client.post("/v1/auth/quick-login", json={"persona": "farmer", "mpin": "9876"})
     assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "DISABLED_IN_PROD" if "error" in resp.json() else resp.json()["detail"]["code"] == "DISABLED_IN_PROD"
+    assert resp.json()["error"]["code"] == "DISABLED_IN_PROD"
 
 
 async def test_mpin_1234_rejected_in_prod(client, user_store, prod_env):

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.8",
+    "@sentry/react": "^11.4.0",
     "axios": "^1.7.7",
     "firebase": "^10.13.2",
     "react": "^18.3.1",
