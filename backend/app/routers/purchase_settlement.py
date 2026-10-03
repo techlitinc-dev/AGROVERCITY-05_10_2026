@@ -155,6 +155,10 @@ async def verify_handover(purchase_id: str, body: dict, uid: str = Depends(curre
         _error(400, "INVALID_OTP", "incorrect handover OTP")
     handover["verifiedAt"] = _now()
     handover["attempts"] = 0
+    # WS-03: OTP confirmation starts the escrow release clock (dispute window).
+    from app.services.escrow import start_clock
+
+    start_clock(escrow)
     _append_event(purchase, "handedOver")
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
@@ -194,6 +198,9 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
     else:
         purchase["finalAmount"] = round(purchase["agreedPricePerUnit"] * body.acceptedQty)
         purchase["status"] = "qcDisputed"
+        # WS-03: a dispute opened inside the window pauses escrow release.
+        escrow = purchase.setdefault("escrow", {})
+        escrow["disputeOpenedAt"] = _now()
         _append_event(purchase, "qcDisputed", f"grade {body.grade}")
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
@@ -225,6 +232,9 @@ async def resolve_dispute(purchase_id: str, body: ResolveIn, uid: str = Depends(
         _error(400, "INVALID_STATUS_TRANSITION", f"cannot resolve from {purchase.get('status')}")
     purchase["status"] = "completed"
     _append_event(purchase, "resolved", body.resolution)
+    escrow = purchase.setdefault("escrow", {})
+    escrow["disputeResolvedAt"] = _now()
+    escrow["releaseAt"] = _now()
     _release_escrow(purchase)
     _append_event(purchase, "completed")
     _issue_invoice(purchase)

@@ -67,6 +67,7 @@ from app.routers import (
     offers,
     purchases,
     purchase_settlement,
+    payments,
     user_products,
     pnl,
     ratings,
@@ -139,6 +140,7 @@ app.include_router(demands.router, prefix="/v1")
 app.include_router(offers.router, prefix="/v1")
 app.include_router(purchases.router, prefix="/v1")
 app.include_router(purchase_settlement.router, prefix="/v1")
+app.include_router(payments.router, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
 app.include_router(direct_buyer.router, prefix="/v1")
 app.include_router(emarket_customer.router, prefix="/v1")

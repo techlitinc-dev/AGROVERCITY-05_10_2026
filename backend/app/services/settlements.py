@@ -1,9 +1,14 @@
 from datetime import datetime, timezone
 
 from app.core.db import get_doc, query, set_doc
+from app.services.payments import create_razorpayx_payout
 
 DEFAULT_CONFIG = {"transportPct": 10, "equipmentRentalPct": 12, "brokerPct": 2}
 PCT_KEYS = {"transport": "transportPct", "equipmentRental": "equipmentRentalPct", "broker": "brokerPct"}
+
+# TDS 194-O on marketplace gross (integer paisa everywhere in the ledger).
+TDS_194O_RATE = 0.01
+GST_RATE = 0.18
 
 
 async def _config() -> dict:
@@ -85,8 +90,78 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
                 "createdAt": existing["createdAt"] if existing else now,
             }
             await set_doc("settlements", doc_id, doc)
+            # WS-03: TDS 194-O ledger + GST commission invoice (integer paisa).
+            gross_paisa = gross * 100
+            tds_paisa = int(round(gross_paisa * TDS_194O_RATE))
+            await set_doc(
+                "tds_ledger",
+                f"tds_{doc_id}",
+                {
+                    "txnId": doc_id,
+                    "persona": role,
+                    "grossPaisa": gross_paisa,
+                    "tdsPaisa": tds_paisa,
+                    "section": "194-O",
+                    "period": f"{period_start}..{period_end}",
+                    "at": now,
+                },
+            )
+            commission_paisa = commission * 100
+            gst_paisa = int(round(commission_paisa * GST_RATE))
+            await set_doc(
+                "invoices",
+                f"inv_{doc_id}",
+                {
+                    "id": f"inv_{doc_id}",
+                    "kind": "commission",
+                    "persona": role,
+                    "userId": entity_id,
+                    "periodStart": period_start,
+                    "periodEnd": period_end,
+                    "grossPaisa": gross_paisa,
+                    "commissionPaisa": commission_paisa,
+                    "gstPaisa": gst_paisa,
+                    "totalPaisa": commission_paisa + gst_paisa,
+                    "issuedAt": now,
+                },
+            )
             if existing is None:
                 created += 1
             else:
                 updated += 1
     return {"created": created, "updated": updated}
+
+
+async def process_payouts(period_start: str, period_end: str) -> dict:
+    """Weekly payout pass: pending settlements move real money to the
+    beneficiary's verified bank account; beneficiaries without one are put
+    `onHold` with a reason."""
+    settlements = await query("settlements", [], limit=2000)
+    now = datetime.now(timezone.utc).isoformat()
+    paid = on_hold = 0
+    for settlement in settlements:
+        if settlement.get("periodStart") != period_start or settlement.get("status") != "pending":
+            continue
+        accounts = await query(f"users/{settlement['entityId']}/bank_accounts", [], limit=50)
+        verified = [a for a in accounts if a.get("verifyStatus") == "verified"]
+        if not verified:
+            settlement["payoutStatus"] = "onHold"
+            settlement["payoutHoldReason"] = "no verified bank account"
+            await set_doc("settlements", settlement["id"], settlement)
+            on_hold += 1
+            continue
+        account = sorted(
+            verified, key=lambda a: (not a.get("isPrimary", False), a.get("createdAt", ""))
+        )[0]
+        payout = await create_razorpayx_payout(
+            account.get("razorpayFundAccountId") or account["id"],
+            int(settlement["netRupees"]) * 100,
+            f"settle_{settlement['id']}",
+        )
+        settlement["status"] = "paid"
+        settlement["payoutStatus"] = "paid"
+        settlement["payoutRef"] = payout.get("id")
+        settlement["paidAt"] = now
+        await set_doc("settlements", settlement["id"], settlement)
+        paid += 1
+    return {"paid": paid, "onHold": on_hold, "periodStart": period_start, "periodEnd": period_end}

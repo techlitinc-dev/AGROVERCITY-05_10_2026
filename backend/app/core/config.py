@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     razorpay_key_id: str = ""
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
+    bank_verify_provider: str = "stub"
+    escrow_dispute_window_hours: int = 24
     openrouter_api_key: str = ""
     sarvam_api_key: str = ""
     weather_api_key: str = ""

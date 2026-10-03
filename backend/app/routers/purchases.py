@@ -75,10 +75,23 @@ def commission_for(amount: int) -> int:
 
 
 def _release_escrow(purchase: dict):
-    """Release held escrow at settlement (spec C4): minus commission."""
+    """Release held escrow at settlement (spec C4): minus commission.
+
+    WS-03 release clock: once handover starts the clock (`releaseAt`), the
+    release waits for the dispute window to close silently; a dispute opened
+    inside the window pauses the release until it is resolved."""
     escrow = purchase.get("escrow") or {}
     if escrow.get("status") != "held":
         return
+    if escrow.get("disputeOpenedAt") and not escrow.get("disputeResolvedAt"):
+        return
+    release_at = escrow.get("releaseAt")
+    if release_at:
+        try:
+            if datetime.now(timezone.utc) < datetime.fromisoformat(release_at):
+                return
+        except ValueError:
+            pass
     final = purchase.get("finalAmount") or purchase.get("totalAmount") or 0
     commission = commission_for(final)
     escrow.update(
