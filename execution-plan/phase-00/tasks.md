@@ -66,21 +66,21 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all tests in the file pass.
 - IF FAIL: read the first failure; if caused by this edit, fix the gate; if pre-existing and unrelated, record it and re-run to confirm — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.6 — Gate login MPIN 1234 bypass
 - DO: Edit `backend/app/routers/auth.py` in `login_with_phone_mpin` (~L75): change the bypass condition so the `1234` shortcut only applies in dev — the inner condition becomes `settings.env == "dev" and body.mpin == "1234" and (u["id"].startswith("dev-") or u["id"].startswith("omni-") or u.get("isDemo", False))`.
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the condition parenthesisation, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.7 — Gate mpin/verify MPIN 1234 bypass
 - DO: Edit `backend/app/routers/auth.py` in `mpin_verify` (~L295): change the fallback to `if settings.env == "dev" and body.mpin == "1234" and (uid.startswith("dev-") or uid.startswith("omni-") or user.get("isDemo", False)):`.
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the condition, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.8 — Disable quick-login outside dev
 - DO: Edit `backend/app/routers/auth.py`: make the FIRST statement of `quick_login` (~L317, before `PERSONA_DEFAULTS`):
@@ -91,7 +91,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: confirm the gate is the first statement of the function, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.9 — Require explicit MPIN in quick-login
 - DO: Edit `backend/app/routers/auth.py` in `quick_login`: (1) immediately after the dev gate from task 1.8 add:
@@ -103,7 +103,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py && grep -n 'or "1234"' app/routers/auth.py; test $? -eq 1` (cwd: `backend/`)
 - EXPECT: tests pass AND the grep finds nothing (exit 1 from grep).
 - IF FAIL: remove the missed `or "1234"` occurrence, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.10 — Reject trivial MPINs outside dev
 - DO: Edit `backend/app/core/security.py`: (1) add `from app.core.config import settings` to imports; (2) at the end of `validate_mpin_format` append:
@@ -123,14 +123,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (tests run with `env=dev`, so the dev path is unaffected).
 - IF FAIL: check the function still accepts valid non-trivial MPINs, fix, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.11 — Delete dev Razorpay signature shortcut
 - DO: Edit `backend/app/services/payments.py` in `verify_razorpay_signature` (L21–22): replace `return signature == "dev"` with `return False` — an empty `razorpay_key_secret` must NEVER accept any signature.
 - RUN: `.venv/bin/python -c "import hmac, hashlib; from app.core.config import settings; from app.services.payments import verify_razorpay_signature as v; assert v('o1','p1','dev') is False; settings.razorpay_key_secret='k'; sig=hmac.new(b'k', b'o1|p1', hashlib.sha256).hexdigest(); assert v('o1','p1',sig) is True; assert v('o1','p1','bad') is False; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: re-read the function and apply the edit exactly — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.12 — Remove rzp_test_dev key fallback
 - DO: Edit `backend/app/routers/orders.py` in `razorpay_order` (~L184): (1) as the first statement after `order = await _own_order(...)` add:
@@ -142,14 +142,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_orders.py tests/test_order_lifecycle.py tests/test_order_cancel.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: if tests exercise the dev no-key path, that path is now a 503 envelope — record pre-existing vs new failures (see ordering note) and fix only failures caused by this edit — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.13 — Lock CORS to configured origins
 - DO: (1) Edit `backend/app/core/config.py`: add field `web_origins: list[str] = ["http://localhost:5173"]` to `Settings`. (2) Edit `backend/app/main.py`: replace `allow_origins=["*"]` with `allow_origins=settings.web_origins`. (3) Edit `backend/.env.example`: append `WEB_ORIGINS=["http://localhost:5173"]` preceded by comment `# JSON array of allowed web origins; staging/prod list the real domains.`.
 - RUN: `.venv/bin/python -m pytest -q tests/test_infra.py && .venv/bin/python -c "from app.core.config import settings; print(settings.web_origins)"` (cwd: `backend/`)
 - EXPECT: tests pass; the python check prints `['http://localhost:5173']`.
 - IF FAIL: pydantic-settings parses list env vars as JSON — confirm the `.env.example` value is a JSON array, fix, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.14 — Move Firebase web config to env vars
 - DO: Edit `website/src/lib/firebase.ts`: replace the hardcoded `firebaseConfig` object (L16–23) with:
@@ -167,7 +167,7 @@
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the `import.meta.env` typings, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.15 — Extend website env example with Firebase keys
 - DO: Edit `website/.env.example`: append these lines:
@@ -185,7 +185,7 @@
 - RUN: `grep -c "VITE_FIREBASE_" website/.env.example`
 - EXPECT: exit 0, output `7`.
 - IF FAIL: add the missing key lines, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.16 — Initialize Firebase App Check on website
 - DO: Edit `website/src/lib/firebase.ts`: (1) add `import { initializeAppCheck, ReCaptchaV3Provider, getToken } from 'firebase/app-check';` to imports; (2) immediately after `export const firebaseAuth: Auth = getAuth(firebaseApp);` add:
@@ -211,7 +211,7 @@
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: confirm the installed `firebase` package exports `firebase/app-check` (it does in v10), fix the import, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.17 — Send App Check header from API client
 - DO: Edit `website/src/lib/api/client.ts`: (1) add `import { getAppCheckToken } from '../firebase';` to imports; (2) change the request interceptor to async and attach the header — the interceptor becomes:
@@ -235,7 +235,7 @@
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the interceptor signature typing, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.18 — Verify App Check tokens backend-side
 - DO: (1) Edit `backend/app/core/firebase.py`: append:
@@ -268,7 +268,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_infra.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (tests run with `env=dev`, so the middleware is inert).
 - IF FAIL: fix imports/middleware placement, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.19 — Add prod-guard regression tests
 - DO: Create `backend/tests/test_prod_guards.py` (new) with exactly this content:
@@ -325,7 +325,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_prod_guards.py` (cwd: `backend/`)
 - EXPECT: exit 0, `5 passed`.
 - IF FAIL: fix the failing assertion against the real response shape (print `resp.json()` once to see it), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.20 — HUMAN CHECK: rotate exposed secrets
 - DO: HUMAN CHECK — the human operator must: (1) in the Firebase console, rotate/restrict the web API key that was hardcoded in `website/src/lib/firebase.ts` (`AIzaSyDj2...No_k`); (2) in the Razorpay dashboard, roll any keys that ever shipped in code or docs; (3) create `.run-logs/phase-00-secrets-rotation.md` (new) recording one line per rotated secret: `<date> <which secret> rotated in <console>`. Executor: create the file with a header line `# phase-00 secrets rotation log` if the human has not; the human fills in the entries.
@@ -339,7 +339,7 @@
 - RUN: `grep -rn 'sess_demo\|dev-user\|demo-\|"1234"' backend/app website/src`
 - EXPECT: exit 0 or 1; every printed hit is inside `backend/app/routers/auth.py` within `_verify_firebase_token`, `login_with_phone_mpin`, `mpin_verify`, or `quick_login`, and each is provably behind `settings.env == "dev"` (or is the `WEAK_MPIN` denylist in `backend/app/core/security.py`). Zero hits in `website/src`.
 - IF FAIL: gate or delete the offending code, re-run the grep — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 1.22 — HUMAN CHECK: dev login flows still work
 - DO: HUMAN CHECK — (1) terminal 1: `cd backend && .venv/bin/uvicorn app.main:app --port 8000` (default `ENV=dev`); (2) terminal 2: `cd website && pnpm dev`; (3) in the browser open the dev URL, use quick-login as persona `farmer` WITH an explicit MPIN (must succeed), then log out and log back in with phone + that MPIN (must succeed); (4) retry quick-login WITHOUT an MPIN (must fail with `MPIN_REQUIRED`).
@@ -353,7 +353,7 @@
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_auth.py tests/test_infra.py tests/test_prod_guards.py && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-00 WS-01: kill demo backdoors & secrets hygiene"`
 - EXPECT: backend tests pass; `tsc` clean; `pnpm build` succeeds; git commit created (if git identity is missing, note it and continue per playbook §6).
 - IF FAIL: fix the failing step (never weaken a test — playbook §3 rule 2), re-run the whole line — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-02 — Auth & admin-auth unification  (see instructions.md §WS-02)
 

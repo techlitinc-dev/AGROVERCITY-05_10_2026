@@ -152,3 +152,100 @@ async def test_login_only_hashless_duplicate_docs_reports_not_set(client, user_s
     )
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "MPIN_NOT_SET"
+
+
+def _patch_redis(monkeypatch, fake_redis):
+    async def _fake():
+        return fake_redis
+
+    monkeypatch.setattr("app.services.tokens.get_redis", _fake)
+    monkeypatch.setattr("app.core.cache.get_redis", _fake)
+
+
+def _seed_login_user(user_store, uid="uid-sess-1"):
+    user_store[f"users/{uid}"] = {
+        "id": uid,
+        "phone": "+919812345678",
+        "mpinHash": hash_mpin("5555"),
+    }
+
+
+async def test_refresh_rotation_invalidates_old(client, user_store, fake_redis, monkeypatch):
+    _patch_redis(monkeypatch, fake_redis)
+    _seed_login_user(user_store, "uid-rot-1")
+    login = await client.post("/v1/auth/login", json={"phone": "+919812345678", "mpin": "5555"})
+    old_refresh = login.json()["refreshToken"]
+    resp = await client.post("/v1/auth/refresh", json={"refreshToken": old_refresh})
+    assert resp.status_code == 200
+    assert resp.json()["refreshToken"] != old_refresh
+    resp2 = await client.post("/v1/auth/refresh", json={"refreshToken": old_refresh})
+    assert resp2.status_code == 401
+
+
+async def test_refresh_replay_revokes_family(client, user_store, fake_redis, monkeypatch):
+    from app.services.tokens import decode_refresh_token
+
+    _patch_redis(monkeypatch, fake_redis)
+    _seed_login_user(user_store, "uid-replay-1")
+    login = await client.post("/v1/auth/login", json={"phone": "+919812345678", "mpin": "5555"})
+    token_a = login.json()["refreshToken"]
+    refreshed = await client.post("/v1/auth/refresh", json={"refreshToken": token_a})
+    assert refreshed.status_code == 200
+    token_b = refreshed.json()["refreshToken"]
+    # replay token A -> replay detected, whole family revoked
+    replay = await client.post("/v1/auth/refresh", json={"refreshToken": token_a})
+    assert replay.status_code == 401
+    assert replay.json()["error"]["code"] == "REFRESH_REPLAYED"
+    # token B must also be dead now
+    assert decode_refresh_token(token_b)
+    after = await client.post("/v1/auth/refresh", json={"refreshToken": token_b})
+    assert after.status_code == 401
+
+
+async def test_sessions_list_and_revoke(client, user_store, fake_redis, monkeypatch):
+    from app.services.tokens import decode_refresh_token
+
+    _patch_redis(monkeypatch, fake_redis)
+    _seed_login_user(user_store, "uid-list-1")
+    login1 = await client.post("/v1/auth/login", json={"phone": "+919812345678", "mpin": "5555"})
+    login2 = await client.post("/v1/auth/login", json={"phone": "+919812345678", "mpin": "5555"})
+    access = login1.json()["accessToken"]
+    token1 = login1.json()["refreshToken"]
+    token2 = login2.json()["refreshToken"]
+    headers = {"Authorization": f"Bearer {access}"}
+
+    sessions = await client.get("/v1/auth/sessions", headers=headers)
+    assert sessions.status_code == 200
+    data = sessions.json()["sessions"]
+    assert len(data) == 2
+    jti1 = decode_refresh_token(token1)[1]
+    jti2 = decode_refresh_token(token2)[1]
+    ids = {s["id"] for s in data}
+    assert {jti1, jti2} == ids
+
+    revoked = await client.delete(f"/v1/auth/sessions/{jti1}", headers=headers)
+    assert revoked.status_code == 200
+    assert revoked.json() == {"ok": True}
+
+    # the revoked session is dead; replaying its token is treated as reuse
+    # and revokes the whole session family (WS-02 step 3)
+    first_after = await client.post("/v1/auth/refresh", json={"refreshToken": token1})
+    assert first_after.status_code == 401
+    assert first_after.json()["error"]["code"] == "REFRESH_REPLAYED"
+    second_after = await client.post("/v1/auth/refresh", json={"refreshToken": token2})
+    assert second_after.status_code == 401
+
+
+async def test_otp_rate_limit_429(client, user_store, fake_redis, monkeypatch):
+    async def _fake():
+        return fake_redis
+
+    monkeypatch.setattr("app.core.ratelimit.get_redis", _fake)
+    user_store["users/uid-1"] = {"id": "uid-1", "phone": "+919812345678"}
+    for attempt in range(1, 7):
+        resp = await client.post("/v1/auth/mpin/reset", json={"idToken": "any", "newMpin": "9876"})
+        if attempt <= 5:
+            assert resp.status_code != 429
+        else:
+            assert resp.status_code == 429
+            assert resp.json()["error"]["code"] == "RATE_LIMITED"

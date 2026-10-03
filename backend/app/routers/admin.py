@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.db import get_doc, set_doc, query
-from app.core.deps import current_user_id
+from app.core.deps import admin_action, admin_user
 from app.models.loans import LoanStatus
 from app.routers.analytics import _line_factor, last_12_months, month_key
 from app.services import loans as loans_service
@@ -19,25 +19,6 @@ def _error(status_code: int, code: str, message: str):
         status_code=status_code,
         detail={"code": code, "message": message, "fieldErrors": {}},
     )
-
-
-def _require_admin(user: dict):
-    # Checks if user has admin claim or is marked as superadmin
-    if not user.get("isAdmin", False) and user.get("activeProfile") != "admin":
-        # Check custom claims or fallback for developer superadmin
-        if user.get("id") not in ("admin-root", "uid-admin", "admin-demo"):
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "FORBIDDEN_ADMIN", "message": "Superadmin privileges required"}
-            )
-
-
-async def _admin_user(uid: str = Depends(current_user_id)) -> dict:
-    user = await get_user(uid)
-    if not user:
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "user not found"})
-    _require_admin(user)
-    return user
 
 
 class UserStatusUpdate(BaseModel):
@@ -64,7 +45,7 @@ class ExpertTicketResolveIn(BaseModel):
 
 
 @router.get("/overview")
-async def get_admin_overview(user: dict = Depends(_admin_user)):
+async def get_admin_overview(user: dict = Depends(admin_user)):
     """Unified superadmin KPI metrics across all 26 modules."""
     users_list = await query("users", limit=1000)
     
@@ -108,7 +89,7 @@ async def list_users(
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
 ):
     users_list = await query("users", limit=500)
     filtered = []
@@ -137,7 +118,8 @@ async def list_users(
 async def update_user_status(
     target_uid: str,
     body: UserStatusUpdate,
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
+    _audit: dict = Depends(admin_action("UPDATE_USER_STATUS")),
 ):
     target = await get_user(target_uid)
     if not target:
@@ -146,14 +128,14 @@ async def update_user_status(
     target["status"] = body.status
     target["statusReason"] = body.reason
     target["statusUpdatedAt"] = datetime.now(timezone.utc).isoformat()
-    target["statusUpdatedBy"] = user["id"]
+    target["statusUpdatedBy"] = user["uid"]
     await set_doc("users", target_uid, target)
 
     # Log to audit_logs
     audit_id = f"aud_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{target_uid}"
     await set_doc("audit_logs", audit_id, {
         "action": "UPDATE_USER_STATUS",
-        "adminId": user["id"],
+        "adminId": user["uid"],
         "targetUid": target_uid,
         "newStatus": body.status,
         "reason": body.reason,
@@ -164,7 +146,7 @@ async def update_user_status(
 
 
 @router.get("/kyc/queue")
-async def get_kyc_queue(user: dict = Depends(_admin_user)):
+async def get_kyc_queue(user: dict = Depends(admin_user)):
     """List pending verification items across user document vaults."""
     queue = [
         {
@@ -195,12 +177,13 @@ async def get_kyc_queue(user: dict = Depends(_admin_user)):
 async def review_kyc_document(
     doc_id: str,
     body: KycReviewIn,
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
+    _audit: dict = Depends(admin_action("REVIEW_KYC_DOC")),
 ):
     audit_id = f"aud_kyc_{doc_id}"
     await set_doc("audit_logs", audit_id, {
         "action": "REVIEW_KYC_DOC",
-        "adminId": user["id"],
+        "adminId": user["uid"],
         "docId": doc_id,
         "status": body.status,
         "rejectionReason": body.rejectionReason,
@@ -210,7 +193,7 @@ async def review_kyc_document(
 
 
 @router.get("/expert-handoffs")
-async def list_expert_handoffs(user: dict = Depends(_admin_user)):
+async def list_expert_handoffs(user: dict = Depends(admin_user)):
     docs = await query("expert_tickets", limit=100)
     return {"data": docs, "total": len(docs)}
 
@@ -219,7 +202,8 @@ async def list_expert_handoffs(user: dict = Depends(_admin_user)):
 async def resolve_expert_handoff(
     ticket_id: str,
     body: ExpertTicketResolveIn,
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
+    _audit: dict = Depends(admin_action("RESOLVE_EXPERT_HANDOFF")),
 ):
     ticket = await get_doc("expert_tickets", ticket_id)
     if not ticket:
@@ -227,7 +211,7 @@ async def resolve_expert_handoff(
     
     ticket["status"] = "resolved"
     ticket["resolvedAt"] = datetime.now(timezone.utc).isoformat()
-    ticket["resolvedBy"] = user.get("name", user["id"])
+    ticket["resolvedBy"] = user.get("name", user["uid"])
     ticket["prescriptionNotes"] = body.prescriptionNotes
     ticket["recommendedProducts"] = body.recommendedProducts
     await set_doc("expert_tickets", ticket_id, ticket)
@@ -250,7 +234,7 @@ class CourseFeatureIn(BaseModel):
 @router.get("/courses/queue")
 async def course_review_queue(
     status: str = Query("pendingReview", description="pendingReview | published | rejected | all"),
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
 ):
     if status == "all":
         docs = await query("courses", [], limit=1000)
@@ -264,7 +248,8 @@ async def course_review_queue(
 async def review_course(
     course_id: str,
     body: CourseReviewIn,
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
+    _audit: dict = Depends(admin_action("REVIEW_COURSE")),
 ):
     course = await get_doc("courses", course_id)
     if not course:
@@ -284,16 +269,16 @@ async def review_course(
         course["status"] = "published"
         course["rejectedReason"] = None
         course["publishedAt"] = now
-        course["reviewedBy"] = user.get("name", user["id"])
+        course["reviewedBy"] = user.get("name", user["uid"])
     else:
         course["status"] = "rejected"
         course["rejectedReason"] = body.reason
-        course["reviewedBy"] = user.get("name", user["id"])
+        course["reviewedBy"] = user.get("name", user["uid"])
     course["updatedAt"] = now
     await set_doc("courses", course_id, course)
     await set_doc("audit_logs", f"aud_course_{course_id}_{int(datetime.now(timezone.utc).timestamp())}", {
         "action": "REVIEW_COURSE",
-        "adminId": user["id"],
+        "adminId": user["uid"],
         "courseId": course_id,
         "reviewAction": body.action,
         "reason": body.reason,
@@ -306,7 +291,8 @@ async def review_course(
 async def feature_course(
     course_id: str,
     body: CourseFeatureIn,
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
+    _audit: dict = Depends(admin_action("FEATURE_COURSE")),
 ):
     course = await get_doc("courses", course_id)
     if not course:
@@ -323,7 +309,7 @@ async def feature_course(
 
 
 @router.get("/courses/report")
-async def courses_report(user: dict = Depends(_admin_user)):
+async def courses_report(user: dict = Depends(admin_user)):
     courses = await query("courses", [], limit=1000)
     purchases = await query("course_purchases", [("status", "==", "paid")], limit=2000)
     by_status: dict[str, int] = {}
@@ -349,7 +335,7 @@ async def courses_report(user: dict = Depends(_admin_user)):
 # E-Market analytics (extension-2026-09-26)
 # ---------------------------------------------------------------------------
 @router.get("/analytics/emarket")
-async def emarket_analytics(user: dict = Depends(_admin_user)):
+async def emarket_analytics(user: dict = Depends(admin_user)):
     orders = await query("orders", limit=1000)
     users_list = await query("users", limit=1000)
     products = await query("products", limit=1000)
@@ -433,7 +419,7 @@ async def list_finance_loans(
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
 ):
     """Loan application underwriting queue for the superadmin console."""
     filters = [("status", "==", status)] if status else None
@@ -448,7 +434,8 @@ async def list_finance_loans(
 async def update_finance_loan_status(
     applicationId: str,
     body: LoanStatusUpdateIn,
-    user: dict = Depends(_admin_user),
+    user: dict = Depends(admin_user),
+    _audit: dict = Depends(admin_action("UPDATE_LOAN_STATUS")),
 ):
     loan = await get_doc("loan_applications", applicationId)
     if loan is None:
@@ -457,7 +444,7 @@ async def update_finance_loan_status(
         loan = loans_service.advance_status(
             loan,
             body.status,
-            by=user["id"],
+            by=user["uid"],
             note=body.note,
             status_text=loans_service.LOAN_STATUS_TEXT[body.status],
         )
@@ -473,7 +460,7 @@ async def update_finance_loan_status(
         f"aud_loan_{applicationId}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         {
             "action": "UPDATE_LOAN_STATUS",
-            "adminId": user["id"],
+            "adminId": user["uid"],
             "loanId": applicationId,
             "newStatus": body.status,
             "note": body.note,

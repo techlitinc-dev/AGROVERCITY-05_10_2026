@@ -5,7 +5,9 @@ import SiteFooter from '../../components/SiteFooter';
 import SiteHeader from '../../components/SiteHeader';
 import { useT } from '../../lib/i18n';
 import { useOnboardingStore } from '../../stores/onboarding';
+import { useSessionStore } from '../../stores/session';
 import LoginForm from './LoginForm';
+import MpinReentrySheet from './MpinReentrySheet';
 import RegisterWizard from './RegisterWizard';
 import '../../theme/views.css';
 
@@ -25,6 +27,10 @@ export default function AuthView() {
   const t = useT();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const updateWizard = useOnboardingStore((s) => s.updateWizard);
+  const mpinReentryRequired = useSessionStore((s) => s.mpinReentryRequired);
+  const [reentryParam] = useState(
+    () => new URLSearchParams(window.location.search).get('reentry') === 'mpin'
+  );
 
   const openRegister = (phoneE164?: string) => {
     if (phoneE164) {
@@ -32,6 +38,16 @@ export default function AuthView() {
     }
     setMode('register');
   };
+
+  if (mpinReentryRequired || reentryParam) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh' }}>
+        <div id="recaptcha-container" />
+        <SiteHeader step={1} />
+        <MpinReentrySheet />
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100dvh' }}>

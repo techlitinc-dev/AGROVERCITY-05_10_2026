@@ -86,9 +86,9 @@ async function refreshSession(): Promise<string | null> {
         useSessionStore.getState().setTokens(data.accessToken, data.refreshToken);
         return data.accessToken;
       } catch {
-        useSessionStore.getState().clear();
+        useSessionStore.getState().setMpinReentryRequired(true);
         if (!window.location.pathname.startsWith('/auth')) {
-          window.location.assign('/auth');
+          window.location.assign('/auth?reentry=mpin');
         }
         return null;
       } finally {

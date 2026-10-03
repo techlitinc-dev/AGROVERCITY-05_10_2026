@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from firebase_admin import auth as firebase_auth
 from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.ratelimit import hit
 from app.core.security import hash_mpin, validate_mpin_format, verify_mpin
 from app.models.auth import (
     AuthResponse,
@@ -23,7 +24,16 @@ from app.models.role_profiles import ROLE_PROFILE_MODELS
 from app.models.user import RegisterRequest, VALID_PROFILES
 from app.services.notifications import send_fcm_to_user
 from app.services.referrals import record_join
-from app.services.tokens import create_access_token, create_refresh_token, decode_token
+from app.services.tokens import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    decode_token,
+    is_refresh_live,
+    revoke_refresh_family,
+    revoke_refresh_jti,
+    store_refresh_jti,
+)
 from app.services.users import upsert_user_from_firebase
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -55,8 +65,31 @@ def _public_user(user: dict) -> dict:
     return {k: v for k, v in user.items() if k != "mpinHash"}
 
 
+async def _issue_session(uid: str, user_agent: str | None) -> dict:
+    pair = {"accessToken": create_access_token(uid), "refreshToken": create_refresh_token(uid)}
+    _, jti = decode_refresh_token(pair["refreshToken"])
+    await store_refresh_jti(jti, uid)
+    try:
+        from app.core.cache import get_redis
+        from app.core.config import settings
+        now = datetime.now(timezone.utc).isoformat()
+        await (await get_redis()).hset(
+            f"auth:session:{jti}",
+            mapping={"userId": uid, "device": user_agent or "unknown", "createdAt": now, "lastUsedAt": now},
+        )
+        await (await get_redis()).expire(f"auth:session:{jti}", settings.jwt_refresh_ttl_days * 86400)
+    except Exception:
+        pass  # Redis optional in dev; sessions list degrades to empty
+    return pair
+
+
 @router.post("/login", response_model=AuthResponse, response_model_exclude_none=True)
-async def login_with_phone_mpin(body: PhoneMpinLoginRequest):
+async def login_with_phone_mpin(
+    request: Request,
+    body: PhoneMpinLoginRequest,
+    user_agent: str | None = Header(None),
+):
+    await hit("login", f"{request.client.host if request.client else 'unknown'}:{_normalize_phone(body.phone)}", 10, 600)
     phone = _normalize_phone(body.phone)
     validate_mpin_format(body.mpin)
     # A phone can have multiple user docs (demo seeding, quick-login phone
@@ -90,32 +123,34 @@ async def login_with_phone_mpin(body: PhoneMpinLoginRequest):
             _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
         _error(401, "WRONG_MPIN", "incorrect MPIN")
     uid = user["id"]
+    pair = await _issue_session(uid, user_agent)
     return AuthResponse(
-        accessToken=create_access_token(uid),
-        refreshToken=create_refresh_token(uid),
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
         isNewUser=False,
         user=_public_user(user),
     )
 
 
 @router.post("/firebase-verify", response_model=AuthResponse, response_model_exclude_none=True)
-async def firebase_verify(body: FirebaseVerifyRequest):
+async def firebase_verify(body: FirebaseVerifyRequest, user_agent: str | None = Header(None)):
     decoded = _verify_firebase_token(body.idToken)
     uid = decoded["uid"]
     phone = decoded.get("phone_number", "")
     if phone and not phone.startswith("+"):
         phone = "+91" + phone
     user, is_new = await upsert_user_from_firebase(uid, phone)
+    pair = await _issue_session(uid, user_agent)
     return AuthResponse(
-        accessToken=create_access_token(uid),
-        refreshToken=create_refresh_token(uid),
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
         isNewUser=is_new,
         user=_public_user(user),
     )
 
 
 @router.post("/register", response_model=AuthResponse, response_model_exclude_none=True)
-async def register(body: RegisterRequest):
+async def register(body: RegisterRequest, user_agent: str | None = Header(None)):
     decoded = _verify_firebase_token(body.idToken)
     uid = decoded["uid"]
     token_phone = _normalize_phone(decoded.get("phone_number", ""))
@@ -239,9 +274,10 @@ async def register(body: RegisterRequest):
                         "rewardCoins": milestone["rewardCoins"],
                     },
                 )
+    pair = await _issue_session(uid, user_agent)
     return AuthResponse(
-        accessToken=create_access_token(uid),
-        refreshToken=create_refresh_token(uid),
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
         isNewUser=False,
         user=_public_user(user),
         referral={"applied": referrer is not None},
@@ -250,11 +286,15 @@ async def register(body: RegisterRequest):
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(body: RefreshRequest):
-    user_id = decode_token(body.refreshToken, "refresh")
-    return TokenPair(
-        accessToken=create_access_token(user_id),
-        refreshToken=create_refresh_token(user_id),
-    )
+    user_id, jti = decode_refresh_token(body.refreshToken)
+    if not await is_refresh_live(jti):
+        await revoke_refresh_family(user_id)
+        _error(401, "REFRESH_REPLAYED", "refresh token reuse detected — all sessions revoked")
+    await revoke_refresh_jti(jti)
+    new_refresh = create_refresh_token(user_id)
+    _, new_jti = decode_refresh_token(new_refresh)
+    await store_refresh_jti(new_jti, user_id)
+    return TokenPair(accessToken=create_access_token(user_id), refreshToken=new_refresh)
 
 
 @router.post("/mpin/set")
@@ -306,6 +346,7 @@ async def mpin_verify(
 async def mpin_reset(body: MpinResetRequest):
     decoded = _verify_firebase_token(body.idToken)
     uid = decoded["uid"]
+    await hit("otp", decoded.get("phone_number") or decoded["uid"], 5, 600)
     validate_mpin_format(body.newMpin)
     user = await get_doc("users", uid)
     if user is None:
@@ -316,7 +357,7 @@ async def mpin_reset(body: MpinResetRequest):
 
 
 @router.post("/quick-login", response_model=AuthResponse, response_model_exclude_none=True)
-async def quick_login(body: QuickLoginRequest):
+async def quick_login(body: QuickLoginRequest, user_agent: str | None = Header(None)):
     if settings.env != "dev":
         _error(403, "DISABLED_IN_PROD", "quick-login is only available in dev")
     if not body.mpin:
@@ -544,9 +585,10 @@ async def quick_login(body: QuickLoginRequest):
                 existing["mpinHash"] = hash_mpin(body.mpin)
                 await set_doc("users", uid, existing)
             user = existing
+        pair = await _issue_session(uid, user_agent)
         return AuthResponse(
-            accessToken=create_access_token(uid),
-            refreshToken=create_refresh_token(uid),
+            accessToken=pair["accessToken"],
+            refreshToken=pair["refreshToken"],
             isNewUser=False,
             user=_public_user(user),
         )
@@ -559,9 +601,10 @@ async def quick_login(body: QuickLoginRequest):
         if user.get("mpinHash") is None:
             user["mpinHash"] = hash_mpin(body.mpin)
             await set_doc("users", uid, user)
+        pair = await _issue_session(uid, user_agent)
         return AuthResponse(
-            accessToken=create_access_token(uid),
-            refreshToken=create_refresh_token(uid),
+            accessToken=pair["accessToken"],
+            refreshToken=pair["refreshToken"],
             isNewUser=False,
             user=_public_user(user),
         )
@@ -601,10 +644,49 @@ async def quick_login(body: QuickLoginRequest):
         }
         await set_doc("users", uid, user)
 
+    pair = await _issue_session(uid, user_agent)
     return AuthResponse(
-        accessToken=create_access_token(uid),
-        refreshToken=create_refresh_token(uid),
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
         isNewUser=False,
         user=_public_user(user),
     )
+
+
+@router.get("/sessions")
+async def list_sessions(uid: str = Depends(current_user_id)):
+    from app.core.cache import get_redis
+    try:
+        r = await get_redis()
+        jtis = await r.smembers(f"auth:refresh_family:{uid}")
+        sessions = []
+        for jti in sorted(jtis):
+            meta = await r.hgetall(f"auth:session:{jti}")
+            if meta:
+                sessions.append({"id": jti, **meta})
+        return {"sessions": sessions}
+    except Exception:
+        return {"sessions": []}
+
+
+@router.delete("/sessions/{jti}")
+async def revoke_session(jti: str, uid: str = Depends(current_user_id)):
+    from app.core.cache import get_redis
+    try:
+        r = await get_redis()
+        if not await r.sismember(f"auth:refresh_family:{uid}", jti):
+            _error(404, "SESSION_NOT_FOUND", "no such session for this user")
+    except HTTPException:
+        raise
+    except Exception:
+        _error(404, "SESSION_NOT_FOUND", "no such session for this user")
+    await revoke_refresh_jti(jti)
+    return {"ok": True}
+
+
+@router.post("/logout")
+async def logout(body: RefreshRequest):
+    user_id, jti = decode_refresh_token(body.refreshToken)
+    await revoke_refresh_jti(jti)
+    return {"ok": True}
 

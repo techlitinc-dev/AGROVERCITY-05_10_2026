@@ -23,8 +23,13 @@ export async function resetMpin(idToken: string, newMpin: string): Promise<{ ok:
   return data;
 }
 
-export async function verifyMpin(mpin: string): Promise<{ ok: boolean }> {
-  const { data } = await api.post<{ ok: boolean }>('/auth/mpin/verify', { mpin });
+export async function verifyMpin(mpin: string, refreshToken?: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post<{ ok: boolean }>('/auth/mpin/verify', { mpin, refreshToken });
+  return data;
+}
+
+export async function refreshTokens(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const { data } = await api.post<{ accessToken: string; refreshToken: string }>('/auth/refresh', { refreshToken });
   return data;
 }
 

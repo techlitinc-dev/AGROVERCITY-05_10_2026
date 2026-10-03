@@ -42,7 +42,11 @@ async def client(monkeypatch, user_store, fake_redis):
     async def fake_delete_doc(collection, doc_id):
         user_store.pop(_key(collection, doc_id), None)
 
-    def fake_verify_id_token(id_token):
+    def fake_verify_id_token(id_token, check_revoked=False):
+        if id_token == "admin-token":
+            return {"uid": "uid-admin-test", "phone_number": "+919800000000", "admin": True, "role": "superadmin"}
+        if id_token == "plain-token":
+            return {"uid": "uid-plain", "phone_number": "+919800000001"}
         return {"uid": "uid-1", "phone_number": "+919812345678"}
 
     for module in (
@@ -110,6 +114,7 @@ async def client(monkeypatch, user_store, fake_redis):
     ):
         monkeypatch.setattr(f"{module}.get_doc", fake_get_doc)
         monkeypatch.setattr(f"{module}.set_doc", fake_set_doc)
+    monkeypatch.setattr("app.core.deps.set_doc", fake_set_doc)
     monkeypatch.setattr("app.services.blocks.get_doc", fake_get_doc)
     monkeypatch.setattr("app.data.insurance_seed.set_doc", fake_set_doc)
     monkeypatch.setattr("app.services.purge.set_doc", fake_set_doc)

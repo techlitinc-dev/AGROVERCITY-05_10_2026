@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.ratelimit import hit
 from app.routers.purchases import TERMINAL_STATUSES
 from app.services.chat import ensure_chat_room, ensure_direct_room, ensure_offer_room, first_name
 from app.services.notify import notify_user
@@ -163,6 +164,7 @@ async def list_messages(
 
 @router.post("/rooms/{room_id}/messages", status_code=201)
 async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current_user_id)):
+    await hit("chat", uid, 60, 60)
     room, terminal = await _load_room(room_id, uid)
     if terminal:
         _error(409, "CHAT_CLOSED", "this thread is closed — chat is read-only")

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.db import get_doc, query, set_doc
 from app.core.config import settings
 from app.core.deps import current_user_id
+from app.core.ratelimit import hit
 from app.models.marketplace import (
     PlaceOrderRequest,
     RazorpayOrderRequest,
@@ -182,6 +183,7 @@ async def cancel_order(order_id: str, uid: str = Depends(_order_user)):
 
 @router.post("/payments/razorpay/order")
 async def razorpay_order(body: RazorpayOrderRequest, uid: str = Depends(_order_user)):
+    await hit("payments", uid, 20, 60)
     order = await _own_order(body.orderId, uid)
     if not settings.razorpay_key_id:
         _error(503, "PAYMENTS_NOT_CONFIGURED", "payments are not configured")
@@ -198,6 +200,7 @@ async def razorpay_order(body: RazorpayOrderRequest, uid: str = Depends(_order_u
 
 @router.post("/payments/razorpay/verify")
 async def razorpay_verify(body: RazorpayVerifyRequest, uid: str = Depends(_order_user)):
+    await hit("payments", uid, 20, 60)
     order = await _own_order(body.orderId, uid)
     if not verify_razorpay_signature(body.razorpayOrderId, body.razorpayPaymentId, body.razorpaySignature):
         _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")

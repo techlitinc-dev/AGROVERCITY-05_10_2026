@@ -1,6 +1,9 @@
-import firebase_admin.auth as firebase_auth
-from fastapi import Header, HTTPException
+from datetime import datetime, timezone
 
+import firebase_admin.auth as firebase_auth
+from fastapi import Depends, Header, HTTPException, Request
+
+from app.core.db import set_doc
 from app.services.tokens import decode_token
 
 
@@ -32,3 +35,35 @@ async def admin_user(authorization: str | None = Header(None)) -> dict:
     if claims.get("admin") is not True:
         _error(403, "ADMIN_REQUIRED", "यह खाता एडमिन नहीं है")
     return claims
+
+
+def admin_action(action: str):
+    """Mutating-admin dependency: requires X-Audit-Reason + X-Admin-Role headers,
+    validates the role against the caller's claims, and writes an audit_logs doc.
+    Rule 8: no admin action without an audit_logs entry + reason."""
+    async def dep(
+        request: Request,
+        claims: dict = Depends(admin_user),
+        x_audit_reason: str | None = Header(None),
+        x_admin_role: str | None = Header(None),
+    ) -> dict:
+        if not x_audit_reason or not x_audit_reason.strip():
+            _error(400, "AUDIT_REASON_REQUIRED", "X-Audit-Reason header is required")
+        claim_role = claims.get("role", "superadmin")
+        if x_admin_role != claim_role:
+            _error(403, "ADMIN_ROLE_MISMATCH", "X-Admin-Role does not match the caller's claims")
+        target_id = next(iter(request.path_params.values()), "")
+        await set_doc(
+            "audit_logs",
+            f"aud_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}_{claims['uid']}",
+            {
+                "adminId": claims["uid"],
+                "role": claim_role,
+                "action": action,
+                "targetId": target_id,
+                "reason": x_audit_reason,
+                "at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return claims
+    return dep
