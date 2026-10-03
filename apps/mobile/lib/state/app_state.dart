@@ -1,23 +1,33 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../api/api_exception.dart';
 import '../api/auth_api.dart';
+import '../api/chatbot_api.dart';
 import '../api/marketplace_api.dart';
 import '../api/user_api.dart';
+import '../api/vet_api.dart';
 import '../core/session_store.dart';
 import '../models/app_models.dart';
+import '../models/land_market_models.dart';
+import '../models/land_models.dart';
 import '../models/user_profile_type.dart';
-import '../data/demo_data.dart';
 import '../data/translations.dart';
 import 'profile_routes.dart';
 
 class AppState extends ChangeNotifier {
-  AppState({ApiClient? apiClient, AuthApi? authApi, UserApi? userApi, MarketplaceApi? marketplaceApi})
-      : _injectedClient = apiClient,
+  AppState({
+    ApiClient? apiClient,
+    AuthApi? authApi,
+    UserApi? userApi,
+    MarketplaceApi? marketplaceApi,
+    String initialLanguage = 'en',
+  })  : _injectedClient = apiClient,
         _injectedAuthApi = authApi,
         _injectedUserApi = userApi,
-        _injectedMarketplaceApi = marketplaceApi;
+        _injectedMarketplaceApi = marketplaceApi,
+        _language = initialLanguage;
 
   final ApiClient? _injectedClient;
   final AuthApi? _injectedAuthApi;
@@ -31,6 +41,30 @@ class AppState extends ChangeNotifier {
   UserApi get _userApi => _injectedUserApi ?? UserApi(client: _apiClient);
   MarketplaceApi get _marketplaceApi =>
       _injectedMarketplaceApi ?? MarketplaceApi(client: _apiClient);
+  ChatbotApi get _chatbotApi => ChatbotApi(client: _apiClient);
+  VetApi get _vetApi => VetApi(client: _apiClient);
+
+  // True when the signed-in user has claimed a vet profile
+  // (GET /livestock/vets/me returns 200).
+  bool _isVet = false;
+  bool get isVet => _isVet;
+
+  /// Hydrates [_isVet] from the vet workspace endpoint. Any failure (404/403
+  /// when no claimed profile exists, network errors) leaves it false.
+  Future<void> loadVetProfile() async {
+    try {
+      await _vetApi.getMyVetProfile();
+      if (!_isVet) {
+        _isVet = true;
+        notifyListeners();
+      }
+    } catch (_) {
+      if (_isVet) {
+        _isVet = false;
+        notifyListeners();
+      }
+    }
+  }
 
   // Onboarding flow: 'splash' -> 'language' -> 'profileSelect' -> 'register' -> 'map' -> 'dashboard'
   String _onboardingStep = 'splash';
@@ -47,92 +81,26 @@ class AppState extends ChangeNotifier {
   bool _isWomenMode = false;
   bool _isHighContrast = false;
   bool _isDarkMode = false;
-  String _language = 'hi';
-  bool _urgentTaskDone = false;
-  int _syncQueueCount = 2;
+  String _language = 'en';
+  // Derived from the real offline write queue (OfflineQueue.onPendingCountChanged
+  // in main.dart); never seeded with a fabricated count.
+  int _syncQueueCount = 0;
   String? _toastMessage;
 
-  final FarmerProfile _profile = dummyFarmerProfile;
+  // Blank until applyAuthUser() hydrates it from the backend user doc.
+  final FarmerProfile _profile = FarmerProfile.empty();
   List<Map<String, dynamic>> _cartItems = [];
   int _cartTotal = 0;
-  List<GovtScheme> _appliedSchemes = List.from(dummyGovtSchemes);
-  List<BuyerContract> _contracts = List.from(dummyBuyerContracts);
 
-  List<BlogArticle> _blogs = List.from(dummyBlogs);
-  final List<VideoGuide> _videos = List.from(dummyVideos);
-  List<ExpertTalk> _expertTalks = List.from(dummyExpertTalks);
+  final List<KisanMitraMessage> _chatbotMessages = [];
 
-  // New Core Modules State
-  final List<TreeArticle> _treeArticles = List.from(dummyTreeArticles);
-  final List<NgoOrganization> _ngos = List.from(dummyNgos);
-  final List<BiofuelTree> _biofuelTrees = List.from(dummyBiofuelTrees);
-  final List<TreeCareGuide> _treeCareGuides = List.from(dummyTreeCareGuides);
-
-  final List<AgriLiveChannel> _liveChannels = List.from(dummyLiveChannels);
-  final List<AgriNewsItem> _agriNews = List.from(dummyAgriNews);
-
-  final List<GaushalaItem> _gaushalas = List.from(dummyGaushalas);
-  final List<PlantNursery> _nurseries = List.from(dummyNurseries);
-  final List<VetDoctor> _vetDoctors = List.from(dummyVetDoctors);
-  final List<DairyProductItem> _dairyProducts = List.from(dummyDairyProducts);
-
-  List<PaidWorkshop> _paidWorkshops = List.from(dummyPaidWorkshops);
-  final List<FarmDiaryEntry> _farmDiaryEntries = List.from(dummyFarmDiaryEntries);
-  final List<ReferralUser> _referrals = List.from(dummyReferrals);
-
-  // Crop Insurance State
-  final List<CropInsurancePolicy> _insurancePolicies = List.from(dummyInsurancePolicies);
-  final List<InsuranceClaimRecord> _insuranceClaims = List.from(dummyInsuranceClaims);
-  final List<CropPremiumRate> _cropInsuranceRates = List.from(dummyCropInsuranceRates);
-
-  String _userMpin = "1234";
-
-  // CRD Feature States
+  String _userMpin = '';
   String _splashStep = 'group'; // 'group' -> 'kisanSetu' -> 'done'
-  final List<VyapariRate> _vyapariRates = List.from(dummyVyapariRates);
-  List<YantraSlot> _yantraSlots = List.from(dummyYantraSlots);
-  final List<LandRecord712> _landRecords = List.from(dummyLandRecords712);
-  final List<KisanMitraMessage> _chatbotMessages = [
-    KisanMitraMessage(
-      id: 'msg-1',
-      sender: 'bot',
-      text: 'Namaste Ram Singh ji! 🙏\nAaj main aapki kya madad kar sakta hoon?',
-      timestamp: DateTime.now(),
-      quickReplies: ['Mausam 🌤️', 'Mandi Bhav 📈', 'Pest 🐛', 'Pani 💧'],
-    ),
-  ];
 
   // Getters
   String get userMpin => _userMpin;
   String get splashStep => _splashStep;
-  List<VyapariRate> get vyapariRates => _vyapariRates;
-  List<YantraSlot> get yantraSlots => _yantraSlots;
-  List<LandRecord712> get landRecords => _landRecords;
   List<KisanMitraMessage> get chatbotMessages => _chatbotMessages;
-
-  // New Core Modules Getters
-  List<TreeArticle> get treeArticles => _treeArticles;
-  List<NgoOrganization> get ngos => _ngos;
-  List<BiofuelTree> get biofuelTrees => _biofuelTrees;
-  List<TreeCareGuide> get treeCareGuides => _treeCareGuides;
-
-  List<AgriLiveChannel> get liveChannels => _liveChannels;
-  List<AgriNewsItem> get agriNews => _agriNews;
-
-  List<GaushalaItem> get gaushalas => _gaushalas;
-  List<PlantNursery> get nurseries => _nurseries;
-  List<VetDoctor> get vetDoctors => _vetDoctors;
-  List<DairyProductItem> get dairyProducts => _dairyProducts;
-
-  List<PaidWorkshop> get paidWorkshops => _paidWorkshops;
-  List<FarmDiaryEntry> get farmDiaryEntries => _farmDiaryEntries;
-  List<ReferralUser> get referrals => _referrals;
-  String get referralCode => "RAMSINGH2026";
-
-  // Crop Insurance Getters
-  List<CropInsurancePolicy> get insurancePolicies => _insurancePolicies;
-  List<InsuranceClaimRecord> get insuranceClaims => _insuranceClaims;
-  List<CropPremiumRate> get cropInsuranceRates => _cropInsuranceRates;
 
   String get onboardingStep => _onboardingStep;
   bool get isOnboarded => _isOnboarded;
@@ -142,16 +110,10 @@ class AppState extends ChangeNotifier {
   bool get isHighContrast => _isHighContrast;
   bool get isDarkMode => _isDarkMode;
   String get language => _language;
-  bool get urgentTaskDone => _urgentTaskDone;
   int get syncQueueCount => _syncQueueCount;
   String? get toastMessage => _toastMessage;
   FarmerProfile get profile => _profile;
   List<Map<String, dynamic>> get cartItems => _cartItems;
-  List<GovtScheme> get appliedSchemes => _appliedSchemes;
-  List<BuyerContract> get contracts => _contracts;
-  List<BlogArticle> get blogs => _blogs;
-  List<VideoGuide> get videos => _videos;
-  List<ExpertTalk> get expertTalks => _expertTalks;
 
   String tr(String key) => AppTranslations.get(key, _language);
 
@@ -180,25 +142,69 @@ class AppState extends ChangeNotifier {
         ..addAll(linked.map(_profileTypeFromKey));
     }
     final active = user['activeProfile'] as String?;
-    if (active != null) _activeProfile = _profileTypeFromKey(active);
+    if (active != null) {
+      final activeType = _profileTypeFromKey(active);
+      // Adopt the backend's active profile only when it is actually linked;
+      // otherwise a stale/mismatched value would clobber the user's choice.
+      if (_linkedProfiles.contains(activeType)) {
+        _activeProfile = activeType;
+      }
+    }
     _profile.name = (user['name'] as String?) ?? _profile.name;
+    _profile.vernacularName =
+        (user['vernacularName'] as String?) ?? _profile.vernacularName;
     _profile.phone = (user['phone'] as String?) ?? _profile.phone;
     _profile.village = (user['village'] as String?) ?? _profile.village;
     _profile.tehsil = (user['tehsil'] as String?) ?? _profile.tehsil;
     _profile.district = (user['district'] as String?) ?? _profile.district;
     _profile.state = (user['state'] as String?) ?? _profile.state;
+    _profile.soilType = (user['soilType'] as String?) ?? _profile.soilType;
+    _profile.irrigationType =
+        (user['irrigationType'] as String?) ?? _profile.irrigationType;
+    _profile.krishiRatnaTitle =
+        (user['krishiRatnaTitle'] as String?) ?? _profile.krishiRatnaTitle;
+    _profile.bankName = (user['bankName'] as String?) ?? _profile.bankName;
+    _profile.creditTier = (user['creditTier'] as String?) ?? _profile.creditTier;
     final acres = user['landAreaAcres'];
     if (acres is num) _profile.landAreaAcres = acres.toDouble();
     final crops = (user['activeCrops'] as List?)?.cast<String>();
     if (crops != null) _profile.activeCrops = crops;
     final coins = user['agriCoins'];
     if (coins is num) _profile.agriCoins = coins.toInt();
+    final score = user['kisanCreditScore'];
+    if (score is num) _profile.kisanCreditScore = score.toInt();
+    final level = user['krishiRatnaLevel'];
+    if (level is num) _profile.krishiRatnaLevel = level.toInt();
+    final streak = user['streakDays'];
+    if (streak is num) _profile.streakDays = streak.toInt();
+    final kcc = user['kccLimit'];
+    if (kcc is num) _profile.kccLimit = kcc.toInt();
+    final boundary = (user['farmBoundaryPoints'] as List?)
+        ?.map((e) => (e as Map).cast<String, dynamic>())
+        .map((e) => {
+              'lat': (e['lat'] as num?)?.toDouble() ?? 0.0,
+              'lng': (e['lng'] as num?)?.toDouble() ?? 0.0,
+            })
+        .toList();
+    if (boundary != null) _profile.farmBoundaryPoints = boundary;
+    final userLang = (user['preferredLanguage'] ?? user['language']) as String?;
+    if (userLang != null && userLang.isNotEmpty) {
+      if (!isNewUser || _language == 'en') {
+        _language = userLang;
+      }
+    }
     _persist();
     notifyListeners();
+    unawaited(loadVetProfile());
   }
 
   Future<void> updateCurrentUser(Map<String, dynamic> fields) async {
     final user = await _userApi.updateMe(fields);
+    applyAuthUser(user);
+  }
+
+  Future<void> refreshCurrentUser() async {
+    final user = await _userApi.getMe();
     applyAuthUser(user);
   }
   bool get isFarmer => _activeProfile == UserProfileType.farmer;
@@ -215,28 +221,8 @@ class AppState extends ChangeNotifier {
   }
 
   // Yantra Time-Slot Booking (Change 10)
-  void bookYantraSlot(String slotId) {
-    _yantraSlots = _yantraSlots.map((s) {
-      if (s.id == slotId && s.status == 'available') {
-        return YantraSlot(
-          id: s.id,
-          slotName: s.slotName,
-          duration: s.duration,
-          status: 'booked',
-          bookedByName: '${_profile.name} (आपकी बुकिंग)',
-          priceRupees: s.priceRupees,
-          recommendedTask: s.recommendedTask,
-        );
-      }
-      return s;
-    }).toList();
-    _profile.agriCoins += 50;
-    showToast("यंत्र स्लॉट सफलतापूर्वक बुक हुआ! SMS अलर्ट भेजा गया (+50 सिक्के)");
-    notifyListeners();
-  }
-
-  // Kisan Mitra Chatbot Messages (Change 8 & 9)
-  void sendChatbotMessage(String query) {
+  // Kisan Mitra Chatbot Messages (Gemini-Powered + Offline Fallback)
+  Future<void> sendChatbotMessage(String query) async {
     _chatbotMessages.add(KisanMitraMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       sender: 'user',
@@ -245,62 +231,46 @@ class AppState extends ChangeNotifier {
     ));
     notifyListeners();
 
-    // Simulated Bot Response
-    Future.delayed(const Duration(milliseconds: 700), () {
-      final qLower = query.toLowerCase();
-      KisanMitraMessage botReply;
+    try {
+      final res = await _chatbotApi.sendMessage(
+        text: query,
+        language: _language,
+        context: {
+          'farmerName': _profile.name,
+          'district': _profile.district,
+          'village': _profile.village,
+          'activeCrops': _profile.activeCrops,
+        },
+      );
+      final replyText = res['text'] as String? ?? '';
+      final quickReplies = (res['quickReplies'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[];
+      final richCardType = res['richCardType'] as String?;
+      final richCardData = (res['richCardData'] as Map?)?.cast<String, dynamic>();
 
-      if (qLower.contains('tamatar') || qLower.contains('tomato') || qLower.contains('sow')) {
-        botReply = KisanMitraMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          sender: 'bot',
-          text: '⚠️ MARKET JAANKARI ALERT:\nAapke 5km ke aas-paas 12 kisanon ne tamatar lagaya hai. Mandi mein 200% zyada aavak aane par bhav ₹12-15/kg gir sakta hai.',
-          timestamp: DateTime.now(),
-          richCardType: 'saturation',
-          richCardData: {
-            'crop': 'Tomato (टमाटर)',
-            'sowingCount': 12,
-            'radiusKm': 5,
-            'arrivalIncrease': '200%',
-            'predictedPrice': '₹12-15/kg',
-            'riskLevel': 'high',
-            'alternativeCrop': 'Capsicum (शिमला मिर्च)',
-            'altPrice': '₹25-30/kg',
-          },
-          quickReplies: ['Capsicum jankari 🌶️', 'Phir bhi Tamatar lagayein 🍅', 'Expert se baat karein 📞'],
-        );
-      } else if (qLower.contains('mausam') || qLower.contains('weather')) {
-        botReply = KisanMitraMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          sender: 'bot',
-          text: '🌤️ Nashik Mausam:\nAaj 27°C aanshik baadal hain. Dopahar 1:00 baje 65% varsha ki sambhavna hai.',
-          timestamp: DateTime.now(),
-          quickReplies: ['Spray Alert 🌧️', 'Mandi Bhav 📈', 'Mukhya Seva 🚜'],
-        );
-      } else {
-        botReply = KisanMitraMessage(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          sender: 'bot',
-          text: 'Ram Ram ${_profile.name} ji! Main aapki fasal suraksha, mandi bhav aur sarkari yojanaon mein madad kar sakta hoon.',
-          timestamp: DateTime.now(),
-          quickReplies: ['Mausam 🌤️', 'Mandi Bhav 📈', 'Pest Scan 📸', 'Yantra Booking 🚜'],
-        );
-      }
-
-      _chatbotMessages.add(botReply);
+      _chatbotMessages.add(KisanMitraMessage(
+        id: res['id']?.toString() ??
+            DateTime.now().millisecondsSinceEpoch.toString(),
+        sender: 'bot',
+        text: replyText.isEmpty ? tr('chatbot.offlineNotice') : replyText,
+        timestamp: DateTime.now(),
+        richCardType: richCardType,
+        richCardData: richCardData,
+        quickReplies: quickReplies,
+      ));
       notifyListeners();
-    });
-  }
-
-  // 7/12 Land Record Search (Change 11)
-  List<LandRecord712> search712Records(String query) {
-    if (query.trim().isEmpty) return _landRecords;
-    final q = query.toLowerCase();
-    return _landRecords.where((r) =>
-      r.gatNumber.toLowerCase().contains(q) ||
-      r.village.toLowerCase().contains(q) ||
-      r.ownerName.toLowerCase().contains(q)
-    ).toList();
+    } catch (_) {
+      // Never fabricate an answer: surface an explicit offline/error notice.
+      _chatbotMessages.add(KisanMitraMessage(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        sender: 'bot',
+        text: tr('chatbot.offlineNotice'),
+        timestamp: DateTime.now(),
+      ));
+      notifyListeners();
+    }
   }
 
   void updateProfileArea(double acres) {
@@ -322,7 +292,15 @@ class AppState extends ChangeNotifier {
     _language = lang;
     _onboardingStep = 'profileSelect';
     _persist();
-    showToast("भाषा चुनी गई: ${AppTranslations.languageNames[lang]}");
+    _syncLanguageToBackend(lang);
+    final langName = AppTranslations.languageNames[lang] ?? lang;
+    if (lang == 'mr') {
+      showToast("भाषा निवडली: $langName");
+    } else if (lang == 'hi') {
+      showToast("भाषा चुनी गई: $langName");
+    } else {
+      showToast("Language selected: $langName");
+    }
     notifyListeners();
   }
 
@@ -333,7 +311,14 @@ class AppState extends ChangeNotifier {
     }
     _onboardingStep = 'register';
     _persist();
-    showToast("प्रोफाइल चुनी गई: ${activeProfileMeta.labelHi}");
+    final label = activeProfileMeta.label(_language);
+    if (_language == 'mr') {
+      showToast("प्रोफाइल निवडली: $label");
+    } else if (_language == 'hi') {
+      showToast("प्रोफाइल चुनी गई: $label");
+    } else {
+      showToast("Profile selected: $label");
+    }
     notifyListeners();
   }
 
@@ -354,15 +339,21 @@ class AppState extends ChangeNotifier {
     _onboardingStep = 'register';
     _persist();
     final count = _linkedProfiles.length;
-    final names = _linkedProfiles.map((p) => UserProfileRegistry.meta(p).labelHi).join(", ");
-    showToast("✨ $count प्रोफाइल चुनी गईं ($names)!");
+    final names = _linkedProfiles.map((p) => UserProfileRegistry.meta(p).label(_language)).join(", ");
+    if (_language == 'mr') {
+      showToast("✨ $count प्रोफाइल निवडल्या ($names)!");
+    } else if (_language == 'hi') {
+      showToast("✨ $count प्रोफाइल चुनी गईं ($names)!");
+    } else {
+      showToast("✨ $count profiles selected ($names)!");
+    }
     notifyListeners();
   }
 
   void toggleLinkedProfile(UserProfileType type) {
     if (_linkedProfiles.contains(type)) {
       if (_linkedProfiles.length <= 1) {
-        showToast("कम से कम एक प्रोफाइल आवश्यक है");
+        showToast(tr('atLeastOneProfile'));
         return;
       }
       _linkedProfiles.remove(type);
@@ -371,11 +362,11 @@ class AppState extends ChangeNotifier {
         _currentRoute = ProfileRoutes.defaultRouteFor(_activeProfile);
       }
       _persist();
-      showToast("${UserProfileRegistry.meta(type).labelHi} प्रोफाइल हटाई गई");
+      showToast("${UserProfileRegistry.meta(type).label(_language)} प्रोफाइल हटाई गई");
     } else {
       _linkedProfiles.add(type);
       _persist();
-      showToast("✨ नई प्रोफाइल जुड़ी: ${UserProfileRegistry.meta(type).labelHi}");
+      showToast("✨ नई प्रोफाइल जुड़ी: ${UserProfileRegistry.meta(type).label(_language)}");
     }
     notifyListeners();
   }
@@ -385,24 +376,36 @@ class AppState extends ChangeNotifier {
     _activeProfile = type;
     _currentRoute = ProfileRoutes.defaultRouteFor(type);
     _persist();
-    showToast("प्रोफाइल बदली: ${activeProfileMeta.labelHi}");
+    showToast("प्रोफाइल बदली: ${activeProfileMeta.label(_language)}");
     notifyListeners();
   }
 
   // API-backed profile switching; ApiException propagates to the caller.
   Future<void> activateProfileApi(UserProfileType type) async {
-    final res = await _userApi.activateProfile(type.name);
-    final user = (res['user'] as Map?)?.cast<String, dynamic>();
-    if (user != null) applyAuthUser(user);
-    final route = res['defaultHomeRoute'] as String?;
-    _navigationHistory.clear();
-    _currentRoute =
-        route != null && ProfileRoutes.canAccess(_activeProfile, route)
-            ? route
-            : ProfileRoutes.defaultRouteFor(_activeProfile);
-    _persist();
-    showToast("प्रोफाइल बदली गई");
-    notifyListeners();
+    if (_isOffline) {
+      switchProfile(type);
+      return;
+    }
+    try {
+      final res = await _userApi.activateProfile(type.name);
+      final user = (res['user'] as Map?)?.cast<String, dynamic>();
+      if (user != null) applyAuthUser(user);
+      final route = res['defaultHomeRoute'] as String?;
+      _navigationHistory.clear();
+      _currentRoute =
+          route != null && ProfileRoutes.canAccess(_activeProfile, route)
+              ? route
+              : ProfileRoutes.defaultRouteFor(_activeProfile);
+      _persist();
+      showToast("प्रोफाइल बदली गई");
+      notifyListeners();
+    } on ApiException catch (e) {
+      if (e.code == 'NETWORK_ERROR') {
+        switchProfile(type);
+        return;
+      }
+      rethrow;
+    }
   }
 
   Future<void> linkProfileApi(UserProfileType type) async {
@@ -452,10 +455,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool verifyMpin(String mpin) {
-    return _userMpin == mpin || mpin == "1234";
-  }
-
   Future<void> resetMpinWithOtp({
     required String idToken,
     required String newMpin,
@@ -467,6 +466,22 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // The farmer persona is the platform default: whenever it is linked, a new
+  // session starts on the farmer dashboard. Other personas stay one tap away
+  // via the profile switcher.
+  Future<void> _applyDefaultLanding() async {
+    if (_linkedProfiles.contains(UserProfileType.farmer) &&
+        _activeProfile != UserProfileType.farmer) {
+      _activeProfile = UserProfileType.farmer;
+      try {
+        await _userApi.activateProfile('farmer');
+      } catch (e) {
+        debugPrint("Default farmer activation failed: $e");
+      }
+    }
+    _currentRoute = ProfileRoutes.defaultRouteFor(_activeProfile);
+  }
+
   // MPIN login after Firebase phone sign-in; false = backend rejected the MPIN.
   Future<bool> loginWithMobileAndMpin(String phone, String mpin) async {
     try {
@@ -474,9 +489,17 @@ class AppState extends ChangeNotifier {
     } on ApiException {
       return false;
     }
+    // Hydrate the account from the backend so linked/active profiles (and the
+    // rest of the user doc) are correct even on a fresh device/browser where
+    // only defaults were persisted locally.
+    try {
+      await refreshCurrentUser();
+    } catch (e) {
+      debugPrint("Profile hydrate after MPIN login failed: $e");
+    }
     _isOnboarded = true;
     _onboardingStep = 'dashboard';
-    _currentRoute = ProfileRoutes.defaultRouteFor(_activeProfile);
+    await _applyDefaultLanding();
     _persist();
     showToast("सुरक्षित MPIN लॉगिन सफल! स्वागत है ${_profile.name}।");
     notifyListeners();
@@ -494,6 +517,36 @@ class AppState extends ChangeNotifier {
     return isNewUser;
   }
 
+  // Direct phone + MPIN login for returning users — no OTP. The backend
+  // /auth/login endpoint verifies the MPIN and returns the token pair.
+  // Throws ApiException; callers branch on code: USER_NOT_FOUND (route to
+  // OTP registration), MPIN_NOT_SET (route to OTP then set MPIN),
+  // WRONG_MPIN (show the pad error).
+  Future<void> loginWithPhoneMpin(String phone, String mpin) async {
+    final res = await _authApi.loginWithPhoneMpin(phone, mpin);
+    applyAuthUser((res['user'] as Map?)?.cast<String, dynamic>() ?? {});
+    _userMpin = mpin;
+    _isOnboarded = true;
+    _onboardingStep = 'dashboard';
+    await _applyDefaultLanding();
+    _persist();
+    showToast("सुरक्षित MPIN लॉगिन सफल! स्वागत है ${_profile.name}।");
+    notifyListeners();
+  }
+
+  // OTP-verified session (tokens already issued via firebaseVerify) where the
+  // account never had an MPIN: store it, then complete onboarding.
+  Future<void> setMpinForCurrentSession(String mpin) async {
+    await _authApi.mpinSet(mpin);
+    _userMpin = mpin;
+    _isOnboarded = true;
+    _onboardingStep = 'dashboard';
+    await _applyDefaultLanding();
+    _persist();
+    showToast("MPIN सेट हो गया! स्वागत है ${_profile.name}।");
+    notifyListeners();
+  }
+
   void loginWithMpin(String phone, String mpin) {
     loginWithMobileAndMpin(phone, mpin);
   }
@@ -501,7 +554,7 @@ class AppState extends ChangeNotifier {
   void loginWithBiometrics() {
     _isOnboarded = true;
     _onboardingStep = 'dashboard';
-    _currentRoute = ProfileRoutes.defaultRouteFor(_activeProfile);
+    _applyDefaultLanding();
     _persist();
     showToast("⚡ बायोमेट्रिक प्रमाणीकरण सफल! स्वागत है ${_profile.name}।");
     notifyListeners();
@@ -536,10 +589,12 @@ class AppState extends ChangeNotifier {
       irrigationType: irrigationType,
       crops: crops,
       mpin: mpin,
-      profiles: _linkedProfiles.map((t) => t.name).toList(),
-      primaryProfile: _activeProfile.name,
+      profiles: linkedProfiles.map((t) => t.name).toList(),
+      primaryProfile: activeProfile.name,
       referralCode: referralCode,
       roleProfiles: roleProfiles,
+      language: _language,
+      preferredLanguage: _language,
     );
     applyAuthUser((res['user'] as Map?)?.cast<String, dynamic>() ?? {});
     _userMpin = mpin;
@@ -557,7 +612,7 @@ class AppState extends ChangeNotifier {
     _profile.landAreaAcres = acres;
     _isOnboarded = true;
     _onboardingStep = 'dashboard';
-    _currentRoute = ProfileRoutes.defaultRouteFor(_activeProfile);
+    await _applyDefaultLanding();
     _persist();
     showToast("🌾 खेत का नक्शा दर्ज हुआ ($acres एकड़)! AGROVERCITY में स्वागत है!");
     notifyListeners();
@@ -568,13 +623,84 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? _selectedTrip;
   Map<String, dynamic>? _selectedVehicle;
   Map<String, dynamic>? _selectedEquipment;
+  LandLease? _selectedLease;
+  LandListing? _selectedListing;
+  int _cropInsuranceInitialTab = 0;
+  String? _selectedDemandId;
+  String? _selectedPurchaseId;
+  String? _selectedLoanId;
   Map<String, dynamic>? get selectedTrip => _selectedTrip;
   Map<String, dynamic>? get selectedVehicle => _selectedVehicle;
   Map<String, dynamic>? get selectedEquipment => _selectedEquipment;
+  LandLease? get selectedLease => _selectedLease;
+  LandListing? get selectedListing => _selectedListing;
+  int get cropInsuranceInitialTab => _cropInsuranceInitialTab;
+  String? get selectedDemandId => _selectedDemandId;
+  String? get selectedPurchaseId => _selectedPurchaseId;
+  String? get selectedLoanId => _selectedLoanId;
+
+  void openLoanDetail(String loanId) {
+    _selectedLoanId = loanId;
+    navigateTo('loanDetail');
+  }
+
+  void openLoanReview(String loanId) {
+    _selectedLoanId = loanId;
+    navigateTo('loanReview');
+  }
+
+  void openDemandDetail(String demandId) {
+    _selectedDemandId = demandId;
+    navigateTo('demandDetail');
+  }
+
+  void openPurchaseDetail(String purchaseId) {
+    _selectedPurchaseId = purchaseId;
+    navigateTo('purchaseDetail');
+  }
+
+  // Claim push/notification deep-link lands on the tracker tab (Day 11 B3).
+  void openClaimTracker() {
+    _cropInsuranceInitialTab = 3;
+    navigateTo('cropInsurance');
+  }
+
+  void setSyncQueueCount(int count) {
+    _syncQueueCount = count;
+    notifyListeners();
+  }
 
   void openTripDetail(Map<String, dynamic> booking) {
     _selectedTrip = booking;
     navigateTo('tripDetail');
+  }
+
+  void openLiveTracking(Map<String, dynamic> booking) {
+    _selectedTrip = booking;
+    navigateTo('liveTracking');
+  }
+
+  void openBilty(Map<String, dynamic> booking) {
+    _selectedTrip = booking;
+    navigateTo('biltyView');
+  }
+
+  void openLoadBoard() {
+    navigateTo('loadBoard');
+  }
+
+  void openTransporterProfile() {
+    navigateTo('transporterProfile');
+  }
+
+  void openRentTracking(LandLease lease) {
+    _selectedLease = lease;
+    navigateTo('landlordRent');
+  }
+
+  void openLeaseRequests(LandListing listing) {
+    _selectedListing = listing;
+    navigateTo('leaseRequests');
   }
 
   void openVehicleCalendar(Map<String, dynamic> vehicle) {
@@ -613,6 +739,7 @@ class AppState extends ChangeNotifier {
   void logout() {
     SessionStore().clear();
     _isOnboarded = false;
+    _isVet = false;
     _onboardingStep = 'register';
     _currentRoute = 'home';
     _navigationHistory.clear();
@@ -667,13 +794,35 @@ class AppState extends ChangeNotifier {
           _currentRoute = ProfileRoutes.defaultRouteFor(_activeProfile);
         }
       }
-      final lang = prefs.getString('language');
+      final lang = prefs.getString('language') ??
+          prefs.getString('preferred_language') ??
+          prefs.getString('app_language');
       if (lang != null && lang.isNotEmpty) {
         _language = lang;
+      } else {
+        _language = 'en';
       }
       notifyListeners();
     } catch (e) {
       debugPrint("SharedPreferences load error: $e");
+    }
+  }
+
+  Future<void> _syncLanguageToBackend(String lang) async {
+    try {
+      // Not signed in yet (e.g. picking a language during onboarding):
+      // the language is sent with the registration payload instead, so
+      // skip the authenticated settings call.
+      if (await SessionStore().accessToken == null) return;
+      await _userApi.updateSettings({
+        'language': lang,
+        'preferredLanguage': lang,
+        'womenMode': _isWomenMode,
+        'highContrast': _isHighContrast,
+        'darkMode': _isDarkMode,
+      });
+    } catch (e) {
+      debugPrint("Sync language to backend: $e");
     }
   }
 
@@ -688,6 +837,8 @@ class AppState extends ChangeNotifier {
       );
       await prefs.setBool('isOnboarded', _isOnboarded);
       await prefs.setString('language', _language);
+      await prefs.setString('preferred_language', _language);
+      await prefs.setString('app_language', _language);
     } catch (e) {
       debugPrint("SharedPreferences save error: $e");
     }
@@ -727,14 +878,16 @@ class AppState extends ChangeNotifier {
 
   void setLanguage(String lang) {
     _language = lang;
-    showToast("भाषा बदली: ${AppTranslations.languageNames[lang]}");
-    notifyListeners();
-  }
-
-  void markUrgentTaskDone() {
-    _urgentTaskDone = true;
-    _profile.agriCoins += 50;
-    showToast("टास्क पूर्ण! +50 कृषि सिक्के अर्जित!");
+    _persist();
+    _syncLanguageToBackend(lang);
+    final langName = AppTranslations.languageNames[lang] ?? lang;
+    if (lang == 'mr') {
+      showToast("भाषा बदलली: $langName");
+    } else if (lang == 'hi') {
+      showToast("भाषा बदली: $langName");
+    } else {
+      showToast("Language changed: $langName");
+    }
     notifyListeners();
   }
 
@@ -757,212 +910,32 @@ class AppState extends ChangeNotifier {
     showToast("सामग्री थैले से हटाई गई");
   }
 
-  void applyForScheme(String schemeId) {
-    _appliedSchemes = _appliedSchemes.map((s) {
-      if (s.id == schemeId) {
-        return GovtScheme(
-          id: s.id,
-          name: s.name,
-          category: s.category,
-          eligible: s.eligible,
-          benefitAmount: s.benefitAmount,
-          documentsRequired: s.documentsRequired,
-          status: "आवेदन जमा (Pending Verification)",
-          nextDeadline: s.nextDeadline,
-          description: s.description,
-        );
-      }
-      return s;
-    }).toList();
-    _profile.agriCoins += 100;
-    showToast("योजना आवेदन सफलतापूर्वक जमा! +100 सिक्के!");
-    notifyListeners();
-  }
+  Timer? _toastTimer;
 
-  void acceptContract(String contractId) {
-    _contracts = _contracts.map((c) {
-      if (c.id == contractId) {
-        return BuyerContract(
-          id: c.id,
-          buyerCompany: c.buyerCompany,
-          buyerRating: c.buyerRating,
-          crop: c.crop,
-          lockedRateQuintal: c.lockedRateQuintal,
-          mspCurrentRate: c.mspCurrentRate,
-          premiumAboveMSP: c.premiumAboveMSP,
-          minQuantityQuintals: c.minQuantityQuintals,
-          deliveryLocation: c.deliveryLocation,
-          paymentTerms: c.paymentTerms,
-          status: "Digital Agreement Signed & Confirmed",
-          contractDuration: c.contractDuration,
-        );
-      }
-      return c;
-    }).toList();
-    _profile.agriCoins += 250;
-    showToast("खरीदार अनुबंध सफलतापूर्वक लॉक! +250 सिक्के!");
-    notifyListeners();
-  }
-
-  void redeemCoupon(String title, int cost) {
-    if (_profile.agriCoins < cost) {
-      showToast("पर्याप्त सिक्के नहीं हैं!");
-      return;
+  void clearToast() {
+    _toastTimer?.cancel();
+    _toastTimer = null;
+    if (_toastMessage != null) {
+      _toastMessage = null;
+      notifyListeners();
     }
-    _profile.agriCoins -= cost;
-    showToast("बधाई! '$title' कूपन अनलॉक हुआ!");
-    notifyListeners();
-  }
-
-  void toggleBookmarkBlog(String blogId) {
-    _blogs = _blogs.map((b) {
-      if (b.id == blogId) {
-        b.isBookmarked = !b.isBookmarked;
-        showToast(b.isBookmarked ? "लेख बुकमार्क किया गया!" : "बुकमार्क हटाया गया");
-      }
-      return b;
-    }).toList();
-    notifyListeners();
-  }
-
-  void registerForExpertTalk(String talkId) {
-    _expertTalks = _expertTalks.map((t) {
-      if (t.id == talkId) {
-        showToast("आप '${t.expertName}' के लाइव मास्टरक्लास हेतु पंजीकृत हो गए हैं!");
-      }
-      return t;
-    }).toList();
-    _profile.agriCoins += 25;
-    notifyListeners();
-  }
-
-  // 1. Tree Plantation Actions
-  void requestSaplings({required String ngoName, required int count, required String treeType}) {
-    _profile.agriCoins += 30;
-    showToast("🎉 '$ngoName' कडे $count $treeType रोपांची मागणी नोंदवली! (+30 नाणी)");
-    notifyListeners();
-  }
-
-  // 2. Livestock & Vet Actions
-  void bookVetDoctor({required String doctorName, required String slot, required bool isFarmVisit}) {
-    final type = isFarmVisit ? "शेतावर प्रत्यक्ष भेट" : "दवाखाना अपॉइंटमेंट";
-    showToast("✅ $doctorName यांच्यासोबत $slot साठी $type निश्चित झाली!");
-    notifyListeners();
-  }
-
-  void orderGaushalaManure({required String gaushalaName, required String item}) {
-    _profile.agriCoins += 20;
-    showToast("📦 $gaushalaName कडून '$item' ऑर्डर बुक झाली! (+20 नाणी)");
-    notifyListeners();
-  }
-
-  void orderDairyProduct(DairyProductItem product) {
-    showToast("🛒 '${product.vernacularTitle}' यशस्वीरित्या बुक झाले! लवकरच वितरण होईल.");
-    notifyListeners();
-  }
-
-  // 4. DnyanSetu Workshop Enrollment
-  void enrollWorkshop(String workshopId, bool useCoins) {
-    _paidWorkshops = _paidWorkshops.map((w) {
-      if (w.id == workshopId) {
-        w.isEnrolled = true;
-        if (useCoins && _profile.agriCoins >= w.coinsDiscountAllowed) {
-          _profile.agriCoins -= w.coinsDiscountAllowed;
-        }
-      }
-      return w;
-    }).toList();
-    showToast("🎓 कार्यशाळेत यशस्वी प्रवेश! ICAR संलग्न डिजिटल प्रमाणपत्र अनलॉक झाले!");
-    notifyListeners();
-  }
-
-  // 5. Daily Farm Diary Actions
-  void addDiaryEntry(FarmDiaryEntry entry) {
-    _farmDiaryEntries.insert(0, entry);
-    _profile.agriCoins += 15;
-    showToast("📒 शेती नोंद यशस्वीरित्या जोडली गेली! (+15 नाणी)");
-    notifyListeners();
-  }
-
-  void deleteDiaryEntry(String id) {
-    _farmDiaryEntries.removeWhere((e) => e.id == id);
-    showToast("नोंद हटवली गेली");
-    notifyListeners();
-  }
-
-  // 5. Refer & Earn Actions
-  void inviteFarmer({required String name, required String phone}) {
-    final newRef = ReferralUser(
-      id: "ref-${DateTime.now().millisecondsSinceEpoch}",
-      farmerName: name,
-      village: "नाशिक परिसर",
-      phone: phone,
-      joinDate: "आज",
-      status: "Invited (आमंत्रण पाठवले)",
-      rewardCoins: 100,
-    );
-    _referrals.insert(0, newRef);
-    _profile.agriCoins += 100;
-    showToast("🎁 शेतकरी मित्राला आमंत्रण पाठवले! +100 नाणी तुमच्या खात्यात जमा!");
-    notifyListeners();
-  }
-
-  // 6. Crop Insurance (फसल बीमा) Actions
-  void submitCropClaim({
-    required String policyId,
-    required String cropName,
-    required String vernacularCropName,
-    required String calamityType,
-    required String dateOfDamage,
-    required int estimatedLossPercent,
-    required double requestedAmount,
-    required String gpsCoordinates,
-    required String village,
-    List<String> damagePhotos = const [],
-  }) {
-    final claimId = "clm-${DateTime.now().millisecondsSinceEpoch}";
-    final randomSuffix = (1000 + (DateTime.now().millisecond % 9000)).toString();
-    final claimNum = "CLM-2026-MH-$randomSuffix";
-
-    final newClaim = InsuranceClaimRecord(
-      id: claimId,
-      claimNumber: claimNum,
-      policyId: policyId,
-      cropName: cropName,
-      vernacularCropName: vernacularCropName,
-      calamityType: calamityType,
-      dateOfDamage: dateOfDamage,
-      estimatedLossPercent: estimatedLossPercent,
-      requestedAmount: requestedAmount,
-      approvedAmount: (requestedAmount * 0.90),
-      status: ClaimStatus.intimated,
-      statusText: "सूचना दर्ज (Claim Intimated - 72h Window)",
-      surveyorName: "Pravin Bhalerao (नियुक्त कृषि सर्वेक्षक)",
-      surveyorPhone: "+91 98231 77650",
-      surveyorVisitDate: "48 घंटे के भीतर खेत निरीक्षण",
-      gpsCoordinates: gpsCoordinates,
-      village: village,
-      damagePhotos: damagePhotos,
-      submittedAt: "आज, ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}",
-      bankAccountLast4: "8842",
-    );
-
-    _insuranceClaims.insert(0, newClaim);
-    _profile.agriCoins += 50; // reward coins for fast intimation
-    showToast("✅ फसल नुकसान दावा $claimNum सफलतापूर्वक दर्ज! कृषि सर्वेक्षक 48 घंटे में निरीक्षण करेंगे।");
-    notifyListeners();
-  }
-
-  void downloadPolicyCertificate(String policyNumber) {
-    showToast("📄 ई-पॉलिसी प्रमाण पत्र ($policyNumber) डाउनलोड हो गया है।");
   }
 
   void showToast(String message) {
     _toastMessage = message;
     notifyListeners();
-    Future.delayed(const Duration(seconds: 4), () {
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(seconds: 4), () {
       _toastMessage = null;
+      _toastTimer = null;
       notifyListeners();
     });
+  }
+
+  @override
+  void dispose() {
+    _toastTimer?.cancel();
+    _toastTimer = null;
+    super.dispose();
   }
 }

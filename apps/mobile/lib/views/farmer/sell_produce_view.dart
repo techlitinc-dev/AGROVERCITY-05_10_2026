@@ -5,14 +5,21 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../api/api_exception.dart';
 import '../../api/lots_api.dart';
+import '../../api/reference_api.dart';
 import '../../components/market/lot_card.dart';
 import '../../state/app_state.dart';
 
 class SellProduceView extends StatefulWidget {
   final AppState state;
   final LotsApi? lotsApi;
+  final ReferenceApi? referenceApi;
 
-  const SellProduceView({super.key, required this.state, this.lotsApi});
+  const SellProduceView({
+    super.key,
+    required this.state,
+    this.lotsApi,
+    this.referenceApi,
+  });
 
   @override
   State<SellProduceView> createState() => _SellProduceViewState();
@@ -20,10 +27,14 @@ class SellProduceView extends StatefulWidget {
 
 class _SellProduceViewState extends State<SellProduceView> {
   late final LotsApi _api = widget.lotsApi ?? LotsApi();
+  late final ReferenceApi _referenceApi =
+      widget.referenceApi ?? ReferenceApi();
   final _quantityCtrl = TextEditingController();
   final _rateCtrl = TextEditingController();
+  final _cropCtrl = TextEditingController();
 
-  late String _crop = _cropOptions().first;
+  late String _crop = _cropOptions().isNotEmpty ? _cropOptions().first : '';
+  List<String> _regionCrops = const [];
   DateTime _harvestDate = DateTime.now();
   final List<String> _photos = [];
   String? _editingId;
@@ -36,21 +47,40 @@ class _SellProduceViewState extends State<SellProduceView> {
   void initState() {
     super.initState();
     _loadLots();
+    _loadRegionCrops();
   }
 
   @override
   void dispose() {
     _quantityCtrl.dispose();
     _rateCtrl.dispose();
+    _cropCtrl.dispose();
     super.dispose();
   }
 
+  // Crop suggestions come from the farmer's active crops (backend-hydrated)
+  // plus the district crop catalogue; free-text entry always stays available.
   List<String> _cropOptions() {
     final crops = [...widget.state.profile.activeCrops];
-    for (final c in const ['Onion (प्याज)', 'Tomato (टमाटर)', 'Wheat (गेहूं)']) {
+    for (final c in _regionCrops) {
       if (!crops.contains(c)) crops.add(c);
     }
     return crops;
+  }
+
+  Future<void> _loadRegionCrops() async {
+    final district = widget.state.profile.district;
+    if (district.isEmpty) return;
+    try {
+      final region = await _referenceApi.getRegionCrops(district);
+      if (!mounted) return;
+      setState(() {
+        _regionCrops = region.suggested;
+        if (_crop.isEmpty && _cropOptions().isNotEmpty) {
+          _crop = _cropOptions().first;
+        }
+      });
+    } catch (_) {}
   }
 
   (double, double) _centroid() {
@@ -97,7 +127,7 @@ class _SellProduceViewState extends State<SellProduceView> {
           await ref.putData(await file.readAsBytes());
           _photos.add(await ref.getDownloadURL());
         } catch (_) {
-          _snack("फोटो अपलोड विफल");
+          _snack(widget.state.tr('trade.photoUploadFailed'));
         }
       }
       if (mounted) setState(() {});
@@ -117,7 +147,7 @@ class _SellProduceViewState extends State<SellProduceView> {
   Future<void> _submit() async {
     final quantity = double.tryParse(_quantityCtrl.text.trim()) ?? 0;
     if (quantity <= 0) {
-      setState(() => _quantityError = "मात्रा 0 से अधिक होनी चाहिए");
+      setState(() => _quantityError = widget.state.tr('trade.quantityMustBePositive'));
       return;
     }
     setState(() {
@@ -136,10 +166,10 @@ class _SellProduceViewState extends State<SellProduceView> {
     try {
       if (_editingId != null) {
         await _api.updateLot(_editingId!, fields);
-        _snack("लॉट अपडेट हुआ");
+        _snack(widget.state.tr('trade.lotUpdated'));
       } else {
         await _api.createLot(fields);
-        _snack("लॉट पोस्ट हुआ");
+        _snack(widget.state.tr('trade.lotPosted'));
       }
       _quantityCtrl.clear();
       _rateCtrl.clear();
@@ -172,14 +202,14 @@ class _SellProduceViewState extends State<SellProduceView> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("लॉट वापस लें?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-        content: Text("${lot['crop']} — ${lot['quantityQuintals']} क्विंटल"),
+        title: Text(widget.state.tr('trade.withdrawLotTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        content: Text("${lot['crop']} — ${lot['quantityQuintals']} ${widget.state.tr('trade.quintal')}"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("रद्द करें")),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(widget.state.tr('cancel'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("वापस लें"),
+            child: Text(widget.state.tr('trade.withdraw')),
           ),
         ],
       ),
@@ -187,7 +217,7 @@ class _SellProduceViewState extends State<SellProduceView> {
     if (confirmed != true) return;
     try {
       await _api.withdrawLot("${lot['id']}");
-      _snack("लॉट वापस लिया गया");
+      _snack(widget.state.tr('trade.lotWithdrawn'));
       await _loadLots();
     } on ApiException catch (e) {
       _snack(e.message);
@@ -203,59 +233,66 @@ class _SellProduceViewState extends State<SellProduceView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _editingId == null ? "अपनी उपज बेचें (Lot Form)" : "लॉट संपादित करें",
+            _editingId == null ? widget.state.tr('sellYourProduce') : widget.state.tr('trade.editLotTitle'),
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 12),
           LotFormField(
-            label: "फसल",
-            child: DropdownButton<String>(
-              value: _crop,
-              isExpanded: true,
-              underline: const SizedBox.shrink(),
-              items: [
-                for (final c in _cropOptions())
-                  DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13))),
-              ],
-              onChanged: (v) => setState(() => _crop = v ?? _crop),
-            ),
+            label: widget.state.tr('trade.cropLabel'),
+            child: _cropOptions().isNotEmpty
+                ? DropdownButton<String>(
+                    value: _crop.isEmpty ? null : _crop,
+                    isExpanded: true,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      for (final c in _cropOptions())
+                        DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13))),
+                    ],
+                    onChanged: (v) => setState(() => _crop = v ?? _crop),
+                  )
+                : TextField(
+                    controller: _cropCtrl,
+                    decoration: InputDecoration.collapsed(
+                        hintText: widget.state.tr('onboarding.cropNameHint')),
+                    onChanged: (v) => _crop = v.trim(),
+                  ),
           ),
           LotFormField(
-            label: "मात्रा (क्विंटल)",
+            label: widget.state.tr('trade.quantityLabel'),
             error: _quantityError,
             child: TextField(
               controller: _quantityCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration.collapsed(hintText: "जैसे 10"),
+              decoration: InputDecoration.collapsed(hintText: widget.state.tr('trade.exampleQty')),
             ),
           ),
           LotFormField(
-            label: "अपेक्षित भाव (₹/क्विंटल)",
+            label: widget.state.tr('trade.expectedRateLabel'),
             child: TextField(
               controller: _rateCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration.collapsed(hintText: "जैसे 1950"),
+              decoration: InputDecoration.collapsed(hintText: widget.state.tr('trade.exampleRate')),
             ),
           ),
           LotFormField(
-            label: "कटाई तिथि: $_harvestDateStr",
+            label: "${widget.state.tr('trade.harvestDate')}: $_harvestDateStr",
             child: Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: _pickDate,
                 icon: const Icon(Icons.calendar_month_rounded, size: 16),
-                label: const Text("तिथि चुनें"),
+                label: Text(widget.state.tr('trade.pickDate')),
               ),
             ),
           ),
           LotFormField(
-            label: "फोटो (${_photos.length}/3)",
+            label: "${widget.state.tr('trade.photos')} (${_photos.length}/3)",
             child: Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: _photos.length >= 3 ? null : _pickPhotos,
                 icon: const Icon(Icons.add_a_photo_rounded, size: 16),
-                label: const Text("फोटो जोड़ें"),
+                label: Text(widget.state.tr('trade.addPhotos')),
               ),
             ),
           ),
@@ -270,13 +307,13 @@ class _SellProduceViewState extends State<SellProduceView> {
               ),
               onPressed: _submitting ? null : _submit,
               child: Text(
-                _submitting ? "भेजा जा रहा है..." : (_editingId == null ? "लॉट पोस्ट करें" : "लॉट अपडेट करें"),
+                _submitting ? widget.state.tr('trade.submitting') : (_editingId == null ? widget.state.tr('trade.postLot') : widget.state.tr('trade.updateLot')),
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
           ),
           const SizedBox(height: 18),
-          const Text("मेरे लॉट", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+          Text(widget.state.tr('trade.myLots'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           if (_loadingLots)
             Container(
@@ -284,7 +321,7 @@ class _SellProduceViewState extends State<SellProduceView> {
               decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(14)),
             )
           else if (_lots.isEmpty)
-            const Text("कोई लॉट नहीं", style: TextStyle(fontSize: 12, color: Colors.grey))
+            Text(widget.state.tr('trade.noLots'), style: const TextStyle(fontSize: 12, color: Colors.grey))
           else
             ..._lots.map(
               (lot) => LotCard(

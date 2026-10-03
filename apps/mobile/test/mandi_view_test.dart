@@ -71,7 +71,7 @@ void main() {
     await pumpScreen(tester, MandiView(state: TestAppState(), mandiApi: api));
     expect(api.lastPricesCrop, isNull);
 
-    await tester.tap(find.text('🧅 प्याज'));
+    await tester.tap(find.text('🧅 Onion'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
 
@@ -85,5 +85,19 @@ void main() {
     await pumpScreen(tester, MandiView(state: TestAppState(), mandiApi: api));
 
     expect(find.text('पुनः प्रयास करें'), findsOneWidget);
+  });
+
+  testWidgets('error state shows no demo price list', (tester) async {
+    final api = FakeMandiApi();
+    api.pricesError = const ApiException(code: 'NETWORK_ERROR');
+
+    await pumpScreen(tester, MandiView(state: TestAppState(), mandiApi: api));
+    await tester.pump(const Duration(seconds: 1));
+
+    // Retry banner only — the greyed-out demo list is gone for good.
+    expect(find.text('पुनः प्रयास करें'), findsOneWidget);
+    expect(find.text('Pimpalgaon Baswant APMC'), findsNothing);
+    expect(find.text('Nashik (Dindori Road) APMC'), findsNothing);
+    expect(find.text('₹1,950'), findsNothing);
   });
 }

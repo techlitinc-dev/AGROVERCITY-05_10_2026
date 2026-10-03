@@ -1,0 +1,76 @@
+/* Direct contracts (अनुबंध) — buyer desk + farmer offer inbox.
+   Follows broker.css conventions: reuses trade-card / trade-detail-grid /
+   trade-pill / av-chip and the --av-* tokens; only contract-specific
+   classes live here. */
+
+/* Price formula chip on contract cards */
+.ct-formula-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid var(--av-border-green);
+  background: var(--av-accent-tint);
+  color: var(--av-green-deep);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.ct-formula-chip.live {
+  border-color: #fde68a;
+  background: var(--av-gold-bg);
+  color: var(--av-gold-text);
+}
+
+/* Farmer decision card (incoming offer) */
+.ct-decision-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.ct-decision-actions .av-btn {
+  flex: 1;
+  height: 44px;
+  font-size: 14px;
+}
+
+/* Live price line on offer cards */
+.ct-current-price {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+}
+.ct-current-price small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+/* Collapsed past-contracts group */
+.ct-past details {
+  margin-top: 10px;
+}
+.ct-past summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ct-past summary::before {
+  content: '▸';
+}
+.ct-past details[open] summary::before {
+  content: '▾';
+}
+
+/* MPIN e-sign sheet body */
+.ct-esign-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

@@ -9,6 +9,8 @@ class EquipmentOut(BaseModel):
     hourlyRate: float
     perAcreRate: float | None = None
     distanceKm: float
+    ratingAvg: float | None = None
+    ratingCount: int = 0
 
 
 class SlotOut(BaseModel):
@@ -40,3 +42,27 @@ class BookSlotRequest(BaseModel):
 
 class RejectEquipmentBookingRequest(BaseModel):
     reason: str = Field(min_length=3)
+
+
+class EquipmentCounterQuoteIn(BaseModel):
+    revisedRateRupees: float = Field(gt=0)
+    rateType: str = "hourly"
+    reason: str = ""
+    validityHours: int = 48
+
+
+class JobExecutionUpdateIn(BaseModel):
+    jobStatus: str
+    notes: str = ""
+    evidencePhotoUrl: str | None = None
+    hoursLogged: float | None = None
+    acresCovered: float | None = None
+
+
+class DamageClaimIn(BaseModel):
+    bookingId: str
+    equipmentId: str
+    incidentDate: str
+    description: str
+    estimatedRepairCostRupees: float = Field(gt=0)
+    photoEvidenceUrls: list[str] = []

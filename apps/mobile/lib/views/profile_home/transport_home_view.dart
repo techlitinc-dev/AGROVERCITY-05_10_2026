@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
+import '../../api/settlements_api.dart';
 import '../../api/transport_api.dart';
 import '../../state/app_state.dart';
 import '../../components/common/motion_animations.dart';
 import '../../components/navigation/dashboard_profile_switcher_bar.dart';
 import '../../components/navigation/profile_switcher_sheet.dart';
+import '../../components/settlements_section.dart';
+import '../transporter/trip_expenses_sheet.dart';
 import 'transport_home_widgets.dart';
 
 class TransportHomeView extends StatefulWidget {
   final AppState state;
   final TransportApi? transportApi;
-  const TransportHomeView({super.key, required this.state, this.transportApi});
+  final SettlementsApi? settlementsApi;
+  const TransportHomeView(
+      {super.key, required this.state, this.transportApi, this.settlementsApi});
 
   @override
   State<TransportHomeView> createState() => _TransportHomeViewState();
@@ -22,6 +27,9 @@ class _TransportHomeViewState extends State<TransportHomeView> {
   List<Map<String, dynamic>> _trips = [];
   List<Map<String, dynamic>> _vehicles = [];
   int _pendingRequests = 0;
+  int _openLoadsCount = 0;
+  Map<String, dynamic> _profile = const {};
+  Map<String, dynamic> _analytics = const {};
 
   @override
   void initState() {
@@ -33,6 +41,10 @@ class _TransportHomeViewState extends State<TransportHomeView> {
     var trips = <Map<String, dynamic>>[];
     var vehicles = <Map<String, dynamic>>[];
     var pending = 0;
+    var openLoadsCount = 0;
+    Map<String, dynamic> profile = const {};
+    Map<String, dynamic> analytics = const {};
+
     try {
       final res = await _api.getBookings();
       trips = (res['data'] as List).cast<Map<String, dynamic>>();
@@ -45,11 +57,28 @@ class _TransportHomeViewState extends State<TransportHomeView> {
       final res = await _api.getMyVehicles();
       vehicles = (res['data'] as List).cast<Map<String, dynamic>>();
     } catch (_) {}
+    try {
+      final res = await _api.getOpenLoads();
+      final data = res['data'] as List?;
+      openLoadsCount = data?.length ?? 0;
+    } catch (_) {}
+    try {
+      final res = await _api.getTransporterProfile();
+      profile = (res['profile'] as Map<String, dynamic>?) ?? const {};
+    } catch (_) {}
+    try {
+      final res = await _api.getTransportAnalytics();
+      analytics = (res['analytics'] as Map<String, dynamic>?) ?? const {};
+    } catch (_) {}
+
     if (!mounted) return;
     setState(() {
       _trips = trips;
       _vehicles = vehicles;
       _pendingRequests = pending;
+      _openLoadsCount = openLoadsCount;
+      _profile = profile;
+      _analytics = analytics;
       _loading = false;
     });
   }
@@ -101,11 +130,16 @@ class _TransportHomeViewState extends State<TransportHomeView> {
                           color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.local_shipping_rounded, color: Colors.white, size: 16),
-                            SizedBox(width: 6),
-                            Text("कृषि परिवहन डैशबोर्ड", style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                            const Icon(Icons.local_shipping_rounded, color: Colors.white, size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              (_profile['businessName'] as String?)?.isNotEmpty == true
+                                  ? "सत्यापित ट्रांसपोर्टर"
+                                  : "कृषि परिवहन डैशबोर्ड",
+                              style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800),
+                            ),
                           ],
                         ),
                       ),
@@ -138,15 +172,25 @@ class _TransportHomeViewState extends State<TransportHomeView> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  const Text(
-                    "कृषि माल ढुलाई व ट्रिप प्रबंधन",
-                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                  Text(
+                    ((_profile['businessName'] as String?)?.isNotEmpty == true)
+                        ? (_profile['businessName'] as String)
+                        : "कृषि माल ढुलाई व ट्रिप प्रबंधन",
+                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    "खेत से मंडी सीधी बुकिंग, वाहन ट्रैकिंग और त्वरित डिजिटल भुगतान।",
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
-                  ),
+                  Builder(builder: (context) {
+                    final rawRoutes = _profile['operatingRoutes'];
+                    final routesStr = rawRoutes is List
+                        ? rawRoutes.join(', ')
+                        : (rawRoutes is String ? rawRoutes : null);
+                    return Text(
+                      routesStr?.isNotEmpty == true
+                          ? "ऑपरेटिंग रूट्स: $routesStr • ${_profile['transporterType'] ?? 'फ्लीट ऑपरेटर'}"
+                          : "खेत से मंडी सीधी बुकिंग, वाहन ट्रैकिंग और त्वरित डिजिटल भुगतान।",
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
+                    );
+                  }),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -165,14 +209,28 @@ class _TransportHomeViewState extends State<TransportHomeView> {
             DashboardProfileSwitcherBar(state: widget.state),
             const SizedBox(height: 14),
 
+            SettlementsSection(state: widget.state, settlementsApi: widget.settlementsApi),
+            const SizedBox(height: 14),
+
             const Text(
-              "परिवहन टूल्स व सेवाएं (Transport Tools):",
+              "परिवहन टूल्स व सेवाएं (Transport Management):",
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
             ),
             const SizedBox(height: 10),
 
             Row(
               children: [
+                Expanded(
+                  child: TransportActionCard(
+                    title: "लोड बाज़ार",
+                    subtitle: "खुले लोड खोजें व बिड लगाएं",
+                    icon: Icons.local_shipping_outlined,
+                    color: const Color(0xFFD97706),
+                    badgeCount: _openLoadsCount,
+                    onTap: () => widget.state.openLoadBoard(),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: TransportActionCard(
                     title: "बुकिंग अनुरोध",
@@ -183,14 +241,29 @@ class _TransportHomeViewState extends State<TransportHomeView> {
                     onTap: () => widget.state.navigateTo('bookingInbox'),
                   ),
                 ),
-                const SizedBox(width: 10),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
                 Expanded(
                   child: TransportActionCard(
                     title: "मेरे वाहन",
                     subtitle: "गाड़ी जोड़ें व प्रबंधित करें",
-                    icon: Icons.local_shipping_rounded,
+                    icon: Icons.directions_car_rounded,
                     color: const Color(0xFF16A34A),
                     onTap: () => widget.state.navigateTo('vehicleManage'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TransportActionCard(
+                    title: "बिजनेस प्रोफाइल",
+                    subtitle: "रूट्स, लाइसेंस व रेट कार्ड",
+                    icon: Icons.badge_rounded,
+                    color: const Color(0xFF7C3AED),
+                    onTap: () => widget.state.openTransporterProfile(),
                   ),
                 ),
               ],
@@ -253,6 +326,24 @@ class _TransportHomeViewState extends State<TransportHomeView> {
                         TripRow(
                           booking: t,
                           onTap: () => widget.state.openTripDetail(t),
+                          onTracking: () => widget.state.openLiveTracking(t),
+                          onBilty: () => widget.state.openBilty(t),
+                          onExpenses: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.white,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                              ),
+                              builder: (_) => TripExpensesSheet(
+                                state: widget.state,
+                                bookingId: "${t['id']}",
+                                grossFare: ((t['fare'] as num?)?.toDouble()) ?? 0.0,
+                                api: _api,
+                              ),
+                            );
+                          },
                         ),
                         if (t != _trips.last) const Divider(height: 18),
                       ],

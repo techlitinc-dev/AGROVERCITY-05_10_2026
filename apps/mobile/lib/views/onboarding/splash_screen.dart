@@ -301,9 +301,9 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      "AGROVERCITY • डिजिटल कृषि प्लेटफॉर्म",
-                      style: TextStyle(
+                    Text(
+                      "AGROVERCITY • ${widget.state.tr('digitalAgriPlatform')}",
+                      style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF2E7D32),
@@ -315,7 +315,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
               ),
               const SizedBox(height: 38),
 
-              // 🔘 1-Tap "Get Started / आगे बढ़ें" Action Button
+              // 🔘 1-Tap "Get Started" Action Button (follows selected language)
               StaggeredSlideFade(
                 delayMs: 250,
                 duration: const Duration(milliseconds: 500),
@@ -337,20 +337,20 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         ),
                       ],
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          "शुरू करें (Get Started)",
-                          style: TextStyle(
+                          widget.state.tr('getStarted'),
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 0.3,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
                       ],
                     ),
                   ),

@@ -1,0 +1,494 @@
+/* Dairy module styles — manager console + farmer "My Dairy" face.
+   Reuses tokens.css custom properties; classes are dairy-* prefixed.
+   Width-aware: content blocks cap at the mobile shell width on wide screens. */
+
+.dairy-wrap {
+  width: 100%;
+  max-width: var(--av-shell-width);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.dairy-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.dairy-section-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--av-title);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dairy-hint {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  margin-top: 6px;
+}
+
+.dairy-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.dairy-actions-row {
+  display: flex;
+  gap: 10px;
+}
+.dairy-actions-row .av-btn {
+  flex: 1;
+}
+
+/* ---- Stat cards ---- */
+.dairy-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-stat {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+}
+
+.dairy-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.dairy-stat-value {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  margin-top: 4px;
+  line-height: 1.15;
+}
+
+.dairy-stat-value small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+.dairy-stat-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  margin-top: 2px;
+}
+
+/* ---- Cards / lists ---- */
+.dairy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-card {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--av-font);
+}
+
+.dairy-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dairy-card-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.dairy-card-sub {
+  font-size: 13px;
+  color: var(--av-slate-1);
+}
+
+.dairy-card-amount {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  white-space: nowrap;
+}
+
+a.dairy-card {
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+a.dairy-card:active {
+  transform: scale(0.99);
+}
+
+/* ---- Slip card ---- */
+.dairy-slip {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-left: 4px solid var(--av-primary);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dairy-slip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dairy-slip-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.dairy-slip-no {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+.dairy-slip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dairy-slip-cell-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.dairy-slip-cell-value {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--av-title);
+  margin-top: 1px;
+}
+
+.dairy-slip-amount {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+}
+
+/* ---- Chips ---- */
+.dairy-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  margin-top: 8px;
+}
+
+.dairy-chip-row .av-chip {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dairy-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* ---- Totals strip ---- */
+.dairy-totals {
+  background: var(--av-accent-tint);
+  border: 1.5px solid var(--av-border-green);
+  border-radius: var(--av-radius-card);
+  padding: 12px 14px;
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-totals-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.dairy-totals-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-green-deep);
+}
+
+.dairy-totals-value {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-deep);
+  margin-top: 2px;
+}
+
+/* ---- Entry form ---- */
+.dairy-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.dairy-preview {
+  background: var(--av-accent-tint);
+  border: 1.5px dashed var(--av-border-green-strong);
+  border-radius: var(--av-radius-card);
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+
+.dairy-preview-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-green-deep);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.dairy-preview-rate {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  margin-top: 4px;
+}
+
+.dairy-preview-formula {
+  font-size: 12px;
+  color: var(--av-slate-3);
+  margin-top: 4px;
+}
+
+/* ---- Tables ---- */
+.dairy-table-wrap {
+  overflow-x: auto;
+  margin-top: 12px;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  background: #fff;
+}
+
+.dairy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dairy-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 10px 12px;
+  border-bottom: 1.5px solid var(--av-border-grey-soft);
+  white-space: nowrap;
+}
+
+.dairy-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--av-border-grey-soft);
+  color: var(--av-slate-4);
+  white-space: nowrap;
+}
+
+.dairy-table tr:last-child td {
+  border-bottom: none;
+}
+
+.dairy-table td.dairy-table-num {
+  text-align: right;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.dairy-table tfoot td {
+  font-weight: 900;
+  color: var(--av-green-deep);
+  border-top: 1.5px solid var(--av-border-grey);
+}
+
+/* ---- Empty states ---- */
+.dairy-empty {
+  text-align: center;
+  padding: 36px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.dairy-empty-icon {
+  font-size: 44px;
+}
+
+.dairy-empty-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.dairy-empty-body {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  max-width: 320px;
+}
+
+.dairy-empty-action {
+  margin-top: 10px;
+  width: 100%;
+  max-width: 280px;
+}
+
+/* ---- Quick action grid ---- */
+.dairy-qa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-qa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px;
+  text-decoration: none;
+  color: var(--av-title);
+  font-size: 14px;
+  font-weight: 800;
+  transition: transform 0.12s ease;
+}
+
+.dairy-qa:active {
+  transform: scale(0.98);
+}
+
+.dairy-qa-icon {
+  font-size: 20px;
+}
+
+/* ---- Rate card (farmer) ---- */
+.dairy-rate-card {
+  background: linear-gradient(135deg, var(--av-green-dark), var(--av-green-deep));
+  color: #fff;
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dairy-rate-card .dairy-rate-label {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.85;
+}
+
+.dairy-rate-card .dairy-rate-value {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.dairy-rate-card .dairy-rate-line {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.92;
+}
+
+.dairy-rate-card .dairy-rate-effective {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+/* ---- Hub prompt ---- */
+.dairy-hub-prompt {
+  text-align: center;
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dairy-hub-icon {
+  font-size: 48px;
+}
+
+/* ---- Alerts list ---- */
+.dairy-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--av-gold-bg);
+  border: 1.5px solid #fde68a;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--av-gold-text);
+  text-decoration: none;
+}
+
+@media (min-width: 720px) {
+  .dairy-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dairy-qa-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dairy-slip-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

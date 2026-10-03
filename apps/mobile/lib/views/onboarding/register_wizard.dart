@@ -43,11 +43,11 @@ class RegisterWizardState extends State<RegisterWizard> {
 
   Future<void> sendOtp() async {
     if (data.name.text.trim().isEmpty) {
-      _toast('कृपया किसान का पूरा नाम दर्ज करें');
+      _toast(widget.state.tr('enterFullNamePrompt'));
       return;
     }
     if (data.phone.text.trim().length < 10) {
-      _toast('कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें');
+      _toast(widget.state.tr('invalidPhone'));
       return;
     }
     setState(() => busy = true);
@@ -92,7 +92,7 @@ class RegisterWizardState extends State<RegisterWizard> {
   Future<void> verifyOtp() async {
     final verificationId = data.verificationId;
     if (verificationId == null || data.otp.text.trim().length < 4) {
-      _toast('कृपया सही OTP दर्ज करें');
+      _toast(widget.state.tr('invalidOtp'));
       return;
     }
     setState(() => busy = true);
@@ -104,7 +104,7 @@ class RegisterWizardState extends State<RegisterWizard> {
     if (idToken == null) {
       setState(() {
         busy = false;
-        data.submitError = 'अमान्य OTP — पुनः प्रयास करें';
+        data.submitError = widget.state.tr('invalidOtpRetry');
       });
       return;
     }
@@ -121,11 +121,11 @@ class RegisterWizardState extends State<RegisterWizard> {
     final mpin = data.mpin.text.trim();
     final confirm = data.mpinConfirm.text.trim();
     if (mpin.length != 4 || confirm.length != 4) {
-      _toast('कृपया 4 अंकों का MPIN दर्ज करें');
+      _toast(widget.state.tr('enterFourDigitMpinPrompt'));
       return;
     }
     if (mpin != confirm) {
-      _toast('❌ दोनों MPIN मेल नहीं खा रहे हैं। कृपया दोबारा जांचें।');
+      _toast(widget.state.tr('bothMpinNotMatchPrompt'));
       return;
     }
     setState(() => step = 3);
@@ -137,7 +137,7 @@ class RegisterWizardState extends State<RegisterWizard> {
       if (key == UserProfileType.farmer.name) continue;
       final formData =
           data.roleProfiles.putIfAbsent(key, RoleProfileFormData.new);
-      final error = formData.validate(key);
+      final error = formData.validate(key, widget.state.language);
       roleErrors[key] = error;
       if (error != null) valid = false;
     }
@@ -145,8 +145,12 @@ class RegisterWizardState extends State<RegisterWizard> {
   }
 
   Future<void> finish() async {
-    if (data.village.text.trim().isEmpty) {
-      _toast('कृपया गांव का नाम दर्ज करें');
+    final isFarmer =
+        _profileKeys.contains(UserProfileType.farmer.name);
+    // Village is part of the farmer's farm details; personas without the
+    // farmer profile don't render that field, so don't require it.
+    if (isFarmer && data.village.text.trim().isEmpty) {
+      _toast(widget.state.tr('enterVillagePrompt'));
       return;
     }
     if (!_validateRoleSections()) {
@@ -155,7 +159,7 @@ class RegisterWizardState extends State<RegisterWizard> {
     }
     final idToken = data.idToken;
     if (idToken == null) {
-      _toast('मोबाइल सत्यापन अधूरा है — कृपया OTP सत्यापित करें');
+      _toast(widget.state.tr('mobileVerificationPending'));
       return;
     }
     final roleProfiles = <String, Map<String, dynamic>>{};
@@ -190,7 +194,7 @@ class RegisterWizardState extends State<RegisterWizard> {
         setState(() {
           busy = false;
           step = 1;
-          data.referralError = 'अमान्य रेफरल कोड';
+          data.referralError = widget.state.tr('invalidReferralCode');
         });
       } else {
         setState(() {
@@ -206,13 +210,14 @@ class RegisterWizardState extends State<RegisterWizard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        RegisterProgressBar(step: step),
+        RegisterProgressBar(step: step, state: widget.state),
         const SizedBox(height: 12),
         Expanded(
           child: SingleChildScrollView(
             child: switch (step) {
               1 => RegisterStep1Identity(
                   data: data,
+                  state: widget.state,
                   busy: busy,
                   onSendOtp: sendOtp,
                   onVerifyOtp: verifyOtp,
@@ -220,16 +225,19 @@ class RegisterWizardState extends State<RegisterWizard> {
                 ),
               2 => RegisterStep2Security(
                   data: data,
+                  state: widget.state,
                   busy: busy,
                   onContinue: continueFromMpin,
                   onChanged: () => setState(() {}),
                 ),
               _ => RegisterStep3Details(
                   data: data,
+                  state: widget.state,
                   busy: busy,
                   profileKeys: _profileKeys,
                   roleErrors: roleErrors,
                   onFinish: finish,
+                  onBack: () => setState(() => step = 2),
                   onChanged: () => setState(() {}),
                 ),
             },

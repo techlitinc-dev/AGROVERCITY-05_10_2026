@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
 
 class AudioButton extends StatefulWidget {
   final String text;
-  final String label;
+  final String? label;
+  final AppState? state;
 
   const AudioButton({
     super.key,
     required this.text,
-    this.label = "सुनिए",
+    this.label,
+    this.state,
   });
 
   @override
@@ -35,9 +39,10 @@ class _AudioButtonState extends State<AudioButton> with SingleTickerProviderStat
 
   void _handlePlay() {
     setState(() => _isPlaying = true);
+    final lang = widget.state?.language ?? 'hi';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text("🔊 वाचन हो रहा है: \"${widget.text}\""),
+        content: Text(AppTranslations.get('common.readAloud', lang).replaceAll('{text}', widget.text)),
         duration: const Duration(seconds: 2),
         backgroundColor: const Color(0xFF1B4332),
       ),
@@ -77,7 +82,7 @@ class _AudioButtonState extends State<AudioButton> with SingleTickerProviderStat
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    widget.label,
+                    widget.label ?? AppTranslations.get('listen', widget.state?.language ?? 'hi'),
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,

@@ -1,29 +1,35 @@
 import 'package:flutter/material.dart';
 
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
+
 Color slotStatusColor(String status) => switch (status) {
       'booked' => Colors.red,
       'pending' => Colors.amber.shade800,
       _ => Colors.green,
     };
 
-String slotStatusLabel(String status) => switch (status) {
-      'booked' => "बुक्ड",
-      'pending' => "स्वीकृति लंबित",
-      _ => "उपलब्ध",
+String slotStatusLabel(String status, String lang) => switch (status) {
+      'booked' => AppTranslations.get('equipment.statusBooked', lang),
+      'pending' => AppTranslations.get('equipment.approvalPending', lang),
+      _ => AppTranslations.get('equipment.statusAvailable', lang),
     };
 
 class SlotStatusLegend extends StatelessWidget {
-  const SlotStatusLegend({super.key});
+  const SlotStatusLegend({super.key, required this.state});
+
+  final AppState state;
 
   @override
   Widget build(BuildContext context) {
+    final lang = state.language;
     return Row(
       children: [
-        _legendItem(Colors.green, "उपलब्ध"),
+        _legendItem(Colors.green, AppTranslations.get('equipment.statusAvailable', lang)),
         const SizedBox(width: 12),
-        _legendItem(Colors.red, "बुक्ड"),
+        _legendItem(Colors.red, AppTranslations.get('equipment.statusBooked', lang)),
         const SizedBox(width: 12),
-        _legendItem(Colors.amber, "स्वीकृति लंबित"),
+        _legendItem(Colors.amber, AppTranslations.get('equipment.approvalPending', lang)),
       ],
     );
   }
@@ -47,6 +53,7 @@ class SlotCard extends StatelessWidget {
   const SlotCard({
     super.key,
     required this.slot,
+    required this.state,
     required this.mine,
     this.onBook,
     this.onCancel,
@@ -54,6 +61,7 @@ class SlotCard extends StatelessWidget {
   });
 
   final Map<String, dynamic> slot;
+  final AppState state;
   final bool mine;
   final VoidCallback? onBook;
   final VoidCallback? onCancel;
@@ -101,7 +109,7 @@ class SlotCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    "${slot['duration']} • ₹${price.toInt()} / slot",
+                    "${slot['duration']} • ₹${price.toInt()} ${state.tr('equipment.perSlot')}",
                     style: const TextStyle(fontSize: 11.5, color: Colors.grey),
                   ),
                   Text(
@@ -114,9 +122,9 @@ class SlotCard extends StatelessWidget {
                       style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.red),
                     ),
                   if (mine)
-                    const Text(
-                      "रद्द करने हेतु दबाकर रखें",
-                      style: TextStyle(fontSize: 9.5, fontStyle: FontStyle.italic, color: Colors.grey),
+                    Text(
+                      state.tr('equipment.holdToCancel'),
+                      style: const TextStyle(fontSize: 9.5, fontStyle: FontStyle.italic, color: Colors.grey),
                     ),
                 ],
               ),
@@ -138,7 +146,7 @@ class SlotCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           minimumSize: const Size(48, 48),
         ),
-        child: const Text("बुक करें", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+        child: Text(state.tr('equipment.book'), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
       );
     }
     if (mine) {
@@ -149,7 +157,7 @@ class SlotCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(
-          slotStatusLabel(status),
+          slotStatusLabel(status, state.language),
           style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: slotStatusColor(status)),
         ),
       );
@@ -161,7 +169,7 @@ class SlotCard extends StatelessWidget {
         side: const BorderSide(color: Colors.red),
         minimumSize: const Size(48, 48),
       ),
-      child: const Text("वेटलिस्ट जोड़ें", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+      child: Text(state.tr('equipment.joinWaitlist'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
     );
   }
 }

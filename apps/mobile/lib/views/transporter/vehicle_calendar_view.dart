@@ -95,7 +95,9 @@ class _VehicleCalendarViewState extends State<VehicleCalendarView> {
               ),
               Expanded(
                 child: Text(
-                  "कैलेंडर: ${vehicle['registrationNo'] ?? ''}",
+                  widget.state
+                      .tr('transporter.calendarFor')
+                      .replaceAll('{regNo}', "${vehicle['registrationNo'] ?? ''}"),
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
               ),
@@ -113,7 +115,15 @@ class _VehicleCalendarViewState extends State<VehicleCalendarView> {
   Widget _buildDayCard(DateTime day, Color primary) {
     final date = _dateStr(day);
     final dayBookings = _bookingsOn(date);
-    const dayNames = ['सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि', 'रवि'];
+    final dayNames = [
+      widget.state.tr('transporter.dayMon'),
+      widget.state.tr('transporter.dayTue'),
+      widget.state.tr('transporter.dayWed'),
+      widget.state.tr('transporter.dayThu'),
+      widget.state.tr('transporter.dayFri'),
+      widget.state.tr('transporter.daySat'),
+      widget.state.tr('transporter.daySun'),
+    ];
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -145,7 +155,7 @@ class _VehicleCalendarViewState extends State<VehicleCalendarView> {
               ),
               Row(
                 children: [
-                  const Text("उपलब्ध", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text(widget.state.tr('transporter.available'), style: const TextStyle(fontSize: 11, color: Colors.grey)),
                   Switch(
                     value: _availableDates.contains(date),
                     activeThumbColor: primary,

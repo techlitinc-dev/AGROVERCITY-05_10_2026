@@ -1,0 +1,356 @@
+/* Herd registry / animal management styles (plan/dairy_plan.md §14 P10).
+   Reuses tokens.css custom properties; classes are animals-* prefixed.
+   Width-aware: content blocks cap at the mobile shell width on wide screens. */
+
+.animals-wrap {
+  width: 100%;
+  max-width: var(--av-shell-width);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.animals-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.animals-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.animals-section-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--av-title);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.animals-hint {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  margin-top: 6px;
+}
+
+.animals-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.animals-actions-row {
+  display: flex;
+  gap: 10px;
+}
+.animals-actions-row .av-btn {
+  flex: 1;
+}
+
+/* ---- Stat cards ---- */
+.animals-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.animals-stat {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+}
+
+.animals-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.animals-stat-value {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  margin-top: 4px;
+  line-height: 1.15;
+}
+
+.animals-stat-value small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+/* ---- Search + chip rows ---- */
+.animals-search {
+  margin-top: 12px;
+}
+
+.animals-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  margin-top: 8px;
+}
+
+.animals-chip-row .av-chip {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.animals-filter-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 10px;
+}
+
+/* ---- Cards / lists ---- */
+.animals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.animals-card {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--av-font);
+}
+
+.animals-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.animals-card-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.animals-card-sub {
+  font-size: 13px;
+  color: var(--av-slate-1);
+}
+
+.animals-card-amount {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  white-space: nowrap;
+}
+
+a.animals-card {
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+a.animals-card:active {
+  transform: scale(0.99);
+}
+
+/* ---- Pills / chips ---- */
+.animals-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.animals-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-chip);
+  background: var(--av-slate-5);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.animals-flag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--av-radius-pill);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.animals-flag-warn {
+  background: var(--av-gold-bg);
+  color: var(--av-gold-text);
+  border: 1px solid #fde68a;
+}
+
+.animals-flag-bad {
+  background: #fee2e2;
+  color: var(--av-error);
+  border: 1px solid #fecaca;
+}
+
+.animals-flag-ok {
+  background: var(--av-accent-tint);
+  color: var(--av-green-deep);
+  border: 1px solid var(--av-border-green);
+}
+
+/* ---- Detail grid ---- */
+.animals-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.animals-detail-cell-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.animals-detail-cell-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--av-title);
+  margin-top: 1px;
+  word-break: break-word;
+}
+
+/* ---- Yield chart ---- */
+.animals-yield-chart {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 10px 6px;
+  margin-top: 4px;
+}
+
+.animals-yield-chart-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0 6px 6px;
+}
+
+.animals-yield-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---- Key-value rows inside cards ---- */
+.animals-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.animals-kv-key {
+  color: var(--av-slate-1);
+  font-weight: 600;
+}
+
+.animals-kv-val {
+  color: var(--av-title);
+  font-weight: 800;
+  text-align: right;
+}
+
+.animals-notes {
+  font-size: 12px;
+  color: var(--av-slate-3);
+  border-top: 1px dashed var(--av-border-grey);
+  padding-top: 6px;
+}
+
+/* ---- Form ---- */
+.animals-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+/* ---- Empty states ---- */
+.animals-empty {
+  text-align: center;
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.animals-empty-icon {
+  font-size: 42px;
+}
+
+.animals-empty-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.animals-empty-body {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  max-width: 320px;
+}
+
+.animals-empty-action {
+  margin-top: 10px;
+  width: 100%;
+  max-width: 280px;
+}
+
+@media (min-width: 720px) {
+  .animals-stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .animals-detail-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

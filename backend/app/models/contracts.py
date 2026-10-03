@@ -1,4 +1,13 @@
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class ContractSchedule(BaseModel):
+    startDate: str
+    endDate: str
+    frequency: Literal["weekly", "biweekly", "monthly"]
+    qtyPerDelivery: float = Field(gt=0)
 
 
 class ContractOut(BaseModel):
@@ -16,6 +25,61 @@ class ContractOut(BaseModel):
     contractDuration: str
     termsText: str | None = None
     acceptedBy: str | None = None
+    # targeted supply contracts (P8/P10) — all optional so legacy seed docs validate
+    buyerId: str | None = None
+    farmerId: str | None = None
+    quantityTotal: float | None = None
+    priceType: Literal["fixed", "mandiLinked"] | None = None
+    baseRate: float | None = None
+    premiumPerQuintal: float | None = None
+    mandiName: str | None = None
+    schedule: ContractSchedule | None = None
+    paymentTermsDays: int | None = None
+    deliveriesGenerated: int | None = None
+    deliveries: list | None = None
+    cancelReason: str | None = None
+    declineReason: str | None = None
+    acceptedAt: str | None = None
+    currentPrice: float | None = None
+
+
+class ContractCreate(BaseModel):
+    farmerId: str
+    crop: str
+    quantityTotal: float = Field(gt=0)
+    priceType: Literal["fixed", "mandiLinked"] = "fixed"
+    baseRate: float | None = None
+    premiumPerQuintal: float = 0
+    mandiName: str = ""
+    schedule: ContractSchedule
+    deliveryLocation: str = ""
+    paymentTermsDays: int = 0
+    termsText: str = ""
+
+
+class ContractUpdate(BaseModel):
+    crop: str | None = None
+    quantityTotal: float | None = Field(default=None, gt=0)
+    priceType: Literal["fixed", "mandiLinked"] | None = None
+    baseRate: float | None = None
+    premiumPerQuintal: float | None = None
+    mandiName: str | None = None
+    schedule: ContractSchedule | None = None
+    deliveryLocation: str | None = None
+    paymentTermsDays: int | None = None
+    termsText: str | None = None
+
+
+class ContractDecline(BaseModel):
+    reason: str = ""
+
+
+class ContractCancel(BaseModel):
+    reason: str = ""
+
+
+class DeliveryCreate(BaseModel):
+    slotDate: str
 
 
 class AcceptContractRequest(BaseModel):

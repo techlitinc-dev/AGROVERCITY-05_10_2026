@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
 import '../common/glass_card.dart';
+
+String _t(AppState? state, String key) =>
+    state != null ? state.tr(key) : AppTranslations.get(key, 'hi');
 
 String fmtInr(num value) {
   final s = value.round().toString();
@@ -12,8 +17,9 @@ String fmtInr(num value) {
 class MandiPriceCard extends StatelessWidget {
   final Map<String, dynamic> price;
   final VoidCallback? onTap;
+  final AppState? state;
 
-  const MandiPriceCard({super.key, required this.price, this.onTap});
+  const MandiPriceCard({super.key, required this.price, this.onTap, this.state});
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +57,7 @@ class MandiPriceCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "${price['distanceKm']} km दूरी • ${price['updatedAt']}",
+                        "${price['distanceKm']} ${_t(state, 'market.kmAway')} • ${price['updatedAt']}",
                         style: const TextStyle(fontSize: 10.5, color: Colors.grey),
                       ),
                       Text(
@@ -104,11 +110,11 @@ class MandiPriceCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "न्यूनतम: ₹${fmtInr(minP)} | अधिकतम: ₹${fmtInr(maxP)}",
+                  "${_t(state, 'market.minShort')}: ₹${fmtInr(minP)} | ${_t(state, 'market.maxShort')}: ₹${fmtInr(maxP)}",
                   style: const TextStyle(fontSize: 11.5, color: Colors.black87),
                 ),
                 Text(
-                  "आवक: ${price['arrivalsQuintals']}q",
+                  "${_t(state, 'market.arrivals')}: ${price['arrivalsQuintals']}q",
                   style: const TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
@@ -130,13 +136,13 @@ class MandiPriceCard extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: "ऑडियो सुनें",
+                  tooltip: _t(state, 'market.listenAudio'),
                   iconSize: 18,
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.volume_up_rounded, color: Color(0xFF2E7D32)),
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("ऑडियो जल्द आ रहा है")),
+                      SnackBar(content: Text(_t(state, 'market.audioComingSoon'))),
                     );
                   },
                 ),

@@ -58,15 +58,15 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              "डिलीवरी पता चुनें",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
+            Text(
+              widget.state.tr('market.selectDeliveryAddress'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
             ),
             const SizedBox(height: 10),
             if (widget.addresses.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text("कोई सहेजा पता नहीं", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(widget.state.tr('market.noSavedAddresses'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
               )
             else
               RadioGroup<String>(
@@ -101,9 +101,9 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.add_location_alt_rounded, color: Color(0xFF16A34A)),
-              title: const Text(
-                "नया पता जोड़ें",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF16A34A)),
+              title: Text(
+                widget.state.tr('market.addNewAddress'),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF16A34A)),
               ),
               onTap: _openAddForm,
             ),
@@ -111,9 +111,9 @@ class _AddressPickerSheetState extends State<AddressPickerSheet> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.settings_outlined, color: Colors.grey),
-              title: const Text(
-                "पता प्रबंधित करें",
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey),
+              title: Text(
+                widget.state.tr('market.manageAddresses'),
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey),
               ),
               onTap: () {
                 Navigator.pop(context);

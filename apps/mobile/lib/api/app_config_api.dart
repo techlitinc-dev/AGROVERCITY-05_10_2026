@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../config.dart';
 import '../core/constants.dart';
 import 'api_exception.dart';
 import 'endpoints.dart';
@@ -20,7 +21,7 @@ class AppConfigApi {
 
   Future<Map<String, dynamic>> getAppConfig() async {
     final response = await _dio.get<Map<String, dynamic>>(
-      '$kApiBaseUrl$pathAppConfig',
+      '$apiBaseUrl$pathAppConfig',
       queryParameters: {'version': kAppVersion, 'platform': _platform},
     );
     final data = response.data;

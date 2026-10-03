@@ -2,8 +2,9 @@
 
 import 'package:flutter/material.dart';
 import '../../state/app_state.dart';
-import '../../data/demo_data.dart';
+import '../../data/regional_languages.dart';
 import '../../components/common/motion_animations.dart';
+import 'onboarding_progress.dart';
 
 
 class LanguageSelectView extends StatefulWidget {
@@ -15,12 +16,14 @@ class LanguageSelectView extends StatefulWidget {
 }
 
 class _LanguageSelectViewState extends State<LanguageSelectView> {
-  String _selectedLang = 'mr';
+  late String _selectedLang = widget.state.language;
 
   void _previewAudio(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text("🔊 Audio Preview: \"$text\""),
+        content: Text(
+          '🔊 ${widget.state.tr('onboarding.audioPreview')}: "$text"',
+        ),
         duration: const Duration(seconds: 2),
         backgroundColor: const Color(0xFF2E7D32),
       ),
@@ -28,8 +31,20 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
   }
 
   @override
+  void didUpdateWidget(LanguageSelectView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.state.language != _selectedLang) {
+      _selectedLang = widget.state.language;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        _selectedLang = widget.state.language;
+        return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       body: SafeArea(
         child: Padding(
@@ -37,41 +52,35 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Progress Header
+              // Overall journey progress (Step 1 of 4: Language)
+              OnboardingFlowProgress(state: widget.state, currentStep: 1),
+              const SizedBox(height: 8),
+
+              // Audio preview action
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2E7D32),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      "Step 1 of 3 • Language",
-                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                  ),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.volume_up_rounded, color: Color(0xFF2E7D32)),
-                    onPressed: () => _previewAudio("Kripya aapni bhasha chunein."),
+                    onPressed: () => _previewAudio(
+                        widget.state.tr('selectLanguagePrompt')),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 4),
 
               // Title
-              const Text(
-                "अपनी भाषा चुनें",
-                style: TextStyle(
+              Text(
+                widget.state.tr('selectLanguagePrompt'),
+                style: const TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF263238),
                 ),
               ),
-              const Text(
-                "Select Your Preferred Language (Grouped by Region)",
-                style: TextStyle(fontSize: 13, color: Color(0xFF90A4AE)),
+              Text(
+                widget.state.tr('languagesGrouped'),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF90A4AE)),
               ),
               const SizedBox(height: 14),
 
@@ -86,20 +95,15 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.my_location_rounded, color: Color(0xFF2E7D32), size: 18),
-                        SizedBox(width: 6),
+                        const Icon(Icons.my_location_rounded, color: Color(0xFF2E7D32), size: 18),
+                        const SizedBox(width: 6),
                         Text(
-                          "Aapke Area ki Bhasha (Suggested by GPS):",
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1B5E20)),
+                          widget.state.tr('gpsDetected'),
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1B5E20)),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Detected Location: Nashik, Maharashtra (West India)",
-                      style: TextStyle(fontSize: 11.5, color: Colors.green.shade800),
                     ),
                     const SizedBox(height: 10),
 
@@ -107,21 +111,31 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
                       children: [
                         Expanded(
                           child: _buildLangCard(
+                            code: 'en',
+                            name: 'English',
+                            english: 'Default',
+                            audioText: 'Welcome to AGROVERCITY. Your land, your business.',
+                            badge: widget.state.tr('onboarding.badgeDefault'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildLangCard(
                             code: 'mr',
                             name: 'मराठी',
                             english: 'Marathi',
                             audioText: 'नमस्कार! AGROVERCITY मध्ये आपले स्वागत आहे।',
-                            badge: '⚡ Top Recommendation',
+                            badge: widget.state.tr('onboarding.badgeMaharashtra'),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: _buildLangCard(
                             code: 'hi',
                             name: 'हिन्दी',
                             english: 'Hindi',
                             audioText: 'नमस्ते! AGROVERCITY में आपका स्वागत है।',
-                            badge: 'Secondary Suggestion',
+                            badge: widget.state.tr('onboarding.badgeNational'),
                           ),
                         ),
                       ],
@@ -131,9 +145,9 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
               ),
               const SizedBox(height: 16),
 
-              const Text(
-                "Aur Bhashaen (Other Regional Languages):",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF263238)),
+              Text(
+                widget.state.tr('otherRegions'),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF263238)),
               ),
               const SizedBox(height: 8),
 
@@ -174,6 +188,7 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
                                 selectedColor: const Color(0xFFE8F5E9),
                                 onSelected: (_) {
                                   setState(() => _selectedLang = l['code']!);
+                                  widget.state.setLanguage(l['code']!);
                                   _previewAudio(l['audio']!);
                                 },
                               );
@@ -195,12 +210,12 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      "भाषा चुनें और आगे बढ़ें (Continue) →",
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                      widget.state.tr('continueBtn'),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                     ),
                   ],
                 ),
@@ -209,6 +224,8 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
           ),
         ),
       ),
+    );
+      },
     );
   }
 
@@ -223,6 +240,7 @@ class _LanguageSelectViewState extends State<LanguageSelectView> {
     return BouncyPressable(
       onTap: () {
         setState(() => _selectedLang = code);
+        widget.state.setLanguage(code);
         _previewAudio(audioText);
       },
       child: Container(

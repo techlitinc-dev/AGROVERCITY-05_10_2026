@@ -53,7 +53,7 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
 
   Future<void> _sendOtp() async {
     if (_phoneController.text.trim().length < 10) {
-      setState(() => _error = 'कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें');
+      setState(() => _error = widget.state.tr('invalidPhone'));
       return;
     }
     setState(() {
@@ -99,7 +99,7 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
   Future<void> _verifyOtp() async {
     final verificationId = _verificationId;
     if (verificationId == null || _otpController.text.trim().length < 4) {
-      setState(() => _error = 'कृपया सही OTP दर्ज करें');
+      setState(() => _error = widget.state.tr('invalidOtp'));
       return;
     }
     setState(() {
@@ -114,7 +114,7 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
     if (idToken == null) {
       setState(() {
         _busy = false;
-        _error = 'अमान्य OTP — पुनः प्रयास करें';
+        _error = widget.state.tr('invalidOtpRetry');
       });
       return;
     }
@@ -131,7 +131,7 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
     final mpin = _mpinController.text.trim();
     final confirm = _mpinConfirmController.text.trim();
     if (mpin.length != 4 || mpin != confirm || idToken == null) {
-      setState(() => _error = 'दोनों MPIN मेल नहीं खा रहे हैं');
+      setState(() => _error = widget.state.tr('bothMpinNotMatchPrompt'));
       return;
     }
     setState(() {
@@ -168,16 +168,16 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'MPIN रीसेट करें',
+            Text(
+              widget.state.tr('resetMpin'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 14),
             if (!_otpVerified) ...[
               LabeledTextField(
                 controller: _phoneController,
-                label: 'मोबाइल नंबर',
+                label: widget.state.tr('mobileNumber'),
                 keyboardType: TextInputType.phone,
                 prefix: '+91 ',
               ),
@@ -185,14 +185,14 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
                 const SizedBox(height: 10),
                 LabeledTextField(
                   controller: _otpController,
-                  label: 'OTP',
+                  label: widget.state.tr('otp'),
                   keyboardType: TextInputType.number,
                 ),
                 if (_otpCountdown > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      'पुनः भेजें ${_otpCountdown}s में',
+                      '${widget.state.tr('resendIn')} ${_otpCountdown}s',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Color(0xFF64748B),
@@ -203,18 +203,18 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: _busy ? null : (_otpSent ? _verifyOtp : _sendOtp),
-                child: Text(_otpSent ? 'सत्यापित करें' : 'OTP भेजें'),
+                child: Text(_otpSent ? widget.state.tr('verifyOtp') : widget.state.tr('sendOtp')),
               ),
             ] else ...[
               MpinPad(
                 controller: _mpinController,
-                label: 'नया 4-अंकीय MPIN',
+                label: widget.state.tr('newMpinFourDigits'),
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 10),
               MpinPad(
                 controller: _mpinConfirmController,
-                label: 'नया MPIN दोबारा दर्ज करें',
+                label: widget.state.tr('reEnterNewMpin'),
                 onChanged: (_) => setState(() {}),
               ),
               if (showMatch)
@@ -222,8 +222,8 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
                     mpin == confirm
-                        ? '✅ MPIN मेल खा गया'
-                        : '❌ MPIN मेल नहीं खा रहा',
+                        ? widget.state.tr('mpinMatched')
+                        : widget.state.tr('mpinNotMatched'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -236,7 +236,7 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: _busy ? null : _submitNewMpin,
-                child: const Text('MPIN बदलें'),
+                child: Text(widget.state.tr('resetMpin')),
               ),
             ],
             if (_error != null)
@@ -251,7 +251,7 @@ class _ForgotMpinSheetState extends State<ForgotMpinSheet> {
               ),
             TextButton(
               onPressed: _busy ? null : () => Navigator.of(context).pop(),
-              child: const Text('रद्द करें'),
+              child: Text(widget.state.tr('cancel')),
             ),
           ],
         ),

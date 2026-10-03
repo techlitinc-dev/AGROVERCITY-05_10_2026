@@ -79,7 +79,7 @@ class _ProfileEditViewState extends State<ProfileEditView> {
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('प्रोफ़ाइल अपडेट हुई')),
+      SnackBar(content: Text(widget.state.tr('profile.profileUpdated'))),
     );
     widget.state.navigateBack();
   }
@@ -100,8 +100,8 @@ class _ProfileEditViewState extends State<ProfileEditView> {
                     onPressed: widget.state.navigateBack,
                     icon: const Icon(Icons.arrow_back_rounded),
                   ),
-                  const Text(
-                    'प्रोफ़ाइल संपादित करें',
+                  Text(
+                    widget.state.tr('profile.editProfileTitle'),
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                   ),
                 ],
@@ -114,11 +114,11 @@ class _ProfileEditViewState extends State<ProfileEditView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    LabeledTextField(controller: _name, label: 'पूरा नाम'),
+                    LabeledTextField(controller: _name, label: widget.state.tr('fullName')),
                     const SizedBox(height: 10),
-                    LabeledTextField(controller: _village, label: 'गांव'),
+                    LabeledTextField(controller: _village, label: widget.state.tr('village')),
                     const SizedBox(height: 10),
-                    LabeledTextField(controller: _tehsil, label: 'तहसील'),
+                    LabeledTextField(controller: _tehsil, label: widget.state.tr('tehsil')),
                     const SizedBox(height: 10),
                     Row(
                       children: [
@@ -129,18 +129,18 @@ class _ProfileEditViewState extends State<ProfileEditView> {
                             max: 25,
                             divisions: 49,
                             label:
-                                '${_landAcres.toStringAsFixed(1)} एकड़',
+                                '${_landAcres.toStringAsFixed(1)} ${widget.state.tr('acresUnit')}',
                             onChanged: (v) => setState(() => _landAcres = v),
                           ),
                         ),
                         Text(
-                          '${_landAcres.toStringAsFixed(1)} एकड़',
+                          '${_landAcres.toStringAsFixed(1)} ${widget.state.tr('acresUnit')}',
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    const Text('मिट्टी का प्रकार',
+                    Text(widget.state.tr('soilType'),
                         style: TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13)),
                     const SizedBox(height: 6),
@@ -150,7 +150,7 @@ class _ProfileEditViewState extends State<ProfileEditView> {
                       onSelected: (v) => setState(() => _soilType = v),
                     ),
                     const SizedBox(height: 10),
-                    const Text('सिंचाई का प्रकार',
+                    Text(widget.state.tr('irrigationType'),
                         style: TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13)),
                     const SizedBox(height: 6),
@@ -161,7 +161,7 @@ class _ProfileEditViewState extends State<ProfileEditView> {
                           setState(() => _irrigationType = v),
                     ),
                     const SizedBox(height: 10),
-                    const Text('फसलें',
+                    Text(widget.state.tr('crops'),
                         style: TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 13)),
                     const SizedBox(height: 6),
@@ -173,7 +173,7 @@ class _ProfileEditViewState extends State<ProfileEditView> {
                     const SizedBox(height: 18),
                     FilledButton(
                       onPressed: _busy ? null : _save,
-                      child: const Text('सहेजें'),
+                      child: Text(widget.state.tr('save')),
                     ),
                   ],
                 ),

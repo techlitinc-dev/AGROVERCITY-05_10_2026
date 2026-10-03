@@ -5,9 +5,15 @@ from app.core.db import get_doc, set_doc
 
 async def get_user(uid: str) -> dict | None:
     user = await get_doc("users", uid)
-    if user is not None and "referralCode" not in user:
-        user["referralCode"] = "ref_" + uid[:8]
-        await set_doc("users", uid, user)
+    if user is not None:
+        if "referralCode" not in user:
+            user["referralCode"] = "ref_" + uid[:8]
+            await set_doc("users", uid, user)
+        if "preferredLanguage" not in user or "language" not in user:
+            pref = user.get("preferredLanguage") or user.get("language") or "en"
+            user["preferredLanguage"] = pref
+            user["language"] = pref
+            await set_doc("users", uid, user)
     return user
 
 
@@ -21,6 +27,8 @@ async def upsert_user_from_firebase(uid: str, phone: str) -> tuple[dict, bool]:
         "referralCode": "ref_" + uid[:8],
         "name": "",
         "vernacularName": "",
+        "language": "en",
+        "preferredLanguage": "en",
         "village": "",
         "tehsil": "",
         "district": "",

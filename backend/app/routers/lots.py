@@ -63,6 +63,60 @@ async def list_lots(
     return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
 
 
+@router.get("/lots/browse")
+async def browse_lots(
+    crop: str | None = None,
+    state: str | None = None,
+    minRate: float | None = None,
+    maxRate: float | None = None,
+    minQty: float | None = None,
+    harvestBefore: str | None = None,
+    sort: str = "newest",
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(current_user_id),
+):
+    """Open discovery for buyers (any authenticated user) — spec V3."""
+    docs = await query("market_lots", [("status", "==", "open")], limit=1000)
+    docs = [d for d in docs if d.get("farmerId") != uid]
+    if crop:
+        docs = [d for d in docs if crop.lower() in d.get("crop", "").lower()]
+    if state:
+        docs = [d for d in docs if (d.get("location") or {}).get("state", "").lower() == state.lower()]
+    if minRate is not None:
+        docs = [d for d in docs if d.get("expectedRate", 0) >= minRate]
+    if maxRate is not None:
+        docs = [d for d in docs if d.get("expectedRate", 0) <= maxRate]
+    if minQty is not None:
+        docs = [d for d in docs if d.get("quantityQuintals", 0) >= minQty]
+    if harvestBefore:
+        docs = [d for d in docs if d.get("harvestDate", "") <= harvestBefore]
+    if sort == "price":
+        docs.sort(key=lambda d: d.get("expectedRate", 0))
+    elif sort == "ready-date":
+        docs.sort(key=lambda d: d.get("harvestDate", ""))
+    else:
+        docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    total = len(docs)
+    start = (page - 1) * pageSize
+    page_docs = docs[start:start + pageSize]
+    # Anonymity per spec G1/G2: first name + village only, never phone/contact.
+    enriched = []
+    for lot in page_docs:
+        farmer = await get_doc("users", lot.get("farmerId", "")) or {}
+        name = (farmer.get("name") or "").strip().split(" ")[0]
+        enriched.append({**lot, "farmerName": name, "farmerVillage": farmer.get("village", "")})
+    return {"data": enriched, "page": page, "pageSize": pageSize, "total": total}
+
+
+@router.get("/lots/{lot_id}")
+async def get_lot(lot_id: str, uid: str = Depends(current_user_id)):
+    doc = await get_doc("market_lots", lot_id)
+    if doc is None:
+        _error(404, "LOT_NOT_FOUND", "lot not found")
+    return doc
+
+
 @router.put("/lots/{lot_id}", response_model=LotOut)
 async def update_lot(lot_id: str, body: LotRequest, uid: str = Depends(_farmer_user)):
     doc = await get_doc("market_lots", lot_id)

@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from datetime import datetime, timezone
+
 from app.core.db import get_doc, query as db_query, set_doc
 from app.core.deps import current_user_id
 from app.models.marketplace import CartItemRequest, CartQuantityRequest
+from app.models.reviews import ReviewIn
 from app.routers.users import require_role
 from app.services.users import get_user
 
 router = APIRouter(tags=["marketplace"])
 
-MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller")
+MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller", "customer", "directBuyer")
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -16,6 +19,14 @@ def _error(status_code: int, code: str, message: str, field_errors: dict | None 
         status_code=status_code,
         detail={"code": code, "message": message, "fieldErrors": field_errors or {}},
     )
+
+
+def _public_product(doc: dict) -> dict:
+    product = dict(doc)
+    in_stock = product.get("stock") is None or product.get("stock", 0) > 0
+    product.pop("stock", None)
+    product["inStock"] = in_stock
+    return product
 
 
 async def _market_user(uid: str = Depends(current_user_id)) -> str:
@@ -41,7 +52,7 @@ async def _cart_response(uid: str) -> dict:
         product = await get_doc("products", product_id)
         if product is None:
             continue
-        data.append({"productId": product_id, "quantity": quantity, "product": product})
+        data.append({"productId": product_id, "quantity": quantity, "product": _public_product(product)})
         total += product["discountedPrice"] * quantity
     return {"data": data, "cartTotal": total}
 
@@ -68,12 +79,18 @@ async def list_products(
         ]
     total = len(docs)
     start = (page - 1) * pageSize
-    return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
+    return {
+        "data": [_public_product(d) for d in docs[start:start + pageSize]],
+        "page": page,
+        "pageSize": pageSize,
+        "total": total,
+    }
 
 
 @router.get("/products/{product_id}")
 async def get_product(product_id: str, uid: str = Depends(_market_user)):
-    return await _require_product(product_id)
+    product = await _require_product(product_id)
+    return _public_product(product)
 
 
 @router.get("/products/{product_id}/certificate")
@@ -120,3 +137,42 @@ async def delete_cart_item(product_id: str, uid: str = Depends(_market_user)):
     cart.setdefault("items", {}).pop(product_id, None)
     await set_doc("carts", uid, cart)
     return await _cart_response(uid)
+
+
+# one review doc per user per product: doc id = reviewer uid (upsert semantics)
+@router.post("/products/{product_id}/reviews")
+async def upsert_review(product_id: str, body: ReviewIn, uid: str = Depends(_market_user)):
+    product = await _require_product(product_id)
+    user = await get_user(uid)
+    now = datetime.now(timezone.utc).isoformat()
+    existing = await get_doc(f"products/{product_id}/reviews", uid)
+    review = {
+        "id": uid,
+        "userId": uid,
+        "userName": (user or {}).get("name", ""),
+        "rating": body.rating,
+        "comment": body.comment,
+        "createdAt": (existing or {}).get("createdAt", now),
+        "updatedAt": now,
+    }
+    await set_doc(f"products/{product_id}/reviews", uid, review)
+    reviews = await db_query(f"products/{product_id}/reviews", [], limit=1000)
+    product["ratingCount"] = len(reviews)
+    product["ratingAvg"] = round(sum(r["rating"] for r in reviews) / len(reviews), 1)
+    await set_doc("products", product_id, product)
+    return review
+
+
+@router.get("/products/{product_id}/reviews")
+async def list_reviews(
+    product_id: str,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(_market_user),
+):
+    await _require_product(product_id)
+    reviews = await db_query(f"products/{product_id}/reviews", [], limit=1000)
+    reviews.sort(key=lambda r: r.get("updatedAt", ""), reverse=True)
+    total = len(reviews)
+    start = (page - 1) * pageSize
+    return {"data": reviews[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}

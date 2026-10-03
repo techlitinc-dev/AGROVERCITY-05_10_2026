@@ -19,7 +19,7 @@ def create_razorpay_order(amount_paise: int, receipt: str) -> dict:
 
 def verify_razorpay_signature(razorpay_order_id: str, razorpay_payment_id: str, signature: str) -> bool:
     if not settings.razorpay_key_secret:
-        return signature == "dev"
+        return False
     expected = hmac.new(
         settings.razorpay_key_secret.encode(),
         f"{razorpay_order_id}|{razorpay_payment_id}".encode(),

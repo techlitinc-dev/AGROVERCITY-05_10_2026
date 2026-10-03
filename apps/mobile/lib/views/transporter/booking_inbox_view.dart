@@ -70,6 +70,7 @@ class _BookingInboxViewState extends State<BookingInboxView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => AcceptVehicleSheet(
+        state: widget.state,
         vehicles: vehicles,
         onManageVehicles: () {
           Navigator.pop(ctx);
@@ -84,7 +85,7 @@ class _BookingInboxViewState extends State<BookingInboxView> {
         vehicleId: "${vehicle['id']}",
         vehicleNo: vehicle['registrationNo'] as String?,
       );
-      _snack("बुकिंग स्वीकृत");
+      _snack(widget.state.tr('transporter.bookingAccepted'));
       _load();
     } on ApiException catch (e) {
       _handleError(e);
@@ -94,12 +95,12 @@ class _BookingInboxViewState extends State<BookingInboxView> {
   Future<void> _openRejectDialog(Map<String, dynamic> booking) async {
     final reason = await showDialog<String>(
       context: context,
-      builder: (_) => const RejectReasonDialog(),
+      builder: (_) => RejectReasonDialog(state: widget.state),
     );
     if (reason == null) return;
     try {
       await _api.rejectBooking("${booking['id']}", reason);
-      _snack("बुकिंग अस्वीकृत");
+      _snack(widget.state.tr('transporter.bookingRejected'));
       _load();
     } on ApiException catch (e) {
       _handleError(e);
@@ -123,15 +124,15 @@ class _BookingInboxViewState extends State<BookingInboxView> {
                   onPressed: widget.state.navigateBack,
                   icon: const Icon(Icons.arrow_back_rounded),
                 ),
-                const Text("बुकिंग अनुरोध", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                Text(widget.state.tr('transporter.bookingRequests'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
               ],
             ),
             if (_loading)
               const Center(child: CircularProgressIndicator())
             else if (_requests.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 40),
-                child: Center(child: Text("कोई लंबित अनुरोध नहीं", style: TextStyle(fontSize: 13, color: Colors.grey))),
+              Padding(
+                padding: const EdgeInsets.only(top: 40),
+                child: Center(child: Text(widget.state.tr('transporter.noPendingRequests'), style: const TextStyle(fontSize: 13, color: Colors.grey))),
               )
             else
               ..._requests.map(_buildRequestCard),
@@ -184,7 +185,10 @@ class _BookingInboxViewState extends State<BookingInboxView> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                "लॉट: ${lot['crop']} — ${lot['quantityQuintals']} क्विंटल",
+                widget.state
+                    .tr('transporter.lotLine')
+                    .replaceAll('{crop}', "${lot['crop']}")
+                    .replaceAll('{qty}', "${lot['quantityQuintals']}"),
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
               ),
             ),
@@ -195,7 +199,7 @@ class _BookingInboxViewState extends State<BookingInboxView> {
                 child: ElevatedButton(
                   onPressed: () => _openAcceptSheet(b),
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0284C7), foregroundColor: Colors.white, minimumSize: const Size(0, 48)),
-                  child: const Text("स्वीकारें", style: TextStyle(fontWeight: FontWeight.w900)),
+                  child: Text(widget.state.tr('transporter.accept'), style: const TextStyle(fontWeight: FontWeight.w900)),
                 ),
               ),
               const SizedBox(width: 10),
@@ -203,7 +207,7 @@ class _BookingInboxViewState extends State<BookingInboxView> {
                 child: OutlinedButton(
                   onPressed: () => _openRejectDialog(b),
                   style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-                  child: const Text("अस्वीकारें", style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
+                  child: Text(widget.state.tr('transporter.reject'), style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
                 ),
               ),
             ],

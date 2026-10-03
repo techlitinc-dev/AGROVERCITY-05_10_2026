@@ -10,13 +10,21 @@ Finder _personaCard(String labelHi) => find.ancestor(
     );
 
 void main() {
-  testWidgets('six persona cards render', (tester) async {
+  testWidgets('seven persona cards render', (tester) async {
     await pumpScreen(tester, ProfileSelectView(state: TestAppState()));
 
     expect(find.text('किसान'), findsOneWidget);
     expect(find.text('खेत मालिक'), findsOneWidget);
     expect(find.text('परिवहन'), findsOneWidget);
     expect(find.text('व्यापारी'), findsOneWidget);
+
+    // The 7th card sits below the fold of the test viewport — scroll to it.
+    await tester.scrollUntilVisible(
+      find.text('प्रशिक्षक / शिक्षक'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('प्रशिक्षक / शिक्षक'), findsOneWidget);
   });
 
   testWidgets('continue disabled until selection', (tester) async {
@@ -62,6 +70,14 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    // Scroll back to the top row before asserting the farmer card state.
+    await tester.scrollUntilVisible(
+      find.text('किसान'),
+      -160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
     expect(
       find.descendant(
         of: _personaCard('किसान'),

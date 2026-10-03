@@ -111,4 +111,113 @@ void main() {
     expect(find.text('err:TOKEN_EXPIRED'), findsOneWidget);
     expect(find.text('सत्र समाप्त — MPIN दर्ज करें'), findsNothing);
   });
+
+  testWidgets('wrong MPIN shows inline error, then correct MPIN succeeds',
+      (tester) async {
+    adapter = FakeHttpAdapter();
+    adapter.onGet('/users/me', () => errorEnvelope('TOKEN_EXPIRED', 401));
+    adapter.onGet('/users/me', () => jsonResponse({'village': 'Ozark'}, 200));
+    adapter.onPost(
+      '/auth/refresh',
+      () => jsonResponse(
+        {'accessToken': 'new', 'refreshToken': 'newref'},
+        200,
+      ),
+    );
+    adapter.onPost(
+      '/auth/mpin/verify',
+      () => errorEnvelope('WRONG_MPIN', 401),
+    );
+    adapter.onPost(
+      '/auth/mpin/verify',
+      () => jsonResponse({'ok': true}, 200),
+    );
+
+    final restorer = MpinSessionRestorer(
+      contextProvider: () => rootNavigatorKey.currentContext,
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    client = ApiClient(
+      dio: Dio()..httpClientAdapter = adapter,
+      sessionRestorer: restorer,
+    );
+
+    await pumpHarness(tester);
+
+    expect(find.text('सत्र समाप्त — MPIN दर्ज करें'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '9999');
+    await tester.tap(find.text('पुष्टि करें'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('सत्र समाप्त — MPIN दर्ज करें'), findsOneWidget);
+    expect(find.text('गलत MPIN'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '1234');
+    await tester.tap(find.text('पुष्टि करें'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ok:Ozark'), findsOneWidget);
+    expect(find.text('सत्र समाप्त — MPIN दर्ज करें'), findsNothing);
+  });
+
+  testWidgets('expired refresh token shows session expired and logout action',
+      (tester) async {
+    adapter = FakeHttpAdapter();
+    adapter.onGet('/users/me', () => errorEnvelope('TOKEN_EXPIRED', 401));
+    adapter.onPost(
+      '/auth/refresh',
+      () => errorEnvelope('TOKEN_EXPIRED', 401),
+    );
+
+    bool loggedOut = false;
+    final restorer = MpinSessionRestorer(
+      contextProvider: () => rootNavigatorKey.currentContext,
+      dio: Dio()..httpClientAdapter = adapter,
+      onLogout: () => loggedOut = true,
+    );
+    client = ApiClient(
+      dio: Dio()..httpClientAdapter = adapter,
+      sessionRestorer: restorer,
+    );
+
+    await pumpHarness(tester);
+
+    expect(find.text('सत्र समाप्त — MPIN दर्ज करें'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '1234');
+    await tester.tap(find.text('पुष्टि करें'));
+    await tester.pumpAndSettle();
+
+    // Must NOT say 'गलत MPIN' when refresh token itself failed
+    expect(find.text('गलत MPIN'), findsNothing);
+    expect(find.text('सत्र समाप्त हो चुका है। कृपया दोबारा लॉगिन करें।'), findsOneWidget);
+    expect(find.text('लॉगिन पेज पर जाएं ➔'), findsOneWidget);
+
+    await tester.tap(find.text('लॉगिन पेज पर जाएं ➔'));
+    await tester.pumpAndSettle();
+
+    expect(loggedOut, isTrue);
+    expect(find.text('सत्र समाप्त — MPIN दर्ज करें'), findsNothing);
+  });
+
+  test('/auth/login 401 does not trigger session restorer', () async {
+    adapter = FakeHttpAdapter();
+    adapter.onPost('/auth/login', () => errorEnvelope('WRONG_MPIN', 401));
+
+    final restorer = MpinSessionRestorer(
+      contextProvider: () => rootNavigatorKey.currentContext,
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    client = ApiClient(
+      dio: Dio()..httpClientAdapter = adapter,
+      sessionRestorer: restorer,
+    );
+
+    expect(
+      () => client.post('/auth/login', body: {'phone': '+919999999999', 'mpin': '0000'}),
+      throwsA(isA<ApiException>().having((e) => e.code, 'code', 'WRONG_MPIN')),
+    );
+  });
 }
+

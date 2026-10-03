@@ -1,5 +1,14 @@
+import hashlib
+import hmac
+
+import pytest
+
+from app.core.config import settings
 from tests.test_marketplace import seeded  # noqa: F401
 from tests.test_users import _auth, _register
+
+RZP_TEST_KEY_ID = "rzp_test_key"
+RZP_TEST_KEY_SECRET = "rzp_test_secret"
 
 ORDER_BODY = {
     "items": [{"productId": "prod-1", "quantity": 2}],
@@ -7,6 +16,34 @@ ORDER_BODY = {
     "deliveryAddress": "Pimplas, Nashik",
     "idempotencyKey": "key-1",
 }
+
+
+@pytest.fixture
+def razorpay(monkeypatch):
+    """Configure fake Razorpay keys and stub the outbound Razorpay HTTP calls."""
+    monkeypatch.setattr(settings, "razorpay_key_id", RZP_TEST_KEY_ID)
+    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_TEST_KEY_SECRET)
+
+    def fake_create_order(amount_paise, receipt):
+        return {
+            "id": f"order_test_{receipt}",
+            "amount": amount_paise,
+            "currency": "INR",
+            "status": "created",
+        }
+
+    async def fake_refund(payment_id, amount_paise):
+        return {"id": f"rfnd_test_{payment_id}", "status": "processed"}
+
+    monkeypatch.setattr("app.routers.orders.create_razorpay_order", fake_create_order)
+    monkeypatch.setattr("app.routers.orders.refund_razorpay_payment", fake_refund)
+    yield
+
+
+def rzp_signature(order_id: str, payment_id: str) -> str:
+    return hmac.new(
+        RZP_TEST_KEY_SECRET.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
+    ).hexdigest()
 
 
 async def _token(client):
@@ -71,21 +108,32 @@ async def test_orders_list_and_detail(client, seeded, user_store):
     assert resp.status_code == 403
 
 
-async def test_razorpay_order_and_verify_dev_mode(client, seeded):
+async def test_razorpay_order_requires_configured_key(client, seeded):
+    token = await _token(client)
+    order_id = (await _place(client, token)).json()["orderId"]
+    resp = await client.post(
+        "/v1/payments/razorpay/order", json={"orderId": order_id}, headers=_auth(token)
+    )
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "PAYMENTS_NOT_CONFIGURED"
+
+
+async def test_razorpay_order_and_verify(client, seeded, razorpay):
     token = await _token(client)
     order_id = (await _place(client, token)).json()["orderId"]
     headers = _auth(token)
     resp = await client.post("/v1/payments/razorpay/order", json={"orderId": order_id}, headers=headers)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["razorpayOrderId"].startswith("order_dev_")
+    assert body["razorpayOrderId"] == f"order_test_{order_id}"
+    assert body["keyId"] == RZP_TEST_KEY_ID
     resp = await client.post(
         "/v1/payments/razorpay/verify",
         json={
             "orderId": order_id,
             "razorpayOrderId": body["razorpayOrderId"],
-            "razorpayPaymentId": "pay_dev_1",
-            "razorpaySignature": "dev",
+            "razorpayPaymentId": "pay_test_1",
+            "razorpaySignature": rzp_signature(body["razorpayOrderId"], "pay_test_1"),
         },
         headers=headers,
     )
@@ -93,7 +141,7 @@ async def test_razorpay_order_and_verify_dev_mode(client, seeded):
     assert resp.json()["status"] == "paid"
 
 
-async def test_razorpay_verify_bad_signature(client, seeded):
+async def test_razorpay_verify_bad_signature(client, seeded, razorpay):
     token = await _token(client)
     order_id = (await _place(client, token)).json()["orderId"]
     headers = _auth(token)
@@ -103,7 +151,7 @@ async def test_razorpay_verify_bad_signature(client, seeded):
         json={
             "orderId": order_id,
             "razorpayOrderId": rzp.json()["razorpayOrderId"],
-            "razorpayPaymentId": "pay_dev_1",
+            "razorpayPaymentId": "pay_test_1",
             "razorpaySignature": "wrong",
         },
         headers=headers,

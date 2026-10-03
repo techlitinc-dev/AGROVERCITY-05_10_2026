@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.equipment import BookSlotRequest, EquipmentOut, SlotOut
+from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
 from app.services.users import get_user
 
@@ -147,7 +148,11 @@ async def list_equipment(
         d for d in docs
         if d.get("active", True) and d.get("docStatus") == "verified" and (type is None or d.get("type") == type)
     ]
-    return {"data": [EquipmentOut(**d).model_dump() for d in docs]}
+    out = []
+    for d in docs:
+        d.update(await provider_rating_fields(d["id"]))
+        out.append(EquipmentOut(**d).model_dump())
+    return {"data": out}
 
 
 @router.get("/{equipment_id}/slots")

@@ -52,13 +52,13 @@ class AppleMenuBar extends StatelessWidget {
               children: [
                 // 🍏 Brand / Apple-style Setu Logo Dropdown
                 PopupMenuButton<String>(
-                  tooltip: "AGROVERCITY Menu",
+                  tooltip: state.tr('navigation.brandMenu'),
                   offset: const Offset(0, 32),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   color: Colors.white.withValues(alpha: 0.96),
                   onSelected: (val) {
                     if (val == 'about') {
-                      state.showToast("AGROVERCITY v2.0 • Aapki Zameen, Aapka Business");
+                      state.showToast(state.tr('aboutTagline'));
                     } else if (val == 'tools') {
                       onOpenAllTools();
                     } else if (val == 'gyan') {
@@ -70,54 +70,54 @@ class AppleMenuBar extends StatelessWidget {
                     }
                   },
                   itemBuilder: (context) => [
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'about',
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF1B4332)),
-                          SizedBox(width: 8),
-                          Text("AGROVERCITY के बारे में (About)", style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                          const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF1B4332)),
+                          const SizedBox(width: 8),
+                          Text(state.tr('about'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                         ],
                       ),
                     ),
                     const PopupMenuDivider(),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'gyan',
                       child: Row(
                         children: [
-                          Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
-                          SizedBox(width: 8),
-                          Text("ज्ञान सेतु (Videos & Blogs)", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
+                          const SizedBox(width: 8),
+                          Text(state.tr('gyanHub'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'tools',
                       child: Row(
                         children: [
-                          Icon(Icons.apps_rounded, size: 16, color: Color(0xFF1B4332)),
-                          SizedBox(width: 8),
-                          Text("सभी 16 टूल्स खोलें (Launchpad)", style: TextStyle(fontSize: 13)),
+                          const Icon(Icons.apps_rounded, size: 16, color: Color(0xFF1B4332)),
+                          const SizedBox(width: 8),
+                          Text(state.tr('allToolsLaunchpad'), style: const TextStyle(fontSize: 13)),
                         ],
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'replay',
                       child: Row(
                         children: [
-                          Icon(Icons.replay_rounded, size: 16, color: Color(0xFF0284C7)),
-                          SizedBox(width: 8),
-                          Text("ऑनबोर्डिंग पुनः चलाएं (Replay Flow)", style: TextStyle(fontSize: 13)),
+                          const Icon(Icons.replay_rounded, size: 16, color: Color(0xFF0284C7)),
+                          const SizedBox(width: 8),
+                          Text(state.tr('replayFlow'), style: const TextStyle(fontSize: 13)),
                         ],
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'sync',
                       child: Row(
                         children: [
-                          Icon(Icons.sync_rounded, size: 16, color: Color(0xFF1B4332)),
-                          SizedBox(width: 8),
-                          Text("डेटा सिंक स्थिति (Sync Status)", style: TextStyle(fontSize: 13)),
+                          const Icon(Icons.sync_rounded, size: 16, color: Color(0xFF1B4332)),
+                          const SizedBox(width: 8),
+                          Text(state.tr('syncStatus'), style: const TextStyle(fontSize: 13)),
                         ],
                       ),
                     ),
@@ -152,9 +152,9 @@ class AppleMenuBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Text(
-                        "AGROVERCITY",
-                        style: TextStyle(
+                      Text(
+                        state.tr('appName'),
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -168,29 +168,29 @@ class AppleMenuBar extends StatelessWidget {
                 const SizedBox(width: 16),
 
                 // macOS Menus
-                _buildMenuTitle(context, "फसल (Crops)", [
-                  _MenuItem("एआई रोग जांच (AI Scan)", 'advisory'),
-                  _MenuItem("खाद बचत NPK (Fertilizer)", 'advisory'),
-                  _MenuItem("सिंचाई नियंत्रण (Water)", 'water'),
+                _buildMenuTitle(context, state.tr('crops'), [
+                  _MenuItem(state.tr('aiScan'), 'advisory'),
+                  _MenuItem(state.tr('fertilizer'), 'advisory'),
+                  _MenuItem(state.tr('waterControl'), 'water'),
                 ]),
-                _buildMenuTitle(context, "बाज़ार (Market)", [
-                  _MenuItem("लाइव मंडी भाव (Mandi Rates)", 'mandi'),
-                  _MenuItem("खाद-बीज बाज़ार (Input Store)", 'marketplace'),
-                  _MenuItem("सीधा खरीदार अनुबंध (Contracts)", 'buyers'),
+                _buildMenuTitle(context, state.tr('market'), [
+                  _MenuItem(state.tr('mandiRates'), 'mandi'),
+                  _MenuItem(state.tr('inputStore'), 'marketplace'),
+                  _MenuItem(state.tr('directContracts'), 'buyers'),
                 ]),
-                _buildMenuTitle(context, "ज्ञान (Media Hub)", [
-                  _MenuItem("वैज्ञानिक मास्टरक्लास (Expert Talks)", 'gyanHub'),
-                  _MenuItem("कृषि वीडियो ट्यूटोरियल (Videos)", 'gyanHub'),
-                  _MenuItem("शोध ब्लॉग्स (Agronomy Blogs)", 'gyanHub'),
+                _buildMenuTitle(context, state.tr('mediaHub'), [
+                  _MenuItem(state.tr('expertTalks'), 'gyanHub'),
+                  _MenuItem(state.tr('videos'), 'gyanHub'),
+                  _MenuItem(state.tr('blogs'), 'gyanHub'),
                 ]),
-                _buildMenuTitle(context, "वित्त (Finance)", [
-                  _MenuItem("फार्म CEO P&L (Profit/Loss)", 'profitLoss'),
-                  _MenuItem("किसान साख स्कोर (Credit 785)", 'finance'),
-                  _MenuItem("तात्कालिक ऋण (₹50k Loan)", 'finance'),
+                _buildMenuTitle(context, state.tr('finance'), [
+                  _MenuItem(state.tr('farmPnl'), 'profitLoss'),
+                  _MenuItem(state.tr('creditScore'), 'finance'),
+                  _MenuItem(state.tr('instantLoan'), 'finance'),
                 ]),
-                _buildMenuTitle(context, "योजनाएं (Govt)", [
-                  _MenuItem("पात्रता जांच (Auto-Checker)", 'schemes'),
-                  _MenuItem("दस्तावेज़ वॉल्ट (Document Vault)", 'schemes'),
+                _buildMenuTitle(context, state.tr('schemes'), [
+                  _MenuItem(state.tr('eligibilityChecker'), 'schemes'),
+                  _MenuItem(state.tr('docVault'), 'schemes'),
                 ]),
 
                 const Spacer(),
@@ -221,7 +221,11 @@ class AppleMenuBar extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          state.isOffline ? "ऑफलाइन (${state.syncQueueCount})" : "सिंक सक्रिय",
+                          state.isOffline
+                              ? (state.syncQueueCount > 0
+                                  ? "${state.tr('offlineWithCount')} (${state.syncQueueCount})"
+                                  : state.tr('offlineWithCount'))
+                              : state.tr('syncActive'),
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w700,
@@ -262,7 +266,7 @@ class AppleMenuBar extends StatelessWidget {
 
                 // 3. Language Selector Pill
                 PopupMenuButton<String>(
-                  tooltip: "Select Language",
+                  tooltip: state.tr('navigation.selectLanguage'),
                   offset: const Offset(0, 30),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   color: Colors.white.withValues(alpha: 0.96),
@@ -318,9 +322,9 @@ class AppleMenuBar extends StatelessWidget {
                           color: state.isWomenMode ? Colors.white : const Color(0xFFFDA4AF),
                         ),
                         const SizedBox(width: 3),
-                        const Text(
-                          "महिला",
-                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white),
+                        Text(
+                          state.tr('navigation.women'),
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                       ],
                     ),

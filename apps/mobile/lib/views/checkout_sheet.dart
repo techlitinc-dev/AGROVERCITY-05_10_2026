@@ -6,22 +6,27 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../api/addresses_api.dart';
 import '../api/api_exception.dart';
+import '../api/coupons_api.dart';
 import '../api/orders_api.dart';
 import '../components/market/address_picker_sheet.dart';
 import '../components/market/checkout_widgets.dart';
+import '../components/market/coupon_apply_section.dart';
 import '../components/mandi/mandi_price_card.dart';
+import '../models/emarket_models.dart';
 import '../state/app_state.dart';
 
 class CheckoutSheet extends StatefulWidget {
   final AppState state;
   final OrdersApi? ordersApi;
   final AddressesApi? addressesApi;
+  final CouponsApi? couponsApi;
 
   const CheckoutSheet({
     super.key,
     required this.state,
     this.ordersApi,
     this.addressesApi,
+    this.couponsApi,
   });
 
   @override
@@ -31,6 +36,7 @@ class CheckoutSheet extends StatefulWidget {
 class _CheckoutSheetState extends State<CheckoutSheet> {
   late final OrdersApi _orders = widget.ordersApi ?? OrdersApi();
   late final AddressesApi _addresses = widget.addressesApi ?? AddressesApi();
+  late final CouponsApi _coupons = widget.couponsApi ?? CouponsApi();
   final String _idempotencyKey = const Uuid().v4();
 
   List<Map<String, dynamic>> _addressList = [];
@@ -38,6 +44,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
   String _paymentMethod = 'cod';
   bool _placing = false;
   Map<String, dynamic>? _placedOrder;
+  CouponValidation? _coupon;
 
   @override
   void initState() {
@@ -111,6 +118,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
             address == null ? _fallbackAddress() : _composedAddress(address),
         addressId: address?['id'] as String?,
         idempotencyKey: _idempotencyKey,
+        couponCode: _appliedCouponCode,
       );
       if (_paymentMethod == 'upi') {
         await _payUpi("${res['orderId']}");
@@ -118,7 +126,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
         _onOrderSuccess(res);
       }
     } on ApiException catch (e) {
-      _snack(e.message.isNotEmpty ? e.message : "भुगतान विफल — पुनः प्रयास करें");
+      _snack(e.message.isNotEmpty ? e.message : widget.state.tr('bookings.paymentFailed'));
     } finally {
       if (mounted) setState(() => _placing = false);
     }
@@ -175,12 +183,39 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
         razorpaySignature: signature,
       );
       if (res['status'] == 'paid') {
-        _onOrderSuccess({'orderId': orderId, 'total': widget.state.cartTotal});
+        _onOrderSuccess({'orderId': orderId, 'total': _payable});
       } else {
         _snack("भुगतान विफल — पुनः प्रयास करें");
       }
     } on ApiException {
       _snack("भुगतान विफल — पुनः प्रयास करें");
+    }
+  }
+
+  String? get _appliedCouponCode =>
+      _coupon?.valid == true ? _coupon!.code : null;
+
+  int get _payable =>
+      _coupon?.valid == true ? _coupon!.finalTotal.round() : widget.state.cartTotal;
+
+  Future<String?> _applyCoupon(String code) async {
+    try {
+      final v = await _coupons.validate(
+        code: code,
+        cartTotal: widget.state.cartTotal,
+      );
+      if (!mounted) return null;
+      if (v.valid) {
+        setState(() => _coupon = v);
+        return null;
+      }
+      return v.message.isNotEmpty
+          ? v.message
+          : widget.state.tr('emarket.couponInvalid');
+    } on ApiException catch (e) {
+      return e.message.isNotEmpty
+          ? e.message
+          : widget.state.tr('emarket.couponInvalid');
     }
   }
 
@@ -216,6 +251,18 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
             onTap: _pickAddress,
           ),
           const SizedBox(height: 12),
+          CouponApplySection(
+            state: widget.state,
+            cartTotal: widget.state.cartTotal,
+            appliedCode: _coupon?.valid == true ? _coupon!.code : null,
+            discount: _coupon?.discount ?? 0,
+            finalTotal: _coupon?.valid == true
+                ? _coupon!.finalTotal
+                : widget.state.cartTotal.toDouble(),
+            onApply: _applyCoupon,
+            onRemove: () => setState(() => _coupon = null),
+          ),
+          const SizedBox(height: 12),
           const Text("भुगतान विधि", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
           CheckoutMethodTiles(
             groupValue: _paymentMethod,
@@ -238,7 +285,7 @@ class _CheckoutSheetState extends State<CheckoutSheet> {
               child: Text(
                 _placing
                     ? "प्रोसेस हो रहा है..."
-                    : "Pay ₹${fmtInr(widget.state.cartTotal)}",
+                    : "Pay ₹${fmtInr(_payable)}",
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),

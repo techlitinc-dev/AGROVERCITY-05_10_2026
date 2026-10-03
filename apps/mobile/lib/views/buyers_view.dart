@@ -63,7 +63,7 @@ class _BuyersViewState extends State<BuyersView> {
   }
 
   Future<void> _showContractTerms(Map<String, dynamic> c) async {
-    String terms = "शर्तें लोड हो रही हैं...";
+    String terms = widget.state.tr('trade.loadingTerms');
     try {
       final detail = await _contractsApi.getContract("${c['id']}");
       terms = "${detail['termsText'] ?? terms}";
@@ -76,14 +76,14 @@ class _BuyersViewState extends State<BuyersView> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          "अनुबंध शर्तें: ${c['buyerCompany']}",
+          "${widget.state.tr('trade.contractTerms')}: ${c['buyerCompany']}",
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
         content: Text(terms, style: const TextStyle(fontSize: 12.5, height: 1.5)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("बंद करें"),
+            child: Text(widget.state.tr('close')),
           ),
         ],
       ),
@@ -100,7 +100,7 @@ class _BuyersViewState extends State<BuyersView> {
       ),
     );
     if (accepted == true) {
-      widget.state.showToast("अनुबंध स्वीकृत");
+      widget.state.showToast(widget.state.tr('trade.contractAccepted'));
       await _loadContracts();
     }
   }
@@ -116,22 +116,22 @@ class _BuyersViewState extends State<BuyersView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("सीधा खरीदार व अनुबंध खेती", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                  Text("बुवाई पूर्व भाव लॉक • डिजिटल एग्रीमेंट • परिवहन", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(widget.state.tr('trade.buyersTitle'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  Text(widget.state.tr('trade.buyersSubtitle'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
               ),
-              const AudioButton(text: "सीधे खरीदारों से बुवाई से पहले भाव तय करें और बिना बिचौलियों के अधिक मुनाफा कमाएं।"),
+              AudioButton(text: widget.state.tr('trade.buyersAudio')),
             ],
           ),
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(child: _tabBtn(0, "🤝 बुवाई पूर्व मूल्य लॉक अनुबंध")),
+              Expanded(child: _tabBtn(0, widget.state.tr('trade.tabPriceLock'))),
               const SizedBox(width: 8),
-              Expanded(child: _tabBtn(1, "🚚 कृषि वाहन बुकिंग (Logistics)")),
+              Expanded(child: _tabBtn(1, widget.state.tr('trade.tabLogistics'))),
             ],
           ),
           const SizedBox(height: 14),
@@ -139,7 +139,7 @@ class _BuyersViewState extends State<BuyersView> {
             if (_loadingContracts)
               const Center(child: CircularProgressIndicator())
             else if (_contracts.isEmpty)
-              const Text("कोई खुला अनुबंध नहीं", style: TextStyle(fontSize: 12, color: Colors.grey))
+              Text(widget.state.tr('trade.noOpenContracts'), style: const TextStyle(fontSize: 12, color: Colors.grey))
             else
               ..._contracts.map(_buildContractCard),
           ],
@@ -193,7 +193,7 @@ class _BuyersViewState extends State<BuyersView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: const Color(0xFFD8F3DC), borderRadius: BorderRadius.circular(8)),
-                child: Text("+₹${c['premiumAboveMSP']}/Quintal", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF166534))),
+                child: Text("+₹${c['premiumAboveMSP']}/${widget.state.tr('trade.quintal')}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF166534))),
               ),
             ],
           ),
@@ -204,29 +204,29 @@ class _BuyersViewState extends State<BuyersView> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("गारंटीड लॉक भाव", style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  Text("₹${c['lockedRateQuintal']}/quintal", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1B4332))),
+                  Text(widget.state.tr('trade.guaranteedLockRate'), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text("₹${c['lockedRateQuintal']}/${widget.state.tr('trade.quintal')}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1B4332))),
                 ],
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text("न्यूनतम मात्रा", style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  Text("${c['minQuantityQuintals']} क्विंटल", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                  Text(widget.state.tr('trade.minQuantity'), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text("${c['minQuantityQuintals']} ${widget.state.tr('trade.quintal')}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Text("डिलीवरी: ${c['deliveryLocation']}", style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
-          Text("भुगतान: ${c['paymentTerms']}", style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+          Text("${widget.state.tr('trade.delivery')}: ${c['deliveryLocation']}", style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
+          Text("${widget.state.tr('trade.payment')}: ${c['paymentTerms']}", style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: () => _showContractTerms(c),
-                  child: const Text("शर्तें देखें", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  child: Text(widget.state.tr('trade.viewTerms'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -234,7 +234,7 @@ class _BuyersViewState extends State<BuyersView> {
                 child: ElevatedButton(
                   onPressed: () => _openEsign(c),
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B4332), foregroundColor: Colors.white),
-                  child: const Text("भाव लॉक करें", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  child: Text(widget.state.tr('lockPrice'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 ),
               ),
             ],

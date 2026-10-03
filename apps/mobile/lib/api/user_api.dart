@@ -36,4 +36,44 @@ class UserApi {
 
   Future<Map<String, dynamic>> setPrimaryProfile(String profileType) =>
       _client.put(userProfilePrimaryPath(profileType));
+
+  Future<Map<String, dynamic>> updateSettings(Map<String, dynamic> settings) =>
+      _client.put(pathUsersMeSettings, body: settings);
+
+  Future<Map<String, dynamic>> updateLanguage(String lang) =>
+      _client.put(pathUsersMeSettings, body: {'language': lang, 'preferredLanguage': lang});
+
+  Future<Map<String, dynamic>> getSettings() =>
+      _client.get(pathUsersMeSettings);
+
+  Future<Map<String, dynamic>> getConsents() =>
+      _client.get(pathUsersMeConsents);
+
+  Future<Map<String, dynamic>> putConsents({
+    required bool dataSharing,
+    required bool location,
+    required bool marketing,
+  }) =>
+      _client.put(pathUsersMeConsents, body: {
+        'dataSharing': dataSharing,
+        'location': location,
+        'marketing': marketing,
+      });
+
+  Future<Map<String, dynamic>> deleteAccount(String mpin) =>
+      _client.delete(pathUsersMe, body: {'mpin': mpin});
+
+  Future<Map<String, dynamic>> registerDevice({
+    required String fcmToken,
+    required String platform,
+    String locale = 'en',
+  }) =>
+      _client.post(pathDevices, body: {
+        'fcmToken': fcmToken,
+        'platform': platform,
+        'locale': locale,
+      });
+
+  Future<void> deleteDevice(String tokenHash) =>
+      _client.delete(devicePath(tokenHash));
 }

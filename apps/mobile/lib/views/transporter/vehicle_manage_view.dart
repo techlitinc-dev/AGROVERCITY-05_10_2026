@@ -65,6 +65,7 @@ class _VehicleManageViewState extends State<VehicleManageView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => VehicleFormSheet(
+        state: widget.state,
         api: _api,
         uploader: widget.photoUploader ?? const PhotoUploader(),
         uid: "${widget.state.currentUser?['id'] ?? 'demo'}",
@@ -79,14 +80,14 @@ class _VehicleManageViewState extends State<VehicleManageView> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("वाहन हटाएं?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        title: Text(widget.state.tr('transporter.deleteVehicleTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
         content: Text("${vehicle['registrationNo']} (${vehicle['vehicleType']})"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("रद्द करें")),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(widget.state.tr('cancel'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("हटाएं"),
+            child: Text(widget.state.tr('transporter.delete')),
           ),
         ],
       ),
@@ -94,7 +95,7 @@ class _VehicleManageViewState extends State<VehicleManageView> {
     if (confirmed != true) return;
     try {
       await _api.deleteVehicle("${vehicle['id']}");
-      _snack("वाहन हटाया गया");
+      _snack(widget.state.tr('transporter.vehicleDeleted'));
       _load();
     } on ApiException catch (e) {
       _snack(e.message.isNotEmpty ? e.message : e.code);
@@ -110,7 +111,7 @@ class _VehicleManageViewState extends State<VehicleManageView> {
         foregroundColor: Colors.white,
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add_rounded),
-        label: const Text("वाहन जोड़ें", style: TextStyle(fontWeight: FontWeight.w900)),
+        label: Text(widget.state.tr('transporter.addVehicle'), style: const TextStyle(fontWeight: FontWeight.w900)),
       ),
       body: ListView(
         physics: const BouncingScrollPhysics(),
@@ -122,13 +123,13 @@ class _VehicleManageViewState extends State<VehicleManageView> {
                 onPressed: widget.state.navigateBack,
                 icon: const Icon(Icons.arrow_back_rounded),
               ),
-              const Text("मेरे वाहन", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              Text(widget.state.tr('transporter.myVehicles'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             ],
           ),
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_vehicles.isEmpty)
-            const Text("कोई वाहन नहीं — ऊपर से जोड़ें", style: TextStyle(fontSize: 12, color: Colors.grey))
+            Text(widget.state.tr('transporter.noVehicles'), style: const TextStyle(fontSize: 12, color: Colors.grey))
           else
             ..._vehicles.map(_buildVehicleCard),
         ],
@@ -140,9 +141,9 @@ class _VehicleManageViewState extends State<VehicleManageView> {
     final active = v['active'] != false;
     final docStatus = "${v['docStatus'] ?? 'pending'}";
     final docLabel = switch (docStatus) {
-      'verified' => "सत्यापित ✅",
-      'rejected' => "अस्वीकृत ❌",
-      _ => "सत्यापन लंबित ⏳",
+      'verified' => "${widget.state.tr('transporter.verified')} ✅",
+      'rejected' => "${widget.state.tr('statusRejected')} ❌",
+      _ => "${widget.state.tr('transporter.verificationPending')} ⏳",
     };
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -163,7 +164,7 @@ class _VehicleManageViewState extends State<VehicleManageView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("${v['registrationNo']}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
-                    Text("${v['vehicleType']} • ${v['capacityTonnes']} टन", style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
+                    Text("${v['vehicleType']} • ${v['capacityTonnes']} ${widget.state.tr('transporter.tonnes')}", style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
                   ],
                 ),
               ),
@@ -171,7 +172,7 @@ class _VehicleManageViewState extends State<VehicleManageView> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(docLabel, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)),
-                  Text(active ? "सक्रिय" : "निष्क्रिय", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: active ? const Color(0xFF166534) : Colors.grey)),
+                  Text(active ? widget.state.tr('transporter.active') : widget.state.tr('transporter.inactive'), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: active ? const Color(0xFF166534) : Colors.grey)),
                 ],
               ),
             ],

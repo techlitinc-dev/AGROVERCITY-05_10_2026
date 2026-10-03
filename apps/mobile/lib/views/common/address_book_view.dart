@@ -64,7 +64,7 @@ class _AddressBookViewState extends State<AddressBookView> {
       ),
     );
     if (saved != null) {
-      _snack(existing == null ? "पता जोड़ा गया" : "पता अपडेट हुआ");
+      _snack(existing == null ? widget.state.tr('profile.addressAdded') : widget.state.tr('profile.addressUpdated'));
       await _load();
     }
   }
@@ -80,7 +80,7 @@ class _AddressBookViewState extends State<AddressBookView> {
         'pincode': a['pincode'],
         'isDefault': true,
       });
-      _snack("डिफ़ॉल्ट पता बदला गया");
+      _snack(widget.state.tr('profile.defaultAddressChanged'));
       await _load();
     } on ApiException catch (e) {
       _snack(e.message);
@@ -92,14 +92,14 @@ class _AddressBookViewState extends State<AddressBookView> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("पता हटाएं?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        title: Text(widget.state.tr('profile.deleteAddressConfirm'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
         content: Text("${a['label']}: ${a['line1']}, ${a['village']}"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("रद्द करें")),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(widget.state.tr('cancel'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("हटाएं"),
+            child: Text(widget.state.tr('deleteK')),
           ),
         ],
       ),
@@ -107,7 +107,7 @@ class _AddressBookViewState extends State<AddressBookView> {
     if (confirmed != true) return;
     try {
       await _api.deleteAddress("${a['id']}");
-      _snack("पता हटाया गया");
+      _snack(widget.state.tr('profile.addressDeleted'));
       await _load();
     } on ApiException catch (e) {
       _snack(e.message);
@@ -123,7 +123,7 @@ class _AddressBookViewState extends State<AddressBookView> {
         foregroundColor: Colors.white,
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add_location_alt_rounded, size: 18),
-        label: const Text("पता जोड़ें", style: TextStyle(fontWeight: FontWeight.w900)),
+        label: Text(widget.state.tr('profile.addAddress'), style: TextStyle(fontWeight: FontWeight.w900)),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -131,14 +131,14 @@ class _AddressBookViewState extends State<AddressBookView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("मेरे पते (Address Book)", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            Text(widget.state.tr('profile.myAddressesTitle'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
             const SizedBox(height: 12),
             if (_loading)
               Container(height: 72, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(14)))
             else if (_addresses.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: Text("कोई पता सहेजा नहीं", style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700))),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text(widget.state.tr('profile.noSavedAddresses'), style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700))),
               )
             else
               ..._addresses.map(_addressCard),
@@ -174,7 +174,7 @@ class _AddressBookViewState extends State<AddressBookView> {
                     if (isDefault) ...[
                       const SizedBox(width: 6),
                       const Icon(Icons.star_rounded, size: 15, color: Color(0xFFF59E0B)),
-                      const Text(" डिफ़ॉल्ट", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFF59E0B))),
+                      Text(' ${widget.state.tr('profile.defaultTag')}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFF59E0B))),
                     ],
                   ],
                 ),
@@ -189,7 +189,7 @@ class _AddressBookViewState extends State<AddressBookView> {
           Column(
             children: [
               IconButton(
-                tooltip: "डिफ़ॉल्ट बनाएं",
+                tooltip: widget.state.tr('profile.setAsDefaultTooltip'),
                 visualDensity: VisualDensity.compact,
                 icon: Icon(
                   isDefault ? Icons.star_rounded : Icons.star_outline_rounded,
@@ -199,13 +199,13 @@ class _AddressBookViewState extends State<AddressBookView> {
                 onPressed: isDefault ? null : () => _setDefault(a),
               ),
               IconButton(
-                tooltip: "संपादित करें",
+                tooltip: widget.state.tr('profile.editTooltip'),
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.edit_rounded, size: 18, color: Color(0xFF2E7D32)),
                 onPressed: () => _openForm(a),
               ),
               IconButton(
-                tooltip: "हटाएं",
+                tooltip: widget.state.tr('deleteK'),
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
                 onPressed: () => _delete(a),

@@ -1,240 +1,196 @@
-// ज्ञान सेतु: Krishi Gyan Media Hub (ज्ञानसेतू Paid Workshops, Blogs, Videos, ICAR Expert Masterclasses)
+// ज्ञान सेतु: Krishi Gyan Media Hub (API-wired port: /v1/workshops + enroll
+// with coin redeem + Razorpay, /v1/expert-talks + register + questions,
+// /v1/videos, /v1/blogs + bookmark/like).
 
 import 'package:flutter/material.dart';
+
+import '../api/api_exception.dart';
+import '../api/gyan_api.dart';
+import '../core/razorpay_payment.dart';
+import '../models/gyan_models.dart';
 import '../state/app_state.dart';
-import '../models/app_models.dart';
-import '../components/common/glass_card.dart';
-import '../components/common/audio_button.dart';
+import 'courses/ad_banner_widget.dart';
+import 'courses/courses_view.dart';
+import 'gyan_hub_header_widgets.dart';
+import 'gyan_hub_media_sheets.dart';
+import 'gyan_hub_sheets.dart';
+import 'gyan_hub_tabs.dart';
 
 class GyanHubView extends StatefulWidget {
   final AppState state;
-  const GyanHubView({super.key, required this.state});
+  final GyanApi? gyanApi;
+
+  // Tests pass false so video_player is never touched off-device.
+  final bool enableVideo;
+
+  const GyanHubView({
+    super.key,
+    required this.state,
+    this.gyanApi,
+    this.enableVideo = true,
+  });
 
   @override
   State<GyanHubView> createState() => _GyanHubViewState();
 }
 
 class _GyanHubViewState extends State<GyanHubView> {
-  int _selectedTab = 0; // 0: DnyanSetu Paid Workshops, 1: Expert Talks, 2: Videos, 3: Blogs
+  late final GyanApi _api = widget.gyanApi ?? GyanApi();
+
+  int _selectedTab = 0; // 0: Workshops, 1: Expert Talks, 2: Videos, 3: Blogs
   final _questionController = TextEditingController();
 
-  void _askScientistDialog(ExpertTalk talk) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("वैज्ञानिक से सवाल पूछें (${talk.expertName})", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _questionController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: "अपना सवाल लिखें (उदा. क्या बारिश के 2 घंटे बाद स्प्रे असरदार होगा?)",
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("रद्द करें")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _questionController.clear();
-              widget.state.showToast("सवाल लाइव मास्टरक्लास हेतु सबमिट हुआ!");
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B4332)),
-            child: const Text("भेजें (Submit)", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  List<PaidWorkshop> _workshops = const [];
+  List<ExpertTalk> _talks = const [];
+  List<VideoGuide> _videos = const [];
+  List<BlogArticle> _blogs = const [];
+  bool _loading = true;
+  final Set<String> _registeredTalks = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
   }
 
-  void _openWorkshopDetailDialog(PaidWorkshop ws) {
-    bool useCoins = true;
+  @override
+  void dispose() {
+    _questionController.dispose();
+    super.dispose();
+  }
 
+  Future<void> _load() async {
+    List<PaidWorkshop> workshops = const [];
+    List<ExpertTalk> talks = const [];
+    List<VideoGuide> videos = const [];
+    List<BlogArticle> blogs = const [];
+    try {
+      workshops = await _api.listWorkshops();
+    } catch (_) {}
+    try {
+      talks = await _api.listTalks();
+    } catch (_) {}
+    try {
+      videos = await _api.listVideos();
+    } catch (_) {}
+    try {
+      blogs = await _api.listBlogs();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _workshops = workshops;
+      _talks = talks;
+      _videos = videos;
+      _blogs = blogs;
+      _loading = false;
+    });
+  }
+
+  Future<void> _refreshWorkshops() async {
+    try {
+      final workshops = await _api.listWorkshops();
+      if (!mounted) return;
+      setState(() => _workshops = workshops);
+    } catch (_) {}
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _openWorkshopDetail(PaidWorkshop ws) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          height: MediaQuery.of(context).size.height * 0.86,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 5,
-                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFDE68A)),
-                    ),
-                    child: const Text(
-                      "ज्ञानसेतू प्रीमियम कार्यशाळा 🎓",
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF92400E)),
-                    ),
-                  ),
-                  if (ws.isCertified)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text("ICAR संलग्न प्रमाणपत्र ✅", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF15803D))),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                ws.vernacularTitle,
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF112A1F), height: 1.3),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                "प्रशिक्षक: ${ws.instructor} (${ws.instructorRole}) • ${ws.institution}",
-                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
-              ),
-              const Divider(height: 20),
-              Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Batch Details Box
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _wsDetailCapsule(Icons.calendar_month_rounded, "दिनांक", ws.batchDate),
-                            _wsDetailCapsule(Icons.access_time_rounded, "वेळ", ws.timing),
-                            _wsDetailCapsule(Icons.timer_rounded, "कालावधी", ws.duration),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      const Text(
-                        "📚 कार्यशाळा अभ्यासक्रम व सत्रे (Syllabus):",
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1B4332)),
-                      ),
-                      const SizedBox(height: 8),
-                      ...ws.syllabusModules.map((m) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 16),
-                            const SizedBox(width: 6),
-                            Expanded(child: Text(m, style: const TextStyle(fontSize: 12, color: Color(0xFF374151), height: 1.35))),
-                          ],
-                        ),
-                      )),
-                      const SizedBox(height: 14),
-
-                      const Text(
-                        "🎁 तुम्हाला काय मिळेल (Deliverables):",
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1B4332)),
-                      ),
-                      const SizedBox(height: 6),
-                      ...ws.deliverables.map((d) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2.5),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.stars_rounded, color: Color(0xFFEAB308), size: 16),
-                            const SizedBox(width: 6),
-                            Expanded(child: Text(d, style: const TextStyle(fontSize: 11.5, color: Color(0xFF4B5563), fontWeight: FontWeight.w600))),
-                          ],
-                        ),
-                      )),
-                    ],
-                  ),
-                ),
-              ),
-              const Divider(height: 16),
-
-              // Fee and Coins Discount Row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text("₹${ws.feeRupees}", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF112A1F))),
-                          const SizedBox(width: 6),
-                          if (useCoins)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(4)),
-                              child: Text("-₹${ws.coinsDiscountAllowed} Coins", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFB45309))),
-                            ),
-                        ],
-                      ),
-                      Text("फक्त ₹${ws.feeRupees - ws.coinsDiscountAllowed} अंतिम फी", style: const TextStyle(fontSize: 11, color: Color(0xFF15803D), fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      widget.state.enrollWorkshop(ws.id, useCoins);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ws.isEnrolled ? const Color(0xFF16A34A) : const Color(0xFF1B4332),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                    ),
-                    child: Text(
-                      ws.isEnrolled ? "प्रवेशित आहात ✅" : "प्रवेश निश्चित करा ⚡",
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+      builder: (ctx) => WorkshopEnrollSheet(
+        workshop: ws,
+        state: widget.state,
+        coinBalance: widget.state.profile.agriCoins,
+        onEnroll: (useCoins, coins) => _enroll(ws, useCoins, coins),
       ),
     );
   }
 
-  Widget _wsDetailCapsule(IconData icon, String label, String value) {
-    return Column(
-      children: [
-        Icon(icon, size: 16, color: const Color(0xFF2E7D32)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 9.5, color: Colors.grey, fontWeight: FontWeight.w600)),
-        Text(value, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF112A1F))),
-      ],
+  Future<void> _enroll(PaidWorkshop ws, bool useCoins, int coinsToRedeem) async {
+    try {
+      final res = await _api.enrollWorkshop(
+        ws.id,
+        useCoins: useCoins,
+        coinsToRedeem: coinsToRedeem,
+      );
+      if (!mounted) return;
+      if (res['enrolled'] == true) {
+        setState(() => ws.isEnrolled = true);
+        _snack(widget.state.tr('gyanHub.enrollSuccess'));
+        return;
+      }
+      final orderId = res['paymentOrderId'] as String?;
+      if (orderId != null) {
+        RazorpayPayment.open(
+          orderId: orderId,
+          amountPaise: (((res['amountDue'] as num?) ?? 0) * 100).toInt(),
+          contact: widget.state.profile.phone,
+          onSuccess: (_, _) {
+            _snack(widget.state.tr('gyanHub.paymentSuccess'));
+            _refreshWorkshops();
+          },
+          onError: () => _snack(widget.state.tr('purchaseFailed')),
+        );
+      }
+    } on ApiException catch (e) {
+      _snack(switch (e.code) {
+        'ALREADY_ENROLLED' => widget.state.tr('gyanHub.alreadyEnrolled'),
+        'INSUFFICIENT_COINS' => widget.state.tr('gyanHub.insufficientCoins'),
+        'WORKSHOP_FULL' => widget.state.tr('gyanHub.seatsFull'),
+        _ => e.message.isNotEmpty ? e.message : e.code,
+      });
+    }
+  }
+
+  Future<void> _registerTalk(ExpertTalk talk) async {
+    try {
+      await _api.registerTalk(talk.id);
+      if (!mounted) return;
+      setState(() => _registeredTalks.add(talk.id));
+      _snack(widget.state.tr('gyanHub.coinsEarned').replaceAll('{coins}', '25'));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'ALREADY_REGISTERED') {
+        setState(() => _registeredTalks.add(talk.id));
+        _snack(e.message.isNotEmpty ? e.message : widget.state.tr('gyanHub.alreadyRegistered'));
+      } else {
+        _snack(e.message.isNotEmpty ? e.message : e.code);
+      }
+    }
+  }
+
+  void _askScientistDialog(ExpertTalk talk) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AskQuestionDialog(
+        talk: talk,
+        state: widget.state,
+        controller: _questionController,
+        onSubmit: () {
+          final question = _questionController.text.trim();
+          Navigator.pop(ctx);
+          _submitQuestion(talk, question);
+        },
+      ),
     );
+  }
+
+  Future<void> _submitQuestion(ExpertTalk talk, String question) async {
+    _questionController.clear();
+    try {
+      await _api.askQuestion(talk.id, question);
+      _snack(widget.state.tr('gyanHub.questionSent'));
+    } on ApiException catch (e) {
+      _snack(e.message.isNotEmpty ? e.message : e.code);
+    }
   }
 
   void _playVideoModal(VideoGuide vid) {
@@ -242,77 +198,29 @@ class _GyanHubViewState extends State<GyanHubView> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          color: Color(0xFF112A1F),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: const Color(0xFFE9C46A), borderRadius: BorderRadius.circular(8)),
-                  child: Text(vid.category, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF112A1F))),
-                ),
-                IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => Navigator.pop(ctx)),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Video Player Simulation Box
-            Container(
-              height: 180,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF52B788)),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const Icon(Icons.play_circle_fill_rounded, size: 56, color: Color(0xFFE9C46A)),
-                  Positioned(
-                    bottom: 10,
-                    left: 14,
-                    right: 14,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text("03:42 / ${vid.duration}", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                        const Row(
-                          children: [
-                            Icon(Icons.hd_rounded, color: Color(0xFF86EFAC), size: 18),
-                            SizedBox(width: 6),
-                            Icon(Icons.fullscreen_rounded, color: Colors.white, size: 20),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            Text(vid.vernacularTitle, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-            Text("प्रशिक्षक: ${vid.instructor} • ${vid.views}", style: const TextStyle(color: Color(0xFFD8F3DC), fontSize: 12)),
-            const SizedBox(height: 10),
-            Text(vid.summary, style: const TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.4)),
-            const SizedBox(height: 12),
-            const Text("💡 मुख्य वैज्ञानिक बिंदु (Key Takeaways):", style: TextStyle(color: Color(0xFFE9C46A), fontSize: 12.5, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 4),
-            ...vid.keyPoints.map((kp) => Text("• $kp", style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.4))),
-          ],
-        ),
-      ),
+      builder: (ctx) =>
+          VideoPlayerModal(video: vid, state: widget.state, enableVideo: widget.enableVideo),
     );
+  }
+
+  Future<void> _toggleBookmark(BlogArticle blog) async {
+    try {
+      final bookmarked = await _api.toggleBookmark(blog.id);
+      if (!mounted) return;
+      setState(() => blog.isBookmarked = bookmarked);
+    } on ApiException catch (e) {
+      _snack(e.message.isNotEmpty ? e.message : e.code);
+    }
+  }
+
+  Future<void> _likeBlog(BlogArticle blog) async {
+    try {
+      final likes = await _api.likeBlog(blog.id);
+      if (!mounted) return;
+      setState(() => blog.likesCount = likes);
+    } on ApiException catch (e) {
+      _snack(e.message.isNotEmpty ? e.message : e.code);
+    }
   }
 
   @override
@@ -324,47 +232,68 @@ class _GyanHubViewState extends State<GyanHubView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header Banner
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1B4332), Color(0xFF2D6A4F), Color(0xFFBC6C25)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          GyanHubHeaderBanner(state: widget.state),
+          const SizedBox(height: 12),
+
+          // Platform Sponsored Ad Banner
+          const AdBannerWidget(placement: 'home_hero'),
+
+          // Online Course Superstore Action Card
+          InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CoursesView(state: widget.state),
               ),
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(color: const Color(0xFF1B4332).withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6)),
-              ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE9C46A),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Text("🎓 ज्ञान सेतू • Krishi Gyan Media & Workshop Hub", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF112A1F))),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1B4332), Color(0xFF2D6A4F)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
                     ),
-                    const AudioButton(text: "ज्ञान सेतू मध्ये आपले स्वागत आहे. येथे सशुल्क कार्यशाळा, आयसीएआर प्रमाणपत्र, शास्त्रज्ञ लाईव्ह संवाद आणि कृषी व्हिडिओ उपलब्ध आहेत."),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  "ज्ञानसेतू: कार्यशाळा, व्हिडिओ व वेबिनार",
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.3),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  "ICAR-IARI व तज्ज्ञ संस्थांच्या सशुल्क कार्यशाळा, डिजिटल प्रमाणपत्रे आणि थेट वैज्ञानिक संवाद",
-                  style: TextStyle(fontSize: 12, color: Color(0xFFD8F3DC), height: 1.4),
-                ),
-              ],
+                    child: const Icon(Icons.school_rounded,
+                        color: Color(0xFFE9C46A), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Online Course Superstore 🎓',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Browse certified masterclasses & learn anytime',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded,
+                      color: Colors.white, size: 14),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -375,377 +304,56 @@ class _GyanHubViewState extends State<GyanHubView> {
             physics: const BouncingScrollPhysics(),
             child: Row(
               children: [
-                _tabBtn(0, "🎓 सशुल्क कार्यशाळा (${widget.state.paidWorkshops.length})"),
-                _tabBtn(1, "🎙️ वैज्ञानिक लाईव्ह टॉक (${widget.state.expertTalks.length})"),
-                _tabBtn(2, "🎬 व्हिडिओ ट्यूटोरियल्स (${widget.state.videos.length})"),
-                _tabBtn(3, "📰 अ‍ॅग्रोनॉमी ब्लॉग्स (${widget.state.blogs.length})"),
+                GyanHubTabButton(
+                  selected: _selectedTab == 0,
+                  label: "🎓 ${widget.state.tr('gyanHub.tabWorkshops')} (${_workshops.length})",
+                  onTap: () => setState(() => _selectedTab = 0),
+                ),
+                GyanHubTabButton(
+                  selected: _selectedTab == 1,
+                  label: "🎙️ ${widget.state.tr('gyanHub.tabExpertTalks')} (${_talks.length})",
+                  onTap: () => setState(() => _selectedTab = 1),
+                ),
+                GyanHubTabButton(
+                  selected: _selectedTab == 2,
+                  label: "🎬 ${widget.state.tr('gyanHub.tabVideos')} (${_videos.length})",
+                  onTap: () => setState(() => _selectedTab = 2),
+                ),
+                GyanHubTabButton(
+                  selected: _selectedTab == 3,
+                  label: "📰 ${widget.state.tr('gyanHub.tabBlogs')} (${_blogs.length})",
+                  onTap: () => setState(() => _selectedTab = 3),
+                ),
               ],
             ),
           ),
           const SizedBox(height: 16),
 
-          if (_selectedTab == 0) _buildWorkshopsSection(),
-          if (_selectedTab == 1) _buildExpertTalksSection(),
-          if (_selectedTab == 2) _buildVideosSection(),
-          if (_selectedTab == 3) _buildBlogsSection(),
+          if (_loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 60),
+                child: CircularProgressIndicator(color: Color(0xFF1B4332)),
+              ),
+            )
+          else
+            GyanHubTabContent(
+              selectedTab: _selectedTab,
+              state: widget.state,
+              workshops: _workshops,
+              talks: _talks,
+              videos: _videos,
+              blogs: _blogs,
+              registeredTalks: _registeredTalks,
+              onOpenWorkshop: _openWorkshopDetail,
+              onRegisterTalk: _registerTalk,
+              onAskQuestion: _askScientistDialog,
+              onPlayVideo: _playVideoModal,
+              onToggleBookmark: _toggleBookmark,
+              onLikeBlog: _likeBlog,
+            ),
         ],
       ),
-    );
-  }
-
-  Widget _tabBtn(int idx, String label) {
-    final isSel = _selectedTab == idx;
-    return GestureDetector(
-      onTap: () => setState(() => _selectedTab = idx),
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8.5),
-        decoration: BoxDecoration(
-          color: isSel ? const Color(0xFF1B4332) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: isSel ? const Color(0xFF1B4332) : Colors.grey.shade300),
-          boxShadow: [
-            if (isSel)
-              BoxShadow(color: const Color(0xFF1B4332).withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3)),
-          ],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-            color: isSel ? Colors.white : Colors.black87,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // 0. DnyanSetu Paid Workshops Section
-  Widget _buildWorkshopsSection() {
-    return Column(
-      children: widget.state.paidWorkshops.map((ws) {
-        return GlassCard(
-          margin: const EdgeInsets.only(bottom: 14),
-          border: Border(left: BorderSide(color: ws.isEnrolled ? const Color(0xFF16A34A) : const Color(0xFFD97706), width: 4)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      "⭐ ${ws.rating} • ${ws.enrolledCount}/${ws.totalSeats} जागा भरल्या",
-                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
-                    ),
-                  ),
-                  if (ws.isEnrolled)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text("प्रवेश निश्चित ✅", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF15803D))),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              Text(
-                ws.vernacularTitle,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                "मार्गदर्शक: ${ws.instructor} (${ws.instructorRole})",
-                style: const TextStyle(fontSize: 11.5, color: Color(0xFF1B5E20), fontWeight: FontWeight.w700),
-              ),
-              Text(
-                "संस्था: ${ws.institution}",
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 10),
-
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.calendar_month_rounded, size: 14, color: Color(0xFFD97706)),
-                        const SizedBox(width: 4),
-                        Text(ws.batchDate, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFD97706))),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        const Icon(Icons.workspace_premium_rounded, size: 14, color: Color(0xFF15803D)),
-                        const SizedBox(width: 4),
-                        Text(ws.certificateTitle, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D))),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("₹${ws.feeRupees}", style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF112A1F))),
-                      Text("नाणी सवलत ₹${ws.coinsDiscountAllowed}", style: const TextStyle(fontSize: 10, color: Color(0xFFB45309), fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () => _openWorkshopDetailDialog(ws),
-                    icon: const Icon(Icons.menu_book_rounded, size: 14, color: Colors.white),
-                    label: Text(ws.isEnrolled ? "अभ्यासक्रम पहा" : "तपशील व प्रवेश", style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ws.isEnrolled ? const Color(0xFF16A34A) : const Color(0xFF1B4332),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  // 1. Expert Talks Section
-  Widget _buildExpertTalksSection() {
-    return Column(
-      children: widget.state.expertTalks.map((talk) {
-        return GlassCard(
-          margin: const EdgeInsets.only(bottom: 14),
-          border: Border(left: BorderSide(color: talk.isLive ? Colors.red : const Color(0xFF52B788), width: 4)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: const Color(0xFF1B4332),
-                        radius: 16,
-                        child: Text(talk.expertAvatar, style: const TextStyle(color: Color(0xFFE9C46A), fontWeight: FontWeight.w900, fontSize: 11)),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(talk.expertName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF1B4332))),
-                          Text(talk.institution, style: const TextStyle(fontSize: 10.5, color: Colors.grey)),
-                        ],
-                      ),
-                    ],
-                  ),
-                  if (talk.isLive)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(8)),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.fiber_manual_record_rounded, color: Colors.white, size: 10),
-                          SizedBox(width: 4),
-                          Text("LIVE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 10)),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              Text(talk.vernacularTopic, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF112A1F))),
-              const SizedBox(height: 4),
-              Text(talk.description, style: const TextStyle(fontSize: 12, color: Colors.black87, height: 1.35)),
-              const SizedBox(height: 10),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFD97706)),
-                      const SizedBox(width: 4),
-                      Text(talk.scheduledTime, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFFD97706))),
-                    ],
-                  ),
-                  Text("👥 ${talk.registeredCount} किसान पंजीकृत", style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => widget.state.registerForExpertTalk(talk.id),
-                      icon: const Icon(Icons.event_available_rounded, size: 16),
-                      label: const Text("पंजीकरण करें (+25 coins)", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B4332), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 8)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _askScientistDialog(talk),
-                    icon: const Icon(Icons.help_outline_rounded, size: 16),
-                    label: const Text("सवाल पूछें", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF1B4332), side: const BorderSide(color: Color(0xFF1B4332)), padding: const EdgeInsets.symmetric(vertical: 8)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  // 2. Videos Section
-  Widget _buildVideosSection() {
-    return Column(
-      children: widget.state.videos.map((vid) {
-        return GlassCard(
-          margin: const EdgeInsets.only(bottom: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () => _playVideoModal(vid),
-                child: Container(
-                  height: 140,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF112A1F),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      const Icon(Icons.play_circle_fill_rounded, size: 48, color: Color(0xFFE9C46A)),
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(6)),
-                          child: Text(vid.category, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(4)),
-                          child: Text(vid.duration, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              Text(vid.vernacularTitle, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1B4332))),
-              const SizedBox(height: 2),
-              Text("${vid.instructor} • ${vid.views}", style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
-              const SizedBox(height: 6),
-              Text(vid.summary, style: const TextStyle(fontSize: 12, color: Colors.black87, height: 1.3)),
-              const SizedBox(height: 10),
-
-              ElevatedButton.icon(
-                onPressed: () => _playVideoModal(vid),
-                icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                label: const Text("व्हिडिओ पहा (Watch Video)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B4332), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 38)),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  // 3. Blogs Section
-  Widget _buildBlogsSection() {
-    return Column(
-      children: widget.state.blogs.map((blog) {
-        return GlassCard(
-          margin: const EdgeInsets.only(bottom: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: const Color(0xFFD8F3DC), borderRadius: BorderRadius.circular(8)),
-                    child: Text(blog.category, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF166534))),
-                  ),
-                  Row(
-                    children: [
-                      Text(blog.readTimeMinutes, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                      IconButton(
-                        icon: Icon(
-                          blog.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          color: blog.isBookmarked ? const Color(0xFFE9C46A) : Colors.grey,
-                          size: 20,
-                        ),
-                        onPressed: () => widget.state.toggleBookmarkBlog(blog.id),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-
-              Text(blog.vernacularTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1B4332))),
-              const SizedBox(height: 2),
-              Text("लेखक: ${blog.author} (${blog.authorRole}) • ${blog.publishedDate}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
-              const SizedBox(height: 8),
-              Text(blog.content, style: const TextStyle(fontSize: 12.5, color: Colors.black87, height: 1.4)),
-              const SizedBox(height: 10),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  AudioButton(text: "${blog.vernacularTitle}। ${blog.content}"),
-                  Row(
-                    children: [
-                      const Icon(Icons.thumb_up_alt_rounded, size: 14, color: Color(0xFF1B4332)),
-                      const SizedBox(width: 4),
-                      Text("${blog.likesCount} पसंद", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF1B4332))),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 }

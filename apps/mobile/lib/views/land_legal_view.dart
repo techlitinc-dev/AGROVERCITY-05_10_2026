@@ -1,33 +1,134 @@
-// Module K: Land & Legal Toolkit Flutter View (CRD Change 11)
+// Module K: Land & Legal Toolkit (API-wired port) — 7/12 / 8A record search
+// via /v1/land-records + land-for-rent browse tab (L2, day-09).
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../api/api_exception.dart';
+import '../api/land_market_api.dart';
+import '../api/land_records_api.dart';
+import '../models/land_record.dart';
 import '../state/app_state.dart';
-import '../models/app_models.dart';
-import '../components/common/glass_card.dart';
+import 'land_legal_widgets.dart';
+import 'land_rental_browse_section.dart';
 
 class LandLegalView extends StatefulWidget {
   final AppState state;
-  const LandLegalView({super.key, required this.state});
+  final LandMarketApi? landMarketApi;
+  final LandRecordsApi? landRecordsApi;
+
+  const LandLegalView({
+    super.key,
+    required this.state,
+    this.landMarketApi,
+    this.landRecordsApi,
+  });
 
   @override
   State<LandLegalView> createState() => _LandLegalViewState();
 }
 
 class _LandLegalViewState extends State<LandLegalView> {
+  late final LandRecordsApi _api = widget.landRecordsApi ?? LandRecordsApi();
+
   final _searchController = TextEditingController();
-  String _selectedRecordType = '7/12'; // '7/12' or '8A'
-  List<LandRecord712> _filteredRecords = [];
+  String _tab = 'records'; // 'records' or 'rent'
+  String _searchMode = 'gat'; // 'gat' or 'village'
+  String _recordType = '712'; // '712' or '8A'
+  List<LandRecord712>? _results;
+  LandRecord712? _selected;
+  bool _searching = false;
+  String? _inlineError;
 
   @override
-  void initState() {
-    super.initState();
-    _filteredRecords = widget.state.landRecords;
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
-  void _onSearchChanged(String query) {
+  String get _district =>
+      (widget.state.currentUser?['district'] as String?) ??
+      widget.state.profile.district;
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _search() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(
+        () => _inlineError = widget.state.tr('landLegal.errEnterGatOrVillage'),
+      );
+      return;
+    }
+    if (_searchMode == 'village' && query.length < 3) {
+      setState(() => _inlineError = widget.state.tr('landLegal.errMinChars'));
+      return;
+    }
     setState(() {
-      _filteredRecords = widget.state.search712Records(query);
+      _inlineError = null;
+      _searching = true;
+      _selected = null;
     });
+    try {
+      final results = await _api.search(
+        gatNumber: _searchMode == 'gat' ? query : null,
+        village: _searchMode == 'village' ? query : null,
+        district: _district,
+        type: _recordType,
+      );
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        _searching = false;
+        if (results.length == 1) _selected = results.first;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _inlineError = (e.statusCode == 400 || e.statusCode == 422)
+            ? widget.state.tr('landLegal.errInvalidSearch')
+            : (e.message.isNotEmpty
+                  ? e.message
+                  : widget.state.tr('landLegal.errSearchFailed'));
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _inlineError = widget.state.tr('landLegal.errSearchFailed');
+      });
+    }
+  }
+
+  Future<void> _viewPdf(LandRecord712 r) async {
+    try {
+      final url = await _api.getPdfUrl(r.id);
+      if (url.isEmpty) throw const ApiException(code: 'PDF_UNAVAILABLE');
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      _snack(widget.state.tr('landLegal.errPdfUnavailable'));
+    }
+  }
+
+  Future<void> _autoStore(LandRecord712 r) async {
+    try {
+      await _api.importRecord(r.id);
+      _snack(widget.state.tr('landLegal.savedToFieldProfile'));
+      try {
+        await widget.state.refreshCurrentUser();
+      } catch (_) {}
+    } on ApiException catch (e) {
+      _snack(
+        e.message.isNotEmpty
+            ? e.message
+            : widget.state.tr('landLegal.errSaveFailed'),
+      );
+    }
   }
 
   @override
@@ -38,163 +139,178 @@ class _LandLegalViewState extends State<LandLegalView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("7/12 Utara & Land Records", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF263238))),
-              Text("Maharashtra Land Record Search by Gat Number / Village Name", style: TextStyle(fontSize: 11.5, color: Color(0xFF90A4AE))),
+              Text(
+                widget.state.tr('landLegal.title'),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF263238),
+                ),
+              ),
+              Text(
+                widget.state.tr('landLegal.subtitle'),
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: Color(0xFF90A4AE),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
-
-          // Search Box (CRD Change 11)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF43A047), width: 1.5),
-              boxShadow: [
-                BoxShadow(color: const Color(0xFF43A047).withValues(alpha: 0.1), blurRadius: 10, offset: const Offset(0, 4)),
-              ],
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search_rounded, color: Color(0xFF43A047), size: 22),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _onSearchChanged,
-                    decoration: const InputDecoration(
-                      hintText: "Enter Gat Number (e.g. 142/2-A) or Village (e.g. Niphad)...",
-                      hintStyle: TextStyle(fontSize: 12, color: Color(0xFF90A4AE)),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-                if (_searchController.text.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(Icons.clear_rounded, size: 18, color: Colors.grey),
-                    onPressed: () {
-                      _searchController.clear();
-                      _onSearchChanged('');
-                    },
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // 7/12 vs 8A Record Type Toggle
           Row(
             children: [
-              const Text("Record Type:", style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF263238))),
-              const SizedBox(width: 10),
               ChoiceChip(
-                label: const Text("7/12 Utara (Satbara)"),
-                selected: _selectedRecordType == '7/12',
+                label: Text(widget.state.tr('landLegal.tabRecords712')),
+                selected: _tab == 'records',
                 selectedColor: const Color(0xFFE8F5E9),
-                onSelected: (_) => setState(() => _selectedRecordType = '7/12'),
+                onSelected: (_) => setState(() => _tab = 'records'),
               ),
               const SizedBox(width: 8),
               ChoiceChip(
-                label: const Text("8A Khata Patrak"),
-                selected: _selectedRecordType == '8A',
-                selectedColor: const Color(0xFFE8F5E9),
-                onSelected: (_) => setState(() => _selectedRecordType = '8A'),
+                label: Text(widget.state.tr('landLegal.tabRent')),
+                selected: _tab == 'rent',
+                selectedColor: const Color(0xFFEDE9FE),
+                onSelected: (_) => setState(() => _tab = 'rent'),
               ),
             ],
           ),
           const SizedBox(height: 14),
-
-          // Records List
-          if (_filteredRecords.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(24),
-              width: double.infinity,
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-              child: const Column(
-                children: [
-                  Icon(Icons.find_in_page_rounded, size: 40, color: Colors.grey),
-                  SizedBox(height: 8),
-                  Text("No 7/12 land records match your search", style: TextStyle(fontSize: 13, color: Colors.grey)),
-                ],
-              ),
+          if (_tab == 'rent')
+            LandRentalBrowseSection(
+              state: widget.state,
+              landMarketApi: widget.landMarketApi,
             )
           else
-            ..._filteredRecords.map((r) => _buildLandRecordCard(r)),
+            ..._buildRecordsTab(),
         ],
       ),
     );
   }
 
-  Widget _buildLandRecordCard(LandRecord712 r) {
-    return GlassCard(
-      backgroundColor: Colors.white,
-      border: Border.all(color: const Color(0xFFECEFF1)),
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  List<Widget> _buildRecordsTab() {
+    return [
+      Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(8)),
-                child: Text("Gat No: ${r.gatNumber}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF2E7D32))),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(8)),
-                child: Text("${r.village}, ${r.district}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFF57F17))),
-              ),
-            ],
+          ChoiceChip(
+            label: Text(widget.state.tr('landLegal.searchModeGat')),
+            selected: _searchMode == 'gat',
+            selectedColor: const Color(0xFFE8F5E9),
+            onSelected: (_) => setState(() {
+              _searchMode = 'gat';
+              _inlineError = null;
+            }),
           ),
-          const SizedBox(height: 10),
-
-          if (_selectedRecordType == '7/12') ...[
-            Text("Owner Name: ${r.ownerName}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF263238))),
-            Text("Khata No: ${r.khataNumber} • Ferfar No: ${r.ferfarNumber}", style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
-            const SizedBox(height: 4),
-            Text("Area: ${r.areaHectares} Hectare (${r.areaAcres} Acres)", style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Color(0xFF2E7D32))),
-            Text("Land Classification: ${r.soilType} • Irrigation: ${r.irrigationType}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          ] else ...[
-            Text("8A Khata Record: ${r.ownerName}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF263238))),
-            Text("Total Khata Gat Holdings: 2 Plots • Combined Area: ${r.areaAcres} Acres", style: const TextStyle(fontSize: 12, color: Colors.black87)),
-            Text("Revenue Assessment: Paid (Clear Status ✅)", style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF2E7D32))),
-          ],
-          const SizedBox(height: 12),
-
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => widget.state.showToast("Digital PDF for Gat ${r.gatNumber} downloaded!"),
-                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 15),
-                  label: const Text("Download PDF", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF43A047), foregroundColor: Colors.white),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    widget.state.updateProfileArea(r.areaAcres);
-                    widget.state.showToast("Land area (${r.areaAcres} Acres) auto-stored into profile!");
-                  },
-                  icon: const Icon(Icons.sync_rounded, size: 15),
-                  label: const Text("Auto-Store Area", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF2E7D32)),
-                ),
-              ),
-            ],
+          const SizedBox(width: 8),
+          ChoiceChip(
+            label: Text(widget.state.tr('landLegal.searchModeVillage')),
+            selected: _searchMode == 'village',
+            selectedColor: const Color(0xFFE8F5E9),
+            onSelected: (_) => setState(() {
+              _searchMode = 'village';
+              _inlineError = null;
+            }),
           ),
         ],
       ),
-    );
+      const SizedBox(height: 10),
+      LandSearchBar(
+        controller: _searchController,
+        state: widget.state,
+        hintText: _searchMode == 'gat'
+            ? widget.state.tr('landLegal.hintGat')
+            : widget.state.tr('landLegal.hintVillage'),
+        searching: _searching,
+        onSearch: _search,
+      ),
+      if (_inlineError != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6, left: 4),
+          child: Text(
+            _inlineError!,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: Color(0xFFDC2626),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Text(
+            widget.state.tr('landLegal.recordTypeLabel'),
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF263238),
+            ),
+          ),
+          const SizedBox(width: 10),
+          ChoiceChip(
+            label: Text(widget.state.tr('landLegal.recordType712')),
+            selected: _recordType == '712',
+            selectedColor: const Color(0xFFE8F5E9),
+            onSelected: (_) => setState(() => _recordType = '712'),
+          ),
+          const SizedBox(width: 8),
+          ChoiceChip(
+            label: Text(widget.state.tr('landLegal.recordType8a')),
+            selected: _recordType == '8A',
+            selectedColor: const Color(0xFFE8F5E9),
+            onSelected: (_) => setState(() => _recordType = '8A'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      if (_searching)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: CircularProgressIndicator(color: Color(0xFF43A047)),
+          ),
+        )
+      else if (_selected != null)
+        LandRecordCard(
+          record: _selected!,
+          recordType: _recordType,
+          state: widget.state,
+          onViewPdf: () => _viewPdf(_selected!),
+          onAutoStore: () => _autoStore(_selected!),
+        )
+      else if (_results != null && _results!.isEmpty)
+        Container(
+          padding: const EdgeInsets.all(24),
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.find_in_page_rounded,
+                size: 40,
+                color: Colors.grey,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.state.tr('landLegal.noRecordsFound'),
+                style: const TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+            ],
+          ),
+        )
+      else if (_results != null)
+        ..._results!.map(
+          (r) => LandRecordResultTile(
+            record: r,
+            state: widget.state,
+            onTap: () => setState(() => _selected = r),
+          ),
+        ),
+    ];
   }
 }
-

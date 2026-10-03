@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../api/api_exception.dart';
 import '../../api/equipment_api.dart';
+import '../../state/app_state.dart';
 
 // Pops with true when the machine was saved, null when dismissed.
 class MachineFormSheet extends StatefulWidget {
-  const MachineFormSheet({super.key, required this.api, this.existing});
+  const MachineFormSheet({super.key, required this.api, required this.state, this.existing});
 
   final EquipmentApi api;
+  final AppState state;
   final Map<String, dynamic>? existing;
 
   @override
@@ -47,7 +49,7 @@ class _MachineFormSheetState extends State<MachineFormSheet> {
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = "मशीन का नाम आवश्यक है");
+      setState(() => _error = widget.state.tr('equipment.machineNameRequired'));
       return;
     }
     final hourly = double.tryParse(_hourlyCtrl.text.trim()) ?? 0;
@@ -98,15 +100,15 @@ class _MachineFormSheetState extends State<MachineFormSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.existing == null ? "नई मशीन जोड़ें" : "मशीन बदलें",
+            widget.existing == null ? widget.state.tr('equipment.addNewMachine') : widget.state.tr('equipment.editMachine'),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _nameCtrl,
             decoration: InputDecoration(
-              labelText: "मशीन का नाम",
-              hintText: "जैसे Mahindra 575 DI Tractor",
+              labelText: widget.state.tr('equipment.machineName'),
+              hintText: widget.state.tr('equipment.machineNameHint'),
               border: const OutlineInputBorder(),
               errorText: _error,
             ),
@@ -114,7 +116,7 @@ class _MachineFormSheetState extends State<MachineFormSheet> {
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             initialValue: _type,
-            decoration: const InputDecoration(labelText: "मशीन प्रकार", border: OutlineInputBorder()),
+            decoration: InputDecoration(labelText: widget.state.tr('equipment.machineType'), border: const OutlineInputBorder()),
             items: _types
                 .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13))))
                 .toList(),
@@ -124,18 +126,18 @@ class _MachineFormSheetState extends State<MachineFormSheet> {
           TextField(
             controller: _hourlyCtrl,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: "घंटा दर (₹/घंटा)",
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: widget.state.tr('equipment.hourlyRateLabel'),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _perAcreCtrl,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: "प्रति एकड़ दर (₹/एकड़, वैकल्पिक)",
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: widget.state.tr('equipment.perAcreRateLabel'),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 14),
@@ -146,7 +148,7 @@ class _MachineFormSheetState extends State<MachineFormSheet> {
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 48),
             ),
-            child: Text(_saving ? "सहेजा जा रहा..." : "सहेजें", style: const TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(_saving ? widget.state.tr('equipment.saving') : widget.state.tr('save'), style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         ],
       ),

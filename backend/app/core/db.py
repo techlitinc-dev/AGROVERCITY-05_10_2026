@@ -34,8 +34,9 @@ async def delete_doc(collection: str, doc_id: str):
     await get_db().collection(collection).document(doc_id).delete()
 
 
-async def query(collection: str, filters: list[tuple[str, str, Any]], limit: int = 100) -> list[dict]:
+async def query(collection: str, filters: list[tuple[str, str, Any]] | None = None, limit: int = 100) -> list[dict]:
     q = get_db().collection(collection)
-    for field, op, value in filters:
-        q = q.where(field, op, value)
+    if filters:
+        for field, op, value in filters:
+            q = q.where(field, op, value)
     return [doc.to_dict() async for doc in q.limit(limit).stream()]

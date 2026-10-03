@@ -12,6 +12,7 @@ from app.models.marketplace import (
     RazorpayRefundRequest,
     RazorpayVerifyRequest,
 )
+from app.routers.coupons import coupon_discount, coupon_reject_reason
 from app.routers.users import require_role
 from app.services.payments import (
     create_razorpay_order,
@@ -22,7 +23,7 @@ from app.services.users import get_user
 
 router = APIRouter(tags=["orders"])
 
-MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller")
+MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller", "customer", "directBuyer")
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -51,6 +52,19 @@ async def _own_order(order_id: str, uid: str, not_found_on_foreign: bool = False
     return order
 
 
+def _append_event(order: dict, status: str, note: str = ""):
+    events = order.setdefault("events", [])
+    events.append({"status": status, "at": datetime.now(timezone.utc).isoformat(), "note": note})
+
+
+async def _restore_stock(order: dict):
+    for item in order.get("items", []):
+        product = await get_doc("products", item["productId"])
+        if product is not None and isinstance(product.get("stock"), int):
+            product["stock"] += item["quantity"]
+            await set_doc("products", item["productId"], product)
+
+
 @router.post("/orders")
 async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
     existing = await get_doc("idempotency_keys", body.idempotencyKey)
@@ -67,14 +81,35 @@ async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
         )
     items = []
     total = 0
+    products = {}
     for item in body.items:
         if item.quantity < 1:
             _error(422, "VALIDATION_ERROR", "invalid quantity", {"quantity": "must be at least 1"})
         product = await get_doc("products", item.productId)
         if product is None:
             _error(404, "PRODUCT_NOT_FOUND", f"product {item.productId} not found")
+        if isinstance(product.get("stock"), int) and product["stock"] < item.quantity:
+            _error(
+                409,
+                "OUT_OF_STOCK",
+                f"insufficient stock for {product.get('title', item.productId)}",
+                {item.productId: f"only {product['stock']} left in stock"},
+            )
         items.append({"productId": item.productId, "quantity": item.quantity})
+        products[item.productId] = product
         total += product["discountedPrice"] * item.quantity
+    discount = 0
+    coupon = None
+    if body.couponCode:
+        coupon = await get_doc("coupons", body.couponCode)
+        if coupon is None:
+            _error(400, "COUPON_INVALID", "coupon not found")
+        reason = coupon_reject_reason(coupon, total)
+        if reason is not None:
+            _error(400, "COUPON_INVALID", reason)
+        discount = coupon_discount(coupon, total)
+    final_total = total - discount
+    now = datetime.now(timezone.utc).isoformat()
     order_id = f"ord_{uuid.uuid4().hex[:12]}"
     order = {
         "id": order_id,
@@ -85,15 +120,31 @@ async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
         "total": total,
         "status": "placed",
         "refundStatus": "none",
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "events": [{"status": "placed", "at": now, "note": ""}],
+        "createdAt": now,
     }
+    if coupon is not None:
+        order["couponCode"] = body.couponCode
+        order["discount"] = discount
+        order["finalTotal"] = final_total
     await set_doc("orders", order_id, order)
+    for item in body.items:
+        product = products[item.productId]
+        if isinstance(product.get("stock"), int):
+            product["stock"] -= item.quantity
+            await set_doc("products", item.productId, product)
+    if coupon is not None:
+        coupon["usedCount"] = coupon.get("usedCount", 0) + 1
+        await set_doc("coupons", body.couponCode, coupon)
     await set_doc("carts", uid, {"items": {}})
     response = {"orderId": order_id, "total": total}
+    if coupon is not None:
+        response["discount"] = discount
+        response["finalTotal"] = final_total
     if body.paymentMethod == "bnpl":
         response["bnplSchedule"] = [
-            {"installment": 1, "dueInDays": 30, "amount": total / 2},
-            {"installment": 2, "dueInDays": 60, "amount": total / 2},
+            {"installment": 1, "dueInDays": 30, "amount": final_total / 2},
+            {"installment": 2, "dueInDays": 60, "amount": final_total / 2},
         ]
     await set_doc("idempotency_keys", body.idempotencyKey, {"key": body.idempotencyKey, "response": response})
     return response
@@ -121,8 +172,10 @@ async def cancel_order(order_id: str, uid: str = Depends(_order_user)):
     order["status"] = "cancelled"
     order["cancelledAt"] = datetime.now(timezone.utc).isoformat()
     order.setdefault("refundStatus", "none")
+    _append_event(order, "cancelled")
     if order.get("razorpayPaymentId"):
         order["refundStatus"] = "requested"
+    await _restore_stock(order)
     await set_doc("orders", order_id, order)
     return order
 
@@ -130,6 +183,8 @@ async def cancel_order(order_id: str, uid: str = Depends(_order_user)):
 @router.post("/payments/razorpay/order")
 async def razorpay_order(body: RazorpayOrderRequest, uid: str = Depends(_order_user)):
     order = await _own_order(body.orderId, uid)
+    if not settings.razorpay_key_id:
+        _error(503, "PAYMENTS_NOT_CONFIGURED", "payments are not configured")
     rzp = create_razorpay_order(int(order["total"] * 100), body.orderId)
     order["razorpayOrderId"] = rzp["id"]
     await set_doc("orders", body.orderId, order)
@@ -137,7 +192,7 @@ async def razorpay_order(body: RazorpayOrderRequest, uid: str = Depends(_order_u
         "razorpayOrderId": rzp["id"],
         "amount": rzp["amount"],
         "currency": "INR",
-        "keyId": settings.razorpay_key_id or "rzp_test_dev",
+        "keyId": settings.razorpay_key_id,
     }
 
 
@@ -148,6 +203,7 @@ async def razorpay_verify(body: RazorpayVerifyRequest, uid: str = Depends(_order
         _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
     order["status"] = "paid"
     order["razorpayPaymentId"] = body.razorpayPaymentId
+    _append_event(order, "paid")
     await set_doc("orders", body.orderId, order)
     return {"ok": True, "status": "paid"}
 

@@ -51,7 +51,7 @@ class _MachineManageViewState extends State<MachineManageView> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => MachineFormSheet(api: _api, existing: existing),
+      builder: (_) => MachineFormSheet(api: _api, state: widget.state, existing: existing),
     );
     if (saved == true) _load();
   }
@@ -65,7 +65,7 @@ class _MachineManageViewState extends State<MachineManageView> {
         foregroundColor: Colors.white,
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add_rounded),
-        label: const Text("मशीन जोड़ें", style: TextStyle(fontWeight: FontWeight.w900)),
+        label: Text(widget.state.tr('equipment.addMachine'), style: const TextStyle(fontWeight: FontWeight.w900)),
       ),
       body: ListView(
         physics: const BouncingScrollPhysics(),
@@ -77,13 +77,13 @@ class _MachineManageViewState extends State<MachineManageView> {
                 onPressed: widget.state.navigateBack,
                 icon: const Icon(Icons.arrow_back_rounded),
               ),
-              const Text("मेरी मशीनें", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              Text(widget.state.tr('equipment.myMachines'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             ],
           ),
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_fleet.isEmpty)
-            const Text("कोई मशीन नहीं — नीचे से जोड़ें", style: TextStyle(fontSize: 12, color: Colors.grey))
+            Text(widget.state.tr('equipment.noMachinesAddBelow'), style: const TextStyle(fontSize: 12, color: Colors.grey))
           else
             ..._fleet.map(_buildMachineCard),
         ],
@@ -94,9 +94,9 @@ class _MachineManageViewState extends State<MachineManageView> {
   Widget _buildMachineCard(Map<String, dynamic> m) {
     final docStatus = "${m['docStatus'] ?? 'pending'}";
     final docLabel = switch (docStatus) {
-      'verified' => "सत्यापित ✅",
-      'rejected' => "अस्वीकृत ❌",
-      _ => "सत्यापन लंबित ⏳",
+      'verified' => "${widget.state.tr('equipment.verified')} ✅",
+      'rejected' => "${widget.state.tr('equipment.statusRejected')} ❌",
+      _ => "${widget.state.tr('equipment.verificationPending')} ⏳",
     };
     final hours = (m['bookedHoursThisWeek'] as num?) ?? 0;
     final income = (m['weeklyIncome'] as num?) ?? 0;
@@ -119,7 +119,7 @@ class _MachineManageViewState extends State<MachineManageView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("${m['name']}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
-                    Text("इस सप्ताह: $hours घंटे बुक • ₹${formatRupees(income)}", style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
+                    Text("${widget.state.tr('equipment.thisWeek')}: $hours ${widget.state.tr('equipment.hoursBooked')} • ₹${formatRupees(income)}", style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
                   ],
                 ),
               ),
@@ -129,7 +129,7 @@ class _MachineManageViewState extends State<MachineManageView> {
           if (m['rejectionReason'] != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text("कारण: ${m['rejectionReason']}", style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
+              child: Text("${widget.state.tr('equipment.reasonLabel')}: ${m['rejectionReason']}", style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626))),
             ),
           const SizedBox(height: 8),
           Row(
@@ -140,12 +140,12 @@ class _MachineManageViewState extends State<MachineManageView> {
                   'name': m['name'],
                 }),
                 icon: const Icon(Icons.calendar_month_rounded, size: 16),
-                label: const Text("स्लॉट कैलेंडर", style: TextStyle(fontSize: 12)),
+                label: Text(widget.state.tr('equipment.slotCalendar'), style: const TextStyle(fontSize: 12)),
               ),
               TextButton.icon(
                 onPressed: () => _openForm(existing: m),
                 icon: const Icon(Icons.edit_rounded, size: 16),
-                label: const Text("बदलें", style: TextStyle(fontSize: 12)),
+                label: Text(widget.state.tr('equipment.edit'), style: const TextStyle(fontSize: 12)),
               ),
             ],
           ),

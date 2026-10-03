@@ -1,10 +1,11 @@
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     app_name: str = "AGROVERCITY API"
-    env: str = "dev"
+    env: str = Field(default="dev", validation_alias=AliasChoices("APP_ENV", "ENV"))
     firebase_service_account_path: str = "secrets/firebase-service-account.json"
     firebase_project_id: str = "agrovercity-dev"
     redis_url: str = "redis://localhost:6379/0"
@@ -18,6 +19,26 @@ class Settings(BaseSettings):
     sarvam_api_key: str = ""
     weather_api_key: str = ""
     sentry_dsn: str = ""
+    cron_secret: str = ""
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    web_origins: list[str] = ["http://localhost:5173"]
+
+    @model_validator(mode="after")
+    def _require_real_secrets_outside_dev(self):
+        if self.env in ("staging", "prod"):
+            missing = []
+            if self.jwt_secret in ("", "dev-secret-change-me"):
+                missing.append("jwt_secret")
+            if not self.razorpay_key_id:
+                missing.append("razorpay_key_id")
+            if not self.razorpay_key_secret:
+                missing.append("razorpay_key_secret")
+            if missing:
+                raise ValueError(
+                    f"refusing to start with env={self.env}: unsafe/missing {', '.join(missing)}"
+                )
+        return self
 
 
 settings = Settings()

@@ -25,52 +25,45 @@ class _RadialOrbitMenuState extends State<RadialOrbitMenu> with SingleTickerProv
   late Animation<double> _expandAnim;
   late Animation<double> _rotateAnim;
 
+  // Labels render via state.tr(item.id) — base module keys cover every id here.
   final List<_RadialMenuItem> _menuItems = [
     _RadialMenuItem(
       id: 'advisory',
-      title: 'AI रोग जांच',
       icon: Icons.edit_rounded,
       color: const Color(0xFF38BDF8),
     ),
     _RadialMenuItem(
       id: 'schemes',
-      title: 'योजनाएं',
       icon: Icons.folder_rounded,
       color: const Color(0xFF60A5FA),
     ),
     _RadialMenuItem(
       id: 'mandi',
-      title: 'मंडी भाव',
       icon: Icons.public_rounded,
       color: const Color(0xFF3B82F6),
     ),
     _RadialMenuItem(
       id: 'profitLoss',
-      title: 'फार्म P&L',
       icon: Icons.power_settings_new_rounded,
       color: const Color(0xFF475569),
     ),
     _RadialMenuItem(
       id: 'gyanHub',
-      title: 'ज्ञान सेतु',
       icon: Icons.info_rounded,
       color: const Color(0xFF334155),
     ),
     _RadialMenuItem(
       id: 'fpo',
-      title: 'FPO हब',
       icon: Icons.groups_rounded,
       color: const Color(0xFF64748B),
     ),
     _RadialMenuItem(
       id: 'landLegal',
-      title: 'खेत नक्शा',
       icon: Icons.map_rounded,
       color: const Color(0xFF6B7280),
     ),
     _RadialMenuItem(
       id: 'equipment',
-      title: 'यंत्र लोकेशन',
       icon: Icons.location_on_rounded,
       color: const Color(0xFF5A738E),
     ),
@@ -216,7 +209,7 @@ class _RadialOrbitMenuState extends State<RadialOrbitMenu> with SingleTickerProv
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
-                                    item.title,
+                                    widget.state.tr(item.id),
                                     style: TextStyle(
                                       color: isCurrent ? const Color(0xFFE9C46A) : Colors.white,
                                       fontSize: 10,
@@ -313,13 +306,11 @@ class _RadialOrbitMenuState extends State<RadialOrbitMenu> with SingleTickerProv
 
 class _RadialMenuItem {
   final String id;
-  final String title;
   final IconData icon;
   final Color color;
 
   _RadialMenuItem({
     required this.id,
-    required this.title,
     required this.icon,
     required this.color,
   });

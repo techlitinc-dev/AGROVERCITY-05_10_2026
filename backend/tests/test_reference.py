@@ -30,9 +30,11 @@ async def test_regions_crops_unknown_district(client):
     assert body["suggested"] == []
 
 
-async def test_languages_seven_entries(client):
+async def test_languages_all_24_entries(client):
     resp = await client.get("/v1/languages")
     assert resp.status_code == 200
     languages = resp.json()["languages"]
-    assert len(languages) == 7
+    assert len(languages) == 24
+    codes = {lang["code"] for lang in languages}
+    assert {"en", "hi", "mr", "gu", "pa", "te", "ta", "bn", "ur", "kn", "ml", "or"}.issubset(codes)
     assert all(lang["audioText"] for lang in languages)

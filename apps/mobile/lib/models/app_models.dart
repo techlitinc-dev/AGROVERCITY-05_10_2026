@@ -46,6 +46,31 @@ class FarmerProfile {
     required this.activeCrops,
     this.farmBoundaryPoints = const [],
   });
+
+  // Blank starting profile — every field is hydrated from GET /users/me after
+  // sign-in; nothing is fabricated locally.
+  factory FarmerProfile.empty() => FarmerProfile(
+        id: '',
+        name: '',
+        vernacularName: '',
+        phone: '',
+        village: '',
+        tehsil: '',
+        district: '',
+        state: '',
+        landAreaAcres: 0,
+        soilType: '',
+        irrigationType: '',
+        kisanCreditScore: 0,
+        creditTier: '',
+        krishiRatnaLevel: 1,
+        krishiRatnaTitle: '',
+        streakDays: 0,
+        agriCoins: 0,
+        bankName: '',
+        kccLimit: 0,
+        activeCrops: [],
+      );
 }
 
 class CropPandL {

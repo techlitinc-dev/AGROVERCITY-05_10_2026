@@ -15,6 +15,7 @@ class ProductOut(BaseModel):
     discountedPrice: float
     bnplAvailable: bool
     batchNo: str
+    inStock: bool = True
 
 
 class CertificateOut(BaseModel):
@@ -40,6 +41,7 @@ class PlaceOrderRequest(BaseModel):
     deliveryAddress: str = ""
     idempotencyKey: str
     addressId: str | None = None
+    couponCode: str | None = None
 
 
 class RazorpayOrderRequest(BaseModel):

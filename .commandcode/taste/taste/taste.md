@@ -1,0 +1,18 @@
+# Taste
+- Prefers a mock/demo API that exactly replicates the real API contract, with switching handled via a settings file rather than hardcoded endpoints. Confidence: 0.85
+- Values a polished, professional, and well-organized user interface — repeatedly asks for pages to "look great" (e.g., "impressive and professional and organisable", "make this page look great"). Confidence: 0.85
+- Refers to and follows documented project conventions (e.g., docs/conventions) when implementing tasks. Confidence: 0.7
+- Prefers full-stack changes — when a feature spans the backend and the website, both are updated in the same task rather than leaving one side out. Confidence: 0.7
+- Prefers comprehensive reference data auto-populated into dropdowns (e.g., all Indian states/UTs) instead of a hardcoded subset. Confidence: 0.75
+- Communicates in terse, informal shorthand and expects the assistant to expand the request into full requirements. Confidence: 0.6
+- Prefers language selection to be applied globally and persisted, so every page renders in the user's chosen language and the choice survives across sessions/devices. Confidence: 0.8
+- Prefers deferred/progressive onboarding — allow users to skip persona/profile setup during registration and complete it later. Confidence: 0.75
+- Prefers extensive Indian regional language coverage — all major scheduled languages (plus additional regional languages) rather than just Hindi and English. Confidence: 0.8
+- Prefers robust implementations with graceful fallbacks (e.g., English fallback for untranslated keys) and no hardcoded localized strings leaking into the UI. Confidence: 0.65
+- Prefers the complete supported-language catalogue to appear in every language-selection surface (onboarding step included, not just the header dropdown), rather than a limited subset. Confidence: 0.7
+- Prefers profile selections to be saved to the database immediately and the user routed straight to the dashboard, with the remaining registration steps (farm/business details, farm boundary) exposed as later actions from the dashboard. Confidence: 0.8
+- Uses `run.sh` as the standard entry point to bring up the whole development stack (Redis, backend, website, mobile, admin) rather than launching services individually. Confidence: 0.6
+- Expects the assistant to autonomously diagnose and resolve errors when running/starting the stack (e.g., kill stale processes holding ports and restart cleanly) rather than stopping just to report them. Confidence: 0.8
+- Prefers the website to mirror the mobile app's structure and design (menubar, profile switcher, tool grids, persona homes) rather than diverging, when building equivalent web features. Confidence: 0.7
+- Prefers placeholder-first UI scaffolding — build out the navigation, pages, and layout with static stubs and explicitly no data/API wiring until the structure is approved. Confidence: 0.8
+- Expects existing functionality to be preserved when rebuilding or replacing a component/page — called out that the assistant silently dropped onboarding prompts during a dashboard rebuild. Confidence: 0.7

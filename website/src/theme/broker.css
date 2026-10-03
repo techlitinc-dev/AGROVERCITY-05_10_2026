@@ -1,0 +1,127 @@
+/* Broker / dalal module styles — deal desk, leads CRM, farmer offer inbox.
+   Follows trade.css conventions: reuses trade-card / trade-list / av-btn /
+   av-chip and the --av-* tokens; only broker-specific classes live here. */
+
+/* Structured offer card (₹/q negotiation message) */
+.broker-offer-card {
+  max-width: 82%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: fit-content;
+  border: 1.5px solid var(--av-border-green);
+  background: #fff;
+  box-shadow: var(--av-shadow-card);
+}
+.broker-offer-card.mine {
+  align-self: flex-end;
+  background: var(--av-accent-tint);
+  border-bottom-right-radius: 4px;
+}
+.broker-offer-card.theirs {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+.broker-offer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.broker-offer-amount {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-deep);
+}
+.broker-offer-text {
+  font-size: 13px;
+  color: var(--av-slate-4);
+}
+
+/* Lead pipeline chips (CRM status transitions) */
+.broker-pipeline-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.broker-pipeline-chips .av-chip {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* C1 — masked phone rendering */
+.broker-masked-phone {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  letter-spacing: 0.3px;
+  user-select: none;
+}
+
+/* D1 — chat lock / door */
+.broker-chat-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--av-gold-bg);
+  border: 1.5px solid #fde68a;
+  color: var(--av-gold-text);
+  border-radius: var(--av-radius-card);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.broker-chat-cta {
+  text-decoration: none;
+}
+
+/* Farmer offer inbox unread marker */
+.broker-unread-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--av-error);
+  margin-right: 6px;
+}
+
+/* Evidence thumbnails */
+.broker-evidence-img {
+  width: 100%;
+  max-width: 260px;
+  border-radius: 12px;
+  border: 1.5px solid var(--av-border-grey-soft);
+  object-fit: cover;
+}
+
+/* Broker rating stars (farmer rates dalal, F11 local v1) */
+.broker-stars {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.broker-star {
+  background: none;
+  border: none;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--av-border-grey);
+  cursor: pointer;
+  padding: 2px;
+}
+.broker-star.filled {
+  color: #f59e0b;
+}
+.broker-star:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
+/* Receipt print wrapper — keep the card clean when printing (F12 client v1) */
+@media print {
+  .broker-receipt .trade-card {
+    box-shadow: none;
+    border: 1.5px solid var(--av-border-grey);
+  }
+}

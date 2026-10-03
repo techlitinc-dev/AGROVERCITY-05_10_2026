@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../state/app_state.dart';
 import '../../components/common/motion_animations.dart';
+import '../../components/market/seller_analytics_card.dart';
 import '../../components/navigation/dashboard_profile_switcher_bar.dart';
 import '../../components/navigation/profile_switcher_sheet.dart';
 
@@ -116,6 +117,13 @@ class SellerHomeView extends StatelessWidget {
           DashboardProfileSwitcherBar(state: state),
           const SizedBox(height: 14),
 
+          // 1.6. Live E-Market sales analytics (GET /analytics/seller)
+          SellerAnalyticsCard(
+            state: state,
+            onViewDetails: () => state.navigateTo('sellerAnalytics'),
+          ),
+          const SizedBox(height: 14),
+
           // 2. Quick Action Modules Grid
           const Text(
             "व्यापार टूल्स व सेवाएं (Trading Tools):",
@@ -123,54 +131,7 @@ class SellerHomeView extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          Row(
-            children: [
-              Expanded(
-                child: _buildActionCard(
-                  title: "लाइव मंडी भाव",
-                  subtitle: "APMC नासिक, लासलगाव रेट",
-                  icon: Icons.analytics_rounded,
-                  color: const Color(0xFFEA580C),
-                  onTap: () => state.navigateTo('mandi'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildActionCard(
-                  title: "खरीदार डायरेक्टरी",
-                  subtitle: "थोक व्यापारी व निर्यातक",
-                  icon: Icons.business_center_rounded,
-                  color: const Color(0xFF0284C7),
-                  onTap: () => state.navigateTo('buyers'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildActionCard(
-                  title: "मुनाफा व लेजर",
-                  subtitle: "बिक्री मार्जिन व हिसाब-किताब",
-                  icon: Icons.account_balance_wallet_rounded,
-                  color: const Color(0xFF16A34A),
-                  onTap: () => state.navigateTo('profitLoss'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildActionCard(
-                  title: "उपज मार्केटप्लेस",
-                  subtitle: "सीधा किसान लॉट खरीद",
-                  icon: Icons.store_rounded,
-                  color: const Color(0xFF8B5CF6),
-                  onTap: () => state.navigateTo('marketplace'),
-                ),
-              ),
-            ],
-          ),
+          _buildActionsGrid(),
           const SizedBox(height: 18),
 
           // 3. Live Mandi Procurement Ledger
@@ -205,6 +166,48 @@ class SellerHomeView extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildActionsGrid() {
+    const actions = [
+      (title: "लाइव मंडी भाव", subtitle: "APMC नासिक, लासलगाव रेट", icon: Icons.analytics_rounded, color: Color(0xFFEA580C), route: 'mandi'),
+      (title: "खरीदार डायरेक्टरी", subtitle: "थोक व्यापारी व निर्यातक", icon: Icons.business_center_rounded, color: Color(0xFF0284C7), route: 'buyers'),
+      (title: "मुनाफा व लेजर", subtitle: "बिक्री मार्जिन व हिसाब-किताब", icon: Icons.account_balance_wallet_rounded, color: Color(0xFF16A34A), route: 'profitLoss'),
+      (title: "उपज मार्केटप्लेस", subtitle: "सीधा किसान लॉट खरीद", icon: Icons.store_rounded, color: Color(0xFF8B5CF6), route: 'marketplace'),
+      (title: "मेरे उत्पाद", subtitle: "स्टॉक व कीमत प्रबंधन", icon: Icons.inventory_2_rounded, color: Color(0xFFDB2777), route: 'sellerProducts'),
+    ];
+    return Column(
+      children: [
+        for (var i = 0; i < actions.length; i += 2) ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionCard(
+                  title: actions[i].title,
+                  subtitle: actions[i].subtitle,
+                  icon: actions[i].icon,
+                  color: actions[i].color,
+                  onTap: () => state.navigateTo(actions[i].route),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: i + 1 < actions.length
+                    ? _buildActionCard(
+                        title: actions[i + 1].title,
+                        subtitle: actions[i + 1].subtitle,
+                        icon: actions[i + 1].icon,
+                        color: actions[i + 1].color,
+                        onTap: () => state.navigateTo(actions[i + 1].route),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+          if (i + 2 < actions.length) const SizedBox(height: 10),
+        ],
+      ],
     );
   }
 

@@ -265,21 +265,23 @@ Primary database for all app data. Naming: collections are plural `snake_case`. 
 - **Indexes:** `status + deadline`.
 
 ## diary_entries
-- **Doc ID:** auto-id.
-- **Security:** owner (farmer/landlord) only.
+- **Path:** subcollection `users/{uid}/diary_entries`.
+- **Doc ID:** `uuid4().hex` (stored also as field `id`).
+- **Security:** owner (farmer/farmLandlord) only. Note: diary amounts are `double` (exception to the integer-rupee rule above).
 
 | Field | Type |
 |---|---|
-| userId | string |
+| id | string (== doc id) |
 | title, category | string |
 | type | string `expense/income/farmActivity` |
-| amount | int |
+| amount | double (`0` for pure activity entries; analytics sums only income/expense) |
 | date | string `YYYY-MM-DD` |
 | cropName, notes | string? |
-| idempotencyKey | string? |
-| createdAt | timestamp |
+| quantity, unit | double / string? (produce quantity, e.g. quintals) |
+| photos | array<string> (signed Storage URLs; path `diary/{uid}/{hex}_{entryId}/{hex}.{ext}`, 1–3 per upload, jpeg/png/webp ≤ 5 MB) |
+| createdAt, updatedAt | string (ISO-8601 UTC — stored as strings, not Timestamps) |
 
-- **Indexes:** `userId + date`; `userId + type + date`.
+- **Indexes:** `date` (single-field range, for `from`/`to` analytics filters; type/category filters and sorting happen in the service layer).
 
 ## pnl_crops
 - **Doc ID:** auto-id (linked to `crop_cycles` where applicable).
@@ -388,6 +390,39 @@ Primary database for all app data. Naming: collections are plural `snake_case`. 
 | sumInsuredPerAcre | int |
 | farmerSharePercent, totalActuarialRatePercent | double |
 | cutoffDate | string |
+
+## loan_applications
+- **Doc ID:** auto-id (hex); public `applicationNumber` = `LN-YYYY-####` (sequence via Firestore counter doc `counters/loans_YYYY`, same read-modify-write pattern as `counters/claims`).
+- **Security:** applicant (farmer) read/create/respond/cancel/upload; `bankManager` read all + review/approve/reject/info-request/disburse. Non-owner access → 404 (never 403).
+
+| Field | Type |
+|---|---|
+| userId | string (applicant uid) |
+| applicationNumber | string? (`LN-YYYY-####`) |
+| amount | double (legacy, kept for backward compatibility) |
+| tenureMonths | int |
+| purpose | string |
+| status | string `submitted/underReview/infoRequested/approved/rejected/disbursed/cancelled` |
+| statusText | string (localized label, mirrors latest timeline entry) |
+| farmerName, farmerPhone | string? (snapshot at apply) |
+| farmerCreditScore | int? (default 650) |
+| farmerCreditTier | string? (`Bronze/Silver/Gold/Platinum`) |
+| bankAccountId | string? (ref into `users/{uid}/bank_accounts`) |
+| bankAccountLast4, bankIfsc | string? (snapshot at apply) |
+| sanctionedAmount, disbursedAmount | int? (₹, integer rupees) |
+| interestRate | double? (annual %, sanctioned terms) |
+| disbursementRef | string? |
+| disbursedAt, updatedAt | timestamp? |
+| rejectionReason | string? |
+| assignedOfficerId, assignedOfficerName | string? (bankManager who reviewed) |
+| note | string? (latest info-request / response / approval note) |
+| documents | array<map{documentId, name, storagePath, uploadedAt}> (Storage paths, prefix `loandocs/`) |
+| timeline | array<map{status, statusText, note, at, by}> (`by` = acting uid; null for system events) |
+| createdAt | timestamp |
+
+- **Status machine** (`app/services/loans.py`): `submitted → underReview → approved → disbursed`; `underReview → rejected|infoRequested|cancelled`; `infoRequested → underReview`; `approved → rejected`; `rejected/disbursed/cancelled` terminal. Illegal moves → 409 `LOAN_INVALID_TRANSITION`.
+- **Side effects:** every banker mutation appends an `audit_logs` doc (`{action: LOAN_REVIEW/LOAN_APPROVE/LOAN_REJECT/LOAN_INFO_REQUEST/LOAN_DISBURSE, adminId, loanId, detail, timestamp}`) and writes a farmer-facing `notifications` doc. EMI schedule is computed on read (`GET /loans/{id}/schedule`), not stored.
+- **Indexes:** `userId + createdAt`; `status + createdAt` (banker queue).
 
 ## land_records
 - **Doc ID:** `{state}_{district}_{gatNumber}` (cached copies of govt records).
@@ -799,31 +834,78 @@ Primary database for all app data. Naming: collections are plural `snake_case`. 
 - **Indexes:** `stepNumber` (single-field).
 
 ## referrals
-- **Doc ID:** `uid` (one referral record per user). Referred list subcollection `referrals/{uid}/referred/{referredUid}`: `{ farmerName, village, phone, joinDate, status: Joined/Verified/Active, rewardCoins }`.
+- **Doc ID:** `uid` (one referral record per user). Invite subcollection `referrals/{uid}/invited/{phoneE164}`: `{name, phone, status: invited/joined, invitedAt, joinedAt, referredUid?}`. Joins that arrive without a prior invite are read from top-level `referral_attributions/{referredUid}` (`{referrerUid, referredUid, code, status: joined, referredPhone, createdAt}`).
 
 | Field | Type |
 |---|---|
-| userId | string |
-| referralCode | string (unique, e.g. `RAMSINGH2026`) |
-| milestones | array<map{count, reward, achieved}> |
+| userId | string (== doc id) |
+| referralCode | string (unique, `ref_` + uid prefix) |
+| invitedCount, joinedCount | int |
 | totalEarnedCoins | int |
+| milestones | array<map{count, rewardCoins, achieved}> (1→50, 5→150, 10→500) |
+| createdAt, updatedAt | string (ISO-8601 UTC) |
 
 - **Indexes:** `referralCode` (single-field, lookup on invite).
 
+## referral_attributions
+- **Doc ID:** `{referredUid}` (one attribution per referred user; re-register with the same code is idempotent — coins paid once).
+- **Security:** service write (registration with `referralCode`); owner read of own attribution.
+
+| Field | Type |
+|---|---|
+| referrerUid | string (uid) |
+| referredUid | string (== doc id) |
+| code | string (referral code used at register) |
+| status | string `joined` (invited-style semantics; written on join) |
+| referredPhone | string? (E.164) |
+| createdAt | string (ISO-8601 UTC) |
+
+- **Indexes:** `referrerUid + createdAt` (referral leaderboard + referred-list fallback).
+
 ## gamification_ledger
-- **Doc ID:** auto-id. Coin balance lives on `users.agriCoins` (transaction-updated); this is the audit trail.
+- **Doc ID:** `{uid}_{refId or uuid12}` — shadow entry written by every `award_coins`/`spend_coins` call. Coin balance lives on `users.agriCoins` (transaction-updated); this is the audit trail feeding global leaderboards and the nightly reconcile job.
 - **Security:** owner read; service write.
 
 | Field | Type |
 |---|---|
 | userId | string |
-| delta | int (signed) |
-| reason | string `urgentTask/diaryEntry/equipmentBooking/expertTalk/referral/redeem/workshopDiscount` |
+| amount | int (signed; `delta` in earlier spec — code writes `amount`) |
+| reason | string `diary_entry/referral/referral_milestone/expert_talk/course_enroll/workshop_enroll/equipment_booking/redeem` (+ legacy `urgent_task`) |
 | refId | string? |
 | balanceAfter | int |
-| createdAt | timestamp |
+| at | ISO-8601 UTC |
 
-- **Indexes:** `userId + createdAt`.
+- **Indexes:** `userId + at`.
+
+## coin_ledger (subcollection `users/{uid}/coin_ledger`)
+- **Doc ID:** `uuid4().hex` (stored also as field `id`). Written by every `award_coins`/`spend_coins` call, alongside the top-level `gamification_ledger` shadow doc.
+- **Security:** owner read; service write.
+
+| Field | Type |
+|---|---|
+| id | string (== doc id) |
+| amount | int (signed — negative on spend/redeem) |
+| reason | string (same enum as `gamification_ledger`) |
+| refId | string? (entry id, phone, reward id, …) |
+| balanceAfter | int |
+| at | string (ISO-8601 UTC) |
+
+- **Indexes:** none (per-user subcollection, sorted in service layer).
+
+## redeemed_rewards (subcollection `users/{uid}/redeemed_rewards`)
+- **Doc ID:** `rw_{hex12}`.
+- **Security:** owner read; service write (on `POST /gamification/redeem`).
+
+| Field | Type |
+|---|---|
+| id | string (== doc id) |
+| rewardType | string `voucher/soil_test/expert_call/workshop` |
+| title | string |
+| coins | int (coins spent) |
+| voucherCode | string (`AGRI-{TYPE}-{ddHHMM}`) |
+| createdAt | string (ISO-8601 UTC) |
+
+- **Indexes:** none (per-user subcollection, read whole).
 
 ## chatbot_sessions
 - **Doc ID:** auto-id; `sessionId` returned to client. Context summary mirrored in Redis (24 h TTL).
@@ -1353,3 +1435,250 @@ Deal rooms are `chats` docs with `contextType: "brokerDeal"`, `contextId: dealId
 | settlement run | Monday 04:00 | materialize `settlements` docs for the closed week; `onHold` when no verified bank account (X10) |
 | coins reconcile | nightly 03:30 | `users.agriCoins` vs `gamification_ledger` drift check → `admin_audit` (X11) |
 | booking-request expiry | hourly | expire stale `requested` transport bookings (24 h) and `pending` equipment bookings (2 h before slot), release slots (T2/E2) |
+
+---
+
+## Livestock, dairy & doctor management (round 3 — SOP-19/TR-19 refresh)
+
+> Source: conversion of the Livestock & Dairy module into a full Dairy + Gaushala + Doctor management system (`backend/app/routers/livestock_dairy.py`, `livestock_gaushala.py`, `livestock_vets.py`; all under `/v1`, OpenAPI tag `livestock`). The 8th persona `dairyManager` is the livestock-domain super-manager: `centerId` / `managerId` / `onboardedBy` / `organizerId` hold the manager uid. Note: dairy money math uses `double` amounts (per-liter FAT/SNF rates), not the integer-rupee rule above.
+
+### Field additions to existing collections
+
+| Collection | New fields | Why |
+|---|---|---|
+| `vets` | `specializations` array<string>, `visitTypes` array<string>, `serviceDistricts` array<string>, `languages` array<string>, `feeClinic` / `feeFarm` / `feeTele` int, `vetCouncilRegNo` string, `emergencyAvailable` bool, `claimedByUid` string?, `status` string `active/inactive`, `onboardedBy` string? | manager-run vet directory + self-claim by phone + vet workspace |
+| `gaushalas` | `managerId` string (uid), `capacity` int, `certifications` map (80G/FCRA/AWBI flags), `bankDetails` map | gaushala back-office profile (POST/PUT `/livestock/gaushala/profile`) |
+| `livestock_animals` | `gaushalaId` string?, `events` array<map{type, note, date, at}>, `cattleStatus` string `in-shelter/adopted-out/deceased/transferred`, `source` string? | gaushala cattle inventory + append-only event log (`/{id}/events`) |
+| `milk_collections` | `memberId` string?, `quality` map? | member-linked collections for payment batches + quality capture |
+
+## dairy_members
+- **Doc ID:** `mem_{hex12}`.
+- **Security:** dairyManager CRUD own (`centerId` == uid); member farmer read own via farmer self-views.
+
+| Field | Type | Notes |
+|---|---|---|
+| centerId | string (uid) | owning dairy manager |
+| farmerUid | string? | resolved member's user uid |
+| name, phone, village | string | |
+| memberCode | string | auto `M-XXXXXX` when blank |
+| bankDetails | map | payout account |
+| defaultSpecies | string `cow/buffalo` | |
+| deduction | double | flat per-batch deduction (₹) |
+| status | string `active/inactive` | DELETE = soft delete to `inactive` |
+| createdAt, updatedAt | timestamp | |
+
+- **Indexes:** `centerId`; `farmerUid` (self-views); `memberCode`.
+
+## rate_charts
+- **Doc ID:** `rc_{hex12}`.
+- **Security:** public-read for livestock users (farmer/seller/dairyManager); dairyManager write. Exactly one active chart per `(centerId, species)` — activating a chart deactivates the others.
+
+| Field | Type | Notes |
+|---|---|---|
+| centerId | string (uid) | |
+| species | string `cow/buffalo` | |
+| effectiveFrom | string `YYYY-MM-DD` | |
+| baseRate, fatBase, snfBase | double | ₹/liter FAT/SNF formula anchors |
+| fatStep, snfStep | double | step increments |
+| minRate, minFat, minSnf | double | quality floor |
+| active | bool | single-active-per-species |
+| createdAt, updatedAt | timestamp | |
+
+- **Indexes:** `centerId + species + active`; `species + active` (public read).
+
+## payment_batches
+- **Doc ID:** `pb_{hex12}`.
+- **Security:** dairyManager owner (`centerId` == uid).
+
+| Field | Type | Notes |
+|---|---|---|
+| centerId | string (uid) | |
+| periodFrom, periodTo | string `YYYY-MM-DD` | generation window |
+| status | string `draft/paid` | `paid` after mark-paid |
+| totalLiters, totalAmount, totalDeduction, totalNet | double | rolled up from entries |
+| paidAt | timestamp? | set by mark-paid |
+| createdAt | timestamp | |
+
+- **Indexes:** `centerId + createdAt`.
+
+## payment_entries
+- **Doc ID:** `pe_{hex12}`.
+- **Security:** dairyManager owner; member farmer read own (via `dairy_members.farmerUid`).
+
+| Field | Type | Notes |
+|---|---|---|
+| batchId, centerId | string | |
+| memberId, memberName | string | denormalized |
+| liters, amount | double | period totals from `milk_collections` |
+| deduction, netAmount | double | per-member flat deduction math |
+| payoutRef | string | UTR/ref; auto `UTR-XXXXXXXXXX` |
+| status | string `pending/paid` | |
+| createdAt | timestamp | |
+
+- **Indexes:** `batchId`; `memberId`; `centerId`.
+
+## milk_sale_customers
+- **Doc ID:** `msc_{hex12}`.
+- **Security:** dairyManager owner (`centerId` == uid).
+
+| Field | Type | Notes |
+|---|---|---|
+| centerId | string (uid) | |
+| name, phone, address, route | string | |
+| type | string `household/shop/hotel` | |
+| dailyLitersAM, dailyLitersPM | double | standing order defaults |
+| ratePerLiter | double | fallback order pricing |
+| status | string `active/inactive` | |
+| createdAt, updatedAt | timestamp | |
+
+- **Indexes:** `centerId`.
+
+## milk_sale_orders
+- **Doc ID:** `mso_{hex12}`.
+- **Security:** dairyManager owner. Status lifecycle `scheduled→delivered→billed→paid` enforced server-side.
+
+| Field | Type | Notes |
+|---|---|---|
+| centerId, customerId, customerName | string | |
+| orderDate | string `YYYY-MM-DD` | |
+| shift | string `am/pm` | |
+| liters | double | |
+| items | array<map{productId, name, qty, unitPrice}> | |
+| amount | double | items total > explicit amount > liters × customer rate |
+| status | string `scheduled/delivered/billed/paid` | |
+| deliveredAt | timestamp? | set on `delivered` |
+| createdAt, updatedAt | timestamp | |
+
+- **Indexes:** `centerId + orderDate`; `centerId + status`.
+
+## dairy_stock_items
+- **Doc ID:** `stk_{hex12}`.
+- **Security:** dairyManager owner (`centerId` == uid).
+
+| Field | Type | Notes |
+|---|---|---|
+| centerId | string (uid) | |
+| name | string | |
+| category | string `milk/curd/ghee/paneer/other` | |
+| unit | string | e.g. `liter` |
+| stockQty, unitPrice | double | |
+| expiryDate | string `YYYY-MM-DD` | |
+| lastAdjustment | map{delta, reason, at}? | from `/adjust` |
+| createdAt | timestamp | |
+
+- **Indexes:** `centerId`.
+
+## gaushala_expenses
+- **Doc ID:** `exp_{hex12}`.
+- **Security:** gaushala manager (owner of `gaushalaId`) CRUD.
+
+| Field | Type | Notes |
+|---|---|---|
+| gaushalaId | string | |
+| category | string `fodder/medical/staff/utilities/transport/other` | |
+| amount | double | |
+| note | string | |
+| expenseDate | string `YYYY-MM-DD` | |
+| createdBy | string (uid) | |
+| createdAt, updatedAt | timestamp | |
+
+- **Indexes:** `gaushalaId + expenseDate`.
+
+## appointments
+- **Doc ID:** `ap_{hex12}`.
+- **Security:** parties only — writing vet (`vets.claimedByUid`), owning farmer (`farmerUid`), or counterparty on status transitions; `dairyManager` reads all (GET scope = caller's role).
+
+| Field | Type | Notes |
+|---|---|---|
+| vetId, vetName | string | |
+| farmerUid, farmerName | string | |
+| animalId | string? | |
+| visitType | string `clinic/farm/tele` | |
+| slotDate, slotTime | string | validated against `vet_schedules` |
+| symptoms, address | string | |
+| fee | double | defaults per visitType |
+| status | string `requested/confirmed/in-progress/completed/cancelled` | vet lifecycle; farmer may cancel requested/confirmed |
+| cancelReason | string? | |
+| vetNotes | string? | on complete |
+| prescriptionId | string? | inline prescription on complete |
+| completedAt | timestamp? | |
+| createdAt, updatedAt | timestamp | |
+
+- **Indexes:** `vetId` (+ `status`, `slotDate`); `farmerUid`; `createdAt`.
+
+## vet_schedules
+- **Doc ID:** vet doc id (`vets/{id}` mirror, one per vet). Default materialized on first workspace read.
+- **Security:** owning (claimed) vet write; livestock users read.
+
+| Field | Type | Notes |
+|---|---|---|
+| vetId | string | doc id |
+| weeklySlots | array<map{day: int 0–6, slots: array<map{start, end}>}> | bookable weekdays |
+| leaves | array<string `YYYY-MM-DD`> | merged additively on PUT |
+| emergencyAvailable, teleAvailable | bool | |
+| updatedAt | timestamp | |
+
+## prescriptions
+- **Doc ID:** `rx_{hex12}`.
+- **Security:** writing vet, any dairyManager, or animal owner (`livestock_animals.ownerId`).
+
+| Field | Type | Notes |
+|---|---|---|
+| appointmentId | string? | source appointment when inline |
+| vetId, animalId, farmerUid | string | |
+| diagnosis | string | |
+| medicines | array<map{name, dosage, frequency, durationDays, notes}> | |
+| advice | string | |
+| milkWithdrawalDays | int | drug-withdrawal before milk sale |
+| followUpDate | string `YYYY-MM-DD`? | |
+| createdAt | timestamp | |
+
+- **Indexes:** `animalId`; `vetId`; `farmerUid`.
+
+## vaccination_campaigns
+- **Doc ID:** `cmp_{hex12}`.
+- **Security:** any livestock user read; dairyManager write.
+
+| Field | Type | Notes |
+|---|---|---|
+| title, vaccine, disease | string | |
+| fromDate, toDate | string `YYYY-MM-DD` | |
+| targetDistricts | array<string> | |
+| organizerId | string (uid) | creating manager |
+| status | string `upcoming/active/closed` | |
+| createdAt | timestamp | |
+
+- **Indexes:** `status`; `fromDate`.
+
+## campaign_enrollments
+- **Doc ID:** `cre_{hex12}`. Unique constraint (service-enforced): `(campaignId, animalId)`.
+- **Security:** enrolling farmer create/read own animal; dairyManager or vet mark-vaccinated.
+
+| Field | Type | Notes |
+|---|---|---|
+| campaignId, animalId, farmerUid | string | |
+| status | string `enrolled/vaccinated` | |
+| vaccinatedAt | timestamp? | |
+| createdAt | timestamp | |
+
+- **Indexes:** `campaignId + animalId` (dedupe); `campaignId`.
+
+## receipts
+- **Doc ID:** `crt_{hex12}`. Auto-created on adoption approve / donation acknowledge.
+- **Security:** issuing gaushala manager write; referenced donor read (FCM carries `receiptId`).
+
+| Field | Type | Notes |
+|---|---|---|
+| kind | string `adoption/donation` | |
+| refId | string | source adoption/donation doc |
+| personName | string | donor/adopter |
+| amount | double? | |
+| panNumber | string | blank until donor provides |
+| eightyGEligible | bool | 80G tax exemption flag |
+| certificateNumber | string | `GOSH-{year}-{KIND}-XXXXXX` |
+| certificateUrl | string | PDF once generated |
+| issuedBy | string (uid) | manager |
+| gaushalaId, gaushalaName | string | |
+| issuedAt | timestamp | |
+
+- **Indexes:** `refId`; `gaushalaId`.

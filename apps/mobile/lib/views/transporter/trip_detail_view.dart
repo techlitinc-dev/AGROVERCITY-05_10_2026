@@ -6,6 +6,7 @@ import '../../core/photo_upload.dart';
 import '../../state/app_state.dart';
 import '../profile_home/transport_home_widgets.dart';
 import 'pod_section.dart';
+import 'trip_expenses_sheet.dart';
 
 class TripDetailView extends StatefulWidget {
   final AppState state;
@@ -89,7 +90,7 @@ class _TripDetailViewState extends State<TripDetailView> {
         vehicleId: _selectedVehicleId,
         vehicleNo: vehicle['registrationNo'] as String?,
       ),
-      toast: "ट्रिप स्वीकृत",
+      toast: widget.state.tr('transporter.tripAccepted'),
     );
   }
 
@@ -109,7 +110,7 @@ class _TripDetailViewState extends State<TripDetailView> {
                 onPressed: widget.state.navigateBack,
                 icon: const Icon(Icons.arrow_back_rounded),
               ),
-              const Text("ट्रिप विवरण", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              Text(widget.state.tr('transporter.tripDetails'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             ],
           ),
           Container(
@@ -122,23 +123,87 @@ class _TripDetailViewState extends State<TripDetailView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _row("वाहन प्रकार", "${_booking['vehicleType']}"),
-                _row("वाहन नं.", "${_booking['vehicleNo'] ?? '—'}"),
-                _row("मार्ग", "${_booking['pickup']} ➔ ${_booking['drop']}"),
-                _row("दूरी", "${_booking['distanceKm']} km"),
-                _row("तिथि", "${_booking['date']}"),
-                _row("भाड़ा", "₹${formatRupees((_booking['fare'] as num?) ?? 0)}"),
-                _row("स्थिति", tripStatusChip(_status)),
+                _row(widget.state.tr('transporter.vehicleType'), "${_booking['vehicleType']}"),
+                _row(widget.state.tr('transporter.vehicleNo'), "${_booking['vehicleNo'] ?? '—'}"),
+                _row(widget.state.tr('transporter.route'), "${_booking['pickup']} ➔ ${_booking['drop']}"),
+                _row(widget.state.tr('transporter.distance'), "${_booking['distanceKm']} km"),
+                _row(widget.state.tr('transporter.date'), "${_booking['date']}"),
+                _row(widget.state.tr('transporter.fare'), "₹${formatRupees((_booking['fare'] as num?) ?? 0)}"),
+                _row(widget.state.tr('transporter.status'), tripStatusChip(_status)),
                 if (lot != null) ...[
                   const Divider(height: 18),
                   Text(
-                    "लॉट: ${lot['crop']} — ${lot['quantityQuintals']} क्विंटल @ ₹${lot['expectedRate']}/q",
+                    widget.state
+                        .tr('transporter.lotRateLine')
+                        .replaceAll('{crop}', "${lot['crop']}")
+                        .replaceAll('{qty}', "${lot['quantityQuintals']}")
+                        .replaceAll('{rate}', "${lot['expectedRate']}"),
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
                   ),
                 ],
               ],
             ),
           ),
+          if (_status == 'accepted' || _status == 'enRoute' || _status == 'delivered') ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => widget.state.openLiveTracking(_booking),
+                    icon: const Icon(Icons.navigation_rounded, size: 16),
+                    label: const Text("ट्रैकिंग", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primary,
+                      side: const BorderSide(color: primary),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => widget.state.openBilty(_booking),
+                    icon: const Icon(Icons.receipt_long_rounded, size: 16),
+                    label: const Text("ई-बिल्टी", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primary,
+                      side: const BorderSide(color: primary),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                        ),
+                        builder: (_) => TripExpensesSheet(
+                          state: widget.state,
+                          bookingId: _id,
+                          grossFare: ((_booking['fare'] as num?)?.toDouble()) ?? 0.0,
+                          api: _api,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.monetization_on_rounded, size: 16),
+                    label: const Text("खर्च व नफा", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF16A34A),
+                      side: const BorderSide(color: Color(0xFF16A34A)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           if (_actionError != null)
             Padding(
@@ -151,7 +216,7 @@ class _TripDetailViewState extends State<TripDetailView> {
           if (_status == 'requested') ...[
             DropdownButtonFormField<String>(
               initialValue: _selectedVehicleId,
-              decoration: const InputDecoration(labelText: "वाहन चुनें", border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: widget.state.tr('transporter.selectVehicle'), border: const OutlineInputBorder()),
               items: _vehicles
                   .map(
                     (v) => DropdownMenuItem(
@@ -169,15 +234,15 @@ class _TripDetailViewState extends State<TripDetailView> {
                   child: ElevatedButton(
                     onPressed: _busy || _selectedVehicleId == null ? null : _accept,
                     style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: Colors.white, minimumSize: const Size(0, 48)),
-                    child: const Text("स्वीकारें", style: TextStyle(fontWeight: FontWeight.w900)),
+                    child: Text(widget.state.tr('transporter.accept'), style: const TextStyle(fontWeight: FontWeight.w900)),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: _busy ? null : () => _run(() => _api.updateBooking(_id, 'cancelled'), toast: "ट्रिप रद्द"),
+                    onPressed: _busy ? null : () => _run(() => _api.updateBooking(_id, 'cancelled'), toast: widget.state.tr('transporter.tripCancelled')),
                     style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-                    child: const Text("अस्वीकारें", style: TextStyle(fontWeight: FontWeight.w800)),
+                    child: Text(widget.state.tr('transporter.reject'), style: const TextStyle(fontWeight: FontWeight.w800)),
                   ),
                 ),
               ],
@@ -205,6 +270,7 @@ class _TripDetailViewState extends State<TripDetailView> {
             ),
             if (_podOpen)
               PodSection(
+                state: widget.state,
                 bookingId: _id,
                 api: _api,
                 uploader: _uploader,

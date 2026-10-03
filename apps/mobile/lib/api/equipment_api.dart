@@ -1,10 +1,15 @@
+import '../services/offline_queue.dart';
 import 'api_client.dart';
+import 'api_exception.dart';
 import 'endpoints.dart';
 
 class EquipmentApi {
-  EquipmentApi({ApiClient? client}) : _client = client ?? ApiClient();
+  EquipmentApi({ApiClient? client, OfflineQueue? queue})
+      : _client = client ?? ApiClient(),
+        _queue = queue ?? OfflineQueue.instance;
 
   final ApiClient _client;
+  final OfflineQueue _queue;
 
   Future<Map<String, dynamic>> getEquipment({String? type}) =>
       _client.get(pathEquipment, query: {'type': ?type});
@@ -12,10 +17,25 @@ class EquipmentApi {
   Future<Map<String, dynamic>> getSlots(String equipmentId, String date) =>
       _client.get(equipmentSlotsPath(equipmentId), query: {'date': date});
 
-  Future<Map<String, dynamic>> bookSlot(String slotId, String farmerName) =>
-      _client.post(equipmentSlotBookPath(slotId), body: {
+  // On a network failure the booking queues for /v1/sync replay and the
+  // caller gets {'queued': true} (Day 11 B4.2); 4xx errors still throw.
+  Future<Map<String, dynamic>> bookSlot(String slotId, String farmerName) async {
+    try {
+      return await _client.post(equipmentSlotBookPath(slotId), body: {
         'farmerName': farmerName,
       });
+    } on ApiException catch (e) {
+      if (e.code == 'NETWORK_ERROR') {
+        await _queue.enqueue(
+          method: 'POST',
+          path: equipmentSlotBookPath(slotId),
+          body: {'farmerName': farmerName},
+        );
+        return {'queued': true};
+      }
+      rethrow;
+    }
+  }
 
   Future<Map<String, dynamic>> joinWaitlist(String slotId) =>
       _client.post(equipmentSlotWaitlistPath(slotId));

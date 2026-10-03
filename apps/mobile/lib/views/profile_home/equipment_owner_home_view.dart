@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../api/equipment_api.dart';
+import '../../api/settlements_api.dart';
 import '../../state/app_state.dart';
 import '../../components/common/motion_animations.dart';
 import '../../components/navigation/dashboard_profile_switcher_bar.dart';
 import '../../components/navigation/profile_switcher_sheet.dart';
+import '../../components/settlements_section.dart';
 import 'transport_home_widgets.dart';
 
 class EquipmentOwnerHomeView extends StatefulWidget {
   final AppState state;
   final EquipmentApi? equipmentApi;
-  const EquipmentOwnerHomeView({super.key, required this.state, this.equipmentApi});
+  final SettlementsApi? settlementsApi;
+  const EquipmentOwnerHomeView(
+      {super.key, required this.state, this.equipmentApi, this.settlementsApi});
 
   @override
   State<EquipmentOwnerHomeView> createState() => _EquipmentOwnerHomeViewState();
@@ -161,6 +165,9 @@ class _EquipmentOwnerHomeViewState extends State<EquipmentOwnerHomeView> {
 
             // 1.5. Dashboard Multi-Profile Switcher Bar
             DashboardProfileSwitcherBar(state: widget.state),
+            const SizedBox(height: 14),
+
+            SettlementsSection(state: widget.state, settlementsApi: widget.settlementsApi),
             const SizedBox(height: 14),
 
             // 2. Quick Action Modules Grid

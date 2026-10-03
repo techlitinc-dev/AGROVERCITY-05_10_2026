@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../../state/app_state.dart';
+
 // Pops with the reason text (min 3 chars), or null when cancelled.
 class RejectEquipmentDialog extends StatefulWidget {
-  const RejectEquipmentDialog({super.key});
+  const RejectEquipmentDialog({super.key, this.state});
 
-  static const quickReasons = ['मशीन खराब', 'ऑपरेटर उपलब्ध नहीं', 'तारीख सूट नहीं'];
+  final AppState? state;
+
+  List<String> get quickReasons => [
+        state?.tr('equipment.reasonMachineBroken') ?? 'मशीन खराब / मेंटेनेंस',
+        state?.tr('equipment.reasonOperatorUnavailable') ?? 'ऑपरेटर उपलब्ध नहीं',
+        state?.tr('equipment.reasonDateNotSuitable') ?? 'तारीख उपयुक्त नहीं',
+      ];
 
   @override
   State<RejectEquipmentDialog> createState() => _RejectEquipmentDialogState();
@@ -24,14 +32,14 @@ class _RejectEquipmentDialogState extends State<RejectEquipmentDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text("अस्वीकार का कारण", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+      title: Text(widget.state?.tr('equipment.rejectionReasonTitle') ?? 'बुकिंग रद्द करने का कारण बताएं', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(
             spacing: 6,
-            children: RejectEquipmentDialog.quickReasons
+            children: widget.quickReasons
                 .map(
                   (r) => ActionChip(
                     label: Text(r, style: const TextStyle(fontSize: 11.5)),
@@ -48,7 +56,7 @@ class _RejectEquipmentDialogState extends State<RejectEquipmentDialog> {
             controller: _reasonCtrl,
             onChanged: (_) => setState(() => _error = null),
             decoration: InputDecoration(
-              labelText: "कारण लिखें",
+              labelText: widget.state?.tr('equipment.enterReason') ?? 'कारण लिखें...',
               border: const OutlineInputBorder(),
               errorText: _error,
             ),
@@ -56,18 +64,18 @@ class _RejectEquipmentDialogState extends State<RejectEquipmentDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("रद्द करें")),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(widget.state?.tr('cancel') ?? 'रद्द करें')),
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
           onPressed: () {
             final text = _reasonCtrl.text.trim();
             if (text.length < 3) {
-              setState(() => _error = "कम से कम 3 अक्षर लिखें");
+              setState(() => _error = widget.state?.tr('equipment.minThreeChars') ?? 'कम से कम 3 अक्षर दर्ज करें');
               return;
             }
             Navigator.pop(context, text);
           },
-          child: const Text("अस्वीकारें"),
+          child: Text(widget.state?.tr('equipment.reject') ?? 'अस्वीकार करें'),
         ),
       ],
     );
@@ -80,16 +88,18 @@ class PendingBookingsSection extends StatelessWidget {
     required this.bookings,
     required this.onApprove,
     required this.onReject,
+    this.state,
   });
 
   final List<Map<String, dynamic>> bookings;
   final void Function(Map<String, dynamic> booking) onApprove;
   final void Function(Map<String, dynamic> booking, String reason) onReject;
+  final AppState? state;
 
   Future<void> _openRejectDialog(BuildContext context, Map<String, dynamic> booking) async {
     final reason = await showDialog<String>(
       context: context,
-      builder: (_) => const RejectEquipmentDialog(),
+      builder: (_) => RejectEquipmentDialog(state: state),
     );
     if (reason == null) return;
     onReject(booking, reason);

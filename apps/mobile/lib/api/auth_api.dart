@@ -19,6 +19,15 @@ class AuthApi {
     return data;
   }
 
+  Future<Map<String, dynamic>> loginWithPhoneMpin(String phone, String mpin) async {
+    final data = await _client.post(
+      pathAuthLogin,
+      body: {'phone': phone, 'mpin': mpin},
+    );
+    await _saveTokenPair(data);
+    return data;
+  }
+
   Future<Map<String, dynamic>> register({
     required String idToken,
     required String name,
@@ -36,6 +45,8 @@ class AuthApi {
     required String primaryProfile,
     String? referralCode,
     Map<String, Map<String, dynamic>>? roleProfiles,
+    String? language,
+    String? preferredLanguage,
   }) async {
     final body = <String, dynamic>{
       'idToken': idToken,
@@ -52,6 +63,8 @@ class AuthApi {
       'mpin': mpin,
       'profiles': profiles,
       'primaryProfile': primaryProfile,
+      'language': language ?? 'en',
+      'preferredLanguage': preferredLanguage ?? language ?? 'en',
     };
     if (referralCode != null && referralCode.trim().isNotEmpty) {
       body['referralCode'] = referralCode.trim();

@@ -1,8 +1,8 @@
-// Order tracking: list + detail timeline + cancel/refund UI (X5).
+// Order tracking: list + expandable detail (timeline, cancel/return) (X5).
 
 import 'package:flutter/material.dart';
-import '../api/api_exception.dart';
 import '../api/orders_api.dart';
+import '../components/market/order_detail_panel.dart';
 import '../components/mandi/mandi_price_card.dart';
 import '../state/app_state.dart';
 
@@ -21,16 +21,14 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
   List<Map<String, dynamic>> _orders = [];
   bool _loading = true;
   String? _expandedId;
-  final Set<String> _notCancellable = {};
 
-  static const _statusFlow = ['placed', 'paid', 'shipped', 'delivered'];
-  static const _statusLabels = {
-    'placed': 'Placed',
-    'paid': 'Paid',
-    'shipped': 'Shipped',
-    'delivered': 'Delivered',
-    'cancelled': 'Cancelled',
-  };
+  Map<String, String> get _statusLabels => {
+        'placed': widget.state.tr('bookings.statusPlaced'),
+        'paid': widget.state.tr('bookings.statusPaid'),
+        'shipped': widget.state.tr('bookings.statusShipped'),
+        'delivered': widget.state.tr('bookings.statusDelivered'),
+        'cancelled': widget.state.tr('bookings.statusCancelled'),
+      };
 
   @override
   void initState() {
@@ -55,11 +53,6 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
     }
   }
 
-  void _snack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
-
   Color _statusColor(String status) => switch (status) {
         'placed' => const Color(0xFFD97706),
         'paid' => const Color(0xFF16A34A),
@@ -67,42 +60,6 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
         'delivered' => const Color(0xFF14532D),
         _ => Colors.grey,
       };
-
-  Future<void> _cancel(Map<String, dynamic> order) async {
-    final isPaid = order['status'] == 'paid';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("ऑर्डर रद्द करें?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-        content: Text(
-          isPaid
-              ? "यह ऑर्डर पेड है — रद्द करने पर रिफंड शुरू हो जाएगा।"
-              : "क्या आप यह ऑर्डर रद्द करना चाहते हैं?",
-          style: const TextStyle(fontSize: 13, height: 1.4),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("नहीं")),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("ऑर्डर रद्द करें"),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await _api.cancelOrder("${order['id']}");
-      _snack("ऑर्डर रद्द किया गया");
-      await _load();
-    } on ApiException catch (e) {
-      _snack(e.message);
-      if (e.code == 'ORDER_NOT_CANCELLABLE') {
-        setState(() => _notCancellable.add("${order['id']}"));
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -112,14 +69,14 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("ऑर्डर ट्रैकिंग / Order Tracking", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          Text(widget.state.tr('bookings.orderTrackingTitle'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           if (_loading)
             Container(height: 72, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(14)))
           else if (_orders.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Text("कोई ऑर्डर नहीं", style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700))),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Text(widget.state.tr('bookings.noOrders'), style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700))),
             )
           else
             ..._orders.map(_orderCard),
@@ -132,6 +89,7 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
     final id = "${order['id']}";
     final status = "${order['status']}";
     final refund = "${order['refundStatus'] ?? 'none'}";
+    final returnStatus = order['returnStatus'] as String?;
     final items = (order['items'] as List? ?? const []);
     final expanded = _expandedId == id;
     final statusColor = _statusColor(status);
@@ -158,18 +116,33 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
                 if (refund != 'none') ...[
                   const SizedBox(width: 6),
                   _chip(
-                    refund == 'processed' ? "रिफंड हो गया" : "रिफंड प्रक्रिया में",
+                    refund == 'processed'
+                        ? widget.state.tr('bookings.refundDone')
+                        : widget.state.tr('bookings.refundProcessing'),
                     refund == 'processed' ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                  ),
+                ],
+                if (returnStatus != null) ...[
+                  const SizedBox(width: 6),
+                  _chip(
+                    widget.state.tr('emarket.returnPendingLabel'),
+                    const Color(0xFFD97706),
                   ),
                 ],
               ],
             ),
             const SizedBox(height: 4),
             Text(
-              "${items.length} सामग्री • कुल ₹${fmtInr((order['total'] as num?) ?? 0)} • ${order['paymentMethod']}",
+              "${items.length} ${widget.state.tr('bookings.itemsUnit')} • ${widget.state.tr('bookings.totalLabel')} ₹${fmtInr((order['total'] as num?) ?? 0)} • ${order['paymentMethod']}",
               style: const TextStyle(fontSize: 11.5, color: Colors.black54),
             ),
-            if (expanded) _detail(order),
+            if (expanded)
+              OrderDetailPanel(
+                state: widget.state,
+                order: order,
+                api: _api,
+                onOrderChanged: _load,
+              ),
           ],
         ),
       ),
@@ -185,67 +158,6 @@ class _OrderTrackingViewState extends State<OrderTrackingView> {
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: color)),
-    );
-  }
-
-  Widget _detail(Map<String, dynamic> order) {
-    final id = "${order['id']}";
-    final status = "${order['status']}";
-    final items = (order['items'] as List? ?? const []).cast<Map<String, dynamic>>();
-    final flowIndex = _statusFlow.indexOf(status);
-    final cancellable =
-        (status == 'placed' || status == 'paid') && !_notCancellable.contains(id);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(height: 18),
-        for (final item in items)
-          Text("• ${item['productId']} × ${item['quantity']}", style: const TextStyle(fontSize: 11.5, color: Colors.black87)),
-        const SizedBox(height: 6),
-        Text("डिलीवरी: ${order['deliveryAddress']}", style: const TextStyle(fontSize: 11.5, color: Colors.black54)),
-        const SizedBox(height: 10),
-        if (status == 'cancelled')
-          const Text("❌ ऑर्डर रद्द किया गया", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.red))
-        else
-          Row(
-            children: [
-              for (var i = 0; i < _statusFlow.length; i++) ...[
-                Icon(
-                  i <= flowIndex ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                  size: 14,
-                  color: i <= flowIndex ? const Color(0xFF16A34A) : Colors.grey.shade400,
-                ),
-                Text(
-                  " ${_statusLabels[_statusFlow[i]]}",
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: i <= flowIndex ? FontWeight.w900 : FontWeight.w500,
-                    color: i <= flowIndex ? const Color(0xFF16A34A) : Colors.grey,
-                  ),
-                ),
-                if (i < _statusFlow.length - 1)
-                  const Text(" →", style: TextStyle(fontSize: 9.5, color: Colors.grey)),
-              ],
-            ],
-          ),
-        if (cancellable) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFDC2626),
-                side: const BorderSide(color: Color(0xFFFCA5A5)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () => _cancel(order),
-              icon: const Icon(Icons.cancel_outlined, size: 16),
-              label: const Text("ऑर्डर रद्द करें", style: TextStyle(fontWeight: FontWeight.w900)),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }

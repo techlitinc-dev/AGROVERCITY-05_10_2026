@@ -1,18 +1,25 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../api/mandi_api.dart';
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
 import 'mandi_price_card.dart';
+
+String _t(AppState? state, String key) =>
+    state != null ? state.tr(key) : AppTranslations.get(key, 'hi');
 
 class PriceHistoryChart extends StatefulWidget {
   final String crop;
   final String mandi;
   final MandiApi? mandiApi;
+  final AppState? state;
 
   const PriceHistoryChart({
     super.key,
     required this.crop,
     required this.mandi,
     this.mandiApi,
+    this.state,
   });
 
   @override
@@ -73,9 +80,9 @@ class _PriceHistoryChartState extends State<PriceHistoryChart> {
               color: Color(0xFF1B4332),
             ),
           ),
-          const Text(
-            "मूल्य इतिहास (₹/क्विंटल)",
-            style: TextStyle(fontSize: 11, color: Colors.grey),
+          Text(
+            _t(widget.state, 'market.priceHistory'),
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
           ),
           const SizedBox(height: 10),
           Row(
@@ -110,9 +117,9 @@ class _PriceHistoryChartState extends State<PriceHistoryChart> {
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text(
-                "डेटा उपलब्ध नहीं",
-                style: TextStyle(
+              child: Text(
+                _t(widget.state, 'noDataAvailable'),
+                style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: Colors.grey,
@@ -144,7 +151,7 @@ class _PriceHistoryChartState extends State<PriceHistoryChart> {
           ),
         ),
         child: Text(
-          "$months माह",
+          "$months ${_t(widget.state, 'market.months')}",
           style: TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w700,
@@ -170,9 +177,9 @@ class _PriceHistoryChartState extends State<PriceHistoryChart> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _statLabel("न्यूनतम", minP),
-            _statLabel("अधिकतम", maxP),
-            _statLabel("अंतिम भाव", lastP, highlight: true),
+            _statLabel(_t(widget.state, 'market.minShort'), minP),
+            _statLabel(_t(widget.state, 'market.maxShort'), maxP),
+            _statLabel(_t(widget.state, 'market.lastPrice'), lastP, highlight: true),
           ],
         ),
         const SizedBox(height: 10),

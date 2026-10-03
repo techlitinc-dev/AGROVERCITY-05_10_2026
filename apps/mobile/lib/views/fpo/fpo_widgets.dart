@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../../state/app_state.dart';
 import '../equipment/equipment_widgets.dart' show slotStatusColor;
 
 // Pops with the chosen unit count (>=1), or null when cancelled.
 class JoinPoolDialog extends StatefulWidget {
-  const JoinPoolDialog({super.key, required this.item});
+  const JoinPoolDialog({super.key, required this.item, required this.state});
 
   final String item;
+  final AppState state;
 
   @override
   State<JoinPoolDialog> createState() => _JoinPoolDialogState();
@@ -19,7 +21,7 @@ class _JoinPoolDialogState extends State<JoinPoolDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text("पूल में यूनिट जोड़ें", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+      title: Text(widget.state.tr('fpo.addUnitsTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -33,7 +35,7 @@ class _JoinPoolDialogState extends State<JoinPoolDialog> {
                 onPressed: _units > 1 ? () => setState(() => _units--) : null,
                 icon: const Icon(Icons.remove_circle_outline_rounded),
               ),
-              Text("$_units यूनिट", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              Text("$_units ${widget.state.tr('fpo.units')}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
               IconButton(
                 key: const ValueKey('join-units-plus'),
                 onPressed: () => setState(() => _units++),
@@ -44,11 +46,11 @@ class _JoinPoolDialogState extends State<JoinPoolDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("रद्द करें")),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(widget.state.tr('cancel'))),
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1B4332), foregroundColor: Colors.white),
           onPressed: () => Navigator.pop(context, _units),
-          child: const Text("पुष्टि करें", style: TextStyle(fontWeight: FontWeight.w900)),
+          child: Text(widget.state.tr('fpo.confirm'), style: const TextStyle(fontWeight: FontWeight.w900)),
         ),
       ],
     );
@@ -56,10 +58,11 @@ class _JoinPoolDialogState extends State<JoinPoolDialog> {
 }
 
 class PoolCard extends StatelessWidget {
-  const PoolCard({super.key, required this.pool, required this.onJoin});
+  const PoolCard({super.key, required this.pool, required this.onJoin, required this.state});
 
   final Map<String, dynamic> pool;
   final VoidCallback onJoin;
+  final AppState state;
 
   @override
   Widget build(BuildContext context) {
@@ -74,13 +77,13 @@ class PoolCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Expanded(
-              child: Text("📦 सामूहिक खरीद पूल: ${pool['item']}", style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
+              child: Text("📦 ${state.tr('fpo.bulkPool')}: ${pool['item']}", style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
             ),
-            Text("$discount% छूट अनलॉक!", style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF16A34A))),
+            Text("$discount% ${state.tr('fpo.discountUnlocked')}", style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF16A34A))),
           ],
         ),
         const SizedBox(height: 8),
-        Text("$booked/$target बुक हो चुकी हैं", style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
+        Text("$booked/$target ${state.tr('fpo.bookedUnits')}", style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
         const SizedBox(height: 8),
         LinearProgressIndicator(
           value: progress.toDouble(),
@@ -91,7 +94,7 @@ class PoolCard extends StatelessWidget {
         ElevatedButton.icon(
           onPressed: booked >= target ? null : onJoin,
           icon: const Icon(Icons.add_shopping_cart_rounded, size: 16),
-          label: const Text("ग्रुप पूल में यूनिट जोड़ें", style: TextStyle(fontWeight: FontWeight.w700)),
+          label: Text(state.tr('fpo.addUnitsToPool'), style: const TextStyle(fontWeight: FontWeight.w700)),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF1B4332),
             foregroundColor: Colors.white,
@@ -104,14 +107,15 @@ class PoolCard extends StatelessWidget {
 }
 
 class MachineryCalendar extends StatelessWidget {
-  const MachineryCalendar({super.key, required this.machines});
+  const MachineryCalendar({super.key, required this.machines, required this.state});
 
   final List<Map<String, dynamic>> machines;
+  final AppState state;
 
   @override
   Widget build(BuildContext context) {
     if (machines.isEmpty) {
-      return const Text("कोई FPO मशीन उपलब्ध नहीं", style: TextStyle(fontSize: 12, color: Colors.grey));
+      return Text(state.tr('fpo.noMachinery'), style: const TextStyle(fontSize: 12, color: Colors.grey));
     }
     return Column(
       children: machines.map(_buildMachine).toList(),

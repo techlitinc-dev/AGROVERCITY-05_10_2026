@@ -1,0 +1,308 @@
+/* Vet network module styles — managed vets directory, appointments,
+   vaccination campaigns, prescriptions.
+   Reuses tokens.css custom properties; classes are vetnet-* prefixed.
+   Width-aware: content blocks cap at the mobile shell width on wide screens. */
+
+.vetnet-wrap {
+  width: 100%;
+  max-width: var(--av-shell-width);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.vetnet-hint {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  margin-top: 6px;
+}
+
+.vetnet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.vetnet-actions-row {
+  display: flex;
+  gap: 10px;
+}
+.vetnet-actions-row .av-btn {
+  flex: 1;
+}
+
+/* ---- Sub-page tabs ---- */
+.vetnet-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  margin-top: 10px;
+}
+
+.vetnet-tabs a {
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-pill);
+  padding: 7px 14px;
+}
+
+.vetnet-tabs a.active {
+  color: #fff;
+  background: var(--av-green-dark);
+  border-color: var(--av-green-dark);
+}
+
+/* ---- Filter row (search input + chip toggles) ---- */
+.vetnet-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.vetnet-filter .av-input {
+  width: 100%;
+}
+
+.vetnet-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vetnet-date-row .av-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Cards / lists ---- */
+.vetnet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.vetnet-card {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--av-font);
+}
+
+a.vetnet-card {
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+a.vetnet-card:active {
+  transform: scale(0.99);
+}
+
+.vetnet-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vetnet-card-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.vetnet-card-sub {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  overflow-wrap: anywhere;
+}
+
+.vetnet-card-amount {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  white-space: nowrap;
+}
+
+/* ---- Pills (status / badges) ---- */
+.vetnet-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.vetnet-pill-ok {
+  background: #eaf7ee;
+  color: #166534;
+  border-color: #bbe7c8;
+}
+
+.vetnet-pill-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.vetnet-pill-warn {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.vetnet-pill-bad {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.vetnet-pill-grey {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+/* ---- Chip row (status filters / small tag chips) ---- */
+.vetnet-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  margin-top: 8px;
+}
+
+.vetnet-chip-row .av-chip {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.vetnet-mini-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.vetnet-mini-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--av-radius-pill);
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ---- Form ---- */
+.vetnet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.vetnet-field-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--av-title);
+  margin-top: 8px;
+}
+
+/* ---- Medicine rows (prescription editor) ---- */
+.vetnet-med {
+  border: 1.5px dashed var(--av-border-grey);
+  border-radius: var(--av-radius-card);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.vetnet-med-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vetnet-med-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.vetnet-med-remove {
+  border: none;
+  background: none;
+  color: var(--av-error, #b91c1c);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+/* ---- Enrollment list ---- */
+.vetnet-enr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---- Empty states ---- */
+.vetnet-empty {
+  text-align: center;
+  padding: 36px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.vetnet-empty-icon {
+  font-size: 44px;
+}
+
+.vetnet-empty-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.vetnet-empty-body {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  max-width: 320px;
+}
+
+.vetnet-empty-action {
+  margin-top: 10px;
+  width: 100%;
+  max-width: 280px;
+}

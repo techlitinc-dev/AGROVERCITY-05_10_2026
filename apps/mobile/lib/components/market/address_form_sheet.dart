@@ -50,7 +50,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
   Future<void> _save() async {
     final pincode = _pincodeCtrl.text.trim();
     if (pincode.length != 6 || int.tryParse(pincode) == null) {
-      setState(() => _pincodeError = "पिनकोड ठीक 6 अंकों का होना चाहिए");
+      setState(() => _pincodeError = widget.state.tr('market.pincodeError'));
       return;
     }
     setState(() {
@@ -58,7 +58,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
       _saving = true;
     });
     final fields = <String, dynamic>{
-      'label': _labelCtrl.text.trim().isEmpty ? 'घर' : _labelCtrl.text.trim(),
+      'label': _labelCtrl.text.trim().isEmpty ? widget.state.tr('market.homeTag') : _labelCtrl.text.trim(),
       'line1': _line1Ctrl.text.trim(),
       'village': _villageCtrl.text.trim(),
       'district': _districtCtrl.text.trim(),
@@ -100,16 +100,16 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              e == null ? "नया पता जोड़ें" : "पता संपादित करें",
+              e == null ? widget.state.tr('market.addNewAddress') : widget.state.tr('market.editAddress'),
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
             ),
             const SizedBox(height: 12),
-            _field("लेबल (घर / खेत)", _labelCtrl),
-            _field("पता पंक्ति 1", _line1Ctrl),
-            _field("गांव", _villageCtrl),
-            _field("जिला", _districtCtrl),
-            _field("राज्य", _stateCtrl),
-            _field("पिनकोड (6 अंक)", _pincodeCtrl,
+            _field(widget.state.tr('market.labelHint'), _labelCtrl),
+            _field(widget.state.tr('market.addressLine1'), _line1Ctrl),
+            _field(widget.state.tr('village'), _villageCtrl),
+            _field(widget.state.tr('district'), _districtCtrl),
+            _field(widget.state.tr('state'), _stateCtrl),
+            _field(widget.state.tr('market.pincode6'), _pincodeCtrl,
                 keyboard: TextInputType.number, error: _pincodeError),
             Row(
               children: [
@@ -118,7 +118,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
                   activeColor: const Color(0xFF16A34A),
                   onChanged: (v) => setState(() => _isDefault = v ?? false),
                 ),
-                const Text("डिफ़ॉल्ट पता बनाएं", style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                Text(widget.state.tr('market.makeDefaultAddress'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
               ],
             ),
             const SizedBox(height: 8),
@@ -132,7 +132,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
                 ),
                 onPressed: _saving ? null : _save,
                 child: Text(
-                  _saving ? "सहेजा जा रहा है..." : "पता सहेजें",
+                  _saving ? widget.state.tr('market.savingAddress') : widget.state.tr('market.saveAddress'),
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),

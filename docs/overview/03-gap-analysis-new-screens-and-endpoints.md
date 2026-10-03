@@ -494,6 +494,37 @@ Other kinds use the entity fields from `endpoints.md` §17/§10 (`blogs` → `Bl
 
 Every admin action (login, user status change, rate decision, content write, claim update) appends a doc to `admin_audit` with `{ adminUid, action, targetRef, payload, at }`.
 
+### B.8 Bank Manager — loan management (2026-09-28)
+
+New `bankManager` persona (12th profile; `roleProfiles.bankManager = { bankName?, branch?, employeeId? }`, dev quick-login persona `bankManager`). The banker operates on the same `loan_applications` collection the farmer writes via `POST /finance/loans/apply` — this is the missing banker half of the F17 loan flow. Status machine (enforced in `app/services/loans.py`):
+
+```
+submitted ─→ underReview ─→ approved ─→ disbursed
+    │             │    └────→ rejected        ↑
+    │             ├────→ infoRequested ──(farmer respond)──→ underReview
+    └────→ cancelled        └────→ cancelled (farmer, owner only)
+                  └────→ cancelled
+```
+
+Illegal transitions → 409 `LOAN_INVALID_TRANSITION`. Every status change appends to `timeline[]`; every banker mutation writes `audit_logs` and FCMs the farmer (`notifications` collection). Non-owner access is always 404 `LOAN_NOT_FOUND` (never 403) so farmers cannot probe each other's loans.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/loans/queue` | Review queue. Query: `status=, q= (farmerName/farmerPhone/applicationNumber substring), page=, pageSize=` → envelope of `LoanApplicationOut`, `createdAt` desc | bankManager |
+| GET | `/loans/stats` | `{ byStatus, totalApplications, totalRequestedAmount, totalSanctionedAmount, pendingReview }` | bankManager |
+| GET | `/loans/{id}` | `LoanApplicationOut` (owner farmer or bankManager; else 404) | farmer, bankManager |
+| POST | `/loans/{id}/review` | `submitted → underReview`; sets `assignedOfficerId/Name`; notifies farmer; audit | bankManager |
+| POST | `/loans/{id}/approve` | `underReview → approved`. Body `{ sanctionedAmount (int ₹), interestRate, tenureMonths, note? }`; notifies; audit | bankManager |
+| POST | `/loans/{id}/reject` | `underReview\|approved → rejected`. Body `{ reason }`; notifies; audit | bankManager |
+| POST | `/loans/{id}/info-request` | `underReview → infoRequested`. Body `{ message }`; notifies; audit | bankManager |
+| POST | `/loans/{id}/respond` | `infoRequested → underReview` (owner farmer; banker → 403). Body `{ message }`; notifies assigned officer | farmer |
+| POST | `/loans/{id}/cancel` | `submitted\|infoRequested → cancelled` (owner farmer; banker → 403); notifies assigned officer | farmer |
+| POST | `/loans/{id}/disburse` | `approved → disbursed`. Body `{ disbursementRef, disbursedAmount? }`; notifies; audit | bankManager |
+| GET | `/loans/{id}/schedule` | Reducing-balance EMI schedule, integer ₹, monthly rest, due 1st of month, final outstanding 0 (sanctioned terms when approved/disbursed, else requested @ 12%) | farmer, bankManager |
+| POST | `/loans/{id}/documents` | Multipart `files[]` (JPG/PNG/PDF) → Storage `loandocs/`; appends `documents[]`, 201 | farmer |
+
+`POST /finance/loans/apply` extension (backward-compatible): optional `bankAccountId` (validated against `users/{uid}/bank_accounts`, 404 `BANK_ACCOUNT_NOT_FOUND`; `accountLast4`+`ifsc` snapshotted). On create the doc snapshots `farmerName`, `farmerPhone`, `farmerCreditScore` (default 650), `farmerCreditTier` (`users.creditTier` or derived from score), `applicationNumber` = `LN-YYYY-####` (counter doc `counters/loans_YYYY`), and seeds `timeline[0] = submitted`. `GET /finance/loans` now returns the full `LoanApplicationOut`.
+
 ---
 
 ## Part C — New Screens (missing.md gap audit, round 2)
@@ -576,9 +607,9 @@ Every admin action (login, user status change, rate decision, content write, cla
 
 #### 35. Loan tracking section (F17)
 - **Persona:** all (section inside `finance` screen + its own full list route `loanTracking`)
-- **Purpose:** status visibility for applications made via `POST /finance/loans/apply` ("under review → approved → disbursed").
-- **UI elements:** application cards (loan type, amount, applied date, status stepper, expected disbursal date, bank ref no.); document checklist per status; empty state CTA → apply.
-- **Endpoints:** `GET /finance/loans` (D.1).
+- **Purpose:** status visibility for applications made via `POST /finance/loans/apply` ("under review → approved → disbursed"). Now backed by the banker workflow in §B.8: every application carries `applicationNumber` (`LN-YYYY-####`), a `timeline[]` of status changes, `documents[]`, and sanctioned/disbursal fields once a bankManager acts on it. Info-requested loans show the banker's message and a respond action; the farmer may cancel while `submitted`/`infoRequested`.
+- **UI elements:** application cards (loan type, amount, applied date, status stepper from `timeline[]`, expected disbursal date, bank ref no. = `applicationNumber`); document upload + checklist per status (respond to info requests with `POST /loans/{id}/respond`); EMI schedule preview (`GET /loans/{id}/schedule`); empty state CTA → apply.
+- **Endpoints:** `GET /finance/loans`, `GET /loans/{id}`, `GET /loans/{id}/schedule`, `POST /loans/{id}/respond`, `POST /loans/{id}/cancel`, `POST /loans/{id}/documents` (D.1 + §B.8).
 
 #### 36. FPO discover & join — route `fpoDiscover` (F19)
 - **Persona:** farmer (non-member state of the `fpo` screen)
@@ -1012,15 +1043,23 @@ Only on `rejected` claims (`409` `CLAIM_NOT_REJECTED`); max 2 appeal rounds (`40
 ```
 `POST /bank-accounts/{id}/verify` enqueues a penny-drop (Razorpay contact/fund-account validation) and returns the account object; completion arrives async (status flips + FCM `bank_verified`). Name mismatch → `verificationStatus: "failed"`, `failureReason`. Only one `isPrimary` per user (service flips the old one). DELETE → `204`; `409` `ACCOUNT_IN_USE` when referenced by an open claim, loan, or `pending/approved` settlement.
 
-**F17 — `GET /finance/loans`** — response:
+**F17 — `GET /finance/loans`** — response (implemented shape; superset of the sketch below — see §B.8 / `LoanApplicationOut`):
 ```json
 {
   "data": [
-    { "id": "loan_9", "type": "kcc | cropLoan | machinery | vehicle",
-      "amountRupees": 150000, "appliedOn": "2026-09-01",
-      "status": "underReview | approved | disbursed | rejected",
-      "statusText": "...", "bankRefNo": "KCC/2026/881", "expectedDisbursal": "2026-09-25",
-      "history": [{ "status": "underReview", "at": "..." }] }
+    { "applicationId": "abc123", "applicationNumber": "LN-2026-0007",
+      "amount": 150000.0, "tenureMonths": 6, "purpose": "machinery",
+      "status": "submitted | underReview | infoRequested | approved | rejected | disbursed | cancelled",
+      "createdAt": "2026-09-20T10:00:00+00:00",
+      "userId": "uid-1", "farmerName": "Ram Patil", "farmerPhone": "+919812345678",
+      "farmerCreditScore": 650, "farmerCreditTier": "Gold",
+      "bankAccountId": null, "bankAccountLast4": "7890", "bankIfsc": "HDFC0001234",
+      "sanctionedAmount": 150000, "interestRate": 12.0,
+      "disbursementRef": null, "disbursedAt": null, "rejectionReason": null,
+      "assignedOfficerId": "uid-banker", "assignedOfficerName": "Anita Sharma",
+      "documents": [{ "documentId": "…", "name": "7-12.pdf", "storagePath": "loandocs/uid-1/…", "uploadedAt": "…" }],
+      "timeline": [{ "status": "underReview", "statusText": "बैंक समीक्षा में", "note": null, "at": "…", "by": "uid-banker" }],
+      "note": null, "updatedAt": "…" }
   ],
   "page": 1, "pageSize": 20, "total": 1
 }
@@ -1342,6 +1381,18 @@ Every change appends a `consent_log` doc `{ userId, key, value, source: "app", a
 | `chats`/`messages`, `notifications` | append-only, no conflict | dedupe by idempotency key |
 
 Sync responses already carry per-op results (conventions §4); conflicts surface as `{ "idempotencyKey", "status": 409, "error": { "code": "SYNC_CONFLICT" }, "replayed": true }` with the server copy in `error.fieldErrors.serverDoc` for the client to display/merge.
+
+**X19 — field-level enforcement matrix (implemented Day 14, `services/sync.py`).** On replay, the server strips server-owned fields from every op body before dispatch; stripping is logged. Per-collection policy:
+
+| Collection / fields | Policy | Notes |
+|---|---|---|
+| diary_entries | client-wins on content fields; server-wins on `agriCoinsEarned` | coins computed server-side |
+| insurance claims (metadata) | server-wins on `status`, `approvedAmount`, `timeline`, `bankAccountLast4` | client edits limited to submit-time fields |
+| wallet / `agriCoins` balance | server-wins always | ledger is the source of truth |
+| equipment/vet bookings | server-wins on `status`, `priceRupees` | slot conflicts decided by the engine |
+| profile (`users/me`) | last-write-wins on name/village/crops; server-wins on `kisanCreditScore`, `kccLimit`, `agriCoins` | |
+
+Server-owned field set stripped on every replayed body: `agriCoins`, `agriCoinsEarned`, `status`, `approvedAmount`, `timeline`, `bankAccountLast4`, `kisanCreditScore`, `kccLimit`, `priceRupees`.
 
 **X21 — speech. `POST /speech/stt`** — `multipart/form-data` (exception to JSON content-type): field `audio` (file), fields `language` (`hi|mr|gu|pa|te|ta|en`), `context` (`chatbot | search | form`). Constraints: formats `wav|m4a|ogg|webm`, 16 kHz mono preferred, **max 15 MB / 60 s** → `413` `AUDIO_TOO_LARGE`. Response:
 ```json

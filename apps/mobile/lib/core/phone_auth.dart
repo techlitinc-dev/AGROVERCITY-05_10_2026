@@ -1,13 +1,19 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../data/translations.dart';
+
 // Thin wrapper over FirebaseAuth phone OTP so views never touch Firebase
 // directly and tests can fake the whole flow. When Firebase is not
 // initialised (no google-services.json / firebase_options yet), every call
 // degrades to onFailed with a user-facing message instead of crashing.
 class PhoneAuth {
-  PhoneAuth({this._auth});
+  PhoneAuth({this._auth, this.lang = 'hi'});
 
   final FirebaseAuth? _auth;
+
+  /// Language code used for user-facing failure messages; callers with an
+  /// AppState in scope should pass its current language.
+  final String lang;
 
   FirebaseAuth? get _instance {
     final injected = _auth;
@@ -27,7 +33,8 @@ class PhoneAuth {
   }) async {
     final auth = _instance;
     if (auth == null) {
-      onFailed('Firebase कॉन्फ़िगर नहीं है — OTP अभी उपलब्ध नहीं');
+      onFailed(AppTranslations.get(
+          'onboarding.errFirebaseNotConfigured', lang));
       return;
     }
     try {
@@ -40,19 +47,22 @@ class PhoneAuth {
             if (token != null) {
               onAutoVerified?.call(token);
             } else {
-              onFailed('OTP सत्यापन विफल — पुनः प्रयास करें');
+              onFailed(AppTranslations.get(
+                  'onboarding.errOtpVerifyFailed', lang));
             }
           } catch (_) {
-            onFailed('OTP सत्यापन विफल — पुनः प्रयास करें');
+            onFailed(AppTranslations.get(
+                'onboarding.errOtpVerifyFailed', lang));
           }
         },
-        verificationFailed: (e) =>
-            onFailed(e.message ?? 'OTP भेजना विफल — पुनः प्रयास करें'),
+        verificationFailed: (e) => onFailed(e.message ??
+            AppTranslations.get('onboarding.errOtpSendFailed', lang)),
         codeSent: (verificationId, _) => onCodeSent(verificationId),
         codeAutoRetrievalTimeout: (_) {},
       );
     } catch (_) {
-      onFailed('OTP भेजना विफल — पुनः प्रयास करें');
+      onFailed(
+          AppTranslations.get('onboarding.errOtpSendFailed', lang));
     }
   }
 

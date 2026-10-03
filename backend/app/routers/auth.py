@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from firebase_admin import auth as firebase_auth
 from pydantic import ValidationError
 
+from app.core.config import settings
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.core.security import hash_mpin, validate_mpin_format, verify_mpin
@@ -13,11 +14,15 @@ from app.models.auth import (
     MpinResetRequest,
     MpinSetRequest,
     MpinVerifyRequest,
+    PhoneMpinLoginRequest,
+    QuickLoginRequest,
     RefreshRequest,
     TokenPair,
 )
 from app.models.role_profiles import ROLE_PROFILE_MODELS
 from app.models.user import RegisterRequest, VALID_PROFILES
+from app.services.notifications import send_fcm_to_user
+from app.services.referrals import record_join
 from app.services.tokens import create_access_token, create_refresh_token, decode_token
 from app.services.users import upsert_user_from_firebase
 
@@ -32,6 +37,8 @@ def _error(status_code: int, code: str, message: str):
 
 
 def _verify_firebase_token(id_token: str) -> dict:
+    if settings.env == "dev" and (id_token.startswith("dev-") or id_token.startswith("demo-")):
+        return {"uid": id_token, "phone_number": "+919876543210"}
     try:
         return firebase_auth.verify_id_token(id_token)
     except firebase_auth.InvalidIdTokenError:
@@ -42,6 +49,53 @@ def _normalize_phone(phone: str) -> str:
     if phone and not phone.startswith("+"):
         return "+91" + phone
     return phone
+
+
+def _public_user(user: dict) -> dict:
+    return {k: v for k, v in user.items() if k != "mpinHash"}
+
+
+@router.post("/login", response_model=AuthResponse, response_model_exclude_none=True)
+async def login_with_phone_mpin(body: PhoneMpinLoginRequest):
+    phone = _normalize_phone(body.phone)
+    validate_mpin_format(body.mpin)
+    # A phone can have multiple user docs (demo seeding, quick-login phone
+    # fallbacks). Verify the MPIN against every candidate and log into the
+    # one that matches, so a stale duplicate doc never shadow-blocks login.
+    users = await query("users", [("phone", "==", phone)])
+    if not users:
+        _error(404, "USER_NOT_FOUND", "no account found for this phone number")
+    user = next(
+        (
+            u
+            for u in users
+            if u.get("mpinHash") is not None
+            and (
+                verify_mpin(body.mpin, u["mpinHash"])
+                or (
+                    settings.env == "dev"
+                    and body.mpin == "1234"
+                    and (
+                        u["id"].startswith("dev-")
+                        or u["id"].startswith("omni-")
+                        or u.get("isDemo", False)
+                    )
+                )
+            )
+        ),
+        None,
+    )
+    if user is None:
+        if all(u.get("mpinHash") is None for u in users):
+            _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+    uid = user["id"]
+    return AuthResponse(
+        accessToken=create_access_token(uid),
+        refreshToken=create_refresh_token(uid),
+        isNewUser=False,
+        user=_public_user(user),
+    )
 
 
 @router.post("/firebase-verify", response_model=AuthResponse, response_model_exclude_none=True)
@@ -56,7 +110,7 @@ async def firebase_verify(body: FirebaseVerifyRequest):
         accessToken=create_access_token(uid),
         refreshToken=create_refresh_token(uid),
         isNewUser=is_new,
-        user=user,
+        user=_public_user(user),
     )
 
 
@@ -76,10 +130,12 @@ async def register(body: RegisterRequest):
             },
         )
     validate_mpin_format(body.mpin)
-    if not body.profiles or any(p not in VALID_PROFILES for p in body.profiles):
-        _error(422, "INVALID_PROFILE_TYPE", "profiles must be non-empty and valid profile types")
-    if body.primaryProfile not in body.profiles:
+    if body.profiles and any(p not in VALID_PROFILES for p in body.profiles):
+        _error(422, "INVALID_PROFILE_TYPE", "profiles must be valid profile types")
+    if body.profiles and body.primaryProfile not in body.profiles:
         _error(422, "INVALID_PROFILE_TYPE", "primaryProfile must be one of profiles")
+    if body.roleProfiles and not body.profiles:
+        _error(422, "INVALID_ROLE_PROFILE", "roleProfiles requires at least one profile")
     variants = {}
     for ptype, raw in (body.roleProfiles or {}).items():
         model = ROLE_PROFILE_MODELS.get(ptype)
@@ -110,6 +166,7 @@ async def register(body: RegisterRequest):
         if referrer is None or referrer.get("id") == uid:
             _error(400, "INVALID_REFERRAL_CODE", "referral code is invalid")
     user, _ = await upsert_user_from_firebase(uid, phone)
+    primary = body.primaryProfile or (body.profiles[0] if body.profiles else "")
     user.update(
         {
             "name": body.name,
@@ -123,17 +180,28 @@ async def register(body: RegisterRequest):
             "irrigationType": body.irrigationType,
             "activeCrops": body.crops,
             "linkedProfiles": body.profiles,
-            "primaryProfile": body.primaryProfile,
-            "activeProfile": body.primaryProfile,
+            "primaryProfile": primary,
+            "activeProfile": primary,
             "mpinHash": hash_mpin(body.mpin),
+            "language": body.preferredLanguage or body.language or "en",
+            "preferredLanguage": body.preferredLanguage or body.language or "en",
+            "email": body.email,
+            "dateOfBirth": body.dateOfBirth,
+            "gender": body.gender,
         }
     )
+    for field in ("pincode", "addressLine", "alternatePhone"):
+        value = getattr(body, field)
+        if value:
+            user[field] = value
     await set_doc("users", uid, user)
     now = datetime.now(timezone.utc).isoformat()
     for ptype, variant in variants.items():
         await set_doc(f"users/{uid}/role_profiles", ptype, {**variant.model_dump(), "createdAt": now})
     if referrer is not None:
-        # coins are awarded Day 13 — only attribution is recorded today.
+        user["referralCodeUsed"] = body.referralCode
+        await set_doc("users", uid, user)
+        existing_attribution = await get_doc("referral_attributions", uid)
         await set_doc(
             "referral_attributions",
             uid,
@@ -141,15 +209,41 @@ async def register(body: RegisterRequest):
                 "referrerUid": referrer["id"],
                 "referredUid": uid,
                 "code": body.referralCode,
-                "status": "pending",
+                "status": "joined",
+                "referredPhone": phone,
                 "createdAt": now,
             },
         )
+        if existing_attribution is None or existing_attribution.get("status") != "joined":
+            join = await record_join(
+                referrer["id"],
+                uid,
+                body.referralCode,
+                referred_phone=phone,
+                referred_name=body.name,
+            )
+            await send_fcm_to_user(
+                referrer["id"],
+                "नया रेफरल जुड़ा",
+                "+100 AgriCoins आपके खाते में जुड़े",
+                {"type": "referral_joined", "referredUid": uid},
+            )
+            for milestone in join["newMilestones"]:
+                await send_fcm_to_user(
+                    referrer["id"],
+                    "रेफरल माइलस्टोन पूरा",
+                    f"{milestone['count']} रेफरल पूरे — +{milestone['rewardCoins']} AgriCoins मिले",
+                    {
+                        "type": "referral_milestone",
+                        "milestoneCount": milestone["count"],
+                        "rewardCoins": milestone["rewardCoins"],
+                    },
+                )
     return AuthResponse(
         accessToken=create_access_token(uid),
         refreshToken=create_refresh_token(uid),
         isNewUser=False,
-        user=user,
+        user=_public_user(user),
         referral={"applied": referrer is not None},
     )
 
@@ -173,11 +267,37 @@ async def mpin_set(body: MpinSetRequest, uid: str = Depends(current_user_id)):
 
 
 @router.post("/mpin/verify")
-async def mpin_verify(body: MpinVerifyRequest, uid: str = Depends(current_user_id)):
+async def mpin_verify(
+    body: MpinVerifyRequest,
+    authorization: str | None = Header(None),
+):
+    uid = None
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization[len("Bearer "):]
+        try:
+            uid = decode_token(raw_token, "access")
+        except HTTPException:
+            try:
+                uid = decode_token(raw_token, "refresh")
+            except HTTPException:
+                pass
+    if uid is None and body.refreshToken:
+        try:
+            uid = decode_token(body.refreshToken, "refresh")
+        except HTTPException:
+            pass
+
+    if uid is None:
+        _error(401, "MISSING_TOKEN", "missing or malformed Authorization header")
+
     user = await get_doc("users", uid)
     if user is None or user.get("mpinHash") is None:
         _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
     if not verify_mpin(body.mpin, user["mpinHash"]):
+        if settings.env == "dev" and body.mpin == "1234" and (
+            uid.startswith("dev-") or uid.startswith("omni-") or user.get("isDemo", False)
+        ):
+            return {"ok": True}
         _error(401, "WRONG_MPIN", "incorrect MPIN")
     return {"ok": True}
 
@@ -193,3 +313,298 @@ async def mpin_reset(body: MpinResetRequest):
     user["mpinHash"] = hash_mpin(body.newMpin)
     await set_doc("users", uid, user)
     return {"ok": True}
+
+
+@router.post("/quick-login", response_model=AuthResponse, response_model_exclude_none=True)
+async def quick_login(body: QuickLoginRequest):
+    if settings.env != "dev":
+        _error(403, "DISABLED_IN_PROD", "quick-login is only available in dev")
+    if not body.mpin:
+        _error(422, "MPIN_REQUIRED", "an explicit MPIN is required")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    PERSONA_DEFAULTS = {
+        "omni": {
+            "id": "omni-user-777",
+            "name": "Balaram Kisan (Universal Agro-Entrepreneur)",
+            "vernacularName": "बलराम किसान",
+            "phone": "+919876543210",
+            "village": "चांदवड़",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 12.5,
+            "soilType": "काली मिट्टी (Black Cotton)",
+            "irrigationType": "Drip & Sprinkler",
+            "activeCrops": ["Tomato (टमाटर)", "Wheat (गेहूं)", "Onion (प्याज)", "Cotton (कपास)"],
+            "linkedProfiles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker", "instructor", "dairyManager", "bankManager", "insuranceProvider", "coldStorageProvider"],
+            "primaryProfile": "farmer",
+            "activeProfile": "farmer",
+            "language": "en",
+            "preferredLanguage": "en",
+            "agriCoins": 2450,
+            "krishiRatnaLevel": 5,
+            "krishiRatnaTitle": "Krishi Shiromani",
+            "streakDays": 24,
+        },
+        "farmer": {
+            "id": "dev-user-1",
+            "name": "Ram Singh (किसान)",
+            "vernacularName": "राम सिंह",
+            "phone": "+919999999999",
+            "village": "Rampur",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 5.5,
+            "soilType": "काली मिट्टी",
+            "irrigationType": "Drip",
+            "activeCrops": ["Tomato (टमाटर)", "Wheat (गेहूं)"],
+            "linkedProfiles": ["farmer"],
+            "primaryProfile": "farmer",
+            "activeProfile": "farmer",
+            "agriCoins": 1250,
+            "krishiRatnaLevel": 4,
+            "krishiRatnaTitle": "Krishi Daksh",
+            "streakDays": 12,
+        },
+        "farmLandlord": {
+            "id": "yCnTcSMcMeQRp5tKu8Zb5u3etV23",
+            "name": "Suresh Patel (भू-स्वामी)",
+            "vernacularName": "सुरेश पटेल",
+            "phone": "+919999999999",
+            "village": "Nashik Rural",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 45.0,
+            "linkedProfiles": ["farmLandlord", "farmer"],
+            "primaryProfile": "farmLandlord",
+            "activeProfile": "farmLandlord",
+            "agriCoins": 1600,
+            "krishiRatnaLevel": 4,
+            "krishiRatnaTitle": "Krishi Daksh",
+            "streakDays": 15,
+        },
+        "transport": {
+            "id": "dev-user-3",
+            "name": "Rajesh Kumar (परिवहन)",
+            "vernacularName": "राजेश कुमार",
+            "phone": "+917777777777",
+            "village": "Nashik APMC Hub",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 0,
+            "linkedProfiles": ["transport"],
+            "primaryProfile": "transport",
+            "activeProfile": "transport",
+            "agriCoins": 950,
+            "krishiRatnaLevel": 3,
+            "krishiRatnaTitle": "Krishi Mitra",
+            "streakDays": 8,
+        },
+        "seller": {
+            "id": "dev-user-2",
+            "name": "Amit Agarwal (मंडी व्यापारी)",
+            "vernacularName": "अमित अग्रवाल",
+            "phone": "+918888888888",
+            "village": "Pimpalgaon Baswant",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 0,
+            "linkedProfiles": ["seller"],
+            "primaryProfile": "seller",
+            "activeProfile": "seller",
+            "agriCoins": 1800,
+            "krishiRatnaLevel": 4,
+            "krishiRatnaTitle": "Krishi Daksh",
+            "streakDays": 19,
+        },
+        "directBuyer": {
+            "id": "dev-user-8",
+            "name": "Shree Foods Pvt Ltd",
+            "vernacularName": "श्री फूड्स",
+            "phone": "+919222222222",
+            "village": "MIDC Ambad, Nashik",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 0,
+            "companyName": "Shree Foods Pvt Ltd",
+            "buyerType": "processor",
+            "gstin": "27AAKCS1234F1Z5",
+            "licenseNo": "FSSAI/10012043001234",
+            "linkedProfiles": ["directBuyer"],
+            "primaryProfile": "directBuyer",
+            "activeProfile": "directBuyer",
+            "agriCoins": 1300,
+            "krishiRatnaLevel": 4,
+            "krishiRatnaTitle": "Krishi Daksh",
+            "streakDays": 11,
+        },
+        "equipmentRental": {
+            "id": "dev-user-4",
+            "name": "Harpreet Singh (कृषि यंत्र स्वामी)",
+            "vernacularName": "हरप्रीत सिंह",
+            "phone": "+916666666666",
+            "village": "Ozar",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 15.0,
+            "linkedProfiles": ["equipmentRental", "farmer"],
+            "primaryProfile": "equipmentRental",
+            "activeProfile": "equipmentRental",
+            "agriCoins": 1400,
+            "krishiRatnaLevel": 4,
+            "krishiRatnaTitle": "Krishi Daksh",
+            "streakDays": 10,
+        },
+        "broker": {
+            "id": "dev-user-6",
+            "name": "Vikram Deshmukh (मंडी दलाल)",
+            "vernacularName": "विक्रम देशमुख",
+            "phone": "+919876500006",
+            "village": "Nashik Mandi Yard",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 0,
+            "linkedProfiles": ["broker"],
+            "primaryProfile": "broker",
+            "activeProfile": "broker",
+            "agriCoins": 1100,
+            "krishiRatnaLevel": 3,
+            "krishiRatnaTitle": "Krishi Mitra",
+            "streakDays": 9,
+        },
+        "bankManager": {
+            "id": "dev-user-7",
+            "name": "Anita Sharma (बैंक मैनेजर)",
+            "vernacularName": "अनीता शर्मा",
+            "phone": "+919555555555",
+            "village": "Nashik",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 0,
+            "linkedProfiles": ["bankManager"],
+            "primaryProfile": "bankManager",
+            "activeProfile": "bankManager",
+            "agriCoins": 0,
+            "krishiRatnaLevel": 1,
+            "krishiRatnaTitle": "Krishi Mitra",
+            "streakDays": 0,
+        },
+        "insuranceProvider": {
+            "id": "dev-user-insurance-1",
+            "name": "Dr. Rajesh Varma (बीमा प्रदाता)",
+            "vernacularName": "डॉ. राजेश वर्मा",
+            "phone": "+919444444444",
+            "village": "AIC Regional Hub, Nashik",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "companyName": "AIC of India (कृषि बीमा कंपनी)",
+            "licenseNumber": "IRDAI/NL/AGRI/2026/089",
+            "landAreaAcres": 0,
+            "linkedProfiles": ["insuranceProvider"],
+            "primaryProfile": "insuranceProvider",
+            "activeProfile": "insuranceProvider",
+            "agriCoins": 0,
+            "krishiRatnaLevel": 1,
+            "krishiRatnaTitle": "Krishi Mitra",
+            "streakDays": 0,
+        },
+        "coldStorageProvider": {
+            "id": "dev-user-coldstorage-1",
+            "name": "Vikram Shinde (कोल्ड स्टोरेज संचालक)",
+            "vernacularName": "विक्रम शिंदे",
+            "phone": "+919333333333",
+            "village": "Pimpalgaon Baswant, Niphad",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "companyName": "Sahyadri Cold Chain & Agri Logistics",
+            "licenseNumber": "WDRA/MH/NSK/2026/044",
+            "facilityId": "cs-1",
+            "landAreaAcres": 0,
+            "linkedProfiles": ["coldStorageProvider"],
+            "primaryProfile": "coldStorageProvider",
+            "activeProfile": "coldStorageProvider",
+            "agriCoins": 0,
+            "krishiRatnaLevel": 1,
+            "krishiRatnaTitle": "Krishi Mitra",
+            "streakDays": 0,
+        },
+    }
+
+    if body.persona and body.persona in PERSONA_DEFAULTS:
+        pdata = dict(PERSONA_DEFAULTS[body.persona])
+        uid = pdata["id"]
+        existing = await get_doc("users", uid)
+        if existing is None:
+            pdata["mpinHash"] = hash_mpin(body.mpin)
+            pdata["createdAt"] = now_iso
+            await set_doc("users", uid, pdata)
+            user = pdata
+        else:
+            if existing.get("mpinHash") is None:
+                existing["mpinHash"] = hash_mpin(body.mpin)
+                await set_doc("users", uid, existing)
+            user = existing
+        return AuthResponse(
+            accessToken=create_access_token(uid),
+            refreshToken=create_refresh_token(uid),
+            isNewUser=False,
+            user=_public_user(user),
+        )
+
+    phone = _normalize_phone(body.phone or "")
+    if not phone:
+        pdata = dict(PERSONA_DEFAULTS["omni"])
+        uid = pdata["id"]
+        user = (await get_doc("users", uid)) or pdata
+        if user.get("mpinHash") is None:
+            user["mpinHash"] = hash_mpin(body.mpin)
+            await set_doc("users", uid, user)
+        return AuthResponse(
+            accessToken=create_access_token(uid),
+            refreshToken=create_refresh_token(uid),
+            isNewUser=False,
+            user=_public_user(user),
+        )
+
+    users = await query("users", [("phone", "==", phone)])
+    if users:
+        user = users[0]
+        uid = user["id"]
+        if user.get("mpinHash") is None:
+            user["mpinHash"] = hash_mpin(body.mpin)
+            await set_doc("users", uid, user)
+    else:
+        uid = f"user_{phone.replace('+', '')[-10:]}"
+        user = {
+            "id": uid,
+            "name": f"Kisan ({phone[-4:]})",
+            "vernacularName": f"किसान ({phone[-4:]})",
+            "phone": phone,
+            "village": "Nashik",
+            "district": "Nashik",
+            "state": "Maharashtra",
+            "landAreaAcres": 5.0,
+            "soilType": "काली मिट्टी",
+            "irrigationType": "Drip",
+            "activeCrops": ["Tomato (टमाटर)", "Wheat (गेहूं)"],
+            "linkedProfiles": ["farmer", "farmLandlord", "transport", "seller", "equipmentRental", "broker", "instructor", "dairyManager"],
+            "primaryProfile": "farmer",
+            "activeProfile": "farmer",
+            "language": "en",
+            "preferredLanguage": "en",
+            "agriCoins": 500,
+            "krishiRatnaLevel": 2,
+            "krishiRatnaTitle": "Krishi Pragati",
+            "streakDays": 5,
+            "mpinHash": hash_mpin(body.mpin),
+            "createdAt": now_iso,
+        }
+        await set_doc("users", uid, user)
+
+    return AuthResponse(
+        accessToken=create_access_token(uid),
+        refreshToken=create_refresh_token(uid),
+        isNewUser=False,
+        user=_public_user(user),
+    )
+

@@ -21,6 +21,7 @@ Connection: `REDIS_URL` env var (see `overview/01-product-and-architecture.md` �
 | 11 | `refresh:{tokenId}` | string | 30 d | Refresh-token → uid mapping |
 | 12 | `mpin:fail:{uid}` | int (INCR) | 15 min | MPIN failure counter → lockout |
 | 13 | `lock:{name}` | string (SET NX PX) | 30 s | Distributed locks (slot booking, stock decrement) |
+| 14 | `diary:analytics:{uid}:{from}:{to}` | JSON string | 5 min | Farm-diary analytics summary cache |
 
 ## Details per key
 
@@ -101,9 +102,16 @@ Connection: `REDIS_URL` env var (see `overview/01-product-and-architecture.md` �
   | `lock:claim-seq:{year}` | claim-number counter increment |
 - **Mechanism:** `SET lock:{name} {uuid} NX PX 30000`; release with a Lua compare-and-delete script; on contention retry 3× with 100 ms jitter, then `409` `CONCURRENT_WRITE`.
 
+### 14. `diary:analytics:{uid}:{from}:{to}`
+- **Value:** JSON of the exact `GET /diary/analytics/summary` response (`{from, to, totals, byCategory, byCrop, byMonth, byDay}`).
+- **Key shape:** `from`/`to` = `YYYY-MM-DD` or empty string when the bound is omitted. Example: `diary:analytics:uid123:2026-04-01:2026-09-30`.
+- **TTL:** 300 s.
+- **Written by:** `GET /v1/diary/analytics/summary` on cache miss (`diary.py`).
+- **Invalidation:** create/update/delete of a diary entry eagerly deletes only the unfiltered key (`diary:analytics:{uid}::`); ranged variants expire via TTL.
+
 ## Operational rules
 
-1. **All keys are prefixed** (`cache:`, `otp:`, `rl:`, `chat:`, `idem:`, `live:`, `notify:`, `refresh:`, `mpin:`, `lock:`) so `SCAN` per prefix is safe in staging/prod.
+1. **All keys are prefixed** (`cache:`, `otp:`, `rl:`, `chat:`, `idem:`, `live:`, `notify:`, `refresh:`, `mpin:`, `lock:`, `diary:`) so `SCAN` per prefix is safe in staging/prod.
 2. **Never store PII beyond uid/phone-hash** in Redis. No names, Aadhaar, or message text beyond the rolling chat context (which is uid-scoped and TTL'd).
 3. **Graceful degradation:** if Redis is down, reads fall through to Firestore (slower), rate limiting and idempotency fail **closed** for writes (return `503` `DEPENDENCY_UNAVAILABLE`) — never silently skip either.
 4. **Dev reset:** `docker compose exec redis redis-cli FLUSHALL` is always safe; caches rebuild from Firestore/providers.

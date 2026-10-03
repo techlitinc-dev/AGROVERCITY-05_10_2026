@@ -1,0 +1,571 @@
+/* Gaushala console styles (P8) — gaushala-* classes on tokens.css custom properties.
+   Mirrors the dairy.css layout vocabulary; width-aware like the other tool modules. */
+
+.gaushala-wrap {
+  width: 100%;
+  max-width: var(--av-shell-width);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.gaushala-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.gaushala-section-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--av-title);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gaushala-hint {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  margin-top: 6px;
+}
+
+.gaushala-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.gaushala-actions-row {
+  display: flex;
+  gap: 10px;
+}
+.gaushala-actions-row .av-btn {
+  flex: 1;
+}
+
+/* ---- Stat cards ---- */
+.gaushala-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.gaushala-stat {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+}
+
+.gaushala-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.gaushala-stat-value {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  margin-top: 4px;
+  line-height: 1.15;
+}
+
+.gaushala-stat-value small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+.gaushala-stat-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  margin-top: 2px;
+}
+
+/* ---- Occupancy progress ---- */
+.gaushala-progress {
+  height: 10px;
+  border-radius: var(--av-radius-pill);
+  background: var(--av-border-grey-soft);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.gaushala-progress-fill {
+  height: 100%;
+  border-radius: var(--av-radius-pill);
+  background: linear-gradient(90deg, var(--av-primary), var(--av-green-dark));
+  transition: width 0.25s ease;
+}
+
+.gaushala-progress-fill.gaushala-progress-full {
+  background: linear-gradient(90deg, var(--av-gold-text), var(--av-error));
+}
+
+/* ---- Net burn banner ---- */
+.gaushala-net {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--av-radius-card);
+  border: 1.5px solid;
+  padding: 12px 14px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gaushala-net-burn {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--av-error);
+}
+
+.gaushala-net-surplus {
+  background: var(--av-accent-tint);
+  border-color: var(--av-border-green);
+  color: var(--av-green-deep);
+}
+
+/* ---- Cards / lists ---- */
+.gaushala-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.gaushala-card {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--av-font);
+}
+
+.gaushala-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gaushala-card-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.gaushala-card-sub {
+  font-size: 13px;
+  color: var(--av-slate-1);
+}
+
+.gaushala-card-amount {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  white-space: nowrap;
+}
+
+a.gaushala-card {
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+a.gaushala-card:active {
+  transform: scale(0.99);
+}
+
+.gaushala-card.gaushala-deceased {
+  border-color: #fecaca;
+  background: #fffafa;
+}
+
+.gaushala-card.gaushala-deceased .gaushala-card-title {
+  color: var(--av-error);
+}
+
+/* ---- Detail grid ---- */
+.gaushala-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.gaushala-detail-cell-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.gaushala-detail-cell-value {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--av-title);
+  margin-top: 1px;
+}
+
+.gaushala-note-warn {
+  background: #fef2f2;
+  border: 1.5px solid #fecaca;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--av-error);
+}
+
+/* ---- Timeline ---- */
+.gaushala-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
+}
+
+.gaushala-timeline-item {
+  display: flex;
+  gap: 10px;
+  position: relative;
+  padding-bottom: 14px;
+}
+
+.gaushala-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 0;
+  width: 2px;
+  background: var(--av-border-grey);
+}
+
+.gaushala-timeline-item:last-child::before {
+  display: none;
+}
+
+.gaushala-timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--av-primary);
+  margin-top: 3px;
+  flex-shrink: 0;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1.5px var(--av-border-green);
+}
+
+.gaushala-timeline-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gaushala-timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gaushala-timeline-date {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+/* ---- Chips ---- */
+.gaushala-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  margin-top: 8px;
+}
+
+.gaushala-chip-row .av-chip {
+  white-space: nowrap;
+}
+
+.gaushala-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.gaushala-pill-ok {
+  background: var(--av-accent-tint);
+  border-color: var(--av-border-green);
+  color: var(--av-green-deep);
+}
+
+.gaushala-pill-warn {
+  background: var(--av-gold-bg);
+  border-color: #fde68a;
+  color: var(--av-gold-text);
+}
+
+.gaushala-pill-bad {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--av-error);
+}
+
+.gaushala-mono {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+/* ---- Entry form ---- */
+.gaushala-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.gaushala-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--av-title);
+}
+
+.gaushala-check-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--av-green-dark);
+}
+
+/* ---- Receipt sheet ---- */
+.gaushala-receipt {
+  background: var(--av-accent-tint);
+  border: 1.5px dashed var(--av-border-green-strong);
+  border-radius: var(--av-radius-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.gaushala-receipt-badge {
+  align-self: flex-start;
+  background: var(--av-gold-bg);
+  border: 1px solid #fde68a;
+  color: var(--av-gold-text);
+  border-radius: var(--av-radius-pill);
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.gaushala-receipt-cert {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--av-green-deep);
+  word-break: break-all;
+}
+
+.gaushala-receipt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.gaushala-receipt-row span:first-child {
+  color: var(--av-slate-1);
+  font-weight: 700;
+}
+
+.gaushala-receipt-row span:last-child {
+  color: var(--av-title);
+  font-weight: 800;
+}
+
+/* ---- Empty state ---- */
+.gaushala-empty {
+  text-align: center;
+  padding: 28px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gaushala-empty-icon {
+  font-size: 40px;
+}
+
+.gaushala-empty-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--av-title);
+  margin: 0;
+}
+
+.gaushala-empty-body {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  margin: 0;
+  max-width: 320px;
+}
+
+.gaushala-empty-action {
+  margin-top: 10px;
+  width: 100%;
+  max-width: 280px;
+}
+
+/* ---- Quick action grid ---- */
+.gaushala-qa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.gaushala-qa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px;
+  text-decoration: none;
+  color: var(--av-title);
+  font-size: 14px;
+  font-weight: 800;
+  transition: transform 0.12s ease;
+}
+
+.gaushala-qa:active {
+  transform: scale(0.98);
+}
+
+.gaushala-qa-icon {
+  font-size: 20px;
+}
+
+/* ---- Analytics ---- */
+.gaushala-chart {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px;
+  margin-top: 12px;
+}
+
+.gaushala-chart-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-slate-3);
+  margin-bottom: 10px;
+}
+
+.gaushala-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gaushala-chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.gaushala-hbar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.gaushala-hbar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.gaushala-hbar-track {
+  height: 12px;
+  border-radius: var(--av-radius-pill);
+  background: var(--av-border-grey-soft);
+  overflow: hidden;
+}
+
+.gaushala-hbar-fill {
+  height: 100%;
+  border-radius: var(--av-radius-pill);
+  background: linear-gradient(90deg, var(--av-primary), var(--av-green-dark));
+  transition: width 0.25s ease;
+}
+
+/* ---- Setup gate ---- */
+.gaushala-setup {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 18px 16px;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (min-width: 720px) {
+  .gaushala-qa-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .gaushala-detail-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

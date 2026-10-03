@@ -11,37 +11,43 @@ class AllToolsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // All Modules Master List
+    // All Modules Master List (titles reuse base module keys via state.tr(m.id);
+    // subtitles carry their own translation key, resolved below)
     final allModules = [
-      _ToolItem('home', 'होम', 'Home Hub', Icons.home_rounded, const Color(0xFF16A34A)),
-      _ToolItem('gyanHub', 'ज्ञान सेतू', 'Workshops & Media', Icons.school_rounded, const Color(0xFFD97706)),
-      _ToolItem('treePlantation', 'वृक्षारोपण', 'Tree Hub', Icons.park_rounded, const Color(0xFF15803D)),
-      _ToolItem('liveChannels', 'लाईव्ह चॅनेल्स', 'Live Streams', Icons.live_tv_rounded, const Color(0xFFE11D48)),
-      _ToolItem('agriNews', 'कृषी वार्ता', 'Agri News', Icons.newspaper_rounded, const Color(0xFF0284C7)),
-      _ToolItem('livestockDairy', 'पशुपालन व गोशाळा', 'Dairy Ecosystem', Icons.pets_rounded, const Color(0xFFD97706)),
-      _ToolItem('farmDiary', 'शेती नोंदवही', 'Farm Diary', Icons.menu_book_rounded, const Color(0xFF4F46E5)),
-      _ToolItem('referEarn', 'रेफर व कमवा', 'Refer & Earn', Icons.card_giftcard_rounded, const Color(0xFFCA8A04)),
-      _ToolItem('advisory', 'AI फसल सलाह', 'Crop Advisory', Icons.camera_alt_rounded, const Color(0xFF0284C7)),
-      _ToolItem('mandi', 'मंडी भाव', 'Live APMC', Icons.trending_up_rounded, const Color(0xFFEA580C)),
-      _ToolItem('marketplace', 'खाद-बीज बाज़ार', 'E-Market', Icons.storefront_rounded, const Color(0xFF84CC16)),
-      _ToolItem('buyers', 'सीधा खरीदार', 'Direct Buyers', Icons.handshake_rounded, const Color(0xFFD97706)),
-      _ToolItem('profitLoss', 'फार्म P&L', 'Finance CEO', Icons.pie_chart_rounded, const Color(0xFF10B981)),
-      _ToolItem('water', 'जल बुद्धिमत्ता', 'Smart Water', Icons.water_drop_rounded, const Color(0xFF06B6D4)),
-      _ToolItem('schemes', 'सरकारी योजनाएं', 'Govt Schemes', Icons.account_balance_rounded, const Color(0xFF6366F1)),
-      _ToolItem('finance', 'ऋण व क्रेडिट', 'Loan & Credit', Icons.credit_card_rounded, const Color(0xFF8B5CF6)),
-      _ToolItem('cropInsurance', 'फसल बीमा', 'Crop Insurance', Icons.health_and_safety_rounded, const Color(0xFF047857)),
-      _ToolItem('womenFarmer', 'महिला किसान', 'Women Hub', Icons.favorite_rounded, const Color(0xFFEC4899)),
-      _ToolItem('fpo', 'FPO इंजन', 'FPO Growth', Icons.groups_rounded, const Color(0xFF14B8A6)),
-      _ToolItem('equipment', 'यंत्र किराया', 'Tractor Rent', Icons.agriculture_rounded, const Color(0xFFF59E0B)),
-      _ToolItem('landLegal', 'भूलेख 7/12', 'Land Records', Icons.description_rounded, const Color(0xFF78716C)),
-      _ToolItem('climate', 'कार्बन क्रेडिट', 'Carbon Eco', Icons.eco_rounded, const Color(0xFF22C55E)),
-      _ToolItem('postHarvest', 'कोल्ड स्टोरेज', 'Cold Chain', Icons.inventory_2_rounded, const Color(0xFF3B82F6)),
-      _ToolItem('krishiRatna', 'कृषि रत्न', 'Coin Rewards', Icons.military_tech_rounded, const Color(0xFFEAB308)),
+      _ToolItem('home', 'navigation.homeHub', Icons.home_rounded, const Color(0xFF16A34A)),
+      _ToolItem('gyanHub', 'navigation.workshopsMedia', Icons.school_rounded, const Color(0xFFD97706)),
+      _ToolItem('treePlantation', 'navigation.treeHub', Icons.park_rounded, const Color(0xFF15803D)),
+      _ToolItem('liveChannels', 'navigation.liveStreams', Icons.live_tv_rounded, const Color(0xFFE11D48)),
+      _ToolItem('agriNews', 'agriNews', Icons.newspaper_rounded, const Color(0xFF0284C7)),
+      _ToolItem('livestockDairy', 'navigation.dairyEcosystem', Icons.pets_rounded, const Color(0xFFD97706)),
+      _ToolItem('farmDiary', 'farmDiary', Icons.menu_book_rounded, const Color(0xFF4F46E5)),
+      _ToolItem('referEarn', 'referEarn', Icons.card_giftcard_rounded, const Color(0xFFCA8A04)),
+      _ToolItem('advisory', 'aiScan', Icons.camera_alt_rounded, const Color(0xFF0284C7)),
+      _ToolItem('mandi', 'navigation.liveApmc', Icons.trending_up_rounded, const Color(0xFFEA580C)),
+      _ToolItem('marketplace', 'eMarket', Icons.storefront_rounded, const Color(0xFF84CC16)),
+      _ToolItem('myProducts', 'emarket.myProductsSubtitle', Icons.inventory_2_rounded, const Color(0xFFEA580C)),
+      _ToolItem('buyers', 'buyers', Icons.handshake_rounded, const Color(0xFFD97706)),
+      _ToolItem('profitLoss', 'navigation.financeCeo', Icons.pie_chart_rounded, const Color(0xFF10B981)),
+      _ToolItem('water', 'navigation.smartWater', Icons.water_drop_rounded, const Color(0xFF06B6D4)),
+      _ToolItem('schemes', 'schemes', Icons.account_balance_rounded, const Color(0xFF6366F1)),
+      _ToolItem('finance', 'navigation.loanCredit', Icons.credit_card_rounded, const Color(0xFF8B5CF6)),
+      _ToolItem('cropInsurance', 'cropInsurance', Icons.health_and_safety_rounded, const Color(0xFF047857)),
+      _ToolItem('myBookings', 'myBookings', Icons.assignment_turned_in, const Color(0xFF0D9488)),
+      _ToolItem('womenFarmer', 'navigation.womenHub', Icons.favorite_rounded, const Color(0xFFEC4899)),
+      _ToolItem('fpo', 'navigation.fpoGrowth', Icons.groups_rounded, const Color(0xFF14B8A6)),
+      _ToolItem('equipment', 'navigation.tractorRent', Icons.agriculture_rounded, const Color(0xFFF59E0B)),
+      _ToolItem('landLegal', 'navigation.landRecords', Icons.description_rounded, const Color(0xFF78716C)),
+      _ToolItem('climate', 'navigation.carbonEco', Icons.eco_rounded, const Color(0xFF22C55E)),
+      _ToolItem('postHarvest', 'navigation.coldChain', Icons.inventory_2_rounded, const Color(0xFF3B82F6)),
+      _ToolItem('krishiRatna', 'navigation.coinRewards', Icons.military_tech_rounded, const Color(0xFFEAB308)),
     ];
 
-    // Filter according to active profile permissions
+    // Home is universal — every profile gets its own home route
+    final homeRoute = ProfileRoutes.defaultRouteFor(state.activeProfile);
+
+    // Filter according to active profile permissions (Home always stays)
     final modules = allModules
-        .where((m) => ProfileRoutes.canAccess(state.activeProfile, m.id))
+        .where((m) => m.id == 'home' || ProfileRoutes.canAccess(state.activeProfile, m.id))
         .toList();
 
     return ClipRRect(
@@ -83,13 +89,13 @@ class AllToolsSheet extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.apps_rounded, color: Color(0xFF2E7D32), size: 22),
-                      SizedBox(width: 8),
+                      const Icon(Icons.apps_rounded, color: Color(0xFF2E7D32), size: 22),
+                      const SizedBox(width: 8),
                       Text(
-                        "AGROVERCITY: सभी सेवाएं (All Tools)",
-                        style: TextStyle(
+                        "${state.tr('appName')}: ${state.tr('allTools')}",
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                           color: Color(0xFF1B4332),
@@ -126,7 +132,8 @@ class AllToolsSheet extends StatelessWidget {
                   itemCount: modules.length,
                   itemBuilder: (context, index) {
                     final m = modules[index];
-                    final isActive = state.currentRoute == m.id;
+                    final target = m.id == 'home' ? homeRoute : m.id;
+                    final isActive = state.currentRoute == target;
 
                     return StaggeredSlideFade(
                       delayMs: (index * 30),
@@ -134,7 +141,7 @@ class AllToolsSheet extends StatelessWidget {
                       offset: const Offset(0.0, 0.08),
                       child: BouncyPressable(
                         onTap: () {
-                          state.navigateTo(m.id);
+                          state.navigateTo(target);
                           Navigator.pop(context);
                         },
                         child: Container(
@@ -170,7 +177,7 @@ class AllToolsSheet extends StatelessWidget {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                m.title,
+                                state.tr(m.id),
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -181,7 +188,7 @@ class AllToolsSheet extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                m.subtitle,
+                                state.tr(m.subtitleKey),
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -209,10 +216,9 @@ class AllToolsSheet extends StatelessWidget {
 
 class _ToolItem {
   final String id;
-  final String title;
-  final String subtitle;
+  final String subtitleKey;
   final IconData icon;
   final Color color;
 
-  _ToolItem(this.id, this.title, this.subtitle, this.icon, this.color);
+  _ToolItem(this.id, this.subtitleKey, this.icon, this.color);
 }

@@ -124,6 +124,7 @@ class _EquipmentViewState extends State<EquipmentView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => BookingConfirmSheet(
+        state: widget.state,
         machineName: "${machine['name']}",
         ownerType: "${machine['ownerType'] ?? 'private'}",
         date: date,
@@ -133,6 +134,10 @@ class _EquipmentViewState extends State<EquipmentView> {
     if (confirmed != true) return;
     try {
       final res = await _api.bookSlot("${slot['id']}", _farmerName);
+      if (res['queued'] == true) {
+        _snack(widget.state.tr('equipment.offlineWillSync'));
+        return;
+      }
       final booking =
           (res['booking'] as Map?)?.cast<String, dynamic>() ?? const {};
       final status = "${res['status'] ?? booking['status'] ?? 'pending'}";
@@ -148,13 +153,13 @@ class _EquipmentViewState extends State<EquipmentView> {
           'status': status,
         });
       });
-      _snack("बुकिंग ${status == 'booked' ? 'कन्फर्म' : 'स्वीकृति लंबित'}! +$coins AgriCoins");
+      _snack("${status == 'booked' ? widget.state.tr('equipment.bookingConfirmed') : widget.state.tr('equipment.approvalPending')}! +$coins AgriCoins");
       _loadSlots();
     } on ApiException catch (e) {
       if (e.code == 'MAX_SLOTS_PER_DAY') {
         _snack(e.message.isNotEmpty ? e.message : e.code);
       } else if (e.code == 'SLOT_UNAVAILABLE') {
-        _snack("स्लॉट अब उपलब्ध नहीं");
+        _snack(widget.state.tr('equipment.slotNoLongerAvailable'));
         _loadSlots();
       } else {
         _snack(e.message.isNotEmpty ? e.message : e.code);
@@ -169,21 +174,21 @@ class _EquipmentViewState extends State<EquipmentView> {
         );
     final bookingId = booking?['bookingId'];
     if (bookingId == null) {
-      _snack("यह बुकिंग इस सत्र में नहीं बनी — कैंसिल जानकारी उपलब्ध नहीं");
+      _snack(widget.state.tr('equipment.cancelInfoUnavailable'));
       return;
     }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("बुकिंग रद्द करें?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        title: Text(widget.state.tr('equipment.cancelBookingTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
         content: Text("${slot['slotName']} • ₹${(slot['priceRupees'] as num?)?.toInt() ?? 0}"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("वापस")),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(widget.state.tr('back'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("रद्द करें"),
+            child: Text(widget.state.tr('cancel')),
           ),
         ],
       ),
@@ -192,7 +197,7 @@ class _EquipmentViewState extends State<EquipmentView> {
     try {
       await _api.cancelBooking("$bookingId");
       setState(() => _myBookings.remove(booking));
-      _snack("बुकिंग रद्द हुई");
+      _snack(widget.state.tr('equipment.bookingCancelled'));
       _loadSlots();
     } on ApiException catch (e) {
       _snack(e.message.isNotEmpty ? e.message : e.code);
@@ -203,7 +208,7 @@ class _EquipmentViewState extends State<EquipmentView> {
   Future<void> _waitlist(Map<String, dynamic> slot) async {
     try {
       await _api.joinWaitlist("${slot['id']}");
-      _snack("वेटलिस्ट में जुड़ गए! कैंसिल होने पर सूचना मिलेगी।");
+      _snack(widget.state.tr('equipment.waitlistJoined'));
     } on ApiException catch (e) {
       _snack(e.message.isNotEmpty ? e.message : e.code);
     }
@@ -232,23 +237,24 @@ class _EquipmentViewState extends State<EquipmentView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Time-Slot Yantra Booking", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF263238))),
-                  Text("Morning, Afternoon, Evening, Night Slots", style: TextStyle(fontSize: 11.5, color: Color(0xFF90A4AE))),
+                  Text(widget.state.tr('equipment.timeSlotYantraBooking'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF263238))),
+                  Text(widget.state.tr('equipment.slotTimesSubtitle'), style: const TextStyle(fontSize: 11.5, color: Color(0xFF90A4AE))),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(8)),
-                child: const Text("Max 2 Slots", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF2E7D32))),
+                child: Text(widget.state.tr('equipment.maxTwoSlots'), style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF2E7D32))),
               ),
             ],
           ),
           const SizedBox(height: 14),
           EquipmentCalendarSection(
             key: _calendarKey,
+            state: widget.state,
             machines: _machines,
             selectedMachineId: _selectedMachine?['id'] as String?,
             days: _days,
@@ -271,11 +277,12 @@ class _EquipmentViewState extends State<EquipmentView> {
           ),
           if (_myBookings.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const Text("मेरी बुकिंग", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF263238))),
+            Text(widget.state.tr('myBookings'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF263238))),
             const SizedBox(height: 8),
             ..._myBookings.map(
               (b) => MyBookingCard(
                 booking: b,
+                state: widget.state,
                 onRebook: b['status'] == 'rejected' ? _scrollToCalendar : null,
               ),
             ),

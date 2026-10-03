@@ -34,7 +34,7 @@ Future<void> completeToStep3(WidgetTester tester) async {
   );
   await tester.tap(find.text('OTP भेजें'));
   await tester.pump();
-  await tester.enterText(find.widgetWithText(TextField, 'OTP'), '123456');
+  await tester.enterText(find.widgetWithText(TextField, 'ओटीपी (OTP)'), '123456');
   await tester.tap(find.text('सत्यापित करें'));
   await tester.pump();
   await tester.pump();
@@ -48,6 +48,13 @@ Future<void> completeToStep3(WidgetTester tester) async {
   );
   await tester.tap(find.text('आगे बढ़ें'));
   await tester.pump();
+  // Step 3 opens on the farmer farm-details page whenever the farmer
+  // profile is selected; fill the required village field when it renders.
+  final villageField = find.widgetWithText(TextField, 'गांव');
+  if (villageField.evaluate().isNotEmpty) {
+    await tester.enterText(villageField, 'Rampur');
+    await tester.pump();
+  }
 }
 
 void main() {

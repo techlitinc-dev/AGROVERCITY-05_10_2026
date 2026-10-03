@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../state/app_state.dart';
+import '../../state/profile_routes.dart';
 import '../common/motion_animations.dart';
+import 'luxury_top_bar_actions.dart';
 
 class LuxuryTopBar extends StatelessWidget {
   final AppState state;
@@ -19,10 +21,11 @@ class LuxuryTopBar extends StatelessWidget {
     final isWomen = state.isWomenMode;
     final themeColor = isWomen ? const Color(0xFFFDA4AF) : const Color(0xFFE9C46A);
 
-    // Clean primary village name
-    final villageShort = state.profile.village.contains(' ')
-        ? state.profile.village.split(' ').first
-        : state.profile.village;
+    // Clean primary village name — hidden entirely until the profile is
+    // hydrated from the backend (no fabricated location or temperature).
+    final village = state.profile.village;
+    final villageShort =
+        village.contains(' ') ? village.split(' ').first : village;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -64,14 +67,14 @@ class LuxuryTopBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // 🌿 1. LEFT BRAND SECTION (Back Button + Squircle Logo + AGROVERCITY PRO + Location)
+          // 🌿 1. LEFT BRAND SECTION (Back/Home Buttons + Squircle Logo + AGROVERCITY PRO + Location)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 🔙 Back Button (Themed icon only, no button name)
               if (state.canGoBack) ...[
                 Tooltip(
-                  message: "वापस जाएं (Back)",
+                  message: state.tr('back'),
                   child: BouncyPressable(
                     onTap: () => state.navigateBack(),
                     child: Container(
@@ -116,6 +119,54 @@ class LuxuryTopBar extends StatelessWidget {
                   ),
                 ),
               ],
+
+              // 🏠 Home Button — back to the dashboard shown right after registration
+              Tooltip(
+                message: state.tr('home'),
+                child: BouncyPressable(
+                  onTap: () => state
+                      .navigateTo(ProfileRoutes.defaultRouteFor(state.activeProfile)),
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isWomen
+                            ? [
+                                const Color(0xFF881337).withValues(alpha: 0.9),
+                                const Color(0xFF9F1239).withValues(alpha: 0.7),
+                              ]
+                            : [
+                                const Color(0xFF0F3818).withValues(alpha: 0.9),
+                                const Color(0xFF165324).withValues(alpha: 0.7),
+                              ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: themeColor,
+                        width: 1.4,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: themeColor.withValues(alpha: 0.35),
+                          blurRadius: 5,
+                          offset: const Offset(0, 1.5),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.home_rounded,
+                        size: 17,
+                        color: themeColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
               // Squircle Logo Emblem
               GestureDetector(
@@ -193,229 +244,34 @@ class LuxuryTopBar extends StatelessWidget {
                         ),
                       ],
                     ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.location_on_rounded,
-                          size: 10,
-                          color: Color(0xFF86EFAC),
-                        ),
-                        const SizedBox(width: 2.5),
-                        Text(
-                          "$villageShort • 27°C",
-                          style: const TextStyle(
-                            fontSize: 10.5,
-                            color: Color(0xFFD8F3DC),
-                            fontWeight: FontWeight.w600,
+                    if (village.isNotEmpty)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 10,
+                            color: Color(0xFF86EFAC),
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 2.5),
+                          Text(
+                            villageShort,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFFD8F3DC),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
             ],
           ),
 
-          // 🪙 2. RIGHT ACTIONS (Spray Alert + Coins + Dedicated Log Out Button)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // A. Dynamic Spray Alert Capsule
-              GestureDetector(
-                onTap: () => state.navigateTo('advisory'),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4.5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: state.urgentTaskDone ? const Color(0xFF22C55E) : const Color(0xFFE9C46A),
-                      width: 1.1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (state.urgentTaskDone ? const Color(0xFF22C55E) : const Color(0xFFE9C46A)).withValues(alpha: 0.25),
-                        blurRadius: 6,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        state.urgentTaskDone ? Icons.check_circle_rounded : Icons.shield_rounded,
-                        size: 12,
-                        color: state.urgentTaskDone ? const Color(0xFF86EFAC) : const Color(0xFFE9C46A),
-                      ),
-                      const SizedBox(width: 3.5),
-                      Text(
-                        state.urgentTaskDone ? "पूरा ✅" : "9 AM",
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: state.urgentTaskDone ? const Color(0xFF86EFAC) : const Color(0xFFE9C46A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 5),
-
-              // B. AgriCoins Pill ($ 1450)
-              GestureDetector(
-                onTap: () => state.navigateTo('krishiRatna'),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4.5),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2A200B), Color(0xFF3D2D0F)],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFE9C46A).withValues(alpha: 0.85),
-                      width: 1.0,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.monetization_on_rounded, size: 12.5, color: Color(0xFFE9C46A)),
-                      const SizedBox(width: 3),
-                      Text(
-                        "${state.profile.agriCoins}",
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFFE9C46A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 5),
-
-              // C. 🚪 DEDICATED RED LOG OUT BUTTON (Always visible at top-right on every page)
-              Tooltip(
-                message: "लॉग आउट (Log Out)",
-                child: BouncyPressable(
-                  onTap: () => _showLogoutDialog(context, state),
-                  child: Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFFEF4444),
-                          Color(0xFFDC2626),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 1.4,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFDC2626).withValues(alpha: 0.55),
-                          blurRadius: 5,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.logout_rounded,
-                        size: 15,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context, AppState state) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: const BoxDecoration(
-                color: Color(0xFFFEE2E2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.logout_rounded, color: Color(0xFFDC2626), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              "लॉग आउट करें?",
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF112A1F),
-              ),
-            ),
-          ],
-        ),
-        content: const Text(
-          "क्या आप वाकई AGROVERCITY से लॉग आउट करना चाहते हैं? आपका खाता व डेटा सुरक्षित रहेगा।",
-          style: TextStyle(fontSize: 13, color: Color(0xFF4B5563), height: 1.4),
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              "रद्द करें (Cancel)",
-              style: TextStyle(
-                color: Color(0xFF6B7280),
-                fontWeight: FontWeight.w700,
-                fontSize: 12.5,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              elevation: 2,
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              state.logout();
-            },
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.logout_rounded, size: 14),
-                SizedBox(width: 5),
-                Text(
-                  "लॉग आउट (Log Out)",
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12.5),
-                ),
-              ],
-            ),
-          ),
+          // 🪙 2. RIGHT ACTIONS (Spray Alert + Coins + Bell + Avatar + Log Out)
+          TopBarActions(state: state, isWomen: isWomen),
         ],
       ),
     );

@@ -34,9 +34,12 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeMeta = state.activeProfileMeta;
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) {
+        final activeMeta = state.activeProfileMeta;
 
-    return Container(
+        return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -69,11 +72,11 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    "भूमिका स्विच करें (Switch Role):",
-                    style: TextStyle(
+                    state.tr('switchRole'),
+                    style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w900,
-                      color: const Color(0xFF1E293B),
+                      color: Color(0xFF1E293B),
                     ),
                   ),
                 ],
@@ -93,7 +96,7 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
                       Icon(Icons.tune_rounded, size: 12, color: activeMeta.primaryColor),
                       const SizedBox(width: 3),
                       Text(
-                        "सभी देखें (${state.linkedProfiles.length}) ▾",
+                        "${state.tr('viewAll')} (${state.linkedProfiles.length}) ▾",
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w800,
@@ -108,7 +111,7 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // Horizontal Role Switcher Chips
+          // Horizontal Role Badges Strip
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -116,16 +119,15 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
               children: [
                 ...state.linkedProfiles.map((type) {
                   final meta = UserProfileRegistry.meta(type);
-                  final isActive = state.activeProfile == type;
+                  final isActive = type == state.activeProfile;
 
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: BouncyPressable(
                       onTap: () => _activate(context, type),
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 240),
-                        curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
                         decoration: BoxDecoration(
                           gradient: isActive
                               ? LinearGradient(
@@ -160,7 +162,7 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
                             ),
                             const SizedBox(width: 5),
                             Text(
-                              meta.labelHi,
+                              meta.label(state.language),
                               style: TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: isActive ? FontWeight.w900 : FontWeight.w700,
@@ -195,14 +197,14 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: Colors.green.shade300, style: BorderStyle.solid),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.add_circle_outline_rounded, size: 14, color: Color(0xFF16A34A)),
-                        SizedBox(width: 4),
+                        const Icon(Icons.add_circle_outline_rounded, size: 14, color: Color(0xFF16A34A)),
+                        const SizedBox(width: 4),
                         Text(
-                          "जोड़ें +",
-                          style: TextStyle(
+                          state.tr('navigation.addRole'),
+                          style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF16A34A),
@@ -217,6 +219,8 @@ class DashboardProfileSwitcherBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+      },
     );
   }
 }

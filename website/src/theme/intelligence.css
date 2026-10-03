@@ -1,0 +1,290 @@
+/* Market intelligence panel (InsightsPanel) — KPI cards, CSS-only bar charts,
+   breakdown bars, insight cards and the bhav-alert section.
+   Follows trade.css conventions: reuses trade-card / trade-pill / av-* tokens;
+   only intelligence-specific classes live here. */
+
+.intel-section {
+  margin-top: 16px;
+}
+
+.intel-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.intel-kpi {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.intel-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.intel-kpi-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.intel-kpi-value {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+}
+.intel-kpi-unit {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+.intel-delta {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid var(--av-border-grey);
+  color: var(--av-slate-1);
+  background: var(--av-bg);
+}
+.intel-delta.up {
+  color: var(--av-success);
+  border-color: rgba(22, 163, 74, 0.4);
+  background: rgba(22, 163, 74, 0.08);
+}
+.intel-delta.down {
+  color: var(--av-error);
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* Series — dependency-free column chart (flex row, height % of max) */
+.intel-chart {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 12px 8px;
+  min-height: 150px;
+  margin: 8px 0;
+}
+.intel-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.intel-chart-bar-wrap {
+  height: 84px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.intel-chart-bar {
+  width: 100%;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, var(--av-primary), var(--av-green-dark));
+  min-height: 2px;
+  cursor: default;
+}
+.intel-chart-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  white-space: nowrap;
+}
+
+/* Breakdowns — horizontal bars, width % of max */
+.intel-breakdown {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.intel-break-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.intel-break-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.intel-break-label {
+  font-weight: 700;
+  color: var(--av-title);
+}
+.intel-break-value {
+  font-weight: 800;
+  color: var(--av-green-dark);
+  white-space: nowrap;
+}
+.intel-break-track {
+  height: 8px;
+  border-radius: 5px;
+  background: var(--av-border-grey-soft);
+  overflow: hidden;
+}
+.intel-break-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--av-primary), var(--av-green-dark));
+}
+
+/* Insights — severity-coloured cards */
+.intel-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+.intel-insight {
+  border-radius: var(--av-radius-card);
+  border: 1.5px solid var(--av-border-grey-soft);
+  background: #fff;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--av-slate-4);
+}
+.intel-insight.opportunity {
+  border-color: var(--av-border-green);
+  background: var(--av-accent-tint);
+  color: var(--av-green-deep);
+}
+.intel-insight.warning {
+  border-color: #fde68a;
+  background: var(--av-gold-bg);
+  color: var(--av-gold-text);
+}
+.intel-insight.info {
+  background: var(--av-bg);
+}
+
+/* Collapsible load-error line */
+.intel-error details {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  padding: 10px 14px;
+}
+.intel-error summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--av-error);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.intel-error summary::before {
+  content: '⚠️';
+}
+.intel-error .intel-error-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* Price alerts */
+.intel-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+.intel-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 10px 12px;
+}
+.intel-alert-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.intel-alert-crop {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+.intel-alert-meta {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.intel-alert-fired {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid rgba(22, 163, 74, 0.45);
+  background: rgba(22, 163, 74, 0.1);
+  color: var(--av-success);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.intel-alert-remove {
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 10px;
+  color: var(--av-slate-1);
+}
+.intel-alert-remove:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--av-error);
+}
+.intel-alert-form {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px;
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.intel-alert-form .av-field {
+  margin-bottom: 0;
+}
+.intel-alert-submit {
+  margin-top: 2px;
+}

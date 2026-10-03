@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 
-import '../core/constants.dart';
+import '../config.dart';
 import '../core/session_store.dart';
 import 'api_exception.dart';
+
+import 'endpoints.dart';
 
 // Implemented by the MPIN re-entry flow: returns true when the session was
 // restored (MPIN verified + tokens refreshed) and the request may be retried.
@@ -19,9 +21,9 @@ class ApiClient {
     SessionStore? sessionStore,
     String Function()? languageProvider,
     this.sessionRestorer,
-  })  : dio = dio ?? Dio(BaseOptions(baseUrl: kApiBaseUrl)),
+  })  : dio = dio ?? Dio(BaseOptions(baseUrl: apiBaseUrl)),
         sessionStore = sessionStore ?? SessionStore(),
-        _languageProvider = languageProvider ?? (() => 'hi') {
+        _languageProvider = languageProvider ?? (() => 'en') {
     this.dio.interceptors.add(
           InterceptorsWrapper(onRequest: _onRequest, onError: _onError),
         );
@@ -35,13 +37,31 @@ class ApiClient {
 
   Completer<bool>? _restoring;
 
+  static bool _isPublicAuthPath(String path) {
+    final cleanPath = path.split('?').first;
+    return cleanPath == pathAuthLogin ||
+        cleanPath == pathAuthFirebaseVerify ||
+        cleanPath == pathAuthRegister ||
+        cleanPath == pathAuthRefresh ||
+        cleanPath == pathAuthMpinReset ||
+        cleanPath.contains('/auth/login') ||
+        cleanPath.contains('/auth/firebase-verify') ||
+        cleanPath.contains('/auth/register') ||
+        cleanPath.contains('/auth/refresh') ||
+        cleanPath.contains('/auth/mpin/reset') ||
+        cleanPath.contains('/auth/quick-login') ||
+        cleanPath.contains('/app-config');
+  }
+
   Future<void> _onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    final token = await sessionStore.accessToken;
-    if (token != null && token.isNotEmpty) {
-      options.headers['Authorization'] = 'Bearer $token';
+    if (!_isPublicAuthPath(options.path)) {
+      final token = await sessionStore.accessToken;
+      if (token != null && token.isNotEmpty) {
+        options.headers['Authorization'] = 'Bearer $token';
+      }
     }
     options.headers['Accept-Language'] = _languageProvider();
     const writeMethods = {'POST', 'PUT', 'PATCH', 'DELETE'};
@@ -65,9 +85,11 @@ class ApiClient {
     final apiError = ApiException.fromResponse(response);
     final hadAuth = err.requestOptions.headers['Authorization'] != null;
     final alreadyRetried = err.requestOptions.extra['retried'] == true;
+    final isPublicAuth = _isPublicAuthPath(err.requestOptions.path);
 
     if (response.statusCode == 401 &&
         hadAuth &&
+        !isPublicAuth &&
         !alreadyRetried &&
         sessionRestorer != null) {
       final restored = await _restore();
@@ -84,6 +106,8 @@ class ApiClient {
             retryApiError is ApiException ? retryErr : _wrap(retryErr, apiError),
           );
         }
+      } else {
+        await sessionStore.clear();
       }
     }
     handler.reject(_wrap(err, apiError));
@@ -115,8 +139,12 @@ class ApiClient {
   }) =>
       _run(() => dio.get(path, queryParameters: query));
 
-  Future<Map<String, dynamic>> post(String path, {dynamic body}) =>
-      _run(() => dio.post(path, data: body));
+  Future<Map<String, dynamic>> post(
+    String path, {
+    dynamic body,
+    Map<String, dynamic>? query,
+  }) =>
+      _run(() => dio.post(path, data: body, queryParameters: query));
 
   Future<Map<String, dynamic>> put(String path, {dynamic body}) =>
       _run(() => dio.put(path, data: body));
@@ -124,8 +152,11 @@ class ApiClient {
   Future<Map<String, dynamic>> patch(String path, {dynamic body}) =>
       _run(() => dio.patch(path, data: body));
 
-  Future<Map<String, dynamic>> delete(String path) =>
-      _run(() => dio.delete(path));
+  Future<Map<String, dynamic>> delete(String path, {dynamic body}) =>
+      _run(() => dio.delete(path, data: body));
+
+  Future<Map<String, dynamic>> postMultipart(String path, FormData form) =>
+      _run(() => dio.post(path, data: form));
 
   Future<Map<String, dynamic>> _run(
     Future<Response<dynamic>> Function() call,

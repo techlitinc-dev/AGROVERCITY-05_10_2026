@@ -1,6 +1,6 @@
 # 04 — Persona × Screen Matrix
 
-Six personas. One account can link several; exactly one is active at a time. The farmer is the super-user (access to all modules). The route access-control matrix below mirrors `flutter-prototype/lib/state/profile_routes.dart` and **must** be enforced both in the Flutter navigation guard (`apps/mobile/lib/core/routes.dart`) and server-side (`backend/app/core/deps.py: require_roles`).
+Core role personas (one account can link several; exactly one is active at a time). The farmer is the super-user (access to all modules). The route access-control matrix below mirrors `flutter-prototype/lib/state/profile_routes.dart` and **must** be enforced both in the Flutter navigation guard (`apps/mobile/lib/core/routes.dart`) and server-side (`backend/app/core/deps.py: require_roles`).
 
 ## 1. Persona Homes
 
@@ -12,6 +12,9 @@ Six personas. One account can link several; exactly one is active at a time. The
 | Seller / Vyapari | `seller` | `sellerHome` | turnover, stock (q), buyers | live mandi rates, buyer directory, P&L, marketplace |
 | Equipment Owner | `equipmentRental` | `equipmentOwnerHome` | machines, booked hrs, weekly income | slot hub, machinery loan, P&L/maintenance, Krishi Ratna |
 | Broker / Dalal | `broker` | `brokerHome` | active deals, leads, commission | buyer directory, mandi trends, commission P&L, finance |
+| Bank Manager | `bankManager` | `bankManagerHome` | pending review, sanctioned today, disbursal queue | loan queue, queue stats, approve, disburse |
+
+The `bankManager` persona (added 2026-09-28) is the banker half of the F17 loan flow: it operates on the `loan_applications` farmers create via `POST /finance/loans/apply` (review → approve/reject/info-request → disburse), see `overview/03` §B.8. Role profile fields: `roleProfiles.bankManager = { bankName?, branch?, employeeId? }`; dev quick-login persona `bankManager`.
 
 Dashboard data: `GET /users/me/dashboard/{profileType}` (base spec §2).
 
@@ -116,6 +119,18 @@ Second-round gap audit (`missing.md` at repo root). Same guard + ACL rules as §
 | All | Splash version gate | — (splash) | `GET /app-config` |
 
 ² P2 (deferred to v1.x): sessions list, data export, plus scan history, MSP reference, trip live-tracking, trip expenses, load board, driver management, B2B buyer network, GST invoices, machine GPS, damage reports, EMI tracker, deal negotiation, streaming infra — see Part C §C.9 of overview/03.
+
+### 3c. Bank Manager screens (loan desk — added 2026-09-28)
+
+The banker half of the F17 loan flow (`overview/03` §B.8). Same guard + ACL rules as §3; all screens 403 for non-`bankManager`.
+
+| Persona | New screen | Route | Primary endpoints |
+|---|---|---|---|
+| Bank Manager | Loan review queue | `loanQueue` | `GET /loans/queue?status=&q=`, `GET /loans/stats` |
+| Bank Manager | Loan detail / decision | `loanReviewDetail` | `GET /loans/{id}`, `POST /loans/{id}/review|approve|reject|info-request|disburse` |
+| Bank Manager | (read-only mirrors of farmer loan screens) | `loanTracking` | `GET /loans/{id}/schedule` |
+
+Farmer-side additions to existing screens: loan detail gains document upload + respond/cancel actions (`POST /loans/{id}/documents|respond|cancel`, `GET /loans/{id}/schedule`) — extensions of `loanTracking` in §3b.
 
 ## 4. Account-Level Screens — Every Persona
 

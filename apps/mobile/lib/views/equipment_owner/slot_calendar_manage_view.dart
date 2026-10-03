@@ -177,6 +177,7 @@ class _SlotCalendarManageViewState extends State<SlotCalendarManageView> {
             const Center(child: CircularProgressIndicator())
           else ...[
             PendingBookingsSection(
+              state: widget.state,
               bookings: _pending,
               onApprove: _approve,
               onReject: _reject,

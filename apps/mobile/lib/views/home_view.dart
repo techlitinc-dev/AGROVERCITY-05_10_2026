@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../api/weather_api.dart';
 import '../state/app_state.dart';
-import '../components/common/glass_card.dart';
 import '../components/common/motion_animations.dart';
 import '../components/mandi/aaj_ke_bhav_widget.dart';
+import '../components/direct/farmer_buy_demands_entry.dart';
 import '../components/navigation/dashboard_profile_switcher_bar.dart';
 import '../components/navigation/profile_switcher_sheet.dart';
 
@@ -97,6 +97,15 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 14),
 
+          // 1.6. 🩺 Vet Workspace banner (only for users with a claimed vet profile)
+          if (widget.state.isVet)
+            StaggeredSlideFade(
+              delayMs: 60,
+              duration: const Duration(milliseconds: 550),
+              child: _buildVetWorkspaceBanner(context),
+            ),
+          if (widget.state.isVet) const SizedBox(height: 14),
+
           // 2. ⚡ Live Weather & Urgent Spray Alert Pill
           StaggeredSlideFade(
             delayMs: 80,
@@ -121,6 +130,14 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 18),
 
+          // 3.6. 🛒 Buy-demands banner — companies buying produce, farmer can offer
+          StaggeredSlideFade(
+            delayMs: 300,
+            duration: const Duration(milliseconds: 550),
+            child: FarmerBuyDemandsEntry(state: widget.state),
+          ),
+          const SizedBox(height: 18),
+
           // 4. 🎁 "Hot Offer 50% OFF" Banner Card with Shimmer & 3D Pulsing basket
           StaggeredSlideFade(
             delayMs: 380,
@@ -137,23 +154,33 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 16),
 
-          // 6. 🛡️ Today's Action & Spray Protocol Card
+          // 6. 🎁 Refer & Earn Point System Banner Card
           StaggeredSlideFade(
             delayMs: 580,
-            duration: const Duration(milliseconds: 550),
-            child: _buildTodayActionCard(context),
-          ),
-          const SizedBox(height: 16),
-
-          // 7. 🎁 Refer & Earn Point System Banner Card
-          StaggeredSlideFade(
-            delayMs: 680,
             duration: const Duration(milliseconds: 550),
             child: _buildNewReferralBanner(context),
           ),
         ],
       ),
     );
+  }
+
+  // Profile fields may be blank until GET /users/me hydrates them — fall back
+  // to the phone number or a neutral greeting instead of a fabricated name.
+  String get _displayName {
+    final p = widget.state.profile;
+    if (p.name.isNotEmpty) return p.name;
+    if (p.phone.isNotEmpty) return p.phone;
+    return widget.state.tr('profile.nameFallback');
+  }
+
+  String get _locationLine {
+    final p = widget.state.profile;
+    final acres =
+        p.landAreaAcres > 0 ? '${p.landAreaAcres} ${widget.state.tr('acresOfLand')}' : '';
+    if (p.village.isEmpty) return acres;
+    if (acres.isEmpty) return p.village;
+    return '${p.village} • $acres';
   }
 
   // 1. Luxury Header matching p3.png with Rotating Vinyl Emblem, Shimmer & Voice Search
@@ -203,7 +230,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                       Row(
                         children: [
                           Text(
-                            "Good Morning",
+                            widget.state.tr('goodMorning'),
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.green.shade100,
@@ -212,15 +239,15 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const PulsingBeaconBadge(
-                            label: "LIVE APMC",
+                          PulsingBeaconBadge(
+                            label: widget.state.tr('profile.liveApmc'),
                             color: Color(0xFF00E676),
                           ),
                         ],
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        widget.state.profile.name,
+                        _displayName,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
@@ -228,14 +255,15 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                           letterSpacing: -0.2,
                         ),
                       ),
-                      Text(
-                        "${widget.state.profile.village} • ${widget.state.profile.landAreaAcres} एकड़ खेत",
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontWeight: FontWeight.w500,
+                      if (_locationLine.isNotEmpty)
+                        Text(
+                          _locationLine,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -254,33 +282,14 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                 ),
                 const SizedBox(width: 6),
                 BouncyPressable(
-                  onTap: () => widget.state.showToast("4 naye mandi alert aaye hain!"),
-                  child: Stack(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 20),
-                      ),
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFF3D00),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Text(
-                            "4",
-                            style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ),
-                    ],
+                  onTap: () => widget.state.navigateTo('notifications'),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 20),
                   ),
                 ),
               ],
@@ -317,7 +326,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        "सक्रिय भूमिका: किसान (${widget.state.linkedProfiles.length} प्रोफाइल जुड़ी हैं)",
+                        "${widget.state.tr('activeRole')}: ${widget.state.activeProfileMeta.label(widget.state.language)} (${widget.state.linkedProfiles.length} ${widget.state.tr('roleProfiles')})",
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11.5,
@@ -331,14 +340,14 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                         color: const Color(0xFFE9C46A),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.swap_horiz_rounded, size: 12, color: Color(0xFF1B5E20)),
-                          SizedBox(width: 3),
+                          const Icon(Icons.swap_horiz_rounded, size: 12, color: Color(0xFF1B5E20)),
+                          const SizedBox(width: 3),
                           Text(
-                            "बदलें ▾",
-                            style: TextStyle(
+                            widget.state.tr('change'),
+                            style: const TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w900,
                               color: Color(0xFF1B5E20),
@@ -404,12 +413,115 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     );
   }
 
-  // 2. Weather & Alert Quick Capsule (live /v1/weather, static fallback on error)
+  // 1.6. Vet Workspace banner — claimed vets jump straight to their clinic inbox.
+  Widget _buildVetWorkspaceBanner(BuildContext context) {
+    return BouncyPressable(
+      onTap: () => widget.state.navigateTo('vetHome'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF00838F), Color(0xFF006064)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF00838F).withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.medical_services_rounded,
+                color: Colors.white, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.state.tr('livestock.claim.workspaceTitle'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    widget.state.tr('livestock.claim.workspaceSubtitle'),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                color: Colors.white, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 2. Weather & Alert Quick Capsule (live /v1/weather; explicit error/retry
+  // state on failure — no fabricated temperature fallback).
   Widget _buildWeatherAlertStrip(BuildContext context) {
-    final tempC = (_weather?['tempC'] as num?)?.round() ?? 31;
-    final rainProbability = (_weather?['rainProbability'] as num?)?.round() ?? 40;
-    final condition = _weather?['condition'] as String? ?? 'Partly Cloudy';
-    final radarAvailable = _weather?['radarAvailable'] == true;
+    final weather = _weather;
+    if (weather == null && _weatherOffline) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFDBA74)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_rounded, color: Color(0xFFEA580C), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                widget.state.tr('profile.weatherLoadFailed'),
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF9A3412)),
+              ),
+            ),
+            TextButton(
+              onPressed: _loadWeather,
+              child: Text(
+                widget.state.tr('retry'),
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFEA580C)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (weather == null) {
+      return Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE0F2FE)),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0284C7)),
+          ),
+        ),
+      );
+    }
+
+    final tempC = (weather['tempC'] as num?)?.round() ?? 0;
+    final rainProbability = (weather['rainProbability'] as num?)?.round() ?? 0;
+    final condition = weather['condition'] as String? ?? '';
+    final radarAvailable = weather['radarAvailable'] == true;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -444,7 +556,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                   children: [
                     Flexible(
                       child: Text(
-                        "$tempC° • $rainProbability% rain",
+                        "$tempC° • $rainProbability% ${widget.state.tr('rain')}",
                         style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF263238)),
                       ),
                     ),
@@ -457,24 +569,25 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: const Color(0xFFFDBA74)),
                         ),
-                        child: const Text(
-                          "offline",
+                        child: Text(
+                          widget.state.tr('offlineWithCount'),
                           style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Color(0xFFEA580C)),
                         ),
                       ),
                     ],
                   ],
                 ),
-                Text(
-                  condition,
-                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF0284C7), fontWeight: FontWeight.w600),
-                ),
+                if (condition.isNotEmpty)
+                  Text(
+                    condition,
+                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF0284C7), fontWeight: FontWeight.w600),
+                  ),
               ],
             ),
           ),
           if (radarAvailable)
-            const PulsingBeaconBadge(
-              label: "Rain Radar 🌧️",
+            PulsingBeaconBadge(
+              label: widget.state.tr('profile.rainRadar'),
               color: Color(0xFFE65100),
             ),
         ],
@@ -486,40 +599,44 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   Widget _buildOurServicesSection(BuildContext context) {
     final services = [
       {
-        'title': 'Transportation',
-        'sub': 'Tractor & Vehicles',
+        'title': widget.state.tr('transportation'),
+        'sub': widget.state.tr('profile.subTractorVehicles'),
         'icon': Icons.local_shipping_rounded,
         'bg': const Color(0xFFE8F5E9),
         'iconColor': const Color(0xFF2E7D32),
         'route': 'equipment',
-        'badge': '1.8 km',
       },
       {
-        'title': 'Market Price',
-        'sub': 'Live APMC Rates',
+        'title': widget.state.tr('marketPrice'),
+        'sub': widget.state.tr('profile.subLiveApmcRates'),
         'icon': Icons.show_chart_rounded,
         'bg': const Color(0xFFFFF9C4),
         'iconColor': const Color(0xFFF57F17),
         'route': 'mandi',
-        'badge': '+8.4% 📈',
       },
       {
-        'title': 'Chat us',
+        'title': widget.state.tr('chatUs'),
         'sub': 'Kisan Mitra AI',
         'icon': Icons.auto_awesome_rounded,
         'bg': const Color(0xFFE8F5E9),
         'iconColor': const Color(0xFF2E7D32),
         'route': 'advisory',
-        'badge': '24x7 ⚡',
       },
       {
-        'title': 'Agricultural Loan',
+        'title': widget.state.tr('myBookings'),
+        'sub': widget.state.tr('profile.subEquipmentRides'),
+        'icon': Icons.assignment_turned_in,
+        'bg': const Color(0xFFE0F2F1),
+        'iconColor': const Color(0xFF0D9488),
+        'route': 'myBookings',
+      },
+      {
+        'title': widget.state.tr('agriculturalLoan'),
         'sub': '0% BNPL & KCC',
         'icon': Icons.account_balance_rounded,
         'bg': const Color(0xFFFFF9C4),
         'iconColor': const Color(0xFFF57F17),
         'route': 'finance',
-        'badge': 'Verified',
       },
     ];
 
@@ -529,9 +646,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              "Our Services",
-              style: TextStyle(
+            Text(
+              widget.state.tr('ourServices'),
+              style: const TextStyle(
                 fontSize: 16.5,
                 fontWeight: FontWeight.w900,
                 color: Color(0xFF263238),
@@ -539,7 +656,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
               ),
             ),
             Text(
-              "4 Active Services",
+              "${services.length} ${widget.state.tr('activeServices')}",
               style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
             ),
           ],
@@ -580,34 +697,18 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: s['bg'] as Color,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Icon(
-                              s['icon'] as IconData,
-                              color: s['iconColor'] as Color,
-                              size: 22,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF5F7FA),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              s['badge'] as String,
-                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF455A64)),
-                            ),
-                          ),
-                        ],
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: s['bg'] as Color,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          s['icon'] as IconData,
+                          color: s['iconColor'] as Color,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Text(
@@ -674,24 +775,24 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                         ),
                       ],
                     ),
-                    child: const Text(
-                      "Hot Offer 🔥",
-                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                    child: Text(
+                      widget.state.tr('hotOffer'),
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    "50% OFF",
-                    style: TextStyle(
+                  Text(
+                    widget.state.tr('discountFifty'),
+                    style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
                       color: Color(0xFF263238),
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const Text(
-                    "On first grab services & seeds",
-                    style: TextStyle(
+                  Text(
+                    widget.state.tr('offerSub'),
+                    style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF5D4037),
@@ -713,9 +814,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                           ),
                         ],
                       ),
-                      child: const Text(
-                        "Get Discount →",
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF263238)),
+                      child: Text(
+                        widget.state.tr('getDiscount'),
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF263238)),
                       ),
                     ),
                   ),
@@ -744,134 +845,64 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     );
   }
 
-  // 6. Today's Action Card with celebratory coin reward feedback
-  Widget _buildTodayActionCard(BuildContext context) {
-    return GlassCard(
-      backgroundColor: widget.state.urgentTaskDone ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
-      border: Border.all(color: widget.state.urgentTaskDone ? const Color(0xFFA5D6A7) : const Color(0xFFFFCDD2)),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                widget.state.urgentTaskDone ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
-                color: widget.state.urgentTaskDone ? const Color(0xFF2E7D32) : Colors.red,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                widget.state.urgentTaskDone ? "TODAY'S ACTION COMPLETED ✅" : "TODAY'S ACTION REQUIRED",
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w900,
-                  color: widget.state.urgentTaskDone ? const Color(0xFF2E7D32) : Colors.red.shade900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            widget.state.urgentTaskDone
-                ? "Aapne subah Mancozeb spray ka chhidkav darj kar liya hai."
-                : "Subah 6:00 - 9:00 AM ke beech Mancozeb spray ka chhidkav karein (65% varsha ki sambhavna).",
-            style: const TextStyle(fontSize: 12, height: 1.4, color: Color(0xFF263238)),
-          ),
-          if (!widget.state.urgentTaskDone) ...[
-            const SizedBox(height: 10),
-            BouncyPressable(
-              onTap: () => widget.state.markUrgentTaskDone(),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF43A047),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF43A047).withValues(alpha: 0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: const Text(
-                  "Kary Poora Kiya (+50 coins)",
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11.5, color: Colors.white),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   // 3.5. 🌟 New Core Modules Quick Grid (Tree, Live Channels, Livestock & Diary)
   Widget _buildNewCoreModulesSection(BuildContext context) {
     final modules = [
       {
-        'title': 'फसल बीमा (PMFBY)',
-        'sub': '72h Claim & Cover',
+        'title': widget.state.tr('cropInsurance'),
+        'sub': widget.state.tr('profile.subClaimCover'),
         'icon': Icons.health_and_safety_rounded,
         'bg': const Color(0xFFD1FAE5),
         'iconColor': const Color(0xFF047857),
         'route': 'cropInsurance',
-        'badge': '72h Claim 🛡️',
       },
       {
-        'title': 'वृक्षारोपण हब',
-        'sub': 'Biofuel & Trees',
+        'title': widget.state.tr('treePlantation'),
+        'sub': widget.state.tr('profile.subBiofuelTrees'),
         'icon': Icons.park_rounded,
         'bg': const Color(0xFFDCFCE7),
         'iconColor': const Color(0xFF15803D),
         'route': 'treePlantation',
-        'badge': 'मोफत रोपे 🌱',
       },
       {
-        'title': 'लाईव्ह चॅनेल्स',
-        'sub': 'Live APMC & KVK',
+        'title': widget.state.tr('liveChannels'),
+        'sub': widget.state.tr('profile.subLiveApmcKvk'),
         'icon': Icons.live_tv_rounded,
         'bg': const Color(0xFFFFE4E6),
         'iconColor': const Color(0xFFE11D48),
         'route': 'liveChannels',
-        'badge': 'LIVE 🔴',
       },
       {
-        'title': 'पशुपालन व गोशाळा',
-        'sub': 'Dairy & Dr. for Cow',
+        'title': widget.state.tr('livestockDairy'),
+        'sub': widget.state.tr('profile.subDairyVetCow'),
         'icon': Icons.pets_rounded,
         'bg': const Color(0xFFFEF3C7),
         'iconColor': const Color(0xFFD97706),
         'route': 'livestockDairy',
-        'badge': '24x7 Vet 🩺',
       },
       {
-        'title': 'शेती नोंदवही',
-        'sub': 'Farm Diary & P&L',
+        'title': widget.state.tr('farmDiary'),
+        'sub': widget.state.tr('profile.subFarmDiaryPnl'),
         'icon': Icons.menu_book_rounded,
         'bg': const Color(0xFFEEF2FF),
         'iconColor': const Color(0xFF4F46E5),
         'route': 'farmDiary',
-        'badge': '+15 Coins 🪙',
       },
       {
-        'title': 'कृषी वार्ता',
-        'sub': 'Daily Market News',
+        'title': widget.state.tr('agriNews'),
+        'sub': widget.state.tr('profile.subDailyMarketNews'),
         'icon': Icons.newspaper_rounded,
         'bg': const Color(0xFFE0F2FE),
         'iconColor': const Color(0xFF0284C7),
         'route': 'agriNews',
-        'badge': 'Audio News 🎙️',
       },
       {
-        'title': 'ज्ञानसेतू कार्यशाळा',
-        'sub': 'Paid Masterclasses',
+        'title': widget.state.tr('dnyanSetu'),
+        'sub': widget.state.tr('profile.subPaidMasterclasses'),
         'icon': Icons.school_rounded,
         'bg': const Color(0xFFF3E8FF),
         'iconColor': const Color(0xFF9333EA),
         'route': 'gyanHub',
-        'badge': 'ICAR Certified 🎓',
       },
     ];
 
@@ -881,9 +912,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              "नवीन विशेष सेवा (Special Modules)",
-              style: TextStyle(
+            Text(
+              widget.state.tr('specialModules'),
+              style: const TextStyle(
                 fontSize: 16.5,
                 fontWeight: FontWeight.w900,
                 color: Color(0xFF263238),
@@ -891,7 +922,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
               ),
             ),
             Text(
-              "6 New Hubs",
+              "6 ${widget.state.tr('profile.newHubs')}",
               style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
             ),
           ],
@@ -946,7 +977,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
                     ),
                     Text(
-                      m['badge'] as String,
+                      m['sub'] as String,
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -996,19 +1027,19 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                       color: const Color(0xFFFEF08A),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text(
-                      "शेतकरी मित्र जोडा आणि कमवा 🎁",
-                      style: TextStyle(color: Color(0xFF713F12), fontSize: 10, fontWeight: FontWeight.w900),
+                    child: Text(
+                      widget.state.tr('referralBannerBadge'),
+                      style: const TextStyle(color: Color(0xFF713F12), fontSize: 10, fontWeight: FontWeight.w900),
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    "+100 नाणी प्रति मित्र",
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Colors.white),
+                  Text(
+                    widget.state.tr('referralCoinsTitle'),
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Colors.white),
                   ),
-                  const Text(
-                    "मित्रांना जोडून मोफत माती परीक्षण व सवलती मिळवा",
-                    style: TextStyle(fontSize: 11, color: Color(0xFFFEF3C7), height: 1.3),
+                  Text(
+                    widget.state.tr('referralBannerDesc'),
+                    style: const TextStyle(fontSize: 11, color: Color(0xFFFEF3C7), height: 1.3),
                   ),
                   const SizedBox(height: 10),
                   BouncyPressable(
@@ -1019,9 +1050,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Text(
-                        "रेफरल कोड पहा →",
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF713F12)),
+                      child: Text(
+                        widget.state.tr('viewReferralCode'),
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF713F12)),
                       ),
                     ),
                   ),

@@ -4,18 +4,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api/api_exception.dart';
 import '../api/marketplace_api.dart';
+import '../api/wishlist_api.dart';
 import '../state/app_state.dart';
 import '../components/common/motion_animations.dart';
 import '../components/market/cart_bar.dart';
 import '../components/market/certificate_dialog.dart';
+import '../components/market/market_browse_header.dart';
 import '../components/market/product_card.dart';
 import 'checkout_sheet.dart';
 
 class MarketplaceView extends StatefulWidget {
   final AppState state;
   final MarketplaceApi? marketplaceApi;
+  final WishlistApi? wishlistApi;
 
-  const MarketplaceView({super.key, required this.state, this.marketplaceApi});
+  const MarketplaceView({
+    super.key,
+    required this.state,
+    this.marketplaceApi,
+    this.wishlistApi,
+  });
 
   @override
   State<MarketplaceView> createState() => _MarketplaceViewState();
@@ -23,6 +31,9 @@ class MarketplaceView extends StatefulWidget {
 
 class _MarketplaceViewState extends State<MarketplaceView> {
   late final MarketplaceApi _api = widget.marketplaceApi ?? MarketplaceApi();
+  late final WishlistApi _wishlistApi =
+      widget.wishlistApi ?? WishlistApi();
+  final Set<String> _wishlistIds = {};
   String? _activeCategory;
   String _query = '';
   Timer? _debounce;
@@ -30,19 +41,55 @@ class _MarketplaceViewState extends State<MarketplaceView> {
   bool _loading = true;
   bool _error = false;
 
-  static const _categories = [
-    {'id': 'Seeds', 'label': 'Seeds', 'icon': '🌱'},
-    {'id': 'Vehicles', 'label': 'Vehicles', 'icon': '🚜'},
-    {'id': 'Fertilizer', 'label': 'Fertilizers', 'icon': '🪨'},
-    {'id': 'Pesticide', 'label': 'Insecticide', 'icon': '🧴'},
-    {'id': 'Tools', 'label': 'Tools', 'icon': '🧰'},
-  ];
 
   @override
   void initState() {
     super.initState();
     _load();
     widget.state.refreshCart().catchError((_) {});
+    _loadWishlist();
+  }
+
+  Future<void> _loadWishlist() async {
+    try {
+      final items = await _wishlistApi.getWishlist();
+      if (!mounted) return;
+      setState(() {
+        _wishlistIds
+          ..clear()
+          ..addAll(items.map((e) => "${e['id']}"));
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleWishlist(Map<String, dynamic> product) async {
+    final id = "${product['id']}";
+    final wasSaved = _wishlistIds.contains(id);
+    setState(() {
+      if (wasSaved) {
+        _wishlistIds.remove(id);
+      } else {
+        _wishlistIds.add(id);
+      }
+    });
+    try {
+      if (wasSaved) {
+        await _wishlistApi.removeItem(id);
+        widget.state.showToast(widget.state.tr('emarket.wishlistRemoved'));
+      } else {
+        await _wishlistApi.addItem(id);
+        widget.state.showToast(widget.state.tr('emarket.wishlistAdded'));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        if (wasSaved) {
+          _wishlistIds.add(id);
+        } else {
+          _wishlistIds.remove(id);
+        }
+      });
+    }
   }
 
   @override
@@ -93,16 +140,20 @@ class _MarketplaceViewState extends State<MarketplaceView> {
         builder: (ctx) => CertificateDialog(
           product: product,
           certificate: cert,
+          api: _api,
+          currentUserId: "${widget.state.currentUser?['id'] ?? ''}",
           onAddToCart: () {
             Navigator.pop(ctx);
             widget.state.addToCartApi("${product['id']}");
           },
+          wishlisted: _wishlistIds.contains("${product['id']}"),
+          onToggleWishlist: () => _toggleWishlist(product),
         ),
       );
     } on ApiException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("प्रमाणपत्र उपलब्ध नहीं")),
+        SnackBar(content: Text(widget.state.tr('certificateNotAvailable'))),
       );
     }
   }
@@ -127,135 +178,25 @@ class _MarketplaceViewState extends State<MarketplaceView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("E-Market", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF263238))),
-                  Text("Reliable online market", style: TextStyle(fontSize: 12, color: Color(0xFF90A4AE))),
-                ],
-              ),
-            ],
+          MarketBrowseHeader(
+            state: widget.state,
+            activeCategory: _activeCategory,
+            onCategoryChanged: (category) {
+              _activeCategory = category;
+              _load();
+            },
+            onSearchChanged: _onSearchChanged,
           ),
-          const SizedBox(height: 12),
-
-          // Search Bar with mic
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFECEFF1)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search_rounded, color: Color(0xFF90A4AE), size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    onChanged: _onSearchChanged,
-                    decoration: const InputDecoration(
-                      hintText: "Seeds, vehicles, fertilizers, vegetables",
-                      hintStyle: TextStyle(fontSize: 12.5, color: Color(0xFF90A4AE)),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.mic_none_rounded, color: Color(0xFF90A4AE), size: 20),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // 5 Category chips
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: _categories.map((c) {
-              final isSel = _activeCategory == c['id'];
-              return BouncyPressable(
-                onTap: () {
-                  _activeCategory = isSel ? null : c['id'];
-                  _load();
-                },
-                child: Container(
-                  width: 62,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isSel ? const Color(0xFF43A047) : const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(c['icon']!, style: const TextStyle(fontSize: 22)),
-                      const SizedBox(height: 4),
-                      Text(
-                        c['label']!,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: isSel ? Colors.white : const Color(0xFF2E7D32),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
 
           if (_error)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFFDBA74)),
-              ),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      "कैटलॉग लोड नहीं हुआ",
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF9A3412)),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _load,
-                    child: const Text("पुनः प्रयास करें", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFEA580C))),
-                  ),
-                ],
-              ),
-            ),
-
-          // Products grid
-          if (_loading)
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.82,
-              children: [
-                for (var i = 0; i < 4; i++)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-              ],
-            )
-          else if (!_error && _products.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+            _errorBanner()
+          else if (_loading)
+            _shimmerGrid()
+          else if (_products.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                child: Text("कोई उत्पाद नहीं मिला", style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700)),
+                child: Text(widget.state.tr('noProductsFound'), style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700)),
               ),
             )
           else
@@ -277,6 +218,8 @@ class _MarketplaceViewState extends State<MarketplaceView> {
                     product: p,
                     onTap: () => _openCertificate(p),
                     onAddToCart: () => widget.state.addToCartApi("${p['id']}"),
+                    wishlisted: _wishlistIds.contains("${p['id']}"),
+                    onToggleWishlist: () => _toggleWishlist(p),
                   ),
                 );
               },
@@ -284,6 +227,52 @@ class _MarketplaceViewState extends State<MarketplaceView> {
 
           // Cart bar
           CartBar(state: widget.state, onCheckout: _openCheckout),
+        ],
+      ),
+    );
+  }
+
+  Widget _shimmerGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 0.82,
+      children: [
+        for (var i = 0; i < 4; i++)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _errorBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              widget.state.tr('noDataAvailable'),
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF9A3412)),
+            ),
+          ),
+          TextButton(
+            onPressed: _load,
+            child: Text(widget.state.tr('retry'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFEA580C))),
+          ),
         ],
       ),
     );

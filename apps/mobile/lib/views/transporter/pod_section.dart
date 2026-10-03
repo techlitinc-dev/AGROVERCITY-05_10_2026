@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import '../../api/api_exception.dart';
 import '../../api/transport_api.dart';
 import '../../core/photo_upload.dart';
+import '../../state/app_state.dart';
 
 // POD capture: delivery photo(s) + receiver name gate the delivered transition.
 class PodSection extends StatefulWidget {
   const PodSection({
     super.key,
+    required this.state,
     required this.bookingId,
     required this.api,
     required this.uploader,
@@ -15,6 +17,7 @@ class PodSection extends StatefulWidget {
     required this.onError,
   });
 
+  final AppState state;
   final String bookingId;
   final TransportApi api;
   final PhotoUploader uploader;
@@ -44,7 +47,7 @@ class _PodSectionState extends State<PodSection> {
           await widget.uploader.pickAndUpload('pod/${widget.bookingId}/$ts.jpg');
       if (url != null && mounted) setState(() => _podPhotos.add(url));
     } catch (_) {
-      widget.onError("फोटो अपलोड विफल");
+      widget.onError(widget.state.tr('transporter.photoUploadFailed'));
     }
   }
 
@@ -91,13 +94,13 @@ class _PodSectionState extends State<PodSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("डिलीवरी प्रमाण (POD)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+          Text(widget.state.tr('transporter.podTitle'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
           TextField(
             controller: _receiverCtrl,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              labelText: "प्राप्तकर्ता का नाम",
+              labelText: widget.state.tr('transporter.receiverName'),
               border: const OutlineInputBorder(),
               errorText: _fieldErrors['receiverName'] as String?,
             ),
@@ -108,7 +111,7 @@ class _PodSectionState extends State<PodSection> {
               TextButton.icon(
                 onPressed: _podPhotos.length >= 3 ? null : _addPhoto,
                 icon: const Icon(Icons.add_a_photo_rounded, size: 16),
-                label: Text("फोटो जोड़ें (${_podPhotos.length}/3)"),
+                label: Text('${widget.state.tr('transporter.addPhoto')} (${_podPhotos.length}/3)'),
               ),
               if (_fieldErrors['podPhotos'] != null)
                 Expanded(
@@ -120,12 +123,12 @@ class _PodSectionState extends State<PodSection> {
             ],
           ),
           if (_podPhotos.isNotEmpty)
-            Text("${_podPhotos.length} फोटो अपलोड हुई ✅", style: const TextStyle(fontSize: 11.5, color: Color(0xFF166534), fontWeight: FontWeight.w700)),
+            Text(widget.state.tr('transporter.photosUploaded').replaceAll('{count}', "${_podPhotos.length}"), style: const TextStyle(fontSize: 11.5, color: Color(0xFF166534), fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
           ElevatedButton(
             onPressed: canSubmit ? _submit : null,
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF16A34A), foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 48)),
-            child: const Text("डिलीवरी सबमिट करें", style: TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(widget.state.tr('transporter.submitDelivery'), style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         ],
       ),

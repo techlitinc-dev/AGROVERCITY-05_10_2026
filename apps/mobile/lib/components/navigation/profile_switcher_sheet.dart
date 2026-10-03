@@ -54,17 +54,17 @@ class ProfileSwitcherSheet extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Text(
-          "${meta.labelHi} प्रोफाइल हटाएं?",
+          state.tr('navigation.removeProfileConfirm').replaceAll('{role}', meta.label(state.language)),
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
         ),
-        content: const Text(
-          "यह भूमिका आपके खाते से हटा दी जाएगी। आप इसे बाद में फिर से जोड़ सकते हैं।",
-          style: TextStyle(fontSize: 13, color: Color(0xFF4B5563), height: 1.4),
+        content: Text(
+          state.tr('navigation.unlinkRoleMsg'),
+          style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563), height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text("रद्द करें", style: TextStyle(color: Color(0xFF6B7280), fontWeight: FontWeight.w700)),
+            child: Text(state.tr('cancel'), style: const TextStyle(color: Color(0xFF6B7280), fontWeight: FontWeight.w700)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -73,7 +73,7 @@ class ProfileSwitcherSheet extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("हटाएं", style: TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(state.tr('deleteK'), style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         ],
       ),
@@ -143,16 +143,16 @@ class ProfileSwitcherSheet extends StatelessWidget {
                         child: Icon(Icons.swap_horizontal_circle_rounded, color: activeMeta.primaryColor, size: 20),
                       ),
                       const SizedBox(width: 8),
-                      const Column(
+                      Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            "प्रोफाइल स्विचर (Role Switcher)",
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
+                            state.tr('navigation.roleSwitcher'),
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
                           ),
                           Text(
-                            "एक टैप में अपनी सक्रिय भूमिका बदलें",
-                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                            state.tr('navigation.switchRoleSub'),
+                            style: const TextStyle(fontSize: 11, color: Colors.grey),
                           ),
                         ],
                       ),
@@ -216,7 +216,11 @@ class ProfileSwitcherSheet extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            state.profile.name,
+                            state.profile.name.isNotEmpty
+                                ? state.profile.name
+                                : (state.profile.phone.isNotEmpty
+                                    ? state.profile.phone
+                                    : state.tr('profile.nameFallback')),
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
                           ),
                           const SizedBox(height: 2),
@@ -233,7 +237,7 @@ class ProfileSwitcherSheet extends StatelessWidget {
                               const SizedBox(width: 5),
                               Flexible(
                                 child: Text(
-                                  "सक्रिय: ${activeMeta.labelHi} (${activeMeta.labelEn})",
+                                  "${state.tr('navigation.activeColon')} ${activeMeta.label(state.language)} (${activeMeta.labelEn})",
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: activeMeta.primaryColor),
@@ -252,7 +256,7 @@ class ProfileSwitcherSheet extends StatelessWidget {
                         border: Border.all(color: Colors.grey.shade200),
                       ),
                       child: Text(
-                        "${state.linkedProfiles.length} / 6 जुड़ी हैं",
+                        "${state.linkedProfiles.length} / ${UserProfileRegistry.all.length} ${state.tr('navigation.linkedSuffix')}",
                         style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                       ),
                     ),
@@ -267,9 +271,9 @@ class ProfileSwitcherSheet extends StatelessWidget {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.edit_rounded, color: Color(0xFF2E7D32)),
-                  title: const Text(
-                    'प्रोफ़ाइल संपादित करें',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                  title: Text(
+                    state.tr('navigation.editProfile'),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                   ),
                   trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
                   onTap: () {
@@ -281,9 +285,9 @@ class ProfileSwitcherSheet extends StatelessWidget {
               const SizedBox(height: 8),
 
               // 4. Linked Profiles Horizontal Animated Slider
-              const Text(
-                "आपकी सक्रिय प्रोफाइल (Tap to Switch):",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
+              Text(
+                state.tr('navigation.activeProfilesTap'),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
               ),
               const SizedBox(height: 8),
 
@@ -366,7 +370,7 @@ class ProfileSwitcherSheet extends StatelessWidget {
                                           Icon(Icons.check_circle_rounded, size: 10, color: meta.primaryColor),
                                           const SizedBox(width: 2),
                                           Text(
-                                            "सक्रिय",
+                                            state.tr('navigation.activeShort'),
                                             style: TextStyle(
                                               fontSize: 8.5,
                                               fontWeight: FontWeight.w900,
@@ -380,7 +384,7 @@ class ProfileSwitcherSheet extends StatelessWidget {
                               ),
                               const Spacer(),
                               Text(
-                                meta.labelHi,
+                                meta.label(state.language),
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w900,
@@ -397,7 +401,7 @@ class ProfileSwitcherSheet extends StatelessWidget {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                isActive ? "वर्तमान डैशबोर्ड ➔" : "टैप कर स्विच करें ⚡",
+                                isActive ? state.tr('navigation.currentDashboard') : state.tr('navigation.tapToSwitch'),
                                 style: TextStyle(
                                   fontSize: 9,
                                   fontWeight: FontWeight.w800,
@@ -415,9 +419,9 @@ class ProfileSwitcherSheet extends StatelessWidget {
               const SizedBox(height: 16),
 
               // 5. Manage All 6 Roles (Add / Remove Roles)
-              const Text(
-                "सभी भूमिकाएं प्रबंधित करें (Link or Unlink Roles):",
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
+              Text(
+                state.tr('navigation.manageAllRoles'),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
               ),
               const SizedBox(height: 8),
 
@@ -465,18 +469,24 @@ class ProfileSwitcherSheet extends StatelessWidget {
                               children: [
                                 Row(
                                   children: [
-                                    Text(
-                                      meta.labelHi,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w900,
-                                        color: isLinked ? const Color(0xFF1E293B) : Colors.grey.shade700,
+                                    Flexible(
+                                      child: Text(
+                                        meta.label(state.language),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w900,
+                                          color: isLinked ? const Color(0xFF1E293B) : Colors.grey.shade700,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      "(${meta.labelEn})",
-                                      style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500),
+                                    Flexible(
+                                      child: Text(
+                                        "(${meta.labelEn})",
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500),
+                                      ),
                                     ),
                                     if (isActive)
                                       Container(
@@ -529,7 +539,9 @@ class ProfileSwitcherSheet extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
-                                    isLinked ? (isActive ? "सक्रिय" : "हटाएं") : "जोड़ें +",
+                                    isLinked
+                                        ? (isActive ? state.tr('navigation.activeShort') : state.tr('deleteK'))
+                                        : state.tr('navigation.addRole'),
                                     style: TextStyle(
                                       fontSize: 10.5,
                                       fontWeight: FontWeight.w800,

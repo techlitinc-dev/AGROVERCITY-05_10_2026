@@ -1,12 +1,20 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
+
+const backendTarget = process.env.VITE_BACKEND_ORIGIN ?? 'http://localhost:8000';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': new URL('./src', import.meta.url).pathname,
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/v1': {
+        target: backendTarget,
+        changeOrigin: true,
+      },
     },
+  },
+  build: {
+    outDir: 'dist',
   },
 });

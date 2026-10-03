@@ -1,0 +1,86 @@
+/* Dairy P6 styles — milk sales, stock and reports.
+   Extends theme/dairy.css (dairy-* classes, tokens.css variables). */
+
+/* ---- Orders summary strip (4 tiles) ---- */
+.dairy-sales-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-sales-tile {
+  background: var(--av-accent-tint);
+  border: 1.5px solid var(--av-border-green);
+  border-radius: var(--av-radius-card);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.dairy-sales-tile-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-green-deep);
+}
+
+.dairy-sales-tile-value {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-green-deep);
+  margin-top: 2px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+@media (min-width: 720px) {
+  .dairy-sales-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* ---- Stock expiry highlight ---- */
+.dairy-sales-expiry-bad {
+  color: var(--av-error);
+  font-weight: 800;
+}
+
+.dairy-sales-expiry-warn {
+  color: #d97706;
+  font-weight: 800;
+}
+
+/* ---- Reports: monthly P&L ---- */
+.dairy-sales-pl-value {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.dairy-sales-pl-value.pos {
+  color: #16a34a;
+}
+
+.dairy-sales-pl-value.neg {
+  color: var(--av-error);
+}
+
+/* ---- Report pickers (date / month inputs row) ---- */
+.dairy-sales-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-sales-picker .av-field {
+  margin-bottom: 0;
+}
+
+@media (min-width: 720px) {
+  .dairy-sales-picker {
+    flex-direction: row;
+  }
+  .dairy-sales-picker .av-field {
+    flex: 1;
+  }
+}

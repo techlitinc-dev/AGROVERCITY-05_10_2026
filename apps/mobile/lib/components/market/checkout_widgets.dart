@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
 import '../mandi/mandi_price_card.dart';
+
+String _t(AppState? state, String key) =>
+    state != null ? state.tr(key) : AppTranslations.get(key, 'hi');
 
 class CheckoutAddressCard extends StatelessWidget {
   final String? composedAddress;
   final String? label;
   final VoidCallback onTap;
+  final AppState? state;
 
   const CheckoutAddressCard({
     super.key,
     required this.composedAddress,
     required this.label,
     required this.onTap,
+    this.state,
   });
 
   @override
@@ -36,9 +43,9 @@ class CheckoutAddressCard extends StatelessWidget {
                       "$label: $composedAddress",
                       style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
                     )
-                  : const Text(
-                      "डिलीवरी पता चुनें / जोड़ें",
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
+                  : Text(
+                      _t(state, 'market.selectOrAddAddress'),
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF166534)),
                     ),
             ),
             const Icon(Icons.chevron_right_rounded, color: Color(0xFF16A34A)),
@@ -52,11 +59,13 @@ class CheckoutAddressCard extends StatelessWidget {
 class CheckoutMethodTiles extends StatelessWidget {
   final String groupValue;
   final ValueChanged<String?> onChanged;
+  final AppState? state;
 
   const CheckoutMethodTiles({
     super.key,
     required this.groupValue,
     required this.onChanged,
+    this.state,
   });
 
   @override
@@ -64,11 +73,11 @@ class CheckoutMethodTiles extends StatelessWidget {
     return RadioGroup<String>(
       groupValue: groupValue,
       onChanged: onChanged,
-      child: const Column(
+      child: Column(
         children: [
-          _MethodTile(id: 'upi', label: "UPI (Razorpay)", icon: Icons.account_balance_wallet_rounded),
-          _MethodTile(id: 'cod', label: "Cash on Delivery (COD)", icon: Icons.payments_rounded),
-          _MethodTile(id: 'bnpl', label: "0% BNPL (2 किश्तें)", icon: Icons.schedule_rounded),
+          const _MethodTile(id: 'upi', label: "UPI (Razorpay)", icon: Icons.account_balance_wallet_rounded),
+          const _MethodTile(id: 'cod', label: "Cash on Delivery (COD)", icon: Icons.payments_rounded),
+          _MethodTile(id: 'bnpl', label: _t(state, 'market.bnplTwoInstallments'), icon: Icons.schedule_rounded),
         ],
       ),
     );
@@ -97,8 +106,9 @@ class _MethodTile extends StatelessWidget {
 
 class OrderSuccessCard extends StatelessWidget {
   final Map<String, dynamic> order;
+  final AppState? state;
 
-  const OrderSuccessCard({super.key, required this.order});
+  const OrderSuccessCard({super.key, required this.order, this.state});
 
   @override
   Widget build(BuildContext context) {
@@ -115,16 +125,19 @@ class OrderSuccessCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "✅ ऑर्डर सफल! #${order['orderId']}",
+            _t(state, 'market.orderSuccess')
+                .replaceAll('{orderId}', "${order['orderId']}"),
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF14532D)),
           ),
           if (schedule != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                "BNPL: किश्त 1 — ₹${fmtInr((schedule[0]['amount'] as num?) ?? 0)} "
-                "(${schedule[0]['dueInDays']} दिन), किश्त 2 — ₹${fmtInr((schedule[1]['amount'] as num?) ?? 0)} "
-                "(${schedule[1]['dueInDays']} दिन)",
+                _t(state, 'market.bnplSchedule')
+                    .replaceAll('{a1}', fmtInr((schedule[0]['amount'] as num?) ?? 0))
+                    .replaceAll('{d1}', "${schedule[0]['dueInDays']}")
+                    .replaceAll('{a2}', fmtInr((schedule[1]['amount'] as num?) ?? 0))
+                    .replaceAll('{d2}', "${schedule[1]['dueInDays']}"),
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
               ),
             ),

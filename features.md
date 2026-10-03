@@ -204,20 +204,25 @@ Shared template: gradient persona banner + switch button, 3 metric pills, profil
 - **AI quality grading card:** AGMARK grade, uniformity %, shelf life, recommended price.
 
 ### 5.15 Krishi Ratna — Gamification (route `krishiRatna`)
-- Level banner (level, title e.g. "Krishi Daksh", coin balance, streak days, XP to next level).
-- **Rewards store:** redeem AgriCoins for vouchers (₹200 IFFCO voucher = 300 coins, free soil test = 500, 1-on-1 scientist video call = 800).
-- Coins earned across the app (+50 urgent task, +15 diary entry, +50 equipment booking, +25 expert-talk registration, +100/referral).
+- Level banner computed live from coin balance: tiers bronze (0) / silver (200) / gold (500) / diamond (1000) with vernacular titles, `nextTier`, `coinsToNextTier`, progress %.
+- **Rewards store (4 redeemables):** fertilizer voucher 300 coins, soil test 500, expert call 800, workshop discount 1000 — redeem generates a `voucherCode` (400 `INSUFFICIENT_COINS` when short).
+- **Real streaks, badges & ledger:** daily streak (current + longest) computed from coin-ledger dates; 8 badges (first_entry, diary_regular, sharer, referral_star, coin_collector, big_earner, redeemer, consistent); full earn/spend coin ledger with paged envelope; every event mirrored to the top-level `gamification_ledger` for leaderboards + reconcile.
+- **Coin leaderboard** (`/gamification/leaderboard?period=all|month`) with rank, name, village, `isMe`, `myRank`.
+- Coins earned across the app: +15 diary entry, +100 referral invite, +100 referral join, +50/+150/+500 referral milestones (1/5/10 joins), +25 expert-talk registration, workshop/course enrollments spend coins.
 
 ### 5.16 Refer & Earn (route `referEarn`)
-- Personal referral code (e.g. `RAMSINGH2026`) with copy-to-clipboard + WhatsApp share.
-- Invite-friend dialog (name + phone → +100 coins).
-- Milestone rewards: 1/5/10 referrals → coins, free soil test, ₹500 equipment discount.
-- Referred-farmers list with status (Joined/Verified/Active) and coins earned.
+- Personal referral code (`ref_` + uid prefix) with copy-to-clipboard + WhatsApp share (`shareLink`, `shareMessage`).
+- Invite-friend dialog (name + E.164 phone → **+100 coins immediately**, deduped by phone → 409 `ALREADY_INVITED`; bad phone → 400).
+- **+100 more when the invitee registers** with the code (attribution recorded, idempotent on re-register); milestones 1/5/10 joins → **+50/+150/+500** coins with a notification per milestone.
+- Referred-farmers list with `invited|joined` status, timestamps and coins earned; joins without a prior invite are synthesized from `referral_attributions`.
+- **Referral leaderboard** (`rank, userId, name, village, referralCount, isMe` + `myRank`) alongside the coin leaderboard.
 
 ### 5.17 Farm Diary (route `farmDiary`)
 - Financial summary card (income / expense / net, entry count, PDF report).
-- Add-entry dialog: type (expense / income / activity), category (fertilizer, seeds, spraying, labor, irrigation, mandi sale, dairy sale…), amount, crop, notes; +15 coins per entry.
-- Filter pills + timeline list with delete.
+- Add-entry dialog: type (expense / income / activity), category (fertilizer, seeds, spraying, labor, irrigation, mandi sale, dairy sale…), amount, crop, notes, quantity/unit; +15 coins per entry.
+- **Edit entries** (full replace, `updatedAt` refreshed) and delete; paginated timeline list (`page/pageSize`, ≤200/page, default 50) with filter pills (type, category, date range).
+- **Photo attachments:** 1–3 images per upload (jpeg/png/webp ≤ 5 MB), stored as signed Storage URLs on the entry.
+- **Analytics dashboard** (`/diary/analytics/summary`): totals (income, expense, net, entry/income/expense/activity counts) plus by-category, by-crop, by-month, by-day breakdowns; Redis-cached 5 min.
 
 ### 5.18 Agri News (route `agriNews`)
 - Breaking-news red banner with audio readout.
@@ -231,11 +236,16 @@ Shared template: gradient persona banner + switch button, 3 metric pills, profil
 - **Live chat box** with send.
 - Channel list: DD Kisan, KVK, live mandi auctions, state agri TV.
 
-### 5.20 Livestock & Dairy (route `livestockDairy`) — 4 tabs
-1. **Gaushala:** trust, district, cow count, breeds, facilities, rating; contact + book cow-dung manure / slurry dialog with priced options; cow-adoption flag.
-2. **Nursery:** govt-certified badge, saplings list, price range, call for availability.
-3. **Dr. for Cow (vet):** 24×7 emergency helpline bar; doctor cards (qualification, specialization, clinic, next slot, fee); booking dialog (farm visit vs clinic, slot dropdown, consultation fee).
-4. **Dairy marketplace:** A2 ghee/milk/paneer/butter with purity certification, rating, direct buy.
+### 5.20 Livestock & Dairy (route `livestockDairy`) — Dairy + Gaushala + Doctor Ecosystem
+Converted from a 4-tab directory into a full management system spanning dairy procurement→payments→sales, gaushala back-office, and a doctor network with a vet workspace. The 8th persona **`dairyManager`** (already in `VALID_PROFILES` / `UserProfileType`) is the livestock-domain super-manager; onboarding now collects `centerName`, `licenseNumber`, `dailyCapacityLiters`, plus `isGaushalaOperator` / `isVetPractitioner` flags. The dead `livestock` route now renders `LivestockDairyView`. ~200 new i18n keys (en/hi/mr).
+
+1. **Directory & marketplace (original 4 tabs, retained):** Gaushala cards (trust, district, cow count, breeds, facilities, manure/slurry order dialog, cow-adoption flag); nursery cards (govt-certified badge, saplings, price range); Dr.-for-Cow vet cards (24×7 emergency helpline, qualification, specialization, clinic, next slot, fee); dairy marketplace (A2 ghee/milk/paneer/butter, purity certification, direct buy).
+2. **Dairy Console (dairyManager, 5 tabs, route `dairyConsole`):** member-farmer register (code, bank details, default species, flat deduction); FAT/SNF rate-chart editor (single active chart per species, version history); payment settlement batches (generate from period, per-member deduction math, mark-paid with FCM to members); milk sales (customers, AM/PM orders with scheduled→delivered→billed→paid lifecycle, summary); stock + daily/PL reports. Farmer-facing self-views: "My Milk & Payments" (route `milkSlips`, universal) shows collection slips and payment entries.
+3. **Gaushala Console (dairyManager, 5 tabs, route `gaushalaConsole`):** gaushala profile (trust, capacity, 80G/FCRA/AWBI certifications, bank details); cattle inventory with event log (intake/adopted-out/deceased/transferred → cattleStatus); adoptions & donations queues (approve/acknowledge auto-issues 80G-eligible `receipts` + FCM); expenses by category; dashboard (headcount, occupancy %, month totals).
+4. **Vet Network (dairyManager, 3 tabs, route `vetNetwork`):** manager-run vet directory (registration no., qualifications, specializations, clinic/farm/tele fees, districts, languages, emergency flag); appointments oversight (all appointments, newest first); vaccination campaigns (create/track, enrollments, mark-vaccinated).
+5. **Vet Workspace (claimed vet, 4 tabs, route `vetHome`, universal via `isVet` flag after login):** appointments inbox (requested→confirmed→in-progress→completed/cancelled with vetNotes + inline prescription on complete); schedule editor (weekly slots, leaves, emergency, teleconsultation); patients (animals + prescription history); earnings (month totals, rating). **Vet claim flow:** a user whose phone matches a directory vet doc claims the profile (`POST /livestock/vets/claim`).
+6. **Rewired booking:** vet booking now posts to `/livestock/appointments` with `animalId` + `symptoms` (visit type clinic/farm/tele, slot date/time, fee per type); every status transition FCMs the counterparty. Vaccination enroll (`/{id}/enroll`) is per own animal with FCM reminder.
+7. **ACL routes:** `livestockDairy` (farmer, seller), `dairyConsole` / `gaushalaConsole` / `vetNetwork` (dairyManager), `vetHome` + `milkSlips` (universal). No admin console yet — `/admin/livestock` deferred (SOP-19).
 
 ### 5.21 Gyan Hub — Knowledge (route `gyanHub`) — 4 tabs
 1. **Paid workshops:** ICAR-certified badge, instructor/institution, seats filled/total, fee with AgriCoins discount; detail sheet (batch date, syllabus modules, deliverables, certificate); enroll with coin redemption.
@@ -316,8 +326,8 @@ Defined in `lib/models/app_models.dart` — 30 entities:
 | VetDoctor | id, name, qualification, specialization, clinicAddress, distanceKm, phone, experienceYears, consultationFeeRupees, rating, availableForFarmVisit, nextAvailableSlot |
 | DairyProductItem | id, title, vernacularTitle, farmName, category, price, rating, unit, reviewsCount, purityCertification, inStock, description |
 | PaidWorkshop | id, title, vernacularTitle, instructor, instructorRole, institution, feeRupees, coinsDiscountAllowed, duration, batchDate, timing, rating, enrolledCount, totalSeats, isCertified, certificateTitle, syllabusModules[], deliverables[], isEnrolled |
-| FarmDiaryEntry | id, title, category, type (expense/income/farmActivity), amount, date, cropName, notes |
-| ReferralUser | id, farmerName, village, phone, joinDate, status (Joined/Verified/Active), rewardCoins |
+| FarmDiaryEntry | id, title, category, type (expense/income/farmActivity), amount, date, cropName?, notes?, photos[] (signed Storage URLs), quantity?, unit?, createdAt, updatedAt |
+| ReferralUser (referred[]) | name, phone, status (invited/joined), invitedAt, joinedAt, rewardCoins |
 | CropInsurancePolicy | id, policyNumber, schemeName, vernacularSchemeName, cropName, vernacularCropName, season, year, landAreaAcres, sumInsured, farmerPremium, govtSubsidy, status, insuranceCompany, coverageStartDate, coverageEndDate, bankName, kccAccountNo, certificateUrl |
 | InsuranceClaimRecord | id, claimNumber, policyId, cropName, vernacularCropName, calamityType, dateOfDamage, estimatedLossPercent, requestedAmount, approvedAmount, status (intimated→surveyorAssigned→fieldAssessed→dbtApproved→disbursed/rejected), statusText, surveyorName, surveyorPhone, surveyorVisitDate, gpsCoordinates, village, damagePhotos[], submittedAt, dbtTransactionId, bankAccountLast4 |
 | CropPremiumRate | id, cropName, vernacularCropName, category, season, sumInsuredPerAcre, farmerSharePercent, totalActuarialRatePercent, cutoffDate |

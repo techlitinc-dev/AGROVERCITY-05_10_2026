@@ -9,6 +9,9 @@ import '../../components/onboarding/field_widgets.dart';
 import '../../core/phone_auth.dart';
 import '../../state/app_state.dart';
 
+// Login journey for returning users: phone number -> MPIN -> done.
+// An OTP is only involved for a first-time registration (unknown number),
+// an account that has no MPIN yet, or MPIN recovery via "Forgot MPIN".
 class LoginForm extends StatefulWidget {
   const LoginForm({super.key, required this.state, this.phoneAuth});
 
@@ -25,14 +28,18 @@ class _LoginFormState extends State<LoginForm> {
   final _otpController = TextEditingController();
   final _mpinController = TextEditingController();
 
+  // 'phone' -> 'mpin' -> 'otp' -> 'setMpin'
+  String _step = 'phone';
+  String _otpGoal = 'register'; // 'register' | 'setMpin'
   String? _verificationId;
-  bool _otpSent = false;
   int _otpCountdown = 0;
   Timer? _otpTimer;
-  bool _mpinStep = false;
   bool _busy = false;
   String? _error;
+  String? _notice;
   bool _wrongMpin = false;
+
+  String get _phone => _phoneController.text.trim();
 
   @override
   void dispose() {
@@ -43,40 +50,58 @@ class _LoginFormState extends State<LoginForm> {
     super.dispose();
   }
 
-  Future<void> _sendOtp() async {
-    if (_phoneController.text.trim().length < 10) {
-      setState(() => _error = 'कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
+  void _startCountdown() {
+    _otpTimer?.cancel();
+    _otpCountdown = 30;
+    _otpTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return timer.cancel();
+      setState(() {
+        if (_otpCountdown > 0) {
+          _otpCountdown--;
+        } else {
+          timer.cancel();
+        }
+      });
     });
-    await _phoneAuth.sendOtp(
-      phone: '+91${_phoneController.text.trim()}',
+  }
+
+  void _showMpinStep() {
+    setState(() {
+      _step = 'mpin';
+      _busy = false;
+      _error = null;
+      _notice = null;
+      _wrongMpin = false;
+      _mpinController.clear();
+    });
+  }
+
+  void _beginOtp(String goal, String noticeKey) {
+    setState(() {
+      _otpGoal = goal;
+      _notice = widget.state.tr(noticeKey);
+      _step = 'otp';
+      _error = null;
+      _otpController.clear();
+      _busy = true;
+    });
+    _phoneAuth.sendOtp(
+      phone: '+91$_phone',
       onCodeSent: (verificationId) {
-        _otpTimer?.cancel();
+        if (!mounted) return;
         setState(() {
           _busy = false;
-          _otpSent = true;
           _verificationId = verificationId;
-          _otpCountdown = 30;
         });
-        _otpTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          if (!mounted) return timer.cancel();
-          setState(() {
-            if (_otpCountdown > 0) {
-              _otpCountdown--;
-            } else {
-              timer.cancel();
-            }
-          });
+        _startCountdown();
+      },
+      onFailed: (message) {
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _error = message;
         });
       },
-      onFailed: (message) => setState(() {
-        _busy = false;
-        _error = message;
-      }),
       onAutoVerified: (idToken) {
         _otpTimer?.cancel();
         _onIdToken(idToken);
@@ -87,7 +112,7 @@ class _LoginFormState extends State<LoginForm> {
   Future<void> _verifyOtp() async {
     final verificationId = _verificationId;
     if (verificationId == null || _otpController.text.trim().length < 4) {
-      setState(() => _error = 'कृपया सही OTP दर्ज करें');
+      setState(() => _error = widget.state.tr('invalidOtp'));
       return;
     }
     setState(() {
@@ -102,7 +127,8 @@ class _LoginFormState extends State<LoginForm> {
     if (idToken == null) {
       setState(() {
         _busy = false;
-        _error = 'अमान्य OTP — पुनः प्रयास करें';
+        _error = widget.state.tr('invalidOtpRetry');
+        _otpController.clear();
       });
       return;
     }
@@ -125,29 +151,73 @@ class _LoginFormState extends State<LoginForm> {
     if (!mounted) return;
     if (isNewUser) {
       widget.state.setAuthMode('register');
-    } else {
-      setState(() {
-        _busy = false;
-        _mpinStep = true;
-      });
+      return;
     }
+    setState(() {
+      _busy = false;
+      _error = null;
+      _notice = null;
+      _wrongMpin = false;
+      if (_otpGoal == 'setMpin') {
+        _step = 'setMpin';
+        _mpinController.clear();
+      } else {
+        _showMpinStep();
+      }
+    });
   }
 
-  Future<void> _submitMpin() async {
-    if (_mpinController.text.length != 4) return;
+  Future<void> _submitPhoneMpin() async {
+    if (_mpinController.text.length != 4 || _busy) return;
     setState(() {
       _busy = true;
       _wrongMpin = false;
+      _error = null;
     });
-    final ok = await widget.state.loginWithMobileAndMpin(
-      _phoneController.text.trim(),
-      _mpinController.text,
-    );
-    if (!mounted) return;
+    try {
+      await widget.state.loginWithPhoneMpin(_phone, _mpinController.text);
+      // On success AppState flips the app to the dashboard and this form
+      // unmounts; nothing further to do here.
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      switch (e.code) {
+        case 'WRONG_MPIN':
+          // Clear the pad so the retry can't resubmit the stale digits —
+          // the field is full (4/4) and maxLength would swallow new input.
+          setState(() {
+            _busy = false;
+            _wrongMpin = true;
+            _mpinController.clear();
+          });
+        case 'USER_NOT_FOUND':
+          _beginOtp('register', 'loginNotRegistered');
+        case 'MPIN_NOT_SET':
+          _beginOtp('setMpin', 'loginMpinNotSet');
+        default:
+          setState(() {
+            _busy = false;
+            _error = e.message.isEmpty ? e.code : e.message;
+          });
+      }
+    }
+  }
+
+  Future<void> _submitSetMpin() async {
+    if (_mpinController.text.length != 4 || _busy) return;
     setState(() {
-      _busy = false;
-      _wrongMpin = !ok;
+      _busy = true;
+      _error = null;
     });
+    try {
+      await widget.state.setMpinForCurrentSession(_mpinController.text);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message.isEmpty ? e.code : e.message;
+        _mpinController.clear();
+      });
+    }
   }
 
   void _openForgotMpin() {
@@ -157,7 +227,7 @@ class _LoginFormState extends State<LoginForm> {
       builder: (_) => ForgotMpinSheet(
         state: widget.state,
         phoneAuth: _phoneAuth,
-        initialPhone: _phoneController.text.trim(),
+        initialPhone: _phone,
       ),
     );
   }
@@ -168,56 +238,131 @@ class _LoginFormState extends State<LoginForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!_mpinStep) ...[
+          if (_step == 'phone') ...[
             LabeledTextField(
               controller: _phoneController,
-              label: 'मोबाइल नंबर',
+              label: widget.state.tr('mobileNumber'),
               keyboardType: TextInputType.phone,
               prefix: '+91 ',
             ),
-            if (_otpSent) ...[
-              const SizedBox(height: 10),
-              LabeledTextField(
-                controller: _otpController,
-                label: 'OTP',
-                keyboardType: TextInputType.number,
-              ),
-              if (_otpCountdown > 0)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'पुनः भेजें ${_otpCountdown}s में',
-                    style:
-                        const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                  ),
-                ),
-            ],
             if (_error != null) _ErrorText(_error!),
             const SizedBox(height: 14),
             FilledButton(
-              onPressed: _busy ? null : (_otpSent ? _verifyOtp : _sendOtp),
-              child: Text(_otpSent ? 'सत्यापित करें' : 'OTP भेजें'),
+              onPressed: _busy
+                  ? null
+                  : () {
+                      if (_phone.length < 10) {
+                        setState(() => _error = widget.state.tr('invalidPhone'));
+                        return;
+                      }
+                      _showMpinStep();
+                    },
+              child: Text(widget.state.tr('continue')),
             ),
-          ] else ...[
-            const Text(
-              'MPIN दर्ज करें',
+          ] else if (_step == 'mpin') ...[
+            Text(
+              widget.state.tr('enterMpin'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '+91 $_phone',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
             ),
             const SizedBox(height: 12),
             MpinPad(
               controller: _mpinController,
-              errorText: _wrongMpin ? 'गलत MPIN' : null,
+              errorText: _wrongMpin ? widget.state.tr('wrongMpin') : null,
               onChanged: (_) => setState(() => _wrongMpin = false),
             ),
+            if (_error != null) _ErrorText(_error!),
             const SizedBox(height: 14),
             FilledButton(
-              onPressed: _busy ? null : _submitMpin,
-              child: const Text('लॉगिन करें'),
+              onPressed: _busy ? null : _submitPhoneMpin,
+              child: Text(widget.state.tr('login')),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: _busy ? null : _openForgotMpin,
+                  child: Text(widget.state.tr('forgotMpin')),
+                ),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _step = 'phone';
+                            _error = null;
+                            _wrongMpin = false;
+                          }),
+                  child: Text(widget.state.tr('changeNumber')),
+                ),
+              ],
+            ),
+          ] else if (_step == 'otp') ...[
+            if (_notice != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text(
+                  _notice!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                ),
+              ),
+            Text(
+              '+91 $_phone',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 10),
+            LabeledTextField(
+              controller: _otpController,
+              label: widget.state.tr('otp'),
+              keyboardType: TextInputType.number,
+            ),
+            if (_otpCountdown > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${widget.state.tr('resendIn')} $_otpCountdown s',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+              ),
+            if (_error != null) _ErrorText(_error!),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: _busy ? null : _verifyOtp,
+              child: Text(widget.state.tr('verifyOtp')),
             ),
             TextButton(
-              onPressed: _busy ? null : _openForgotMpin,
-              child: const Text('MPIN भूल गए?'),
+              onPressed: _busy
+                  ? null
+                  : () => setState(() {
+                        _step = 'phone';
+                        _error = null;
+                        _notice = null;
+                      }),
+              child: Text(widget.state.tr('changeNumber')),
+            ),
+          ] else ...[
+            Text(
+              widget.state.tr('setMpinTitle'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 12),
+            MpinPad(
+              controller: _mpinController,
+              onChanged: (_) {},
+            ),
+            if (_error != null) _ErrorText(_error!),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: _busy ? null : _submitSetMpin,
+              child: Text(widget.state.tr('setMpinAndLogin')),
             ),
           ],
         ],

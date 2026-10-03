@@ -2,16 +2,20 @@
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
 import '../common/motion_animations.dart';
 
 class KisanMitraFab extends StatefulWidget {
   final VoidCallback onTap;
   final bool isWomenMode;
+  final AppState? state;
 
   const KisanMitraFab({
     super.key,
     required this.onTap,
     this.isWomenMode = false,
+    this.state,
   });
 
   @override
@@ -28,6 +32,9 @@ class _KisanMitraFabState extends State<KisanMitraFab> with TickerProviderStateM
   late Animation<double> _popupOpacity;
 
   bool _isPopupOpen = false;
+
+  String _tr(String key) =>
+      widget.state?.tr(key) ?? AppTranslations.get(key, 'hi');
 
   @override
   void initState() {
@@ -168,7 +175,7 @@ class _KisanMitraFabState extends State<KisanMitraFab> with TickerProviderStateM
                                       ),
                                     ),
                                     Text(
-                                      "किसान मित्र AI • 24x7 Assistant",
+                                      _tr('navigation.kisanMitraTag'),
                                       style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Colors.green.shade800),
                                     ),
                                   ],
@@ -188,7 +195,7 @@ class _KisanMitraFabState extends State<KisanMitraFab> with TickerProviderStateM
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            "नमस्ते! फसल, मौसम, मंडी भाव या कीट सलाह हेतु तुरंत बात करें।",
+                            _tr('navigation.kisanMitraGreeting'),
                             style: TextStyle(fontSize: 11, color: Colors.grey.shade700, height: 1.3),
                           ),
                           const SizedBox(height: 10),
@@ -204,12 +211,12 @@ class _KisanMitraFabState extends State<KisanMitraFab> with TickerProviderStateM
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 elevation: 2,
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.chat_bubble_outline_rounded, size: 14),
-                                  SizedBox(width: 6),
-                                  Text("चैट शुरू करें (Open AI) ➔", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+                                  const Icon(Icons.chat_bubble_outline_rounded, size: 14),
+                                  const SizedBox(width: 6),
+                                  Text(_tr('navigation.startChat'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
                                 ],
                               ),
                             ),

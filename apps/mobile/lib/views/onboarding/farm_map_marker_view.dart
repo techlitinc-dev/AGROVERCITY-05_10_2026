@@ -1,8 +1,25 @@
 // Step 4: Interactive Farm Geofencing & Map Marker View
+//
+// Two modes:
+//  * Real map — web builds with a GOOGLE_MAPS_API_KEY (--dart-define). Tap
+//    the map to drop boundary pins; area and boundary length are computed
+//    live and confirmed to the backend with real coordinates. Confirm stays
+//    disabled until at least 3 pins form a real boundary.
+//  * Fallback — no key or non-web platform: live mapping is unavailable, so
+//    confirm is blocked with an honest explanation. No fabricated boundary
+//    ever leaves this screen.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 import '../../api/api_exception.dart';
+import '../../core/geofence_math.dart';
+import '../../core/google_maps_key.dart';
+import '../../core/google_maps_loader.dart';
 import '../../state/app_state.dart';
+import 'onboarding_progress.dart';
 
 class FarmMapMarkerView extends StatefulWidget {
   final AppState state;
@@ -13,38 +30,102 @@ class FarmMapMarkerView extends StatefulWidget {
 }
 
 class _FarmMapMarkerViewState extends State<FarmMapMarkerView> {
-  double _calculatedAcres = 3.48;
   bool _showMoistureLayer = true;
 
-  final List<Map<String, dynamic>> _pins = [
-    {"title": "उत्तर-पश्चिम मेड़ (Pin 1)", "coords": "20.1742° N, 73.9851° E", "x": 60.0, "y": 50.0},
-    {"title": "उत्तर-पूर्व कुआं (Pin 2)", "coords": "20.1760° N, 73.9875° E", "x": 240.0, "y": 35.0},
-    {"title": "दक्षिण-पूर्व बोरवेल (Pin 3)", "coords": "20.1735° N, 73.9890° E", "x": 260.0, "y": 170.0},
-    {"title": "दक्षिण-पश्चिम सड़क (Pin 4)", "coords": "20.1718° N, 73.9862° E", "x": 50.0, "y": 155.0},
-  ];
-
-  void _addPin() {
-    setState(() {
-      _calculatedAcres = 3.48;
-    });
-    widget.state.showToast("GPS द्वारा खेत के 4 कोने (मेड़) चिन्हित किए गए!");
-  }
+  // Real-map state.
+  final List<GeoPoint> _pins = [];
+  bool _useRealMap = false;
+  bool _mapReady = false;
+  bool _locating = false;
+  GoogleMapController? _mapController;
+  // Neutral viewport centre until GPS fixes the real location.
+  GeoPoint _center = const GeoPoint(20.5937, 78.9629);
 
   bool _confirming = false;
 
+  double get _areaAcres => _pins.length >= 3 ? polygonAreaAcres(_pins) : 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _useRealMap = kIsWeb && hasGoogleMapsApiKey;
+    if (_useRealMap) _initRealMap();
+  }
+
+  Future<void> _initRealMap() async {
+    final loaded = await ensureGoogleMapsLoaded(kGoogleMapsApiKey);
+    if (!mounted) return;
+    if (loaded) {
+      setState(() => _mapReady = true);
+      _locateFarm();
+    } else {
+      setState(() => _useRealMap = false);
+      widget.state.showToast(widget.state.tr('mapLoadError'));
+    }
+  }
+
+  Future<void> _locateFarm() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return; // Keep the default centre.
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _center = GeoPoint(pos.latitude, pos.longitude));
+      await _mapController?.animateCamera(
+        CameraUpdate.newLatLng(LatLng(pos.latitude, pos.longitude)),
+      );
+    } catch (_) {
+      // Location unavailable — the user can still drop pins manually.
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _addPin(LatLng pos) {
+    setState(() => _pins.add(GeoPoint(pos.latitude, pos.longitude)));
+  }
+
+  void _removePin(int index) {
+    setState(() => _pins.removeAt(index));
+  }
+
+  void _undoPin() {
+    if (_pins.isNotEmpty) setState(() => _pins.removeLast());
+  }
+
+  void _clearPins() => setState(() => _pins.clear());
+
+  List<Map<String, double>> get _pinsJson =>
+      _pins.map((p) => p.toJson()).toList();
+
   Future<void> _handleConfirm() async {
+    // Only a user-marked boundary may be confirmed — never a synthetic one.
+    if (_pins.length < 3) {
+      widget.state.showToast(widget.state.tr('minPinsToast'));
+      return;
+    }
+    await _confirmToBackend(_pinsJson, _areaAcres);
+  }
+
+  Future<void> _confirmToBackend(
+      List<Map<String, double>> points, double acres) async {
     if (_confirming) return;
     setState(() => _confirming = true);
     try {
-      await widget.state.confirmFarmMap(
-        [
-          {"lat": 20.1742, "lng": 73.9851},
-          {"lat": 20.1760, "lng": 73.9875},
-          {"lat": 20.1735, "lng": 73.9890},
-          {"lat": 20.1718, "lng": 73.9862},
-        ],
-        _calculatedAcres,
-      );
+      await widget.state.confirmFarmMap(points, acres);
     } on ApiException catch (e) {
       widget.state.showToast(e.message.isEmpty ? e.code : e.message);
     } finally {
@@ -59,240 +140,367 @@ class _FarmMapMarkerViewState extends State<FarmMapMarkerView> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header Step
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1B4332),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      "चरण 3 / 3 (Step 3 of 3)",
-                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _addPin,
-                    icon: const Icon(Icons.my_location_rounded, size: 16, color: Color(0xFF1B4332)),
-                    label: const Text("GPS द्वारा खोजें", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF1B4332))),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              const Text(
-                "खेत का डिजिटल सीमांकन (Farm Geofencing)",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF112A1F)),
-              ),
-              const Text(
-                "सैटेलाइट मैप पर अपने खेत के कोनों (मेड़) को पिन करें",
-                style: TextStyle(fontSize: 12.5, color: Colors.black54),
-              ),
-              const SizedBox(height: 14),
-
-              // Interactive Satellite Map Canvas Simulator
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1F2937),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: const Color(0xFF52B788), width: 2.0),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 18, offset: const Offset(0, 6)),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
-                    child: Stack(
-                      children: [
-                        // Map Background Grid (Satellite Simulation)
-                        Positioned.fill(
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF264653), Color(0xFF2A9D8F), Color(0xFF1B4332)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                            child: CustomPaint(
-                              painter: _FieldPolygonPainter(
-                                pins: _pins,
-                                showMoisture: _showMoistureLayer,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Interactive Pins
-                        ..._pins.map((pin) {
-                          return Positioned(
-                            left: pin['x'] as double,
-                            top: pin['y'] as double,
-                            child: Column(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black87,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    pin['title'].toString().split(' ')[0],
-                                    style: const TextStyle(color: Color(0xFFE9C46A), fontSize: 9.5, fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                                const Icon(Icons.location_on_rounded, color: Color(0xFFEF4444), size: 28),
-                              ],
-                            ),
-                          );
-                        }),
-
-                        // Map Layer Controls Overlay
-                        Positioned(
-                          top: 12,
-                          right: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 6)],
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.water_drop_rounded, size: 14, color: Color(0xFF0284C7)),
-                                const SizedBox(width: 4),
-                                const Text("नमी लेयर", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                                Switch(
-                                  value: _showMoistureLayer,
-                                  onChanged: (v) => setState(() => _showMoistureLayer = v),
-                                  activeThumbColor: const Color(0xFF0284C7),
-                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        // Map Footer Stats Card
-                        Positioned(
-                          bottom: 12,
-                          left: 12,
-                          right: 12,
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.94),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFF52B788)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text("सटीक रकबा (Calculated):", style: TextStyle(fontSize: 10.5, color: Colors.grey)),
-                                    Text(
-                                      "$_calculatedAcres एकड़ (1.41 Ha)",
-                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Color(0xFF1B4332)),
-                                    ),
-                                  ],
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFD8F3DC),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text("मृदा: मध्यम काली", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF166534))),
-                                      Text("खसरा नं: 142/2-A", style: TextStyle(fontSize: 10, color: Color(0xFF14532D))),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Confirm CTA -> Dashboard
-              ElevatedButton(
-                onPressed: _confirming ? null : _handleConfirm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1B4332),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 54),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 4,
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.dashboard_rounded, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      "खेत की पुष्टि करें व डैशबोर्ड खोलें →",
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          child: _useRealMap ? _buildRealMapView() : _buildFallbackView(),
         ),
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Real Google Maps geofencing
+  // ---------------------------------------------------------------------------
+  Widget _buildRealMapView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OnboardingFlowProgress(state: widget.state, currentStep: 4),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                widget.state.tr('farmGeofencingTitle'),
+                style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF112A1F)),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _locating ? null : _locateFarm,
+              icon: _locating
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location_rounded,
+                      size: 16, color: Color(0xFF1B4332)),
+              label: Text(widget.state.tr('findByGps'),
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1B4332))),
+            ),
+          ],
+        ),
+        Text(
+          widget.state.tr('geofenceRealHint'),
+          style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: _mapReady
+                ? GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(_center.lat, _center.lng),
+                      zoom: 17,
+                    ),
+                    onMapCreated: (c) => _mapController = c,
+                    onTap: _addPin,
+                    markers: {
+                      for (var i = 0; i < _pins.length; i++)
+                        Marker(
+                          markerId: MarkerId('pin_$i'),
+                          position:
+                              LatLng(_pins[i].lat, _pins[i].lng),
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                            BitmapDescriptor.hueGreen,
+                          ),
+                          onTap: () => _removePin(i),
+                          infoWindow: InfoWindow(
+                            title:
+                                '${widget.state.tr('pinsLabel')} ${i + 1}',
+                          ),
+                        ),
+                    },
+                    polygons: {
+                      if (_pins.length >= 3)
+                        Polygon(
+                          polygonId: const PolygonId('farm_boundary'),
+                          points: [
+                            for (final p in _pins)
+                              LatLng(p.lat, p.lng),
+                          ],
+                          fillColor:
+                              const Color(0xFF43A047).withValues(alpha: 0.18),
+                          strokeColor: const Color(0xFF2E7D32),
+                          strokeWidth: 2,
+                        ),
+                    },
+                    mapToolbarEnabled: false,
+                    myLocationButtonEnabled: false,
+                    zoomControlsEnabled: false,
+                  )
+                : const Center(child: CircularProgressIndicator()),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildMapStatsCard(),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: _pins.isEmpty ? null : _undoPin,
+              icon: const Icon(Icons.undo_rounded, size: 16),
+              label: Text(widget.state.tr('undoPin')),
+            ),
+            TextButton.icon(
+              onPressed: _pins.isEmpty ? null : _clearPins,
+              icon: const Icon(Icons.delete_outline_rounded, size: 16),
+              label: Text(widget.state.tr('clearPins')),
+            ),
+          ],
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _confirming || _pins.length < 3
+                ? null
+                : _handleConfirm,
+            icon: _confirming
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: Text(widget.state.tr('confirmFarmAndOpen')),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMapStatsCard() {
+    final area = _areaAcres;
+    final perimeter = _pins.length >= 2 ? polygonPerimeterM(_pins) : 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFDCE5DC)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _stat(
+              widget.state.tr('calculatedAcresLabel'),
+              _pins.length < 3
+                  ? '—'
+                  : '${area.toStringAsFixed(2)} ${widget.state.tr('acresUnit')}'),
+          _stat(widget.state.tr('boundaryLabel'),
+              _pins.length < 2 ? '—' : '${perimeter.round()} m'),
+          _stat(widget.state.tr('pinsLabel'), '${_pins.length}'),
+        ],
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 10.5, color: Colors.black54)),
+        Text(value,
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF1B4332))),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fallback (no API key / non-web): no live map, so no boundary can be marked
+  // and confirm stays blocked — nothing synthetic is sent to the backend.
+  // ---------------------------------------------------------------------------
+  Widget _buildFallbackView() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Overall journey progress (Step 4 of 4: Farm Map)
+        OnboardingFlowProgress(state: widget.state, currentStep: 4),
+        const SizedBox(height: 8),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () =>
+                  widget.state.showToast(widget.state.tr('map.fallbackUnavailable')),
+              icon: const Icon(Icons.my_location_rounded,
+                  size: 16, color: Color(0xFF1B4332)),
+              label: Text(widget.state.tr('findByGps'),
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1B4332))),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        Text(
+          widget.state.tr('farmGeofencingTitle'),
+          style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF112A1F)),
+        ),
+        Text(
+          widget.state.tr('farmGeofencingSub'),
+          style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+        ),
+        const SizedBox(height: 14),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1B4332), Color(0xFF2D6A4F), Color(0xFF40916C)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF1B4332).withValues(alpha: 0.3),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Stack(
+                children: [
+                  // Grid lines for map-like feel
+                  CustomPaint(
+                    size: Size.infinite,
+                    painter: _GridPainter(),
+                  ),
+                  if (_showMoistureLayer)
+                    Positioned(
+                      left: 30,
+                      top: 40,
+                      child: Container(
+                        width: 150,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              const Color(0xFF74C69D).withValues(alpha: 0.5),
+                              const Color(0xFF74C69D).withValues(alpha: 0.0),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  // Honest blocked state — no sample pins or polygon.
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.map_rounded,
+                              color: Colors.white54, size: 44),
+                          const SizedBox(height: 10),
+                          Text(
+                            widget.state.tr('map.fallbackUnavailable'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                height: 1.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        // Area readout — nothing computed until a real boundary exists.
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              widget.state.tr('calculatedAcresLabel'),
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF112A1F)),
+            ),
+            const Text(
+              '—',
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF2E7D32)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Switch(
+                  value: _showMoistureLayer,
+                  activeThumbColor: const Color(0xFF2E7D32),
+                  onChanged: (v) => setState(() => _showMoistureLayer = v),
+                ),
+                Text(widget.state.tr('moistureLayer'),
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade400,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+            ),
+            icon: const Icon(Icons.check_circle_outline),
+            label: Text(widget.state.tr('confirmFarmAndOpen'),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _FieldPolygonPainter extends CustomPainter {
-  final List<Map<String, dynamic>> pins;
-  final bool showMoisture;
-
-  _FieldPolygonPainter({required this.pins, required this.showMoisture});
-
+class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    if (pins.length < 4) return;
-
-    final path = Path();
-    path.moveTo((pins[0]['x'] as double) + 14, (pins[0]['y'] as double) + 24);
-    path.lineTo((pins[1]['x'] as double) + 14, (pins[1]['y'] as double) + 24);
-    path.lineTo((pins[2]['x'] as double) + 14, (pins[2]['y'] as double) + 24);
-    path.lineTo((pins[3]['x'] as double) + 14, (pins[3]['y'] as double) + 24);
-    path.close();
-
-    // Fill Field
-    final fillPaint = Paint()
-      ..color = showMoisture ? const Color(0xFF52B788).withValues(alpha: 0.35) : const Color(0xFFE9C46A).withValues(alpha: 0.3)
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(path, fillPaint);
-
-    // Border
-    final borderPaint = Paint()
-      ..color = const Color(0xFFE9C46A)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
-    canvas.drawPath(path, borderPaint);
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..strokeWidth = 1;
+    for (double x = 0; x < size.width; x += 28) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += 28) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

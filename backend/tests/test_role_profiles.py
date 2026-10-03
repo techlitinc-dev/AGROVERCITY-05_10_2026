@@ -27,14 +27,16 @@ async def test_register_seller_variant_optionals(client):
 
 
 async def test_register_variant_missing_required(client):
+    # Transport fields are all optional now (rcNumber defaults to "") — use
+    # seller, whose shopName is still a required field.
     resp = await _register(
         client,
-        profiles=["farmer", "transport"],
-        roleProfiles={"transport": {"vehicleType": "Tata Ace"}},
+        profiles=["farmer", "seller"],
+        roleProfiles={"seller": {}},
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INVALID_ROLE_PROFILE"
-    assert "transport" in resp.json()["error"]["fieldErrors"]
+    assert "seller" in resp.json()["error"]["fieldErrors"]
 
 
 async def test_register_roleprofile_not_in_profiles(client):
@@ -63,3 +65,29 @@ async def test_register_landlord_and_broker_variants(client):
     role_profiles = me.json()["roleProfiles"]
     assert role_profiles["farmLandlord"]["totalLandAcres"] == 12.5
     assert role_profiles["broker"]["marketsServed"] == ["Nashik", "Lasalgaon"]
+
+
+async def test_register_equipment_rental_variant(client):
+    resp = await _register(
+        client,
+        profiles=["farmer", "equipmentRental"],
+        roleProfiles={"equipmentRental": {"machineType": "Thresher", "machineCount": 3}},
+    )
+    assert resp.status_code == 200
+    token = resp.json()["accessToken"]
+    me = await client.get("/v1/users/me", headers=_auth(token))
+    assert me.json()["roleProfiles"]["equipmentRental"]["machineType"] == "Thresher"
+    assert me.json()["roleProfiles"]["equipmentRental"]["machineCount"] == 3
+
+
+async def test_register_equipment_rental_defaults(client):
+    resp = await _register(
+        client,
+        profiles=["equipmentRental"],
+        primaryProfile="equipmentRental",
+        roleProfiles={"equipmentRental": {"machineType": "Tractor"}},
+    )
+    assert resp.status_code == 200
+    token = resp.json()["accessToken"]
+    me = await client.get("/v1/users/me", headers=_auth(token))
+    assert me.json()["roleProfiles"]["equipmentRental"]["machineCount"] == 1

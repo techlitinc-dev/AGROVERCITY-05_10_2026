@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../state/app_state.dart';
 import '../../models/user_profile_type.dart';
 import '../../components/common/motion_animations.dart';
+import 'onboarding_progress.dart';
 
 class ProfileSelectView extends StatefulWidget {
   final AppState state;
@@ -35,7 +36,7 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
             _primaryProfile = _selectedProfiles.first;
           }
         } else {
-          widget.state.showToast("कम से कम एक प्रोफाइल का चयन आवश्यक है");
+          widget.state.showToast(widget.state.tr('atLeastOneProfile'));
         }
       } else {
         _selectedProfiles.add(type);
@@ -50,12 +51,12 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
       }
       _primaryProfile = type;
     });
-    widget.state.showToast("⭐ मुख्य प्रोफाइल: ${UserProfileRegistry.meta(type).labelHi}");
+    widget.state.showToast("⭐ ${UserProfileRegistry.meta(type).label(widget.state.language)}");
   }
 
   void _handleContinue() {
     if (_selectedProfiles.isEmpty) {
-      widget.state.showToast("कृपया कम से कम एक प्रोफाइल चुनें");
+      widget.state.showToast(widget.state.tr('atLeastOneProfile'));
       return;
     }
     widget.state.selectMultipleProfilesDuringRegistration(
@@ -77,21 +78,14 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Progress Row
+              // Overall journey progress (Step 2 of 4: Profiles)
+              OnboardingFlowProgress(state: widget.state, currentStep: 2),
+              const SizedBox(height: 8),
+
+              // Selection count pill
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2E7D32),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      "Step 2 of 4 • Multi-Role Setup",
-                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                  ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
@@ -110,7 +104,7 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                         Icon(Icons.layers_rounded, size: 14, color: primaryMeta.primaryColor),
                         const SizedBox(width: 4),
                         Text(
-                          "${_selectedProfiles.length} प्रोफाइल चुनी गईं",
+                          "${_selectedProfiles.length} ${widget.state.tr('profilesSelected')}",
                           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: primaryMeta.primaryColor),
                         ),
                       ],
@@ -121,9 +115,9 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
               const SizedBox(height: 12),
 
               // Title & Multi-Role Instruction
-              const Text(
-                "अपनी भूमिकाएं चुनें (Multi-Role)",
-                style: TextStyle(
+              Text(
+                widget.state.tr('selectRolesTitle'),
+                style: const TextStyle(
                   fontSize: 21,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF112A1F),
@@ -132,7 +126,7 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
               ),
               const SizedBox(height: 3),
               Text(
-                "एक से अधिक भूमिका चुन सकते हैं (जैसे किसान + व्यापारी)। मुख्य प्रोफाइल पर ⭐ टैप करें:",
+                widget.state.tr('selectRolesSub'),
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.3),
               ),
               const SizedBox(height: 12),
@@ -168,9 +162,9 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                         text: TextSpan(
                           style: const TextStyle(fontSize: 11.5, color: Color(0xFF1E293B)),
                           children: [
-                            const TextSpan(text: "मुख्य भूमिका: ", style: TextStyle(color: Colors.grey)),
+                            TextSpan(text: widget.state.tr('primaryRoleLabel'), style: const TextStyle(color: Colors.grey)),
                             TextSpan(
-                              text: "${primaryMeta.labelHi} (${primaryMeta.labelEn})",
+                              text: "${primaryMeta.label(widget.state.language)} (${primaryMeta.labelEn})",
                               style: TextStyle(fontWeight: FontWeight.w900, color: primaryMeta.primaryColor),
                             ),
                           ],
@@ -183,9 +177,9 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                         color: const Color(0xFFFEF3C7),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        "Primary ⭐",
-                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFFB45309)),
+                      child: Text(
+                        widget.state.tr('onboarding.primaryBadge'),
+                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFFB45309)),
                       ),
                     ),
                   ],
@@ -276,7 +270,11 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                                             ),
                                             const SizedBox(width: 2),
                                             Text(
-                                              isPrimary ? "मुख्य" : "जुड़ा",
+                                              isPrimary
+                                                  ? widget.state
+                                                      .tr('onboarding.primary')
+                                                  : widget.state
+                                                      .tr('onboarding.linked'),
                                               style: const TextStyle(
                                                 fontSize: 9,
                                                 color: Colors.white,
@@ -300,9 +298,9 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                               ),
                               const Spacer(),
 
-                              // Hindi Title
+                              // Localized Persona Title
                               Text(
-                                meta.labelHi,
+                                meta.label(widget.state.language),
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w900,
@@ -321,9 +319,9 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                               ),
                               const SizedBox(height: 4),
 
-                              // Hindi Tagline
+                              // Localized Tagline
                               Text(
-                                meta.taglineHi,
+                                meta.tagline(widget.state.language),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -358,7 +356,9 @@ class _ProfileSelectViewState extends State<ProfileSelectView> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      "आगे बढ़ें (${_selectedProfiles.length} प्रोफाइल के साथ) ➔",
+                      widget.state
+                          .tr('onboarding.continueWithProfiles')
+                          .replaceAll('{count}', '${_selectedProfiles.length}'),
                       style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, letterSpacing: 0.2),
                     ),
                   ],

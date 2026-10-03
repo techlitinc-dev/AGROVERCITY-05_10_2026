@@ -65,7 +65,7 @@ class _FpoEngineViewState extends State<FpoEngineView> {
   Future<void> _joinPool(Map<String, dynamic> pool) async {
     final units = await showDialog<int>(
       context: context,
-      builder: (_) => JoinPoolDialog(item: "${pool['item']}"),
+      builder: (_) => JoinPoolDialog(item: "${pool['item']}", state: widget.state),
     );
     if (units == null) return;
     try {
@@ -75,7 +75,7 @@ class _FpoEngineViewState extends State<FpoEngineView> {
         final idx = _pools.indexWhere((p) => p['id'] == pool['id']);
         if (idx >= 0) _pools[idx] = updated;
       });
-      _snack("पूल में $units यूनिट जोड़ी गईं!");
+      _snack(widget.state.tr('fpo.unitsAdded').replaceAll('{units}', '$units'));
     } on ApiException catch (e) {
       _snack(e.message.isNotEmpty ? e.message : e.code);
       if (e.code == 'POOL_FULL') _load();
@@ -95,17 +95,21 @@ class _FpoEngineViewState extends State<FpoEngineView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("एफपीओ विकास इंजन (FPO Hub)", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                  Text("सामूहिक खरीद • साझा यंत्र • एफपीओ एनालिटिक्स", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(widget.state.tr('fpo.headerTitle'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  Text(widget.state.tr('fpo.headerSubtitle'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
               ),
               AudioButton(
                 text: _pools.isEmpty
-                    ? "एफपीओ सामूहिक खरीद व साझा यंत्र।"
-                    : "${fpo?['name'] ?? 'एफपीओ'} में ${_pools.first['item']} के सामूहिक आर्डर पर ${_pools.first['discountPercent']} प्रतिशत की छूट उपलब्ध है।",
+                    ? widget.state.tr('fpo.audioEmpty')
+                    : widget.state
+                        .tr('fpo.audioDiscount')
+                        .replaceAll('{name}', "${fpo?['name'] ?? 'FPO'}")
+                        .replaceAll('{item}', "${_pools.first['item']}")
+                        .replaceAll('{discount}', "${_pools.first['discountPercent']}"),
               ),
             ],
           ),
@@ -128,7 +132,7 @@ class _FpoEngineViewState extends State<FpoEngineView> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "सदस्य: ${fpo?['memberCount'] ?? '...'} किसान • ${fpo?['district'] ?? ''}",
+                  "${widget.state.tr('fpo.members')}: ${fpo?['memberCount'] ?? '...'} ${widget.state.tr('fpo.farmers')} • ${fpo?['district'] ?? ''}",
                   style: const TextStyle(color: Color(0xFFD8F3DC), fontSize: 12),
                 ),
               ],
@@ -141,8 +145,8 @@ class _FpoEngineViewState extends State<FpoEngineView> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _pools.isEmpty
-                    ? const Text("कोई सक्रिय पूल नहीं", style: TextStyle(fontSize: 12, color: Colors.grey))
-                    : PoolCard(pool: _pools.first, onJoin: () => _joinPool(_pools.first)),
+                    ? Text(widget.state.tr('fpo.noActivePools'), style: const TextStyle(fontSize: 12, color: Colors.grey))
+                    : PoolCard(pool: _pools.first, onJoin: () => _joinPool(_pools.first), state: widget.state),
           ),
           const SizedBox(height: 14),
 
@@ -151,9 +155,9 @@ class _FpoEngineViewState extends State<FpoEngineView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("🚜 FPO साझा मशीनरी कैलेंडर", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(widget.state.tr('fpo.machineryCalendar'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                MachineryCalendar(machines: _machinery),
+                MachineryCalendar(machines: _machinery, state: widget.state),
               ],
             ),
           ),

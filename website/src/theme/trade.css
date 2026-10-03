@@ -1,0 +1,683 @@
+/* Trade module styles — marketplace (farmer ↔ vyapari) pages.
+   Reuses tokens.css custom properties; classes are trade-* prefixed. */
+
+.trade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.trade-card {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--av-font);
+  width: 100%;
+  transition: transform 0.12s ease;
+}
+.trade-card:active {
+  transform: scale(0.99);
+}
+.trade-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.trade-card-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+.trade-card-sub {
+  font-size: 13px;
+  color: var(--av-slate-1);
+}
+.trade-card-amount {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  white-space: nowrap;
+}
+.trade-card-photos {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.trade-card-photos img {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--av-border-grey-soft);
+}
+
+.trade-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--av-radius-pill);
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.trade-empty {
+  text-align: center;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.trade-empty-icon {
+  font-size: 44px;
+}
+.trade-empty-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+.trade-empty-body {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  max-width: 320px;
+}
+.trade-empty-action {
+  margin-top: 10px;
+  width: 100%;
+  max-width: 280px;
+}
+
+/* Timeline (booking dashboard) */
+.trade-timeline {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+.trade-timeline-item {
+  display: flex;
+  gap: 12px;
+  position: relative;
+  padding-bottom: 18px;
+}
+.trade-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 32px;
+  bottom: 0;
+  width: 2px;
+  background: var(--av-border-grey);
+}
+.trade-timeline-item:last-child::before {
+  display: none;
+}
+.trade-timeline-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--av-accent-tint);
+  border: 1.5px solid var(--av-border-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.trade-timeline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+}
+.trade-timeline-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+.trade-timeline-note {
+  font-size: 12px;
+  color: var(--av-slate-1);
+}
+.trade-timeline-time {
+  font-size: 11px;
+  color: var(--av-slate-2);
+}
+
+/* Stepper */
+.trade-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 1.5px solid var(--av-border-grey);
+  border-radius: var(--av-radius-input);
+  background: #fff;
+  padding: 4px;
+}
+.trade-stepper-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: var(--av-accent-tint);
+  color: var(--av-green-deep);
+  font-size: 22px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trade-stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.trade-stepper-value {
+  min-width: 76px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--av-title);
+}
+.trade-stepper-value small {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+/* Photo uploader */
+.trade-photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.trade-photo-thumb {
+  position: relative;
+  width: 84px;
+  height: 84px;
+}
+.trade-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1.5px solid var(--av-border-grey-soft);
+}
+.trade-photo-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: var(--av-error);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trade-photo-add {
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--av-border-green);
+  background: var(--av-accent-tint);
+  color: var(--av-green-dark);
+  font-family: var(--av-font);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.trade-photo-add:disabled {
+  opacity: 0.6;
+}
+.trade-field {
+  margin-bottom: 16px;
+}
+
+/* Mandi benchmark card */
+.trade-benchmark {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.trade-benchmark-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--av-title);
+  margin-bottom: 6px;
+}
+.trade-benchmark-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--av-slate-4);
+  padding: 2px 0;
+}
+.trade-benchmark-value {
+  font-weight: 800;
+  color: var(--av-green-dark);
+}
+.trade-benchmark-good {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-success);
+}
+.trade-benchmark-warn {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-gold-text);
+}
+
+/* Detail blocks & action rows */
+.trade-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+.trade-detail-item {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.trade-detail-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.trade-detail-value {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--av-title);
+  margin-top: 2px;
+}
+.trade-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+.trade-actions-row {
+  display: flex;
+  gap: 10px;
+}
+.trade-actions-row .av-btn {
+  flex: 1;
+}
+.trade-section-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--av-title);
+  margin: 18px 0 8px;
+}
+.trade-hint {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  margin-top: 6px;
+}
+.trade-counter-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trade-counter-hint {
+  font-size: 12px;
+  color: var(--av-slate-1);
+  margin: -8px 0 4px;
+}
+
+/* Filter chips row (discovery / inbox) */
+.trade-filter-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  margin-top: 8px;
+}
+.trade-filter-row .av-chip {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Stat cards (seller suite) */
+.trade-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.trade-stat {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  padding: 12px 14px;
+}
+.trade-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.trade-stat-value {
+  font-size: 19px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  margin-top: 4px;
+}
+
+/* Notifications */
+.trade-notif {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.trade-notif-unread {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--av-primary);
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.trade-notif-read {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.trade-notif-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+.trade-notif-body {
+  font-size: 13px;
+  color: var(--av-slate-1);
+  margin-top: 2px;
+}
+.trade-notif-time {
+  font-size: 11px;
+  color: var(--av-slate-2);
+  margin-top: 4px;
+}
+.trade-notif-badge {
+  font-size: 16px;
+  line-height: 1;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.trade-notif-open {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* Bell button in the menubar tray */
+.dash-bell {
+  position: relative;
+}
+.dash-bell-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--av-error);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* Invoice / settlement summary */
+.trade-invoice-box {
+  background: var(--av-accent-tint);
+  border: 1.5px solid var(--av-border-green);
+  border-radius: var(--av-radius-card);
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+.trade-invoice-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--av-slate-4);
+  padding: 2px 0;
+}
+.trade-invoice-total {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--av-green-deep);
+  border-top: 1px dashed var(--av-border-green);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+/* Analytics v2 — status funnel bars */
+.trade-bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.trade-bar-track {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--av-border-grey-soft);
+  overflow: hidden;
+}
+.trade-bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--av-primary), var(--av-green-dark));
+}
+.trade-bar-count {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--av-title);
+  text-align: right;
+}
+
+/* Analytics v2 — 12-month column chart */
+.trade-chart {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  padding: 14px 12px 8px;
+  min-height: 170px;
+}
+.trade-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.trade-chart-bar-wrap {
+  height: 96px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.trade-chart-bar {
+  width: 100%;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, var(--av-primary), var(--av-green-dark));
+  min-height: 2px;
+}
+.trade-chart-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  white-space: nowrap;
+}
+.trade-chart-value {
+  font-size: 9px;
+  color: var(--av-slate-2);
+  white-space: nowrap;
+}
+
+/* Benchmark deltas */
+.trade-delta-up {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--av-error);
+}
+.trade-delta-down {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--av-success);
+}
+
+/* Booking-gated chat room (spec §4) */
+.chat-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.chat-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60dvh;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.chat-bubble {
+  max-width: 78%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: fit-content;
+}
+.chat-bubble.mine {
+  align-self: flex-end;
+  background: var(--av-primary);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.chat-bubble.theirs {
+  align-self: flex-start;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  color: var(--av-title);
+  border-bottom-left-radius: 4px;
+}
+.chat-bubble.mine .chat-meta {
+  color: rgba(255, 255, 255, 0.82);
+}
+.chat-meta {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-2);
+}
+.chat-img {
+  max-width: 220px;
+  width: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+}
+.chat-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  background: var(--av-bg, transparent);
+}
+.chat-composer .av-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Cashbook — paired income/expense bars (views/diary/CashbookPage) */
+.cb-chart {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: flex-end;
+  min-height: 160px;
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 12px 8px;
+}
+.cb-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cb-bars {
+  height: 90px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2px;
+  width: 100%;
+}
+.cb-bar-in {
+  flex: 1;
+  background: var(--av-primary);
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+}
+.cb-bar-out {
+  flex: 1;
+  background: var(--av-error);
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+}
+.cb-month {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  white-space: nowrap;
+}

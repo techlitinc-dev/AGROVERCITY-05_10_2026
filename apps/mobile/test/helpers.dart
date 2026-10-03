@@ -12,28 +12,36 @@ import 'package:kisan_setu/api/contracts_api.dart';
 import 'package:kisan_setu/api/lots_api.dart';
 import 'package:kisan_setu/api/mandi_api.dart';
 import 'package:kisan_setu/api/marketplace_api.dart';
+import 'package:kisan_setu/api/my_products_api.dart';
 import 'package:kisan_setu/api/orders_api.dart';
 import 'package:kisan_setu/api/transport_api.dart';
 import 'package:kisan_setu/api/user_api.dart';
 import 'package:kisan_setu/core/phone_auth.dart';
 import 'package:kisan_setu/core/photo_upload.dart';
+import 'package:kisan_setu/models/emarket_models.dart';
 import 'package:kisan_setu/models/user_profile_type.dart';
 import 'package:kisan_setu/state/app_state.dart';
 
 class TestAppState extends AppState {
   TestAppState({
     this.linked = const [UserProfileType.farmer],
+    this.active = UserProfileType.farmer,
     this.user,
+    super.initialLanguage = 'hi',
     super.authApi,
     super.userApi,
     super.marketplaceApi,
   });
 
   final List<UserProfileType> linked;
+  final UserProfileType active;
   final Map<String, dynamic>? user;
 
   @override
   List<UserProfileType> get linkedProfiles => linked;
+
+  @override
+  UserProfileType get activeProfile => active;
 
   @override
   Map<String, dynamic>? get currentUser => user ?? super.currentUser;
@@ -174,6 +182,8 @@ class FakeAuthApi extends AuthApi {
     required String primaryProfile,
     String? referralCode,
     Map<String, Map<String, dynamic>>? roleProfiles,
+    String? language,
+    String? preferredLanguage,
   }) async {
     lastRegisterBody = {
       'idToken': idToken,
@@ -192,6 +202,8 @@ class FakeAuthApi extends AuthApi {
       'primaryProfile': primaryProfile,
       'referralCode': ?referralCode,
       'roleProfiles': ?roleProfiles,
+      'language': language,
+      'preferredLanguage': preferredLanguage,
     };
     final error = registerError;
     if (error != null) throw error;
@@ -336,9 +348,13 @@ class FakeMarketplaceApi extends MarketplaceApi {
   Map<String, dynamic> cartResponse = const {'data': <Map<String, dynamic>>[], 'cartTotal': 0};
   Object? productsError;
 
+  Map<String, dynamic> productResponse = const {};
+  Map<String, dynamic> reviewsResponse = const {'data': <Map<String, dynamic>>[], 'page': 1, 'pageSize': 20, 'total': 0};
+
   String? lastCategory;
   String? lastQuery;
   final List<Map<String, dynamic>> addedItems = [];
+  final List<Map<String, dynamic>> postReviewCalls = [];
 
   @override
   Future<Map<String, dynamic>> getProducts({String? category, String? query, int page = 1}) async {
@@ -348,6 +364,36 @@ class FakeMarketplaceApi extends MarketplaceApi {
     if (error != null) throw error;
     return productsResponse;
   }
+
+  @override
+  Future<Map<String, dynamic>> getProduct(String id) async => productResponse;
+
+  @override
+  Future<Map<String, dynamic>> postReview(
+    String productId,
+    int rating,
+    String comment,
+  ) async {
+    postReviewCalls.add({
+      'productId': productId,
+      'rating': rating,
+      'comment': comment,
+    });
+    return {
+      'id': 'rev_fake_${postReviewCalls.length}',
+      'productId': productId,
+      'userId': 'u1',
+      'userName': 'मी',
+      'rating': rating,
+      'comment': comment,
+      'createdAt': '2026-09-17T10:00:00.000Z',
+      'updatedAt': '2026-09-17T10:00:00.000Z',
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> listReviews(String productId) async =>
+      reviewsResponse;
 
   @override
   Future<Map<String, dynamic>> getCertificate(String id) async =>
@@ -371,6 +417,8 @@ class FakeOrdersApi extends OrdersApi {
   final List<Map<String, dynamic>> placeOrderCalls = [];
   final List<String> cancelledIds = [];
   final List<String> razorpayOrderIds = [];
+  final List<Map<String, dynamic>> returnCalls = [];
+  List<Map<String, dynamic>> timelineResponse = const [];
   String? lastAddressId;
   int _orderSeq = 0;
 
@@ -381,6 +429,7 @@ class FakeOrdersApi extends OrdersApi {
     required String deliveryAddress,
     required String idempotencyKey,
     String? addressId,
+    String? couponCode,
   }) async {
     idempotencyKeys.add(idempotencyKey);
     lastAddressId = addressId;
@@ -390,6 +439,7 @@ class FakeOrdersApi extends OrdersApi {
       'deliveryAddress': deliveryAddress,
       'addressId': addressId,
       'idempotencyKey': idempotencyKey,
+      'couponCode': couponCode,
     });
     final error = placeOrderError;
     if (error != null) throw error;
@@ -404,6 +454,16 @@ class FakeOrdersApi extends OrdersApi {
   Future<Map<String, dynamic>> cancelOrder(String id) async {
     cancelledIds.add(id);
     return {'id': id, 'status': 'cancelled', 'refundStatus': 'none'};
+  }
+
+  @override
+  Future<List<OrderTimelineEvent>> getTimeline(String id) async =>
+      timelineResponse.map(OrderTimelineEvent.fromJson).toList();
+
+  @override
+  Future<Map<String, dynamic>> requestReturn(String id, String reason) async {
+    returnCalls.add({'id': id, 'reason': reason});
+    return {'id': id, 'returnStatus': 'requested'};
   }
 
   @override
@@ -544,10 +604,12 @@ class FakeTransportApi extends TransportApi {
   final List<List<String>> availabilityCalls = [];
 
   @override
-  Future<Map<String, dynamic>> getVehicleTypes() async => vehicleTypesResponse;
+  Future<Map<String, dynamic>> getVehicleTypes({bool extended = false}) async =>
+      vehicleTypesResponse;
 
   @override
-  Future<Map<String, dynamic>> fareEstimate(String vehicleType, double distanceKm) async =>
+  Future<Map<String, dynamic>> fareEstimate(
+          String vehicleType, double distanceKm) async =>
       fareResponse;
 
   @override
@@ -558,6 +620,10 @@ class FakeTransportApi extends TransportApi {
     required String drop,
     required String date,
     String? lotId,
+    String? commodity,
+    double? weightQuintals,
+    String? packaging,
+    String? notes,
   }) async {
     createBookingCalls.add({
       'vehicleType': vehicleType,
@@ -566,6 +632,10 @@ class FakeTransportApi extends TransportApi {
       'drop': drop,
       'date': date,
       'lotId': lotId,
+      'commodity': commodity,
+      'weightQuintals': weightQuintals,
+      'packaging': packaging,
+      'notes': notes,
     });
     return {'id': 'bk_new', 'status': 'requested'};
   }
@@ -582,6 +652,8 @@ class FakeTransportApi extends TransportApi {
     String? vehicleNo,
     List<String>? podPhotos,
     String? receiverName,
+    String? receiverPhone,
+    String? damageNotes,
   }) async {
     updateBookingCalls.add({
       'id': id,
@@ -590,6 +662,8 @@ class FakeTransportApi extends TransportApi {
       'vehicleNo': vehicleNo,
       'podPhotos': podPhotos,
       'receiverName': receiverName,
+      'receiverPhone': receiverPhone,
+      'damageNotes': damageNotes,
     });
     return {'id': id, 'status': status};
   }
@@ -599,8 +673,16 @@ class FakeTransportApi extends TransportApi {
     String id, {
     String? vehicleId,
     String? vehicleNo,
+    String? driverName,
+    String? driverPhone,
   }) async {
-    acceptBookingCalls.add({'id': id, 'vehicleId': vehicleId, 'vehicleNo': vehicleNo});
+    acceptBookingCalls.add({
+      'id': id,
+      'vehicleId': vehicleId,
+      'vehicleNo': vehicleNo,
+      'driverName': driverName,
+      'driverPhone': driverPhone,
+    });
     return {'id': id, 'status': 'accepted'};
   }
 
@@ -623,6 +705,13 @@ class FakeTransportApi extends TransportApi {
     required double capacityTonnes,
     String? rcDocUrl,
     String? insuranceDocUrl,
+    String? pucExpiry,
+    String? fitnessExpiry,
+    String? insuranceExpiry,
+    String? permitType,
+    String? driverName,
+    String? driverPhone,
+    String? driverLicense,
   }) async {
     createVehicleCalls.add({
       'vehicleType': vehicleType,
@@ -642,6 +731,218 @@ class FakeTransportApi extends TransportApi {
     availabilityCalls.add(dates);
     return {'id': id, 'availableDates': dates};
   }
+
+  @override
+  Future<Map<String, dynamic>> getTransporterProfile() async => {
+        'profile': {
+          'businessName': 'जय किसान लॉजिस्टिक्स',
+          'transporterType': 'owner_driver',
+          'vehicleType': 'Tata Ace',
+          'rcNumber': 'MH-15-AB-1234',
+          'contactPhone': '+91 98220 12345',
+          'operatingRoutes': ['पिंपलगाव ➔ नासिक', 'निफाड ➔ मुंबई'],
+          'operatingStates': ['महाराष्ट्र'],
+          'specializations': ['ताजी सब्जियां'],
+          'fleetSize': 2,
+          'experienceYears': 5,
+        },
+        'stats': {
+          'totalVehicles': 2,
+          'totalTrips': 48,
+          'activeTrips': 2,
+          'lifetimeEarnings': 185000,
+          'rating': 4.8,
+          'onTimeRate': 98.0,
+          'verified': true,
+        },
+      };
+
+  @override
+  Future<Map<String, dynamic>> updateTransporterProfile(
+          Map<String, dynamic> data) async =>
+      data;
+
+  @override
+  Future<Map<String, dynamic>> getOpenLoads(
+          {String? crop, String? pickup, String? drop}) async =>
+      {
+        'data': [
+          {
+            'id': 'load_test_1',
+            'farmerName': 'राजाराम पाटिल',
+            'pickupLocation': 'पिंपलगाव, नासिक',
+            'dropLocation': 'आज़ादपुर मंडी, दिल्ली',
+            'crop': 'टमाटर (Tomato)',
+            'quantityQuintals': 35.0,
+            'packaging': 'Plastic Crates',
+            'perishable': true,
+            'preferredVehicleType': 'Tata Ace',
+            'pickupDate': '2026-09-28',
+            'targetFare': 38000,
+            'bidsCount': 1,
+            'status': 'open',
+          }
+        ],
+        'total': 1,
+      };
+
+  @override
+  Future<Map<String, dynamic>> submitLoadBid(
+    String loadId, {
+    required double quotedFare,
+    String? vehicleId,
+    String? vehicleNo,
+    String? estimatedPickupTime,
+    String? notes,
+  }) async =>
+      {
+        'id': 'bid_test_1',
+        'loadId': loadId,
+        'quotedFare': quotedFare,
+        'status': 'pending',
+      };
+
+  @override
+  Future<Map<String, dynamic>> getDigitalBilty(String bookingId) async => {
+        'lrNumber': 'LR-2026-TEST',
+        'bookingId': bookingId,
+        'consignor': {'name': 'किसान', 'location': 'पिंपलगाव'},
+        'consignee': {'name': 'मंडी आढ़ती', 'destination': 'नासिक APMC'},
+        'vehicleDetails': {'vehicleNo': 'MH-15-AB-1234'},
+        'goods': {'commodity': 'टमाटर', 'weightQuintals': 25.0},
+        'freightCharges': {
+          'grossFare': 1200,
+          'advancePaid': 500,
+          'balancePayable': 700
+        },
+      };
+
+  @override
+  Future<Map<String, dynamic>> getTripLocation(String bookingId) async => {
+        'bookingId': bookingId,
+        'status': 'enRoute',
+        'route': 'पिंपलगाव ➔ नासिक',
+        'currentLocation': {
+          'lat': 19.9975,
+          'lng': 73.7898,
+          'speedKmH': 45.0,
+          'waypoint': 'in_transit',
+        },
+        'waypoints': [],
+      };
+
+  @override
+  Future<Map<String, dynamic>> getTripExpenses(String bookingId) async => {
+        'bookingId': bookingId,
+        'grossFare': 1200,
+        'totalExpenses': 450,
+        'netProfit': 690,
+        'expenses': [
+          {'id': 'e1', 'category': 'diesel', 'amount': 450.0}
+        ],
+      };
+
+  @override
+  Future<Map<String, dynamic>> updateTripLocation(
+    String bookingId, {
+    required double lat,
+    required double lng,
+    double speedKmH = 0.0,
+    double heading = 0.0,
+    String? waypoint,
+    String? waypointLabel,
+    String? notes,
+  }) async =>
+      {
+        'bookingId': bookingId,
+        'status': 'enRoute',
+        'currentLocation': {
+          'lat': lat,
+          'lng': lng,
+          'speedKmH': speedKmH,
+          'waypoint': waypoint ?? 'in_transit',
+          'waypointLabel': waypointLabel,
+        },
+      };
+
+  @override
+  Future<Map<String, dynamic>> recordWeighbridge(
+    String bookingId, {
+    required String slipNo,
+    required double tareWeightKg,
+    required double grossWeightKg,
+    double? netWeightKg,
+    String weighbridgeName = 'धर्मकांटा',
+    String? slipPhotoUrl,
+    String? notes,
+  }) async =>
+      {
+        'bookingId': bookingId,
+        'weighbridgeSlip': {
+          'slipNo': slipNo,
+          'tareWeightKg': tareWeightKg,
+          'grossWeightKg': grossWeightKg,
+          'netWeightKg': netWeightKg ?? (grossWeightKg - tareWeightKg),
+          'weighbridgeName': weighbridgeName,
+        },
+      };
+
+  @override
+  Future<Map<String, dynamic>> addTripExpense(
+    String bookingId, {
+    required String category,
+    required double amount,
+    String? notes,
+    String? receiptPhotoUrl,
+  }) async =>
+      {
+        'bookingId': bookingId,
+        'id': 'exp_new',
+        'category': category,
+        'amount': amount,
+        'notes': notes,
+      };
+
+  @override
+  Future<Map<String, dynamic>> postOpenLoad({
+    required String pickupLocation,
+    required String dropLocation,
+    required String crop,
+    required double quantityQuintals,
+    String packaging = 'Gunny Bags',
+    bool perishable = false,
+    String preferredVehicleType = 'Tata Ace',
+    required String pickupDate,
+    required double targetFare,
+    String? notes,
+  }) async =>
+      {
+        'id': 'load_created',
+        'status': 'open',
+      };
+
+  @override
+  Future<Map<String, dynamic>> getLoadBids(String loadId) async => {
+        'data': <Map<String, dynamic>>[],
+        'total': 0,
+      };
+
+  @override
+  Future<Map<String, dynamic>> acceptLoadBid(String loadId, String bidId) async => {
+        'id': loadId,
+        'acceptedBidId': bidId,
+        'status': 'booked',
+      };
+
+  @override
+  Future<Map<String, dynamic>> getTransportAnalytics() async => {
+        'totalVehicles': 2,
+        'totalTripsCompleted': 35,
+        'activeTripsCount': 2,
+        'totalGrossRevenue': 142000,
+        'estimatedNetProfit': 98000,
+        'averageRating': 4.9,
+      };
 }
 
 class FakePhotoUploader extends PhotoUploader {
@@ -658,5 +959,141 @@ class FakePhotoUploader extends PhotoUploader {
     final error = errorToThrow;
     if (error != null) throw Exception(error);
     return urlToReturn;
+  }
+}
+
+class FakeMyProductsApi extends MyProductsApi {
+  FakeMyProductsApi([List<UserProduct>? items])
+      : products = items ?? List.of(_defaultProducts);
+
+  static final _defaultProducts = <UserProduct>[
+    const UserProduct(
+      id: 'up-1',
+      title: 'Hybrid Tomato Seeds',
+      category: 'Seeds',
+      brand: 'Mahyco',
+      vernacularTitle: 'हाइब्रिड टमाटर बीज',
+      description: 'High yield hybrid seeds',
+      mrp: 450,
+      discountedPrice: 380,
+      stock: 25,
+      unit: 'kg',
+      imageUrl: '',
+      batchNo: 'USR-ABC123',
+      sellerId: 'u1',
+      sellerName: 'Sunita',
+      dealerName: '',
+      rating: 0,
+      reviewsCount: 0,
+      bnplAvailable: false,
+      distanceKm: 0,
+      createdAt: '2026-09-20T10:00:00Z',
+      updatedAt: '2026-09-20T10:00:00Z',
+    ),
+    const UserProduct(
+      id: 'up-2',
+      title: 'Organic Compost',
+      category: 'Fertilizer',
+      brand: 'AgroGold',
+      vernacularTitle: '',
+      description: '',
+      mrp: 900,
+      discountedPrice: 750,
+      stock: 4,
+      unit: 'kg',
+      imageUrl: '',
+      batchNo: 'USR-DEF456',
+      sellerId: 'u1',
+      sellerName: 'Sunita',
+      dealerName: '',
+      rating: 0,
+      reviewsCount: 0,
+      bnplAvailable: false,
+      distanceKm: 0,
+      createdAt: '2026-09-21T10:00:00Z',
+      updatedAt: '2026-09-21T10:00:00Z',
+    ),
+    const UserProduct(
+      id: 'up-3',
+      title: 'Old Pesticide Stock',
+      category: 'Pesticide',
+      brand: 'KillSafe',
+      vernacularTitle: '',
+      description: '',
+      mrp: 300,
+      discountedPrice: 250,
+      stock: 0,
+      unit: 'litre',
+      imageUrl: '',
+      batchNo: 'USR-GHI789',
+      sellerId: 'u1',
+      sellerName: 'Sunita',
+      dealerName: '',
+      rating: 0,
+      reviewsCount: 0,
+      bnplAvailable: false,
+      distanceKm: 0,
+      createdAt: '2026-09-22T10:00:00Z',
+      updatedAt: '2026-09-22T10:00:00Z',
+    ),
+  ];
+
+  List<UserProduct> products;
+  final List<UserProductInput> createCalls = [];
+  final List<Map<String, dynamic>> updateCalls = [];
+  final List<String> deleteCalls = [];
+  Object? deleteError;
+
+  @override
+  Future<List<UserProduct>> list() async => List.of(products);
+
+  @override
+  Future<UserProduct> create(UserProductInput input) async {
+    createCalls.add(input);
+    final p = UserProduct(
+      id: 'up_new_${products.length}',
+      title: input.title,
+      category: input.category,
+      brand: input.brand,
+      vernacularTitle: input.vernacularTitle,
+      description: input.description,
+      mrp: input.mrp,
+      discountedPrice: input.discountedPrice,
+      stock: input.stock,
+      unit: input.unit,
+      imageUrl: input.imageUrl,
+      batchNo: input.batchNo.isEmpty ? 'USR-FAKE01' : input.batchNo,
+      sellerId: 'u1',
+      sellerName: 'Sunita',
+      dealerName: '',
+      rating: 0,
+      reviewsCount: 0,
+      bnplAvailable: false,
+      distanceKm: 0,
+      createdAt: '2026-09-26T10:00:00Z',
+      updatedAt: '2026-09-26T10:00:00Z',
+    );
+    products = [...products, p];
+    return p;
+  }
+
+  @override
+  Future<UserProduct> update(String id, Map<String, dynamic> fields) async {
+    updateCalls.add({'id': id, ...fields});
+    products = [
+      for (final e in products)
+        e.id == id
+            ? e.copyWith(stock: (fields['stock'] as num?)?.toInt() ?? e.stock)
+            : e,
+    ];
+    return products.firstWhere((e) => e.id == id);
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    deleteCalls.add(id);
+    final error = deleteError;
+    if (error != null) throw error;
+    products.removeWhere((e) => e.id == id);
   }
 }

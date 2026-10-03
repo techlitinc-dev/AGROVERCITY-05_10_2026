@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import '../../api/settlements_api.dart';
 import '../../state/app_state.dart';
 import '../../components/common/motion_animations.dart';
 import '../../components/navigation/dashboard_profile_switcher_bar.dart';
 import '../../components/navigation/profile_switcher_sheet.dart';
+import '../../components/settlements_section.dart';
 
 class BrokerHomeView extends StatelessWidget {
   final AppState state;
-  const BrokerHomeView({super.key, required this.state});
+  final SettlementsApi? settlementsApi;
+  const BrokerHomeView({super.key, required this.state, this.settlementsApi});
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +117,9 @@ class BrokerHomeView extends StatelessWidget {
 
           // 1.5. Dashboard Multi-Profile Switcher Bar
           DashboardProfileSwitcherBar(state: state),
+          const SizedBox(height: 14),
+
+          SettlementsSection(state: state, settlementsApi: settlementsApi),
           const SizedBox(height: 14),
 
           // 2. Quick Action Modules Grid

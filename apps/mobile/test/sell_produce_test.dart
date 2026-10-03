@@ -36,12 +36,20 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  // Crop dropdown is fed by the farmer's active crops (backend-hydrated);
+  // seed them so the crop selector renders instead of the free-text field.
+  TestAppState stateWithCrops() {
+    final state = TestAppState();
+    state.profile.activeCrops.add('Tomato (टमाटर)');
+    return state;
+  }
+
   testWidgets('form validates quantity > 0', (tester) async {
     final api = FakeLotsApi();
 
     await pumpScreen(
       tester,
-      Scaffold(body: SellProduceView(state: TestAppState(), lotsApi: api)),
+      Scaffold(body: SellProduceView(state: stateWithCrops(), lotsApi: api)),
     );
 
     await tester.enterText(find.byType(TextField).first, '0');
@@ -57,7 +65,7 @@ void main() {
 
     await pumpScreen(
       tester,
-      Scaffold(body: SellProduceView(state: TestAppState(), lotsApi: api)),
+      Scaffold(body: SellProduceView(state: stateWithCrops(), lotsApi: api)),
     );
 
     await tester.enterText(find.byType(TextField).at(0), '10');

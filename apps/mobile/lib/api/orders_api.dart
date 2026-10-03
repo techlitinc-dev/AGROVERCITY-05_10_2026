@@ -1,3 +1,4 @@
+import '../models/emarket_models.dart';
 import 'api_client.dart';
 import 'endpoints.dart';
 
@@ -12,6 +13,7 @@ class OrdersApi {
     required String deliveryAddress,
     required String idempotencyKey,
     String? addressId,
+    String? couponCode,
   }) =>
       _client.post(pathOrders, body: {
         'items': items,
@@ -19,6 +21,7 @@ class OrdersApi {
         'deliveryAddress': deliveryAddress,
         'idempotencyKey': idempotencyKey,
         'addressId': ?addressId,
+        'couponCode': ?couponCode,
       });
 
   Future<Map<String, dynamic>> getOrders({int page = 1}) =>
@@ -28,6 +31,16 @@ class OrdersApi {
 
   Future<Map<String, dynamic>> cancelOrder(String id) =>
       _client.post(orderCancelPath(id));
+
+  Future<List<OrderTimelineEvent>> getTimeline(String id) async {
+    final res = await _client.get(orderTimelinePath(id));
+    return ((res['events'] as List?) ?? const <dynamic>[])
+        .map((e) => OrderTimelineEvent.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> requestReturn(String id, String reason) =>
+      _client.post(orderReturnPath(id), body: {'reason': reason});
 
   Future<Map<String, dynamic>> createRazorpayOrder(String orderId) =>
       _client.post(pathRazorpayOrder, body: {'orderId': orderId});

@@ -86,13 +86,13 @@ class _SmartCompareSheetState extends State<SmartCompareSheet> {
                 ),
               ),
               const SizedBox(height: 14),
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.calculate_rounded, color: Color(0xFF16A34A), size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.calculate_rounded, color: Color(0xFF16A34A), size: 20),
+                  const SizedBox(width: 8),
                   Text(
-                    "स्मार्ट मंडी चयन कैलकुलेटर",
-                    style: TextStyle(
+                    widget.state.tr('market.smartMandiCalculator'),
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
                       color: Color(0xFF14532D),
@@ -101,33 +101,33 @@ class _SmartCompareSheetState extends State<SmartCompareSheet> {
                 ],
               ),
               const SizedBox(height: 4),
-              const Text(
-                "भाड़ा काटकर किस मंडी में मिलेगा सर्वाधिक शुद्ध मुनाफा?",
-                style: TextStyle(fontSize: 11.5, color: Color(0xFF166534)),
+              Text(
+                widget.state.tr('market.compareSubtitle'),
+                style: const TextStyle(fontSize: 11.5, color: Color(0xFF166534)),
               ),
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Text(
-                    "फसल:",
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                  Text(
+                    widget.state.tr('market.cropLabel'),
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(width: 10),
                   DropdownButton<String>(
                     value: _crop,
                     underline: const SizedBox.shrink(),
                     borderRadius: BorderRadius.circular(14),
-                    items: const [
-                      DropdownMenuItem(value: 'Tomato', child: Text('🍅 Tomato (टमाटर)')),
-                      DropdownMenuItem(value: 'Onion', child: Text('🧅 Onion (प्याज)')),
-                      DropdownMenuItem(value: 'Wheat', child: Text('🌾 Wheat (गेहूं)')),
+                    items: [
+                      DropdownMenuItem(value: 'Tomato', child: Text(widget.state.tr('market.cropTomato'))),
+                      DropdownMenuItem(value: 'Onion', child: Text(widget.state.tr('market.cropOnion'))),
+                      DropdownMenuItem(value: 'Wheat', child: Text(widget.state.tr('market.cropWheat'))),
                     ],
                     onChanged: (v) => setState(() => _crop = v ?? _crop),
                   ),
                 ],
               ),
               Text(
-                "आपकी कुल उपज: ${_quintals.toInt()} क्विंटल",
+                "${widget.state.tr('market.yourTotalProduce')}: ${_quintals.toInt()} ${widget.state.tr('market.quintal')}",
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
               ),
               Slider(
@@ -151,7 +151,7 @@ class _SmartCompareSheetState extends State<SmartCompareSheet> {
                   onPressed: _loading ? null : _compare,
                   icon: const Icon(Icons.compare_arrows_rounded, size: 18),
                   label: Text(
-                    _loading ? "तुलना हो रही है..." : "Compare (तुलना करें)",
+                    _loading ? widget.state.tr('market.comparing') : widget.state.tr('market.compareBtn'),
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
@@ -215,9 +215,9 @@ class _SmartCompareSheetState extends State<SmartCompareSheet> {
                     color: const Color(0xFF16A34A),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text(
-                    "Best net profit",
-                    style: TextStyle(
+                  child: Text(
+                    widget.state.tr('market.bestNetProfit'),
+                    style: const TextStyle(
                       fontSize: 9.5,
                       fontWeight: FontWeight.w900,
                       color: Colors.white,
@@ -231,15 +231,15 @@ class _SmartCompareSheetState extends State<SmartCompareSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                "मॉडल ₹${fmtInr(modal)}/qtl",
+                "${widget.state.tr('market.modalShort')} ₹${fmtInr(modal)}/qtl",
                 style: const TextStyle(fontSize: 11, color: Colors.black87),
               ),
               Text(
-                "भाड़ा ₹${fmtInr(transport)}",
+                "${widget.state.tr('market.freight')} ₹${fmtInr(transport)}",
                 style: const TextStyle(fontSize: 11, color: Colors.black54),
               ),
               Text(
-                "शुद्ध लाभ ₹${fmtInr(net)}",
+                "${widget.state.tr('market.netProfit')} ₹${fmtInr(net)}",
                 style: const TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w900,

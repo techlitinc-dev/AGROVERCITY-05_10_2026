@@ -5,6 +5,7 @@ import '../../core/phone_auth.dart';
 import '../../state/app_state.dart';
 import 'login_form.dart';
 import 'register_wizard.dart';
+import 'onboarding_progress.dart';
 
 class AuthView extends StatefulWidget {
   final AppState state;
@@ -47,77 +48,83 @@ class _AuthViewState extends State<AuthView> {
   @override
   Widget build(BuildContext context) {
     const primary = Color(0xFF2E7D32);
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F7FA),
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.asset(
-                      'assets/app_icon.png',
-                      width: 40,
-                      height: 40,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.eco_rounded,
-                        color: primary,
-                        size: 40,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
                     children: [
-                      Text(
-                        'AGROVERCITY',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF1B5E20),
-                          letterSpacing: 1.2,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(
+                          'assets/app_icon.png',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            Icons.eco_rounded,
+                            color: primary,
+                            size: 40,
+                          ),
                         ),
                       ),
-                      Text(
-                        'डिजिटल कृषि प्लेटफॉर्म',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF90A4AE),
-                        ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.state.tr('appName'),
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF1B5E20),
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          Text(
+                            widget.state.tr('digitalAgriPlatform'),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF90A4AE),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F5E9),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    _Segment(
-                      label: 'लॉगिन',
-                      selected: _authMode == 'login',
-                      onTap: () => _switchMode('login'),
+                  const SizedBox(height: 16),
+                  // Overall journey progress (Step 3 of 4: Account & Details)
+                  OnboardingFlowProgress(state: widget.state, currentStep: 3),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    _Segment(
-                      label: 'रजिस्टर',
-                      selected: _authMode == 'register',
-                      onTap: () => _switchMode('register'),
+                    child: Row(
+                      children: [
+                        _Segment(
+                          label: widget.state.tr('login'),
+                          selected: _authMode == 'login',
+                          onTap: () => _switchMode('login'),
+                        ),
+                        _Segment(
+                          label: widget.state.tr('register'),
+                          selected: _authMode == 'register',
+                          onTap: () => _switchMode('register'),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
+                  ),
+                  const SizedBox(height: 18),
               Expanded(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
@@ -140,7 +147,9 @@ class _AuthViewState extends State<AuthView> {
         ),
       ),
     );
-  }
+  },
+);
+}
 }
 
 class _Segment extends StatelessWidget {

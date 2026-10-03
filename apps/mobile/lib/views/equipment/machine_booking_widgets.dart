@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../state/app_state.dart';
 import 'equipment_widgets.dart' show slotStatusLabel;
 
 class MachineSelectCard extends StatelessWidget {
   const MachineSelectCard({
     super.key,
     required this.machine,
+    required this.state,
     required this.selected,
     required this.onTap,
   });
 
   final Map<String, dynamic> machine;
+  final AppState state;
   final bool selected;
   final VoidCallback onTap;
 
@@ -60,14 +63,14 @@ class MachineSelectCard extends StatelessWidget {
                     ],
                   ),
                   Text(
-                    "${machine['type']} • $distance km दूर",
+                    "${machine['type']} • $distance ${state.tr('equipment.kmAway')}",
                     style: const TextStyle(fontSize: 11, color: Colors.black54),
                   ),
                 ],
               ),
             ),
             Text(
-              "₹${rate.toInt()} / घंटा",
+              "₹${rate.toInt()} ${state.tr('equipment.perHour')}",
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF2E7D32)),
             ),
           ],
@@ -81,18 +84,19 @@ class DayCell extends StatelessWidget {
   const DayCell({
     super.key,
     required this.day,
+    required this.state,
     required this.selected,
     required this.onTap,
   });
 
   final DateTime day;
+  final AppState state;
   final bool selected;
   final VoidCallback onTap;
 
-  static const dayNames = ['सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि', 'रवि'];
-
   @override
   Widget build(BuildContext context) {
+    final dayNames = state.tr('equipment.weekdayNames').split(',');
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -121,9 +125,10 @@ class DayCell extends StatelessWidget {
 }
 
 class MyBookingCard extends StatelessWidget {
-  const MyBookingCard({super.key, required this.booking, this.onRebook});
+  const MyBookingCard({super.key, required this.booking, required this.state, this.onRebook});
 
   final Map<String, dynamic> booking;
+  final AppState state;
   final VoidCallback? onRebook;
 
   @override
@@ -158,7 +163,7 @@ class MyBookingCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  rejected ? "अस्वीकृत" : slotStatusLabel(status),
+                  rejected ? state.tr('equipment.statusRejected') : slotStatusLabel(status, state.language),
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
@@ -175,13 +180,13 @@ class MyBookingCard extends StatelessWidget {
           if (rejected) ...[
             const SizedBox(height: 4),
             Text(
-              "कारण: ${booking['rejectionReason'] ?? ''}",
+              "${state.tr('equipment.reasonLabel')}: ${booking['rejectionReason'] ?? ''}",
               style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFFDC2626)),
             ),
             TextButton.icon(
               onPressed: onRebook,
               icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: const Text("फिर से बुक करें", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+              label: Text(state.tr('equipment.rebook'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
             ),
           ],
         ],

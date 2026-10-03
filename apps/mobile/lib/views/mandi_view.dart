@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import '../api/mandi_api.dart';
 import '../state/app_state.dart';
-import '../data/demo_data.dart';
 import '../components/common/audio_button.dart';
 import '../components/mandi/mandi_price_card.dart';
 import '../components/mandi/price_history_chart.dart';
@@ -92,17 +91,17 @@ class _MandiViewState extends State<MandiView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("लाइव मंडी भाव व लाभ अनुकूलक", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                  Text("APMC दरें • आवक • गाड़ी भाड़ा काटकर शुद्ध लाभ", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(widget.state.tr('liveMandiRatesTitle'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  Text(widget.state.tr('liveMandiSubtitle'), style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
               ),
-              AudioButton(text: "आज के मंडी भाव सुनें"),
+              AudioButton(text: widget.state.tr('trade.mandiRatesAudio')),
             ],
           ),
           const SizedBox(height: 10),
@@ -113,7 +112,7 @@ class _MandiViewState extends State<MandiView> {
               Expanded(
                 child: _headerButton(
                   icon: Icons.calculate_rounded,
-                  label: "स्मार्ट मंडी चयन",
+                  label: widget.state.tr('smartMandiSelect'),
                   color: const Color(0xFF16A34A),
                   onTap: _openCompare,
                 ),
@@ -122,7 +121,7 @@ class _MandiViewState extends State<MandiView> {
               Expanded(
                 child: _headerButton(
                   icon: Icons.sell_rounded,
-                  label: "अपनी उपज बेचें",
+                  label: widget.state.tr('sellYourProduce'),
                   color: const Color(0xFFEA580C),
                   onTap: () => widget.state.navigateTo('sellProduce'),
                 ),
@@ -136,10 +135,10 @@ class _MandiViewState extends State<MandiView> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _filterChip('All', 'सभी फसलें'),
-                _filterChip('Tomato', '🍅 टमाटर'),
-                _filterChip('Onion', '🧅 प्याज'),
-                _filterChip('Wheat', '🌾 गेहूं'),
+                _filterChip('All', widget.state.tr('allCrops')),
+                _filterChip('Tomato', '🍅 Tomato'),
+                _filterChip('Onion', '🧅 Onion'),
+                _filterChip('Wheat', '🌾 Wheat'),
               ],
             ),
           ),
@@ -158,12 +157,12 @@ class _MandiViewState extends State<MandiView> {
                 ),
               )
           else if (_error)
-            _greyedDemoList()
+            const SizedBox.shrink()
           else if (_prices.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                child: Text("डेटा उपलब्ध नहीं", style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700)),
+                child: Text(widget.state.tr('noDataAvailable'), style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w700)),
               ),
             )
           else
@@ -221,51 +220,20 @@ class _MandiViewState extends State<MandiView> {
         children: [
           const Icon(Icons.cloud_off_rounded, size: 18, color: Color(0xFFEA580C)),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
-              "लाइव भाव उपलब्ध नहीं — कैश्ड डेटा दिख रहा है",
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF9A3412)),
+              widget.state.tr('trade.liveRatesUnavailable'),
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF9A3412)),
             ),
           ),
           TextButton(
             onPressed: _load,
-            child: const Text(
-              "पुनः प्रयास करें",
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFEA580C)),
+            child: Text(
+              widget.state.tr('retry'),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFEA580C)),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _greyedDemoList() {
-    final demo = dummyMandiPrices
-        .where((m) =>
-            _selectedCrop == 'All' ||
-            m.commodity.toLowerCase().contains(_selectedCrop.toLowerCase()))
-        .map(
-          (m) => <String, dynamic>{
-            'mandiName': m.mandiName,
-            'distanceKm': m.distanceKm,
-            'commodity': m.commodity,
-            'variety': m.variety,
-            'minPrice': m.minPrice,
-            'maxPrice': m.maxPrice,
-            'modalPrice': m.modalPrice,
-            'msp': m.msp,
-            'trend': m.trend,
-            'changePercent': m.changePercent,
-            'arrivalsQuintals': m.arrivalsQuintals,
-            'updatedAt': m.updatedAt,
-          },
-        )
-        .toList();
-
-    return Opacity(
-      opacity: 0.45,
-      child: Column(
-        children: [for (final p in demo) MandiPriceCard(price: p)],
       ),
     );
   }

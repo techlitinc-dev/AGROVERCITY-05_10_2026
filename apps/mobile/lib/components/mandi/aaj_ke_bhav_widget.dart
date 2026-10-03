@@ -101,9 +101,9 @@ class _AajKeBhavWidgetState extends State<AajKeBhavWidget> {
                 child: const Text("💰", style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(width: 8),
-              const Text(
-                "AAJ KE BHAV",
-                style: TextStyle(
+              Text(
+                widget.state.tr('aajKeBhav'),
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF263238),
@@ -143,11 +143,11 @@ class _AajKeBhavWidgetState extends State<AajKeBhavWidget> {
                 ),
               )
           else if (_rates.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                "डेटा उपलब्ध नहीं",
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                widget.state.tr('noDataAvailable'),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             )
           else
@@ -157,9 +157,9 @@ class _AajKeBhavWidgetState extends State<AajKeBhavWidget> {
             alignment: Alignment.centerRight,
             child: BouncyPressable(
               onTap: () => widget.state.navigateTo('mandi'),
-              child: const Text(
-                "Poora Mandi Bhav Dekhein →",
-                style: TextStyle(
+              child: Text(
+                widget.state.tr('viewAllMandiRates'),
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w900,
                   color: Color(0xFF43A047),
@@ -243,7 +243,7 @@ class _AajKeBhavWidgetState extends State<AajKeBhavWidget> {
             ),
             const SizedBox(height: 2),
             Text(
-              "${vr['mandiName']} • ${vr['vyapariCount']} vyapari updated • ${vr['lastUpdated']}",
+              "${vr['mandiName']} • ${vr['vyapariCount']} ${widget.state.tr('tradersUpdated')} • ${vr['lastUpdated']}",
               style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
             ),
           ],

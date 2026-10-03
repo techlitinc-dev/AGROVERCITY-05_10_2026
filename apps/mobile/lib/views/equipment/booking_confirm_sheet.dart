@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../state/app_state.dart';
+
 // Pops with true on confirm, null when dismissed.
 class BookingConfirmSheet extends StatelessWidget {
   const BookingConfirmSheet({
     super.key,
+    required this.state,
     required this.machineName,
     required this.ownerType,
     required this.date,
     required this.slot,
   });
 
+  final AppState state;
   final String machineName;
   final String ownerType;
   final String date;
@@ -25,12 +29,12 @@ class BookingConfirmSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("स्लॉट बुकिंग पक्की करें", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+          Text(state.tr('equipment.confirmSlotBookingTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
           Text(machineName, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF263238))),
           const SizedBox(height: 4),
           Text("$date • ${slot['slotName']}", style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
-          Text("किराया: ₹${price.toInt()} (${slot['duration']})", style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
+          Text("${state.tr('equipment.rentLabel')}: ₹${price.toInt()} (${slot['duration']})", style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
@@ -40,7 +44,7 @@ class BookingConfirmSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              isFpo ? "Auto-confirm (FPO)" : "Owner approval needed",
+              isFpo ? state.tr('equipment.autoConfirmFpo') : state.tr('equipment.ownerApprovalNeeded'),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
@@ -56,7 +60,7 @@ class BookingConfirmSheet extends StatelessWidget {
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 48),
             ),
-            child: const Text("बुकिंग पक्की करें", style: TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(state.tr('equipment.confirmBooking'), style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         ],
       ),

@@ -5,6 +5,11 @@ class FirebaseVerifyRequest(BaseModel):
     idToken: str
 
 
+class PhoneMpinLoginRequest(BaseModel):
+    phone: str
+    mpin: str
+
+
 class TokenPair(BaseModel):
     accessToken: str
     refreshToken: str
@@ -29,8 +34,16 @@ class MpinSetRequest(BaseModel):
 
 class MpinVerifyRequest(BaseModel):
     mpin: str
+    refreshToken: str | None = None
 
 
 class MpinResetRequest(BaseModel):
     idToken: str
     newMpin: str
+
+
+class QuickLoginRequest(BaseModel):
+    persona: str | None = None
+    phone: str | None = None
+    mpin: str | None = None
+

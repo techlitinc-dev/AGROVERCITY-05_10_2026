@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../state/app_state.dart';
+
 // Pops with the chosen vehicle map, or null when dismissed.
 class AcceptVehicleSheet extends StatefulWidget {
   const AcceptVehicleSheet({
     super.key,
+    required this.state,
     required this.vehicles,
     required this.onManageVehicles,
   });
 
+  final AppState state;
   final List<Map<String, dynamic>> vehicles;
   final VoidCallback onManageVehicles;
 
@@ -34,23 +38,23 @@ class _AcceptVehicleSheetState extends State<AcceptVehicleSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("वाहन असाइन करें", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+          Text(widget.state.tr('transporter.assignVehicle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
           if (widget.vehicles.isEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("पहले सत्यापित वाहन जोड़ें", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                Text(widget.state.tr('transporter.addVerifiedVehicleFirst'), style: const TextStyle(fontSize: 13, color: Colors.grey)),
                 TextButton(
                   onPressed: widget.onManageVehicles,
-                  child: const Text("मेरे वाहन खोलें →"),
+                  child: Text(widget.state.tr('transporter.openMyVehicles')),
                 ),
               ],
             )
           else
             DropdownButtonFormField<String>(
               initialValue: _selectedId,
-              decoration: const InputDecoration(labelText: "सत्यापित वाहन", border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: widget.state.tr('transporter.verifiedVehicle'), border: const OutlineInputBorder()),
               items: widget.vehicles
                   .map(
                     (v) => DropdownMenuItem(
@@ -77,7 +81,7 @@ class _AcceptVehicleSheetState extends State<AcceptVehicleSheet> {
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 48),
             ),
-            child: const Text("स्वीकारें", style: TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(widget.state.tr('transporter.accept'), style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         ],
       ),
@@ -87,9 +91,18 @@ class _AcceptVehicleSheetState extends State<AcceptVehicleSheet> {
 
 // Pops with the reason text (min 3 chars), or null when cancelled.
 class RejectReasonDialog extends StatefulWidget {
-  const RejectReasonDialog({super.key});
+  const RejectReasonDialog({super.key, required this.state});
 
+  final AppState state;
+
+  // Quick-reason payload values stay Hindi (sent to the API); chips show
+  // translated labels via quickReasonKeys.
   static const quickReasons = ['वाहन उपलब्ध नहीं', 'दूरी ज़्यादा', 'तारीख सूट नहीं'];
+  static const quickReasonKeys = {
+    'वाहन उपलब्ध नहीं': 'transporter.reasonVehicleUnavailable',
+    'दूरी ज़्यादा': 'transporter.reasonDistanceTooFar',
+    'तारीख सूट नहीं': 'transporter.reasonDateUnsuitable',
+  };
 
   @override
   State<RejectReasonDialog> createState() => _RejectReasonDialogState();
@@ -109,7 +122,7 @@ class _RejectReasonDialogState extends State<RejectReasonDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text("अस्वीकार का कारण", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+      title: Text(widget.state.tr('transporter.rejectReasonTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,7 +132,7 @@ class _RejectReasonDialogState extends State<RejectReasonDialog> {
             children: RejectReasonDialog.quickReasons
                 .map(
                   (r) => ActionChip(
-                    label: Text(r, style: const TextStyle(fontSize: 11.5)),
+                    label: Text(widget.state.tr(RejectReasonDialog.quickReasonKeys[r]!), style: const TextStyle(fontSize: 11.5)),
                     onPressed: () => setState(() {
                       _reasonCtrl.text = r;
                       _error = null;
@@ -133,7 +146,7 @@ class _RejectReasonDialogState extends State<RejectReasonDialog> {
             controller: _reasonCtrl,
             onChanged: (_) => setState(() => _error = null),
             decoration: InputDecoration(
-              labelText: "कारण लिखें",
+              labelText: widget.state.tr('transporter.writeReason'),
               border: const OutlineInputBorder(),
               errorText: _error,
             ),

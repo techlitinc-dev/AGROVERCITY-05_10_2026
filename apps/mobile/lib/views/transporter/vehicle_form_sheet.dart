@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import '../../api/api_exception.dart';
 import '../../api/transport_api.dart';
 import '../../core/photo_upload.dart';
+import '../../state/app_state.dart';
 
 class VehicleFormSheet extends StatefulWidget {
   const VehicleFormSheet({
     super.key,
+    required this.state,
     required this.api,
     required this.uploader,
     required this.uid,
     this.existing,
   });
 
+  final AppState state;
   final TransportApi api;
   final PhotoUploader uploader;
   final String uid;
@@ -69,7 +72,7 @@ class _VehicleFormSheetState extends State<VehicleFormSheet> {
   Future<void> _save() async {
     final reg = _regCtrl.text.trim();
     if (reg.isEmpty) {
-      setState(() => _regError = "रजिस्ट्रेशन नंबर आवश्यक है");
+      setState(() => _regError = widget.state.tr('transporter.regNoRequired'));
       return;
     }
     final capacity = double.tryParse(_capacityCtrl.text.trim()) ?? 0;
@@ -121,13 +124,13 @@ class _VehicleFormSheetState extends State<VehicleFormSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.existing == null ? "नया वाहन जोड़ें" : "वाहन बदलें",
+            widget.existing == null ? widget.state.tr('transporter.addNewVehicle') : widget.state.tr('transporter.editVehicle'),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _vehicleType,
-            decoration: const InputDecoration(labelText: "वाहन प्रकार", border: OutlineInputBorder()),
+            decoration: InputDecoration(labelText: widget.state.tr('transporter.vehicleType'), border: const OutlineInputBorder()),
             items: _types
                 .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 13))))
                 .toList(),
@@ -137,8 +140,8 @@ class _VehicleFormSheetState extends State<VehicleFormSheet> {
           TextField(
             controller: _regCtrl,
             decoration: InputDecoration(
-              labelText: "रजिस्ट्रेशन नंबर",
-              hintText: "जैसे MH-15-AB-1234",
+              labelText: widget.state.tr('transporter.registrationNo'),
+              hintText: widget.state.tr('transporter.regNoHint'),
               border: const OutlineInputBorder(),
               errorText: _regError,
             ),
@@ -147,9 +150,9 @@ class _VehicleFormSheetState extends State<VehicleFormSheet> {
           TextField(
             controller: _capacityCtrl,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: "क्षमता (टन)",
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: widget.state.tr('transporter.capacityTonnes'),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 10),

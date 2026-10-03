@@ -1,0 +1,62 @@
+/* Dairy ops styles — P4 collections + P5 payment batches (manager console).
+   Classes are dairy-ops-*; reuses tokens.css custom properties. */
+
+.dairy-ops-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dairy-ops-member-placeholder {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--av-slate-1);
+}
+
+.dairy-ops-warn {
+  background: var(--av-gold-bg);
+  border: 1.5px solid #fde68a;
+  border-radius: var(--av-radius-card);
+  padding: 10px 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--av-gold-text);
+}
+
+.dairy-ops-note {
+  background: #f8fafc;
+  border: 1.5px dashed var(--av-border-grey-soft);
+  border-radius: var(--av-radius-card);
+  padding: 10px 12px;
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--av-slate-1);
+}
+
+.dairy-ops-success {
+  text-align: center;
+  padding: 20px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.dairy-ops-success-icon {
+  font-size: 44px;
+}
+
+.dairy-ops-success-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--av-title);
+}
+
+.dairy-ops-success-amount {
+  font-size: 34px;
+  font-weight: 900;
+  color: var(--av-green-dark);
+  line-height: 1.1;
+}

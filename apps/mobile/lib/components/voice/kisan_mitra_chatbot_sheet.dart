@@ -46,20 +46,18 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
   }
 
   void _toggleVoiceListening() {
+    // No STT plugin is bundled — never fake a transcript; explain honestly.
     setState(() => _isListening = !_isListening);
     if (_isListening) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("🎙️ Bhashini AI: Sun raha hoon... Boliyen \"Tamatar ka bhav\" ya \"Tamatar ugana hai\""),
-          duration: Duration(seconds: 3),
-          backgroundColor: Color(0xFF43A047),
+        SnackBar(
+          content: Text(widget.state.tr('voice.typeInstead')),
+          duration: const Duration(seconds: 3),
+          backgroundColor: const Color(0xFF43A047),
         ),
       );
       Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && _isListening) {
-          setState(() => _isListening = false);
-          _sendMessage("Is saal tamatar ugane ka soch raha hoon");
-        }
+        if (mounted && _isListening) setState(() => _isListening = false);
       });
     }
   }
@@ -120,11 +118,11 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         "Kisan Mitra (किसान मित्र)",
                         style: TextStyle(
                           fontSize: 16,
@@ -133,8 +131,8 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
                         ),
                       ),
                       Text(
-                        "24x7 AI Krishi Salahkar • Voice & Text",
-                        style: TextStyle(fontSize: 11.5, color: Color(0xFF90A4AE)),
+                        widget.state.tr('voice.kisanMitraSubtitle'),
+                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF90A4AE)),
                       ),
                     ],
                   ),
@@ -251,15 +249,15 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
               children: [
                 const Icon(Icons.support_agent_rounded, color: Color(0xFFF57F17), size: 20),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    "Sawal samajh nahi aaya? Vishvasniya Krishi Scientist se baat karein.",
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF5D4037)),
+                    widget.state.tr('voice.expertBanner'),
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF5D4037)),
                   ),
                 ),
                 TextButton(
                   onPressed: _showExpertHandoff,
-                  child: const Text("Expert Call →", style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFF57F17))),
+                  child: Text(widget.state.tr('voice.expertCall'), style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFF57F17))),
                 ),
               ],
             ),
@@ -302,7 +300,7 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
                     controller: _textController,
                     onSubmitted: (_) => _sendMessage(),
                     decoration: InputDecoration(
-                      hintText: "Sawal poochein (e.g. Tamatar bhav)...",
+                      hintText: widget.state.tr('voice.askQuestionHint'),
                       hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF90A4AE)),
                       filled: true,
                       fillColor: const Color(0xFFF5F7FA),
@@ -343,17 +341,23 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
                 const Icon(Icons.warning_amber_rounded, color: Color(0xFFF57F17), size: 20),
                 const SizedBox(width: 6),
                 Text(
-                  "MARKET JAANKARI (Market Saturation Alert)",
+                  widget.state.tr('voice.marketInfo'),
                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Colors.orange.shade900),
                 ),
               ],
             ),
             const Divider(),
-            Text("📍 Aapke ${data['radiusKm']}km ke aas-paas:", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-            Text("• ${data['sowingCount']} kisanon ne ${data['crop']} lagaya hai\n• Pichle hafte mandi mein ${data['arrivalIncrease']} zyada aavak aayi", style: const TextStyle(fontSize: 12, height: 1.4)),
+            Text(widget.state.tr('voice.nearYou').replaceAll('{radiusKm}', '${data['radiusKm']}'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+            Text(
+              widget.state.tr('voice.saturationSummary')
+                  .replaceAll('{sowingCount}', '${data['sowingCount']}')
+                  .replaceAll('{crop}', '${data['crop']}')
+                  .replaceAll('{arrivalIncrease}', '${data['arrivalIncrease']}'),
+              style: const TextStyle(fontSize: 12, height: 1.4),
+            ),
             const SizedBox(height: 8),
 
-            const Text("Anumanit Bhav (3 mahine baad):", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+            Text(widget.state.tr('voice.estimatedPrice'), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             // Risk Meter Bar
             ClipRRect(
@@ -369,11 +373,11 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("${data['predictedPrice']} (Gir sakta hai)", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.red)),
+                Text(widget.state.tr('voice.priceMayFall').replaceAll('{predictedPrice}', '${data['predictedPrice']}'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.red)),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(4)),
-                  child: const Text("HIGH RISK 🔴", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.red)),
+                  child: Text(widget.state.tr('voice.highRisk'), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.red)),
                 ),
               ],
             ),
@@ -390,8 +394,13 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("💡 Sujhav (Recommended Alternative):", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF2E7D32))),
-                  Text("• ${data['alternativeCrop']} ki demand zyada hai\n• Anumanit bhav: ${data['altPrice']}", style: const TextStyle(fontSize: 11.5, height: 1.4, color: Color(0xFF1B5E20))),
+                  Text(widget.state.tr('voice.suggestion'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF2E7D32))),
+                  Text(
+                    widget.state.tr('voice.alternativeSummary')
+                        .replaceAll('{alternativeCrop}', '${data['alternativeCrop']}')
+                        .replaceAll('{altPrice}', '${data['altPrice']}'),
+                    style: const TextStyle(fontSize: 11.5, height: 1.4, color: Color(0xFF1B5E20)),
+                  ),
                 ],
               ),
             ),
@@ -406,25 +415,25 @@ class _KisanMitraChatbotSheetState extends State<KisanMitraChatbotSheet> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.person_pin_rounded, color: Color(0xFF43A047), size: 24),
             SizedBox(width: 8),
-            Text("Senior Scientist Handoff", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+            Text(widget.state.tr('voice.seniorScientistHandoff'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           ],
         ),
-        content: const Text(
-          "Dr. A.K. Sharma (Plant Pathologist) ko aapki chat history aur khet data (Nashik 3.5 acre) bheja ja raha hai.\n\nWhatsApp / Voice Call dwara 5 minute mein sampark hoga.",
-          style: TextStyle(fontSize: 13, height: 1.4),
+        content: Text(
+          widget.state.tr('voice.handoffMessage'),
+          style: const TextStyle(fontSize: 13, height: 1.4),
         ),
         actions: [
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              widget.state.showToast("Expert Request Sent! Call connecting in 2 mins.");
+              widget.state.showToast(widget.state.tr('voice.expertRequestSent'));
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF43A047)),
-            child: const Text("Call Confirm Karein", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+            child: Text(widget.state.tr('voice.confirmCall'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           ),
         ],
       ),

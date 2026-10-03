@@ -37,4 +37,17 @@ class MarketplaceApi {
 
   Future<Map<String, dynamic>> removeCartItem(String productId) =>
       _client.delete(cartItemPath(productId));
+
+  Future<Map<String, dynamic>> postReview(
+    String productId,
+    int rating,
+    String comment,
+  ) =>
+      _client.post(productReviewsPath(productId), body: {
+        'rating': rating,
+        'comment': comment,
+      });
+
+  Future<Map<String, dynamic>> listReviews(String productId) =>
+      _client.get(productReviewsPath(productId));
 }

@@ -171,6 +171,31 @@ class LandlordHomeView extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionCard(
+                  title: "प्लॉट और पट्टे",
+                  subtitle: "प्लॉट, लीज व किराया ट्रैकिंग",
+                  icon: Icons.landscape_rounded,
+                  color: const Color(0xFF8B5CF6),
+                  onTap: () => state.navigateTo('landlordPlots'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildActionCard(
+                  title: "ज़मीन लिस्टिंग",
+                  subtitle: "किराए की ज़मीन व अनुरोध",
+                  icon: Icons.storefront_rounded,
+                  color: const Color(0xFF0D9488),
+                  onTap: () => state.navigateTo('landListings'),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 18),
 
           // 3. Active Land Leases Summary Card

@@ -1,0 +1,198 @@
+/* Dairy analytics (P11) — month cockpit + farmer 6-month trend.
+   Hand-rolled SVG charts (AnaBars); classes are dairy-ana-* prefixed and reuse
+   tokens.css custom properties. No chart dependencies. */
+
+.dairy-ana-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dairy-ana-nav-btn {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.dairy-ana-nav-label {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--av-title);
+  white-space: nowrap;
+}
+
+.dairy-ana-nav-input {
+  flex: 0 0 auto;
+  width: auto;
+  height: 42px;
+}
+
+/* ---- Month-over-month deltas ---- */
+.dairy-ana-delta {
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dairy-ana-delta.up {
+  color: #16a34a;
+}
+
+.dairy-ana-delta.down {
+  color: #dc2626;
+}
+
+.dairy-ana-delta.flat {
+  color: var(--av-slate-1);
+  font-weight: 700;
+}
+
+.dairy-ana-delta-vs {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+  white-space: nowrap;
+}
+
+/* ---- Amber dues card (links to payments) ---- */
+.dairy-ana-stat-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin-top: 12px;
+  background: var(--av-gold-bg);
+  border: 1.5px solid #fde68a;
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--av-font);
+  transition: transform 0.12s ease;
+}
+
+.dairy-ana-stat-warn:active {
+  transform: scale(0.99);
+}
+
+.dairy-ana-stat-warn .dairy-stat-label {
+  color: var(--av-gold-text);
+}
+
+.dairy-ana-stat-warn .dairy-stat-value {
+  color: var(--av-gold-text);
+}
+
+.dairy-ana-stat-warn .dairy-stat-sub {
+  color: var(--av-gold-text);
+  opacity: 0.85;
+}
+
+/* ---- Charts grid ---- */
+.dairy-ana-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dairy-ana-chart {
+  gap: 10px;
+}
+
+.dairy-ana-chart-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+.dairy-ana-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dairy-ana-svg text {
+  font-family: var(--av-font);
+}
+
+.dairy-ana-axis {
+  font-size: 9px;
+  font-weight: 700;
+  fill: var(--av-slate-1);
+}
+
+.dairy-ana-xlabel {
+  font-size: 8.5px;
+  fill: var(--av-slate-1);
+}
+
+.dairy-ana-hlabel {
+  font-size: 10px;
+  font-weight: 800;
+  fill: var(--av-title);
+}
+
+.dairy-ana-val {
+  font-size: 9px;
+  font-weight: 800;
+  fill: var(--av-title);
+}
+
+.dairy-ana-val-inverse {
+  fill: #fff;
+}
+
+.dairy-ana-axis-line {
+  stroke: var(--av-border-grey-soft);
+  stroke-width: 1;
+}
+
+/* ---- Per-chart empty state ---- */
+.dairy-ana-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 12px;
+  font-size: 26px;
+}
+
+.dairy-ana-empty p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--av-slate-1);
+}
+
+/* ---- Sales by-status chips ---- */
+.dairy-ana-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dairy-ana-status-count {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--av-title);
+}
+
+/* ---- Farmer 6-month trend ---- */
+.dairy-ana-trend-card {
+  gap: 4px;
+}
+
+@media (min-width: 720px) {
+  .dairy-ana-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

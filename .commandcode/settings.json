@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(python3 -m pytest tests/test_auth.py tests/test_referral.py -q 2 >& 1)",
+      "Shell(pnpm:*)",
+      "Shell(.venv/bin/python:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

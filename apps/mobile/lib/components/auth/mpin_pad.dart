@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../data/translations.dart';
+import '../../state/app_state.dart';
 
 class MpinPad extends StatelessWidget {
   const MpinPad({
     super.key,
     required this.controller,
-    this.label = '4-अंकीय MPIN',
+    this.label,
+    this.state,
     this.errorText,
     this.onChanged,
   });
 
   final TextEditingController controller;
-  final String label;
+  final String? label;
+  final AppState? state;
   final String? errorText;
   final ValueChanged<String>? onChanged;
 
@@ -31,7 +35,9 @@ class MpinPad extends StatelessWidget {
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       onChanged: onChanged,
       decoration: InputDecoration(
-        labelText: label,
+        labelText: label ??
+            AppTranslations.get(
+                'common.fourDigitMpin', state?.language ?? 'hi'),
         counterText: '',
         errorText: errorText,
         filled: true,

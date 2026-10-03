@@ -11,7 +11,7 @@ from app.services.users import get_user
 
 router = APIRouter(prefix="/mandi", tags=["mandi"])
 
-MANDI_ROLES = ("farmer", "seller", "broker")
+MANDI_ROLES = ("farmer", "seller", "broker", "directBuyer")
 
 
 def _error(status_code: int, code: str, message: str):

@@ -50,3 +50,22 @@ async def test_reset_with_firebase_token(client):
     resp = await client.post("/v1/auth/mpin/verify", json={"mpin": "4321"}, headers=_auth(token))
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+async def test_verify_with_refresh_token(client):
+    resp = await client.post("/v1/auth/firebase-verify", json={"idToken": "refresh-user-1"})
+    tokens = resp.json()
+    access_token = tokens["accessToken"]
+    refresh_token = tokens["refreshToken"]
+    await client.post("/v1/auth/mpin/set", json={"mpin": "1234"}, headers=_auth(access_token))
+
+    # Verify with refreshToken in body (no Authorization header)
+    resp = await client.post("/v1/auth/mpin/verify", json={"mpin": "1234", "refreshToken": refresh_token})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+    # Wrong mpin with refreshToken in body
+    resp = await client.post("/v1/auth/mpin/verify", json={"mpin": "9999", "refreshToken": refresh_token})
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "WRONG_MPIN"
+
