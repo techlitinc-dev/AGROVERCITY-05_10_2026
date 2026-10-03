@@ -1127,3 +1127,44 @@
   font-weight: 800;
   color: #14532D;
 }
+
+/* ---- AI badge + confidence gate (phase-01 WS-03) ---- */
+
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 2px 8px;
+  vertical-align: middle;
+}
+
+.ai-badge-high {
+  background: #DCFCE7;
+  color: #166534;
+  border: 1px solid #86EFAC;
+}
+
+.ai-badge-mid {
+  background: #FEF9C3;
+  color: #854D0E;
+  border: 1px solid #FDE68A;
+}
+
+.ai-badge-low {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+}
+
+.dash-action-card.confident {
+  border-color: #4ADE80;
+  box-shadow: 0 6px 18px rgba(74, 222, 128, 0.18);
+}
+
+.dash-action-cta.neutral {
+  background: #E5E7EB;
+  color: #374151;
+}

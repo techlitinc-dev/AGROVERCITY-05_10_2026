@@ -9,6 +9,7 @@ import logging
 import os
 
 from app.services.ai import question_sets, privacy
+from app.services.ai.question_sets import _due_date_order
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,27 @@ def _load_fixtures() -> dict:
     return fixtures
 
 
+def _rank_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic tasks.rank.v1 shim: due-date order + monotone impacts."""
+    ranking = _due_date_order(state)
+    total = len(ranking) or 1
+    impacts = {
+        task_id: round((total - index) / total, 3) for index, task_id in enumerate(ranking)
+    }
+    return (
+        {
+            "ranking": ranking,
+            "headline_task": ranking[0] if ranking else None,
+            "confidence": 0.9,
+            "impacts": impacts,
+        },
+        0.9,
+    )
+
+
 async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
+    if question_set_id == "tasks.rank.v1":
+        return _rank_answers(state)
     record = _load_fixtures().get(question_set_id)
     if record is not None:
         return dict(record.get("answers") or {}), float(record.get("confidence", 0.9))

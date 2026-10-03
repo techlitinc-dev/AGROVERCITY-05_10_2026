@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from app.core.db import get_doc, set_doc
 
 
-async def record_outcome(decision_id: str, outcome: dict) -> dict:
+async def record_outcome(decision_id: str, outcome) -> dict:
+    """Link a logged decision to its real-world outcome (string label or dict)."""
     decision = await get_doc("ai_decisions", decision_id)
     if decision is None:
         raise ValueError(f"unknown decision: {decision_id}")

@@ -1,7 +1,15 @@
 from datetime import date, datetime, timedelta, timezone
+import json
+import os
 
+from app.services import task_ranking
+from app.services.ai import config_store, gateway
 from app.services.tasks import COLLECTION, DEEP_LINKS, emit_task
 from tests.test_diary import auth, seed_user
+
+RANK_FIXTURE = os.path.join(
+    os.path.dirname(__file__), "fixtures", "ai", "golden", "tasks.rank.v1.jsonl"
+)
 
 
 def _task_docs(user_store):
@@ -238,3 +246,110 @@ async def test_invalid_cursor_envelope(client, user_store):
     resp = await client.get("/v1/tasks?cursor=not-a-cursor", headers=auth(token))
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "INVALID_CURSOR"
+
+
+# ---------------- ranking (task 3.9 / 3.10) ----------------
+
+
+async def test_rank_v1_shim_is_deterministic(client, user_store):
+    today = date.today().isoformat()
+    await _emit(kind="a", source_id="s1", priority="urgent", due_at=f"{today}T06:00:00+00:00")
+    await _emit(kind="b", source_id="s2", priority="today")
+    token = seed_user(user_store)
+    first = await client.get("/v1/tasks/today", headers=auth(token))
+    second = await client.get("/v1/tasks/today", headers=auth(token))
+    ids1 = [(item["taskId"], bool(item.get("headline_task"))) for item in first.json()["items"]]
+    ids2 = [(item["taskId"], bool(item.get("headline_task"))) for item in second.json()["items"]]
+    assert ids1 == ids2
+    assert any(item.get("headline_task") for item in first.json()["items"])
+
+
+async def test_rank_v1_golden_fixture(client, user_store):
+    with open(RANK_FIXTURE, encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            case = json.loads(line)
+            result = await gateway.decide(case["input"], "tasks.rank.v1", module="tasks")
+            assert result.answers["ranking"] == case["output"]["ranking"]
+            assert result.answers["headline_task"] == case["output"]["headline_task"]
+            assert result.confidence == case["output"]["confidence"]
+
+
+async def test_rank_chunking_merges_twelve_tasks(client, user_store):
+    tasks = [
+        {
+            "taskId": f"t{i:02d}",
+            "userId": "uid-1",
+            "persona": "farmer",
+            "module": "trade",
+            "kind": "k",
+            "title": {"en": "x", "hi": "x"},
+            "subtitle": "",
+            "priority": "today",
+            "deepLink": DEEP_LINKS["trade"],
+            "dueAt": f"2026-10-{i + 1:02d}T06:00:00+00:00",
+            "status": "open",
+            "sourceId": f"s{i}",
+            "coinsAwarded": 0,
+            "createdAt": "2026-10-01T00:00:00+00:00",
+            "updatedAt": "2026-10-01T00:00:00+00:00",
+        }
+        for i in range(12)
+    ]
+    ranked, headline = await task_ranking.rank_tasks("uid-1", "farmer", tasks)
+    assert [task["taskId"] for task in ranked] == [f"t{i:02d}" for i in range(12)]
+    assert headline == "t00"
+
+
+async def test_rank_fallback_on_gateway_error(client, user_store, monkeypatch):
+    today = date.today().isoformat()
+    await _emit(kind="late", source_id="s1", priority="upcoming", due_at=f"{today}T20:00:00+00:00")
+    await _emit(kind="early", source_id="s2", priority="upcoming", due_at=f"{today}T08:00:00+00:00")
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr("app.services.ai.gateway.decide", boom)
+    token = seed_user(user_store)
+    resp = await client.get("/v1/tasks/today", headers=auth(token))
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert [item["kind"] for item in items] == ["early", "late"]
+    assert not any(item.get("headline_task") for item in items)
+
+
+async def test_rank_flag_off_due_date_order(client, user_store):
+    config_store.clear_cache()
+    user_store["platform_config/ai"] = {
+        "modules": {"tasks": False},
+        "thresholds": {},
+        "automation": {},
+    }
+    today = date.today().isoformat()
+    await _emit(kind="late", source_id="s1", priority="upcoming", due_at=f"{today}T20:00:00+00:00")
+    await _emit(kind="early", source_id="s2", priority="upcoming", due_at=f"{today}T08:00:00+00:00")
+    token = seed_user(user_store)
+    resp = await client.get("/v1/tasks/today", headers=auth(token))
+    assert resp.status_code == 200
+    assert [item["kind"] for item in resp.json()["items"]] == ["early", "late"]
+    decisions = [key for key in user_store if key.startswith("ai_decisions/")]
+    assert decisions == []
+    config_store.clear_cache()
+
+
+async def test_done_outcome_hook_records_within_24h(client, user_store):
+    task_id = await _emit()
+    token = seed_user(user_store)
+    ranked = await client.get("/v1/tasks/today", headers=auth(token))
+    headline = next(item for item in ranked.json()["items"] if item.get("headline_task"))
+    decision_id = headline["decisionId"]
+    assert decision_id
+    resp = await client.post(
+        f"/v1/tasks/{task_id}/done",
+        json={"decisionId": decision_id},
+        headers={**auth(token), "Idempotency-Key": "key-outcome-1"},
+    )
+    assert resp.status_code == 200
+    assert f"ai_outcomes/{decision_id}" in user_store
+    assert user_store[f"ai_outcomes/{decision_id}"]["outcome"] == "task-completed-within-24h"

@@ -10,6 +10,31 @@ from typing import Any, Callable
 AUTOMATION_LEVELS = ("suggest", "require_confirm", "auto")
 
 
+def _due_date_order(state: dict) -> list[str]:
+    """Canonical ordering: urgent first, then dueAt ascending, then id."""
+    tasks = state.get("tasks") or []
+    ordered = sorted(
+        tasks,
+        key=lambda task: (
+            0 if task.get("priority") == "urgent" else 1,
+            task.get("dueAt") or "9999-12-31",
+            task.get("id") or "",
+        ),
+    )
+    return [task.get("id") for task in ordered if task.get("id")]
+
+
+def _rank_fallback(state: dict) -> dict:
+    """Deterministic due-date sort (SDR step 5 fallback for tasks.rank.v1)."""
+    ranking = _due_date_order(state)
+    return {
+        "ranking": ranking,
+        "headline_task": ranking[0] if ranking else None,
+        "confidence": 0.0,
+        "impacts": {},
+    }
+
+
 @dataclass
 class QuestionSet:
     id: str
@@ -54,5 +79,18 @@ register(
         schema={"crop": "unknown", "sowingWindow": "not-available"},
         confidence_threshold=0.75,
         automation_level="suggest",
+    )
+)
+
+# Brief M5 — task ranking: orders /v1/tasks/* and picks the hero next-best
+# action. Ranking annotates; the user still taps (automation stays `suggest`).
+register(
+    QuestionSet(
+        id="tasks.rank.v1",
+        version="v1",
+        schema={"ranking": [], "headline_task": None, "confidence": 0.0, "impacts": {}},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_rank_fallback,
     )
 )

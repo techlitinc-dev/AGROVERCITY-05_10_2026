@@ -8,12 +8,15 @@ import MenuBar from '../../components/dashboard/MenuBar';
 import ProfileSwitcherBar from '../../components/dashboard/ProfileSwitcherBar';
 import ProfileSwitcherSheet from '../../components/dashboard/ProfileSwitcherSheet';
 import { PersonaBanner, PromoBanner, SectionTitle, ToolTile } from '../../components/dashboard/tiles';
+import AiBadge from '../../components/ai/AiBadge';
+import ConfidenceGate from '../../components/ai/ConfidenceGate';
 import InsightsPanel from '../../components/intelligence/InsightsPanel';
 import SellerHomeBoard from '../../components/dashboard/SellerHomeBoard';
 import { toast } from '../../components/toast';
 import { getIntelligence, type IntelligenceResponse } from '../../lib/api/intelligence';
 import { getToday, markDone, summary as fetchSummary, type Task, type TaskSummary } from '../../lib/api/tasks';
 import { canAccess, personaHomeConfig } from '../../lib/dashboard';
+import { ZERO } from '../../lib/numDefaults';
 import { PERSONAS, personaByType, personaLabel } from '../../lib/personas';
 import { isKnownRoute } from '../../lib/routes';
 import { useT } from '../../lib/i18n';
@@ -276,28 +279,37 @@ export default function DashboardHome() {
           <span className="dash-aggregate-hint">{t('dashAggregateHint')}</span>
         </div>
 
-        {/* 1 — Hero next-best-action mount point (WS-03 fills this in). */}
+        {/* 1 — Hero next-best-action card (WS-03 ranked). */}
         {headlineTask ? (
           <section className="dash-section dash-hero-action">
             <SectionTitle title={t('dashActionHeroTitle')} />
-            <div className="dash-action-card">
-              <span className="dash-action-icon">{MODULE_ICON[headlineTask.module] ?? '✅'}</span>
-              <div className="dash-action-main">
-                <div className="dash-action-title">{taskTitle(headlineTask)}</div>
-                {headlineTask.subtitle ? (
-                  <div className="dash-action-sub">{headlineTask.subtitle}</div>
-                ) : null}
-              </div>
-              {isKnownRoute(headlineTask.deepLink) ? (
-                <button
-                  type="button"
-                  className="dash-action-cta"
-                  onClick={() => openTask(headlineTask)}
-                >
-                  {t('dashTaskOpen')} →
-                </button>
-              ) : null}
-            </div>
+            <ConfidenceGate
+              confidence={headlineTask.rank_confidence ?? ZERO}
+            >
+              {(preselected) => (
+                <div className={`dash-action-card${preselected ? ' confident' : ''}`}>
+                  <span className="dash-action-icon">{MODULE_ICON[headlineTask.module] ?? '✅'}</span>
+                  <div className="dash-action-main">
+                    <div className="dash-action-title">
+                      {taskTitle(headlineTask)}{' '}
+                      <AiBadge confidence={headlineTask.rank_confidence ?? ZERO} />
+                    </div>
+                    {headlineTask.subtitle ? (
+                      <div className="dash-action-sub">{headlineTask.subtitle}</div>
+                    ) : null}
+                  </div>
+                  {isKnownRoute(headlineTask.deepLink) ? (
+                    <button
+                      type="button"
+                      className={`dash-action-cta${preselected ? '' : ' neutral'}`}
+                      onClick={() => openTask(headlineTask)}
+                    >
+                      {t('dashTaskOpen')} →
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </ConfidenceGate>
           </section>
         ) : null}
 

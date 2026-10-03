@@ -145,7 +145,7 @@
 - RUN: `ls website/src/views/dashboard/DashboardHome.tsx website/src/lib/dashboard.ts website/src/lib/personas.ts website/src/stores/dashboard.ts website/src/lib/api/intelligence.ts website/src/lib/api/client.ts website/src/components/intelligence/InsightsPanel.tsx website/src/components/dashboard/tiles.tsx website/src/lib/i18n/index.ts website/src/lib/i18n/locales/en.ts website/src/lib/i18n/locales/hi.ts website/src/lib/i18n/locales/en.trade.ts website/src/lib/i18n/locales/hi.trade.ts website/src/theme/dashboard.css website/src/App.tsx`
 - EXPECT: exit 0; all 15 paths printed.
 - IF FAIL: a cited file is missing → STOP the phase (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.2 — Create tasks API wrapper
 - PRECONDITION: `test -f backend/app/routers/tasks.py` — if this fails, STOP the phase (playbook §5).
@@ -153,112 +153,112 @@
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the type/import errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.3 — Create en.dashboard locale file
 - DO: Create `website/src/lib/i18n/locales/en.dashboard.ts` (new) following the `en.trade.ts` module-pair pattern. Add English strings for every new UI label the Action Center needs: the five section titles (hero next-best-action, urgent strip, today's tasks, module summary grid, money snapshot), task-row actions (done, dismiss, open), empty states ("no tasks today" style per section), celebration copy including a coins variant with a count param, the aggregate toggle ("All profiles"), per-module one-line status strings with count/amount params (e.g. offers-expiring, rent-overdue patterns), and loading skeleton accessibility labels. Every string with a number takes it as a `t()` param — never bake numbers into strings.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the file to match the locale-module type shape used by `en.trade.ts`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.4 — Create hi.dashboard locale file with full parity
 - DO: Create `website/src/lib/i18n/locales/hi.dashboard.ts` (new) containing a Hindi translation for EVERY key added in task 2.3 — identical key set, same param names. en+hi parity at ship time is a hard gate (rule 6).
 - RUN: `cd website && pnpm exec tsc --noEmit && grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/en.dashboard.ts | sort > /tmp/en.keys && grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/hi.dashboard.ts | sort > /tmp/hi.keys && diff /tmp/en.keys /tmp/hi.keys && echo PARITY_OK`
 - EXPECT: exit 0 and output ends with `PARITY_OK` (en/hi key sets identical); `tsc` clean.
 - IF FAIL: add/remove keys in `hi.dashboard.ts` until `diff` is empty, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.5 — Register dashboard locale pair in i18n index
 - DO: In `website/src/lib/i18n/index.ts`, register the new `en.dashboard` / `hi.dashboard` module pair exactly the way the existing module pairs (`en.trade`/`hi.trade` etc.) are registered — same import style, same merge/registration call. Touch only the registration lines.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: match the registration pattern of an existing pair, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.6 — Wire DashboardHome data fetching
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, begin the rebuild: using `useT()` for strings, the `activeProfile`/`linkedProfiles` from `website/src/stores/dashboard.ts`, and the new `website/src/lib/api/tasks.ts` + existing `website/src/lib/api/intelligence.ts`, add state + effects that fetch `getToday()`, `summary(activePersona | 'all')`, and the intelligence response on mount and when the active profile changes. Keep the fetched data in component state; render nothing new yet beyond the data wiring (sections land in tasks 2.7–2.13). No `?? <number>` fallbacks anywhere — missing data stays undefined and renders loading/empty UI (tasks 2.16).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the type errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.7 — Build urgent strip section
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, render the urgent strip (instructions.md §WS-02 step 2.2): red/amber cards for tasks with `priority === "urgent"` from the fetched today/summary data (expiring offers, pickups today, payment releases), each card showing the localized title/subtitle via `t()` and navigating to the task's `deepLink` on tap. Section title via `t()`. Render the section only when at least one urgent task exists.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.8 — Build today's-tasks checklist
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, render the today's-tasks checklist from the `getToday()` data: each row shows an icon, the localized `title`/`subtitle` from the task doc, a one-tap primary action that navigates to `deepLink`, and a done toggle that calls `markDone(id, decisionId)` and updates local state so the row flips to done WITHOUT a reload. Strings via `t()`; icon-first rows (P7); no `alert()`/`confirm()` — use `components/toast.ts` for feedback.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.9 — Add done celebration with coins
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, on a successful `markDone`: play a celebration micro-animation on the row (CSS in `website/src/theme/dashboard.css` — add the animation class there if needed) and, when the completed task's `coinsAwarded > 0`, show the coins celebration string from the dashboard locale pair with the coin count as a `t()` param ("+coins where applicable", robust.md §4.2). No hardcoded copy; no invented coin numbers.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.10 — Build module summary grid
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, render the module summary grid: one card per module the active persona can access per the ACL matrix in `website/src/lib/dashboard.ts`; each card shows the live open count and a one-line status string (from the dashboard locale pair, count/amount as `t()` params — e.g. offers-expiring / rent-overdue patterns) sourced from the `summary()` response's `moduleCounts` and `topUrgent`. A module with zero open tasks shows its honest empty/zero state string — never an invented number.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.11 — Build money snapshot, remove hardcoded metric pills
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, render the money snapshot section from the `/intelligence` response (pending receivables/payables/settlements fields from WS-01 task 1.11), formatting paisa client-side as ₹. Then DELETE every hardcoded metric pill in this file — including any `PersonaBanner` metrics fed from static config — so the snapshot replaces them (instructions.md §WS-02 step 2.5). If `PersonaBanner` in `website/src/components/dashboard/tiles.tsx` takes metrics only from static config, stop passing them; missing API data renders a loading/empty state, never a fallback number.
 - RUN: `cd website && pnpm exec tsc --noEmit && grep -rn "?? [0-9]" src/views/dashboard/DashboardHome.tsx || echo CLEAN`
 - EXPECT: exit 0 from `tsc`; grep prints `CLEAN` (no `?? <number>` in the file).
 - IF FAIL: remove the hardcoded fallback/metric and re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.12 — Build persona switcher + aggregate mode
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, add the "All profiles" aggregate toggle (string from the dashboard locale pair): when ON, fetch `summary('all')` and union tasks across the user's `linkedProfiles`; when OFF, use the active persona only. The farmer persona defaults the toggle ON (robust.md §4.2 — farmer is the super-user); other personas default OFF. Persist nothing server-side; local state is fine.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.13 — Add hero card mount point
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, add the hero next-best-action mount point as the FIRST section above the urgent strip: render it only when a fetched task carries `headline_task === true` (WS-03 attaches this server-side); for now it renders the task's localized title + primary action navigating to `deepLink` (WS-03 task 3.13 replaces this with the full hero component). Section order after this task: hero → urgent strip → today's tasks → module summary grid → money snapshot → persona switcher/aggregate toggle.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.14 — Keep persona home boards mounted below
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, confirm the existing persona home boards (`SellerHomeBoard`, `TransportHomeBoard`, `BrokerHomeBoard`, `BuyerHomeBoard`, `LandlordHomeBoard`, `EquipmentOwnerHomeBoard`, `CustomerHomeBoard`, `InstructorHomeBoard`, `DairyManagerHomeBoard`) still render BELOW the new Action Center sections, unchanged (they are refactored in phases 02–04, not here). Restore any the rebuild accidentally dropped.
 - RUN: `cd website && grep -c "HomeBoard" src/views/dashboard/DashboardHome.tsx && pnpm exec tsc --noEmit`
 - EXPECT: `grep -c` prints a number ≥ 9 (all boards still referenced); `tsc` exits 0.
 - IF FAIL: restore the missing board import/JSX exactly as it was, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.15 — Assert deep-link route integrity client-side
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, add a route-integrity guard for task actions: build the set of registered route prefixes from `website/src/App.tsx` (export a `ROUTE_PREFIXES` constant from a small new module `website/src/lib/routes.ts` (new) listing the `path=` prefixes, or reuse an existing registry if one exists); when rendering a task's action button, check the task's `deepLink` against that set — unknown route → render the task WITHOUT the action button (never a dead tap, robust.md §4.3). All other task rendering is unchanged.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.16 — Add loading skeletons and honest empty states
 - DO: In `website/src/views/dashboard/DashboardHome.tsx`, add per P7: skeleton card placeholders (styles in `website/src/theme/dashboard.css` if not already present) while any section's fetch is in flight, and an honest empty state with an icon per section when its data is empty (all strings from the dashboard locale pair — "no tasks today" etc.). No fake numbers anywhere in loading or empty states.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0, no type errors.
 - IF FAIL: fix the errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.17 — WS-02 cleanliness gate
 - DO: Run the scriptable parts of the WS-02 acceptance: the `?? <number>` grep over all dashboard views, and a spot check that the new dashboard keys exist in both locale files.
 - RUN: `cd website && grep -rn "?? [0-9]" src/views || echo CLEAN; grep -c ":" src/lib/i18n/locales/en.dashboard.ts src/lib/i18n/locales/hi.dashboard.ts`
 - EXPECT: grep prints `CLEAN` (robust.md §4.3: zero hardcoded metrics); both locale files print a key count > 0 and the counts are equal.
 - IF FAIL: remove the offending fallback or fix locale parity, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.18 — HUMAN CHECK: Action Center walkthrough
 - DO: Human: start the app with `./run.sh --no-mobile` from the repo root (API :8000, website :5173). Log in at http://localhost:5173 as a multi-profile user. (1) Confirm the five sections render with live data on the farmer persona and on one business persona; (2) toggle "All profiles" and confirm tasks from both personas union; (3) tap a task → confirm it lands on its module screen (no dead tap, no "coming soon"); (4) mark a task done → confirm the celebration plays, coins show when `coinsAwarded > 0`, and the summary count decrements without a reload; (5) switch language to Hindi and re-walk the page, confirming every new label is Hindi.
@@ -272,7 +272,7 @@
 - RUN: `cd website && pnpm exec tsc --noEmit && pnpm build && grep -rn "?? [0-9]" src/views || echo "clean"`
 - EXPECT: `tsc` clean, `pnpm build` exits 0, grep prints `clean`; then the commit succeeds (if git identity is missing, note it and continue — playbook §6).
 - IF FAIL: fix the build/grep failure, re-run; only commit when green — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-03 — Task ranking AI  (see instructions.md §WS-03)
 

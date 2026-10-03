@@ -26,6 +26,8 @@ export interface Task {
   decisionId?: string | null;
   coinsAwarded: number;
   headline_task?: boolean;
+  /** WS-03 ranking confidence for the headline task (0–1). */
+  rank_confidence?: number;
   createdAt: string;
   updatedAt: string;
 }
