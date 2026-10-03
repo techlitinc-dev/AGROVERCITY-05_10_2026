@@ -511,245 +511,245 @@
 - RUN: `ls backend/app/routers/advisory.py backend/app/routers/weather.py backend/app/routers/offers.py backend/app/routers/lots.py backend/app/routers/purchases.py backend/app/routers/transport.py backend/app/routers/equipment.py backend/app/routers/equipment_owner.py backend/app/routers/land.py backend/app/services/rent_reminders.py backend/app/routers/dairy_manager.py backend/app/routers/loans.py backend/app/routers/finance.py backend/app/routers/insurance.py backend/app/routers/insurance_claims.py backend/app/routers/contracts.py backend/app/routers/direct_buyer.py backend/app/routers/schemes.py backend/app/services/eligibility.py backend/app/routers/courses.py backend/app/routers/teachers.py backend/app/routers/broker.py backend/app/routers/post_harvest.py backend/app/routers/gamification.py backend/app/routers/referrals.py backend/app/routers/users.py`
 - EXPECT: exit 0; all 26 paths printed.
 - IF FAIL: a cited router is missing/renamed → STOP the phase (playbook §5) and report the contradiction.
-- [ ]
+- [x]
 
 ### Task 5.2 — Wire emit_task into advisory/crop_cycles
 - DO: In `backend/app/routers/advisory.py` (and the advisory service it calls, if transitions live there), call `await emit_task(...)` (import from `app.services.tasks`) at the existing advisory state transitions for the §WS-05 table row "crop_cycles / advisory": sowing-window advisories ("Sow tomato this week"), spray-window advisories ("Spray window tomorrow 6–9am"), sowing-intent nudges, saturation warnings. Per call: `module="advisory"`, a snake_case `kind` per trigger (e.g. `sowing_window`, `spray_window`, `sowing_intent_nudge`, `saturation_warning`), `title_en` from the table example, `title_hi` its Hindi translation, `subtitle` from real values in the triggering doc (no invented numbers), `priority` per time pressure (`spray_window` → `urgent`), `due_at` ISO from the doc when a deadline exists, `source_id` = the advisory/crop-cycle doc id, `deep_link` = `DEEP_LINKS["advisory"]` (+ doc id if parameterized). FIRST run the deep-link gate: `grep -n "path=" website/src/App.tsx` — if no advisory route exists, instead write a dated deferral note in `missing-features/robust.md` under the advisory module's §7 entry and skip emission (never a dead-end task). If a transition also writes a notification doc, set its `data.deepLink` to the same value.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_advisory.py`
 - EXPECT: exit 0; existing advisory tests pass (emission wired or deferral note written).
 - IF FAIL: fix the wiring (never weaken tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.3 — Test advisory task emission
 - DO: In `backend/tests/test_advisory.py` (extend — do not remove tests), add `test_advisory_transition_emits_task`: perform one wired transition from task 5.2 (or, if 5.2 ended in a deferral note, assert nothing and mark this task [x] with the note "deferred per robust.md"), then assert a `tasks` doc exists with `module="advisory"`, the expected `kind`, `status="open"`, non-empty `title.en` and `title.hi`, and a `deepLink` present in `DEEP_LINKS` from `app.services.tasks`.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_advisory.py`
 - EXPECT: exit 0; all advisory tests pass.
 - IF FAIL: fix the emission code (never the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.4 — Wire emit_task into weather alerts
 - DO: In `backend/app/routers/weather.py` / `backend/app/services/weather.py`, at the severe-weather alert transition, call `await emit_task(...)` for the §WS-05 table row "weather": "Heavy rain in 48h — delay urea" (`module="weather"`, `kind="severe_weather_alert"`, `priority="urgent"`, `title_en`/`title_hi` from the example + Hindi, `subtitle` from real alert values, `due_at` = alert window start ISO, `source_id` = the alert doc id, `deep_link` = `DEEP_LINKS["weather"]`). Deep-link gate first: `grep -n "path=" website/src/App.tsx`; no weather route → dated deferral note in `missing-features/robust.md` under weather's §7 entry, skip emission. If the transition also writes a notification doc, set `data.deepLink` to the same value.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_weather.py`
 - EXPECT: exit 0; existing weather tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.5 — Test weather task emission
 - DO: In `backend/tests/test_weather.py`, add `test_severe_weather_emits_task`: trigger the alert path and assert a `tasks` doc with `module="weather"`, `kind="severe_weather_alert"`, `status="open"`, localized `title.en`/`title.hi`, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.4 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_weather.py`
 - EXPECT: exit 0; all weather tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.6 — Wire emit_task into trade (lots/offers/purchases)
 - DO: In `backend/app/routers/offers.py`, `backend/app/routers/lots.py`, and `backend/app/routers/purchases.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "trade": new offers on a lot ("3 new offers on your onion lot" — count from the real offers query), counter expiring ("Counter expires in 6h"), pickup scheduled ("Pickup scheduled — keep produce ready"), payment pending release ("Payment ₹18,400 pending release" — integer paisa from the purchase/settlement doc, formatted client-side). `module="trade"`, kinds e.g. `new_offers`, `counter_expiring`, `pickup_scheduled`, `payment_pending_release`; `source_id` = the offer/lot/purchase doc id; `deep_link` = `DEEP_LINKS["trade"]` (or `DEEP_LINKS["purchases"]` for the payment row) + doc id for parameterized routes. Deep-link gate first via `grep -n "path=" website/src/App.tsx` (the `myOffers`/`purchases` routes exist — use them); notification `data.deepLink` aligned where notifications are also written.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_demands_offers.py tests/test_lots.py tests/test_purchases.py`
 - EXPECT: exit 0; existing trade tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.7 — Test trade task emission
 - DO: In `backend/tests/test_demands_offers.py`, add `test_offer_created_emits_task`: create an offer on another user's lot and assert a `tasks` doc for the lot owner with `module="trade"`, `kind="new_offers"`, `status="open"`, `title.en`/`title.hi` non-empty, `deepLink` in `DEEP_LINKS`. Add a second test for one more wired trade transition (e.g. payment pending release) in the matching test file with the same assertions on its kind.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_demands_offers.py tests/test_lots.py tests/test_purchases.py`
 - EXPECT: exit 0; all trade tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.8 — Wire emit_task into transport
 - DO: In `backend/app/routers/transport.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "transport": new booking request, trip starting soon ("Trip starts in 2h"), POD pending upload, weekly settlement ready ("Weekly settlement ₹28,500 ready" — integer paisa). `module="transport"`, kinds e.g. `booking_request`, `trip_starting`, `pod_pending`, `settlement_ready`; `source_id` = the booking/trip/settlement doc id; `deep_link` = `DEEP_LINKS["transport"]` + trip id where parameterized (the `/dashboard/p/transport/trips/:tripId` route exists). Deep-link gate first via `grep -n "path=" website/src/App.tsx`; align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_transport.py tests/test_tms.py`
 - EXPECT: exit 0; existing transport tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.9 — Test transport task emission
 - DO: In `backend/tests/test_transport.py`, add `test_booking_request_emits_task`: create a booking request and assert a `tasks` doc for the vehicle owner with `module="transport"`, `kind="booking_request"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS`.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_transport.py tests/test_tms.py`
 - EXPECT: exit 0; all transport tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.10 — Wire emit_task into equipment
 - DO: In `backend/app/routers/equipment.py` and `backend/app/routers/equipment_owner.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "equipment": booking approval needed, machine due back today, service due ("Service due: Mahindra 575" — machine name from the real doc). `module="equipment"`, kinds e.g. `booking_approval_needed`, `machine_due_back`, `service_due`; `source_id` = the booking/machine doc id; `deep_link` = `DEEP_LINKS["equipment"]` if it exists. Deep-link gate first via `grep -n "path=" website/src/App.tsx`; no equipment route → dated deferral note in `missing-features/robust.md` under equipment's §7 entry, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_equipment.py tests/test_equipment_approve.py tests/test_equipment_owner.py`
 - EXPECT: exit 0; existing equipment tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.11 — Test equipment task emission
 - DO: In `backend/tests/test_equipment_approve.py`, add `test_booking_approval_emits_task`: request an equipment booking and assert a `tasks` doc for the owner with `module="equipment"`, `kind="booking_approval_needed"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.10 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_equipment.py tests/test_equipment_approve.py tests/test_equipment_owner.py`
 - EXPECT: exit 0; all equipment tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.12 — Wire emit_task into land + rent-reminders job
 - DO: (a) In `backend/app/services/rent_reminders.py` (the job triggered via `POST /jobs/rent-reminders/run` with the `X-Cron-Secret` header): alongside its existing notification writes, ALSO call `await emit_task(...)` for "Rent due from tenant in 3 days" (`module="land"`, `kind="rent_due"`, `priority` per days-left, `due_at` = due date ISO, `source_id` = the lease doc id + due month so dedupe works per period, ₹ as integer paisa in the subtitle). (b) In `backend/app/routers/land.py`, emit at the transitions for lease expiring in 30 days and new lease request (`kinds` `lease_expiring`, `lease_request`). `deep_link` = `DEEP_LINKS["land"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no land route → dated deferral note under land's §7 entry in `missing-features/robust.md`, skip emission. Notification `data.deepLink` must carry the same value (continues task 1.13).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_land.py tests/test_rent_reminders.py`
 - EXPECT: exit 0; existing land + rent-reminders tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.13 — Test land + rent-reminders task emission
 - DO: In `backend/tests/test_rent_reminders.py`, add `test_rent_reminder_job_emits_task`: run the job path and assert BOTH the notification doc AND a `tasks` doc (`module="land"`, `kind="rent_due"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS`) exist, and that running the job twice creates only one task (dedupe via `source_id`). In `backend/tests/test_land.py`, add `test_lease_request_emits_task` with the same field assertions for `kind="lease_request"` (or mark [x] with "deferred per robust.md" if task 5.12 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_land.py tests/test_rent_reminders.py`
 - EXPECT: exit 0; all land + rent-reminders tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.14 — Wire emit_task into dairy
 - DO: In `backend/app/routers/dairy_manager.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "dairy": morning collection not logged, payment batch ready to approve, rate chart expiring ("Rate chart expires Sunday"). `module="dairy"`, kinds e.g. `collection_missing`, `payment_batch_ready`, `rate_chart_expiring`; `source_id` = the collection-day/batch/rate-chart doc id; `deep_link` = `DEEP_LINKS["dairy"]` (+ sub-path like `/payments` per `website/src/App.tsx` dairy console routes, e.g. `/dairy/console/payments/:batchId`). Deep-link gate first via `grep -n "path=" website/src/App.tsx` (dairy console routes exist — use the matching one per kind). Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/ -k "dairy" `
 - EXPECT: exit 0; existing dairy tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.15 — Test dairy task emission
 - DO: In the existing dairy test file (instructions cite `backend/tests/test_dairy_mgmt.py`; locate with `ls backend/tests | grep -i dairy` and extend the file that tests the dairy manager transitions), add `test_payment_batch_ready_emits_task`: bring a payment batch to ready and assert a `tasks` doc for the dairy manager with `module="dairy"`, `kind="payment_batch_ready"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS`.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/ -k "dairy"`
 - EXPECT: exit 0; all dairy tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.16 — Wire emit_task into loans/finance
 - DO: In `backend/app/routers/loans.py` and `backend/app/routers/finance.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "loans / finance": loan approved ("Loan approved — accept terms"), EMI due in 5 days, KCC limit top-up available. `module="loans"`, kinds e.g. `loan_approved`, `emi_due`, `kcc_topup_available`; `source_id` = the loan/EMI doc id; ₹ as integer paisa. `deep_link` = `DEEP_LINKS["loans"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no loans/finance route → dated deferral note under the module's §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_loans.py tests/test_finance.py`
 - EXPECT: exit 0; existing loans/finance tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.17 — Test loans/finance task emission
 - DO: In `backend/tests/test_loans.py`, add `test_loan_approved_emits_task`: advance a loan to approved and assert a `tasks` doc with `module="loans"`, `kind="loan_approved"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.16 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_loans.py tests/test_finance.py`
 - EXPECT: exit 0; all loans/finance tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.18 — Wire emit_task into insurance
 - DO: In `backend/app/routers/insurance.py` and `backend/app/routers/insurance_claims.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "insurance": claim surveyor assigned, claim rejected ("Claim rejected — appeal within 15 days" — `due_at` = appeal deadline ISO), PMFBY enrollment deadline. `module="insurance"`, kinds e.g. `claim_surveyor_assigned`, `claim_rejected_appeal`, `pmfby_enrollment_deadline`; `source_id` = the claim/policy doc id. `deep_link` = `DEEP_LINKS["insurance"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no insurance route → dated deferral note under insurance's §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_insurance_claims.py tests/test_insurance_policies.py tests/test_insurance_provider.py`
 - EXPECT: exit 0; existing insurance tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.19 — Test insurance task emission
 - DO: In `backend/tests/test_insurance_claims.py`, add `test_claim_status_change_emits_task`: advance a claim to surveyor-assigned (or rejected) and assert a `tasks` doc with `module="insurance"`, the expected `kind`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.18 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_insurance_claims.py tests/test_insurance_policies.py tests/test_insurance_provider.py`
 - EXPECT: exit 0; all insurance tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.20 — Wire emit_task into contracts/direct buyer
 - DO: In `backend/app/routers/contracts.py` and `backend/app/routers/direct_buyer.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "contracts / direct buyer": contract delivery due this week, new grow-for-us offer matching the farmer's crops. `module="contracts"`, kinds e.g. `contract_delivery_due`, `grow_for_us_offer_match`; `source_id` = the contract/offer doc id; `deep_link` = `DEEP_LINKS["contracts"]` + contract id where parameterized (the `/dashboard/p/contracts/:contractId` and `/dashboard/p/myContracts/:contractId` routes exist — pick the one matching the user's role in the contract). Deep-link gate first via `grep -n "path=" website/src/App.tsx`; align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_contracts.py tests/test_contracts_direct.py`
 - EXPECT: exit 0; existing contracts tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.21 — Test contracts task emission
 - DO: In `backend/tests/test_contracts.py`, add `test_contract_delivery_due_emits_task`: move a contract into its delivery week and assert a `tasks` doc with `module="contracts"`, `kind="contract_delivery_due"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS`.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_contracts.py tests/test_contracts_direct.py`
 - EXPECT: exit 0; all contracts tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.22 — Wire emit_task into schemes
 - DO: In `backend/app/routers/schemes.py` and `backend/app/services/eligibility.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "schemes": PM-Kisan installment credited, new scheme matching the user's profile ("New scheme matches your profile — apply by 12 Nov" — deadline from the scheme doc). `module="schemes"`, kinds e.g. `scheme_installment_credited`, `scheme_match_deadline`; `source_id` = the scheme/installment doc id; `due_at` = application deadline ISO. `deep_link` = `DEEP_LINKS["schemes"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no schemes route → dated deferral note under schemes' §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_schemes.py`
 - EXPECT: exit 0; existing schemes tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.23 — Test schemes task emission
 - DO: In `backend/tests/test_schemes.py`, add `test_scheme_match_emits_task`: trigger the eligibility match path and assert a `tasks` doc with `module="schemes"`, `kind="scheme_match_deadline"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.22 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_schemes.py`
 - EXPECT: exit 0; all schemes tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.24 — Wire emit_task into courses/instructor
 - DO: In `backend/app/routers/courses.py` and `backend/app/routers/teachers.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "courses / instructor": live class starting ("Live class at 5pm"), pending assignment reviews ("12 pending assignment reviews" — real count), certificate ready. `module="courses"`, kinds e.g. `live_class_starting`, `assignment_reviews_pending`, `certificate_ready`; `source_id` = the class/assignment/certificate doc id. `deep_link` = `DEEP_LINKS["courses"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no courses route → dated deferral note under the module's §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_courses.py tests/test_saas_teachers.py`
 - EXPECT: exit 0; existing courses/teachers tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.25 — Test courses task emission
 - DO: In `backend/tests/test_courses.py`, add `test_live_class_emits_task`: schedule/move a live class into its start window and assert a `tasks` doc with `module="courses"`, `kind="live_class_starting"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.24 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_courses.py tests/test_saas_teachers.py`
 - EXPECT: exit 0; all courses/teachers tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.26 — Wire emit_task into broker
 - DO: In `backend/app/routers/broker.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "broker": deal awaiting confirmation, commission payout processed. `module="broker"`, kinds e.g. `deal_confirmation_pending`, `commission_payout_processed`; `source_id` = the deal/payout doc id; `deep_link` = `DEEP_LINKS["broker"]` + deal id where parameterized (the `/dashboard/p/broker/deals/:dealId` route exists). Deep-link gate first via `grep -n "path=" website/src/App.tsx`; align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_broker_deals.py`
 - EXPECT: exit 0; existing broker tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.27 — Test broker task emission
 - DO: In `backend/tests/test_broker_deals.py`, add `test_deal_confirmation_emits_task`: move a deal into awaiting-confirmation and assert a `tasks` doc with `module="broker"`, `kind="deal_confirmation_pending"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS`.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_broker_deals.py`
 - EXPECT: exit 0; all broker tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.28 — Wire emit_task into cold storage (post_harvest)
 - DO: In `backend/app/routers/post_harvest.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "cold storage": chamber booking confirmed, lot releases tomorrow. `module="post_harvest"`, kinds e.g. `chamber_booking_confirmed`, `lot_release_tomorrow`; `source_id` = the booking/lot doc id. `deep_link` = `DEEP_LINKS["post_harvest"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no cold-storage route → dated deferral note under the module's §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_cold_storage.py tests/test_climate_postharvest.py tests/test_cold_storage_provider.py`
 - EXPECT: exit 0; existing cold-storage tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.29 — Test cold-storage task emission
 - DO: In `backend/tests/test_cold_storage.py`, add `test_chamber_booking_emits_task`: confirm a chamber booking and assert a `tasks` doc with `module="post_harvest"`, `kind="chamber_booking_confirmed"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.28 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_cold_storage.py tests/test_climate_postharvest.py tests/test_cold_storage_provider.py`
 - EXPECT: exit 0; all cold-storage tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.30 — Wire emit_task into gamification/referrals
 - DO: In `backend/app/routers/gamification.py` and `backend/app/routers/referrals.py`, call `await emit_task(...)` at the transitions for the §WS-05 table row "gamification / referrals": coins close to next reward ("50 coins to next reward" — real delta), referral milestone reached. `module="gamification"`, kinds e.g. `coins_to_next_reward`, `referral_milestone`; `source_id` = the reward/milestone doc id (or a stable key like `<userId>:next-reward` so dedupe works). `deep_link` = `DEEP_LINKS["gamification"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no route → dated deferral note under the module's §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_gamification.py tests/test_referrals.py tests/test_referral.py`
 - EXPECT: exit 0; existing gamification/referrals tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.31 — Test gamification task emission
 - DO: In `backend/tests/test_gamification.py`, add `test_reward_proximity_emits_task`: push a user's coin balance to within the reward threshold and assert a `tasks` doc with `module="gamification"`, `kind="coins_to_next_reward"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.30 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_gamification.py tests/test_referrals.py tests/test_referral.py`
 - EXPECT: exit 0; all gamification/referrals tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.32 — Wire emit_task into KYC/account
 - DO: In `backend/app/routers/users.py`, call `await emit_task(...)` at the KYC state transitions for the §WS-05 table row "KYC / account": KYC verification needed to receive payouts, document expiring. `module="kyc"`, kinds e.g. `kyc_needed_for_payout`, `kyc_document_expiring`; `source_id` = the KYC/document doc id (or a stable key `<userId>:kyc` for dedupe). `deep_link` = `DEEP_LINKS["kyc"]` if it exists — deep-link gate first via `grep -n "path=" website/src/App.tsx`; no KYC route → dated deferral note under the module's §7 entry in `missing-features/robust.md`, skip emission. Align notification `data.deepLink` where applicable.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_users.py tests/test_account.py`
 - EXPECT: exit 0; existing users/account tests pass.
 - IF FAIL: fix the wiring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.33 — Test KYC task emission
 - DO: In `backend/tests/test_users.py`, add `test_kyc_state_emits_task`: transition a user into KYC-required and assert a `tasks` doc with `module="kyc"`, `kind="kyc_needed_for_payout"`, `status="open"`, localized titles, `deepLink` in `DEEP_LINKS` (or mark [x] with "deferred per robust.md" if task 5.32 deferred).
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_users.py tests/test_account.py`
 - EXPECT: exit 0; all users/account tests pass.
 - IF FAIL: fix the emission code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.34 — Aggregate summary-coverage test
 - DO: In `backend/tests/test_tasks.py`, add `test_summary_covers_every_wired_module`: seed (via `emit_task`) one open task for every module that was actually wired in tasks 5.2–5.33 (skip modules with deferral notes), then `GET /v1/tasks/summary?persona=all` and assert every wired module key appears in `moduleCounts` with a count ≥ 1.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py -k "covers_every_wired_module"`
 - EXPECT: exit 0; the aggregate test passes.
 - IF FAIL: fix the summary endpoint or the missing emission (never the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.35 — Cross-check summary grid covers emitted modules
 - DO: Client-side cross-check (instructions.md §WS-05 step 7): for every module key wired in tasks 5.2–5.33, confirm the WS-02 summary grid in `website/src/views/dashboard/DashboardHome.tsx` renders a card for it for the personas whose ACL matrix in `website/src/lib/dashboard.ts` grants access. Where a wired module has no grid card, add the card mapping (module key → icon + locale status string in `en.dashboard.ts`/`hi.dashboard.ts`) — do not change ACL entries.
 - RUN: `cd website && pnpm exec tsc --noEmit && grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/en.dashboard.ts | sort > /tmp/en5.keys; grep -o "^[[:space:]]*[a-zA-Z0-9_]*:" src/lib/i18n/locales/hi.dashboard.ts | sort > /tmp/hi5.keys; diff /tmp/en5.keys /tmp/hi5.keys && echo PARITY_OK`
 - EXPECT: `tsc` exits 0; output contains `PARITY_OK`; every wired module has a grid card (verified by reading the grid mapping against the task-5.34 seeded list).
 - IF FAIL: add the missing card mapping/locale keys, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.36 — HUMAN CHECK: per-module trigger sweep
 - DO: Human: with the app running via `./run.sh --no-mobile`: for each module wired in tasks 5.2–5.33, trigger ONE transition (create an offer, request a booking, run the rent-reminders job via `curl -X POST http://localhost:8000/jobs/rent-reminders/run -H "X-Cron-Secret: <from operator env>"`, advance a claim, etc.), then open the dashboard and confirm the task appears in today's tasks; tap it and confirm it lands on a working screen — no "coming soon" reachable from any task (robust.md §4.3). Modules with dated deferral notes are exempt; confirm each such note exists in `missing-features/robust.md` with a date.
@@ -763,7 +763,7 @@
 - RUN: `cd backend && .venv/bin/python -m pytest -q`
 - EXPECT: exit 0; the FULL backend suite is green; then the commit succeeds (if git identity is missing, note it and continue — playbook §6).
 - IF FAIL: fix the failing code (never weaken tests), re-run; only commit when green — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## Phase-final gate
 
@@ -772,42 +772,42 @@
 - RUN: `cd backend && .venv/bin/python -m pytest -q`
 - EXPECT: exit 0; the entire backend suite passes, zero failures.
 - IF FAIL: identify the failing test's workstream, fix the code there (never weaken the test), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task P.2 — Gate: full backend suite green on shim
 - DO: Run the AI-provider gate from instructions.md §Phase-final verification (everything must work with the shim — rule 10).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
 - EXPECT: exit 0; the entire suite passes with `AI_PROVIDER=shim`.
 - IF FAIL: fix the shim-path code (likely a missing fallback in WS-03/WS-04), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task P.3 — Gate: website typecheck + build clean
 - DO: Run the phase-final verification website command from instructions.md §Phase-final verification.
 - RUN: `cd website && pnpm exec tsc --noEmit && pnpm build`
 - EXPECT: `tsc` exits 0 with no errors; `pnpm build` exits 0.
 - IF FAIL: fix the type/build errors shown, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task P.4 — Gate: zero hardcoded metrics in dashboard views
 - DO: Run the robust.md §4.3 verbatim check from the phase readme exit gate and instructions.md §Phase-final verification.
 - RUN: `grep -rn "?? [0-9]" website/src/views`
 - EXPECT: exit 1 (grep finds NOTHING — no output). Any match is a failure.
 - IF FAIL: remove the offending `?? <number>` fallback (missing data renders loading/empty state), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task P.5 — Gate: every module emits and appears in summary
 - DO: Verify the exit-gate item "every module emits ≥1 task type and appears in the summary grid" via the automated coverage tests written in WS-05 (task 5.34) plus the deferral-note check.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py -k "covers_every_wired_module" && grep -n "deferr" ../missing-features/robust.md | tail -20`
 - EXPECT: the coverage test passes; the grep lists a dated deferral note for every module that was NOT wired (silence is not allowed — rule 10). Cross-check by reading: wired modules + deferred modules = the 16 rows of the instructions.md §WS-05 table.
 - IF FAIL: wire the missing module or write its dated deferral note, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task P.6 — Gate: tasks API contract (summary shape, idempotency, envelope, pagination)
 - DO: Verify the exit-gate item "`GET /v1/tasks/summary` returns per-module counts + top-3 urgent per persona; `done`/`dismiss` idempotent; error envelope + cursor pagination on all endpoints" via the WS-01 automated suite.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_tasks.py`
 - EXPECT: exit 0; all `test_tasks.py` tests pass (they cover summary shape, top-3 urgent, idempotent replay, cross-user 404, cursor round-trip, envelope shape).
 - IF FAIL: fix the router code (never the tests), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task P.7 — HUMAN CHECK: farmer morning end-to-end flow
 - DO: Human (ai.md flow 5.1, exit-gate walk item 1): with the app running via `./run.sh --no-mobile` and backend on `AI_PROVIDER=shim`: open the farmer dashboard → confirm the hero next-best-action card renders and is stable across two reloads → confirm urgent strip + today's tasks + summary grid + money snapshot all show live data → tap the hero card's task → confirm it lands on the module screen → complete the action → confirm the task flips to done with the celebration (coins when applicable) and the summary count decrements without reload.
@@ -842,4 +842,4 @@
 - RUN: `git status --short | head -20`
 - EXPECT: after the commit, `git status --short` prints nothing (clean tree). If git identity is missing, note it in the report and continue (playbook §6).
 - IF FAIL: commit the remaining files or resolve the reported git error — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
