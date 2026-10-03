@@ -64,7 +64,7 @@ async def test_list_envelope_and_ownership_isolation(client, user_store):
         assert item["userId"] == "uid-a"
         assert item["read"] is False
         assert set(item.keys()) == {
-            "id", "userId", "title", "body", "type", "read", "createdAt",
+            "id", "userId", "title", "body", "type", "read", "createdAt", "data",
         }
     created = [item["createdAt"] for item in body["data"]]
     assert created == sorted(created, reverse=True)

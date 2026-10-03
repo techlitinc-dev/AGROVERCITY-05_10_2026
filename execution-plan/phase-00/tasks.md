@@ -370,14 +370,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py` (cwd: `backend/`)
 - EXPECT: exit 0 (baseline unchanged — `admin.py` not yet modified).
 - IF FAIL: this is a pre-existing failure — record it and continue (see ordering note); if the file has a syntax/import error from your edit, fix it — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.2 — Route admin.py through core deps admin_user
 - DO: Edit `backend/app/routers/admin.py`: (1) delete the `_require_admin` function (~L24–32) and the `_admin_user` function (~L35–40), including the hardcoded UID fallback (`admin-root`, `uid-admin`, `admin-demo`); (2) replace `from app.core.deps import current_user_id` with `from app.core.deps import admin_user`; (3) replace every `Depends(_admin_user)` with `Depends(admin_user)`; (4) in every handler, replace `user["id"]` with `user["uid"]` (Firebase claims carry `uid`, not `id`); (5) remove now-unused imports (`current_user_id`, `get_user` if unused elsewhere in the file — check before removing).
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py` (cwd: `backend/`)
 - EXPECT: command completes; failures caused by the auth-mechanism switch are expected here and fixed in task 2.5 — no 500s from `NameError`/`ImportError` (i.e. no test may error with a missing `_admin_user` reference).
 - IF FAIL: `grep -n "_admin_user\|_require_admin" app/routers/admin.py` must return nothing — remove the missed reference, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.3 — Add admin_action dependency with audit headers
 - DO: Edit `backend/app/core/deps.py`: (1) add imports `from datetime import datetime, timezone`, `from fastapi import Request`, `from app.core.db import set_doc`; (2) append:
@@ -416,21 +416,21 @@
 - RUN: `.venv/bin/python -c "from app.core.deps import admin_action; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports (notably `Depends`/`Header` already imported at top of `deps.py`), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.4 — Wire admin_action into admin mutations
 - DO: Edit `backend/app/routers/admin.py`: (1) add `from app.core.deps import admin_user, admin_action` (replace the task-2.2 import); (2) on EVERY mutating endpoint (`@router.post` / `@router.put` / `@router.delete` in this file — at minimum `update_user_status`, `review_kyc_document`, the claim-adjudication endpoint, and the expert-ticket resolve endpoint) add a dependency parameter `_audit: dict = Depends(admin_action("<ACTION_NAME>"))` where `<ACTION_NAME>` is the existing audit action string for that endpoint (e.g. `"UPDATE_USER_STATUS"`, `"REVIEW_KYC_DOC"`). Read-only `@router.get` endpoints keep `Depends(admin_user)` only.
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py` (cwd: `backend/`)
 - EXPECT: command completes; admin mutations without the new headers now 400 `AUDIT_REASON_REQUIRED` — failing assertions about that are fixed in task 2.5.
 - IF FAIL: fix any `NameError`/signature error, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.5 — Update admin tests for new auth path
 - DO: Edit `backend/tests/test_admin.py`: make every admin request use a Firebase admin identity — header `Authorization: Bearer admin-token` (the conftest token from task 2.1) — and make every admin MUTATION also send `X-Admin-Role: superadmin` and `X-Audit-Reason: test reason`. Where a test asserts 403 for a non-admin, use `Bearer plain-token`. Where a test asserts the old hardcoded-UID behavior, update it to assert 403 for `plain-token` instead (this is adapting tests to the WS-02 spec, not weakening them — the spec changed per instructions.md §WS-02 steps 1–2). Never delete an assertion without replacing it with the equivalent new-mechanism assertion.
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the remaining header/identity mismatch in the failing test, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.6 — Add jti refresh-token helpers to tokens service
 - DO: Edit `backend/app/services/tokens.py`: (1) add imports `import logging`, `import uuid`, `from app.core.cache import REDIS_ERRORS, get_redis`; (2) add `"jti": uuid.uuid4().hex` to the refresh payload in `create_refresh_token`; (3) append:
@@ -489,7 +489,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (refresh tokens now carry `jti`; old `decode_token` path unchanged).
 - IF FAIL: fix the failing import/signature, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.7 — Store refresh jti and session metadata on issue
 - DO: Edit `backend/app/routers/auth.py`: (1) extend the tokens import to `from app.services.tokens import create_access_token, create_refresh_token, decode_refresh_token, decode_token, store_refresh_jti`; (2) add this helper near `_public_user`:
@@ -515,7 +515,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the missed call site (`grep -n "create_refresh_token" app/routers/auth.py` — every one must flow through `_issue_session`), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.8 — Rotate refresh tokens with replay protection
 - DO: Edit `backend/app/routers/auth.py`: (1) extend the tokens import with `is_refresh_live, revoke_refresh_family, revoke_refresh_jti`; (2) rewrite the `refresh` handler (~L249) as:
@@ -535,7 +535,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: if a test replays a refresh token and now gets 401, that assertion is updated in task 2.12 — record it here and continue only if every other failure is understood — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.9 — Add GET /auth/sessions endpoint
 - DO: Edit `backend/app/routers/auth.py`: append:
@@ -558,7 +558,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the endpoint (imports inside the function are intentional), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.10 — Add DELETE /auth/sessions/{jti} endpoint
 - DO: Edit `backend/app/routers/auth.py`: append:
@@ -580,7 +580,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the membership check, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.11 — Add logout endpoint revoking current jti
 - DO: Edit `backend/app/routers/auth.py`: append:
@@ -594,7 +594,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the handler, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.12 — Add rotation, replay, and session tests
 - DO: Edit `backend/tests/test_auth.py`: append new tests (use the existing `client`, `user_store`, `fake_redis` fixtures; each new test must first `monkeypatch.setattr("app.services.tokens.get_redis", lambda: _fake())` where `_fake` is an async function returning the `fake_redis` fixture — request `fake_redis` and `monkeypatch` as test parameters):
@@ -605,14 +605,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py -k "rotation or replay or sessions"` (cwd: `backend/`)
 - EXPECT: exit 0, the 3 new tests pass.
 - IF FAIL: print the 401/500 body in the failing test and align it with the implemented behavior (the implementation is the truth per instructions.md §WS-02 steps 3–4), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.13 — Add mpinReentryRequired flag to session store
 - DO: Edit `website/src/stores/session.ts`: add state field `mpinReentryRequired: boolean` (initial `false`), an action `setMpinReentryRequired(v: boolean)`, and make the existing `clear()` also reset `mpinReentryRequired` to `false`. Persist it alongside the existing persisted fields if the store uses `persist`.
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: match the store's existing zustand patterns exactly, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.14 — Route 401 refresh failure to MPIN re-entry
 - DO: Edit `website/src/lib/api/client.ts` in `refreshSession`'s `catch` block: replace the hard `useSessionStore.getState().clear(); window.location.assign('/auth')` behavior with:
@@ -626,14 +626,14 @@
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the store action name to match task 2.13, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.15 — Build MPIN re-entry sheet with i18n
 - DO: (1) Create `website/src/views/auth/MpinReentrySheet.tsx` (new): a sheet/modal styled like the existing `ForgotMpinSheet.tsx` (read it first and mirror its structure) with a 4-digit MPIN input and submit; on submit it calls `POST /v1/auth/mpin/verify` then `POST /v1/auth/refresh` (via the existing wrappers in `website/src/lib/api/auth.ts` — read it and reuse; add a `verifyMpin` wrapper there if none exists), on success calls `setMpinReentryRequired(false)` and navigates back to `window.history.back()`-equivalent route state, on failure shows the error text from the envelope (NO `alert()` — playbook §3 rule 3). All user-facing strings via `t()`. (2) Edit `website/src/lib/i18n/locales/en.ts` AND `website/src/lib/i18n/locales/hi.ts`: add matching keys `auth.mpinReentry.title` ("Session expired — re-enter MPIN" / "सत्र समाप्त — MPIN दोबारा दर्ज करें"), `auth.mpinReentry.subtitle`, `auth.mpinReentry.submit`, `auth.mpinReentry.failed`. (3) Edit `website/src/views/auth/AuthView.tsx`: when the URL has `?reentry=mpin` or `mpinReentryRequired` is true, render `MpinReentrySheet` instead of the login choices.
 - RUN: `pnpm exec tsc --noEmit && node -e "const en=require('fs').readFileSync('src/lib/i18n/locales/en.ts','utf8');const hi=require('fs').readFileSync('src/lib/i18n/locales/hi.ts','utf8');for(const k of ['mpinReentry']){if(!en.includes(k)||!hi.includes(k))process.exit(1)}console.log('parity ok')"` (cwd: `website/`)
 - EXPECT: `tsc` exit 0 and output `parity ok` (keys present in BOTH locale files — playbook §3 rule 3).
 - IF FAIL: add the missing locale key(s) to whichever file lacks them, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.16 — Create Redis rate-limit core module
 - DO: Create `backend/app/core/ratelimit.py` (new) with exactly:
@@ -675,35 +675,35 @@
 - RUN: `.venv/bin/python -c "from app.core.ratelimit import hit, rate_limit_ip; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.17 — Rate-limit auth login and OTP surfaces
 - DO: Edit `backend/app/routers/auth.py`: (1) add `from app.core.ratelimit import hit` and `from fastapi import Request` to imports; (2) in `login_with_phone_mpin` add a `request: Request` parameter and as the first statement `await hit("login", f"{request.client.host if request.client else 'unknown'}:{_normalize_phone(body.phone)}", 10, 600)` (10 per 10 min per IP+phone); (3) in `mpin_reset` (the OTP-request surface), after `decoded = _verify_firebase_token(body.idToken)` add `await hit("otp", decoded.get("phone_number") or decoded["uid"], 5, 600)` (5 per 10 min per phone).
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (no Redis in tests → fail-open).
 - IF FAIL: fix the call placement, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.18 — Test OTP rate limit returns 429
 - DO: Edit `backend/tests/test_auth.py`: append `test_otp_rate_limit_429` — request `client`, `user_store`, `fake_redis`, `monkeypatch`; monkeypatch `app.core.ratelimit.get_redis` with an async function returning `fake_redis`; seed `user_store["users/uid-1"] = {"id": "uid-1", "phone": "+919812345678"}`; call `POST /v1/auth/mpin/reset` six times with `{"idToken": "any", "newMpin": "9876"}` (conftest's fake Firebase verify returns phone `+919812345678`); assert calls 1–5 are not 429 and call 6 returns 429 with envelope code `RATE_LIMITED`.
 - RUN: `.venv/bin/python -m pytest -q tests/test_auth.py -k rate_limit` (cwd: `backend/`)
 - EXPECT: exit 0, 1 test passes.
 - IF FAIL: check the reset handler's idempotency on repeated newMpin (calls 1–5 may legitimately 200/404 — assert only "not 429" for those), adjust the seeding, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.19 — Rate-limit Razorpay order/verify endpoints
 - DO: Edit `backend/app/routers/orders.py`: (1) add `from app.core.ratelimit import hit` to imports; (2) in `razorpay_order` and `razorpay_verify`, as the first statement of each: `await hit("payments", uid, 20, 60)` (20/min per user).
 - RUN: `.venv/bin/python -m pytest -q tests/test_orders.py tests/test_order_lifecycle.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the call placement, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.20 — Rate-limit chat message send
 - DO: Edit `backend/app/routers/chat.py`: (1) add `from app.core.ratelimit import hit` to imports; (2) in the `POST /rooms/{room_id}/messages` handler (~L164), as the first statement after the user id is known: `await hit("chat", uid, 60, 60)` (60/min per user — use the handler's actual user-id variable name).
 - RUN: `.venv/bin/python -m pytest -q tests/test_chatbot.py` (cwd: `backend/`) — there is no dedicated chat-router test file; this guards against import breakage.
 - EXPECT: exit 0, all pass.
 - IF FAIL: run `.venv/bin/python -c "from app.routers import chat"` to surface the error, fix, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 2.21 — HUMAN CHECK: admin and session flows manually
 - DO: HUMAN CHECK — with the dev server running (`cd backend && .venv/bin/uvicorn app.main:app --port 8000`) the human: (1) runs `cd backend && .venv/bin/python scripts/make_admin.py` for a test Firebase user per its `--help`; (2) calls any admin mutation WITHOUT `X-Audit-Reason` → expects 400 `AUDIT_REASON_REQUIRED`; (3) repeats WITH `X-Admin-Role: superadmin` + `X-Audit-Reason: manual check` → expects success; (4) confirms a non-claim account (even `admin-root`) gets 403 on `GET /v1/admin/overview`.
@@ -717,4 +717,4 @@
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_auth.py tests/test_admin.py && cd .. && git add -A && git commit -m "phase-00 WS-02: auth & admin-auth unification"`
 - EXPECT: both test files pass; commit created (git-identity failure is non-blocking per playbook §6 — note it and continue).
 - IF FAIL: fix failures caused by WS-02 files; record pre-existing unrelated failures per the ordering note — else STOP (playbook §5) with full output.
-- [ ]
+- [x]

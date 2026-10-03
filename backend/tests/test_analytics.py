@@ -117,7 +117,9 @@ def _admin(user_store, uid="admin-root"):
         "primaryProfile": "farmer",
         "isAdmin": True,
     }
-    return create_access_token(uid)
+    # Unified admin_user mechanism (WS-02): admin console signs in with Firebase
+    # Auth; the test identity resolves via the conftest admin-token.
+    return "admin-token"
 
 
 async def test_customer_analytics(client, emarket):
@@ -204,7 +206,7 @@ async def test_admin_emarket_analytics(client, emarket):
 
 async def test_admin_emarket_analytics_forbidden_for_non_admin(client, emarket):
     resp = await client.get(
-        "/v1/admin/analytics/emarket", headers={"Authorization": f"Bearer {_token('cust-1')}"}
+        "/v1/admin/analytics/emarket", headers={"Authorization": "Bearer plain-token"}
     )
     assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "FORBIDDEN_ADMIN"
+    assert resp.json()["error"]["code"] == "ADMIN_REQUIRED"

@@ -72,11 +72,14 @@ async def test_delete_entry(client, user_store):
 
 
 async def test_report_returns_url(client, user_store, monkeypatch):
+    from datetime import date
+
+    today = date.today().isoformat()
     token = seed_user(user_store)
-    await client.post("/v1/diary/entries", json=ENTRY, headers=auth(token))
+    await client.post("/v1/diary/entries", json={**ENTRY, "date": today}, headers=auth(token))
     await client.post(
         "/v1/diary/entries",
-        json={**ENTRY, "title": "Sold wheat", "type": "income", "amount": 5000},
+        json={**ENTRY, "date": today, "title": "Sold wheat", "type": "income", "amount": 5000},
         headers=auth(token),
     )
     monkeypatch.setattr(

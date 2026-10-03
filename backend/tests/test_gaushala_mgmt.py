@@ -322,6 +322,9 @@ async def test_expenses_forbidden_for_farmer(client, user_store):
 # --- Dashboard ---
 
 async def test_dashboard_aggregates(client, user_store):
+    from datetime import datetime, timezone
+
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
     token = seed_user(user_store, uid="mgr-1", active_profile="dairyManager")
     profile = await _create_profile(client, token)
     _seed_cattle(user_store, profile["id"])
@@ -339,11 +342,11 @@ async def test_dashboard_aggregates(client, user_store):
     }
     user_store["fodder_donations/don-1"] = {
         "id": "don-1", "gaushalaId": profile["id"], "donorId": "farmer-1",
-        "donorName": "अशोकराव कदम", "amountInr": 3500, "createdAt": "2026-09-20T10:00:00Z",
+        "donorName": "अशोकराव कदम", "amountInr": 3500, "createdAt": f"{month}-20T10:00:00Z",
     }
     user_store["gaushala_expenses/exp-1"] = {
         "id": "exp-1", "gaushalaId": profile["id"], "category": "fodder",
-        "amount": 5000.0, "expenseDate": "2026-09-10", "createdBy": "mgr-1",
+        "amount": 5000.0, "expenseDate": f"{month}-10", "createdBy": "mgr-1",
     }
 
     resp = await client.get("/v1/livestock/gaushala/dashboard", headers=auth(token))

@@ -37,6 +37,7 @@ def razorpay(monkeypatch):
 
     monkeypatch.setattr("app.routers.orders.create_razorpay_order", fake_create_order)
     monkeypatch.setattr("app.routers.orders.refund_razorpay_payment", fake_refund)
+    monkeypatch.setattr("app.routers.courses.create_razorpay_order", fake_create_order)
     yield
 
 

@@ -1,5 +1,6 @@
 from tests.test_diary import auth, seed_user
-from tests.test_admin import _seed_admin
+from tests.test_admin import _seed_admin, admin_headers
+from tests.test_orders import razorpay, rzp_signature  # noqa: F401
 
 COURSE = {
     "title": "Tomato Protection Masterclass",
@@ -98,14 +99,14 @@ async def test_course_created_pending_and_hidden_until_published(client, user_st
     # Admin queue + publish
     admin = _seed_admin(user_store)
     queue = await client.get(
-        "/v1/admin/courses/queue", headers=auth(admin)
+        "/v1/admin/courses/queue", headers=admin_headers(admin)
     )
     assert queue.json()["total"] == 1
 
     pub = await client.post(
         f"/v1/admin/courses/{course_id}/review",
         json={"action": "publish"},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
     assert pub.status_code == 200
 
@@ -113,7 +114,7 @@ async def test_course_created_pending_and_hidden_until_published(client, user_st
     assert browse.json()["total"] == 1
 
 
-async def test_paid_purchase_flow_with_verification(client, user_store):
+async def test_paid_purchase_flow_with_verification(client, user_store, razorpay):
     instructor = _instructor_token(user_store)
     farmer = seed_user(user_store, uid="uid-farmer")
     course = (await _create(client, instructor)).json()
@@ -122,7 +123,7 @@ async def test_paid_purchase_flow_with_verification(client, user_store):
     await client.post(
         f"/v1/admin/courses/{course['id']}/review",
         json={"action": "publish"},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
 
     # Instructor cannot buy their own course
@@ -145,8 +146,8 @@ async def test_paid_purchase_flow_with_verification(client, user_store):
         "/v1/courses/purchases/verify",
         json={
             "razorpayOrderId": order_id,
-            "razorpayPaymentId": "pay_dev_1",
-            "razorpaySignature": "dev",
+            "razorpayPaymentId": "pay_test_1",
+            "razorpaySignature": rzp_signature(order_id, "pay_test_1"),
         },
         headers=auth(farmer),
     )
@@ -157,8 +158,8 @@ async def test_paid_purchase_flow_with_verification(client, user_store):
         "/v1/courses/purchases/verify",
         json={
             "razorpayOrderId": order_id,
-            "razorpayPaymentId": "pay_dev_1",
-            "razorpaySignature": "dev",
+            "razorpayPaymentId": "pay_test_1",
+            "razorpaySignature": rzp_signature(order_id, "pay_test_1"),
         },
         headers=auth(farmer),
     )
@@ -188,7 +189,7 @@ async def test_free_course_claim_hides_media_until_entitled(client, user_store):
     await client.post(
         f"/v1/admin/courses/{course['id']}/review",
         json={"action": "publish"},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
 
     detail = await client.get(f"/v1/courses/{course['id']}", headers=auth(farmer))
@@ -211,14 +212,14 @@ async def test_reject_requires_reason_and_edit_resubmits(client, user_store):
     no_reason = await client.post(
         f"/v1/admin/courses/{course['id']}/review",
         json={"action": "reject"},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
     assert no_reason.status_code == 422
 
     rejected = await client.post(
         f"/v1/admin/courses/{course['id']}/review",
         json={"action": "reject", "reason": "Video quality too low"},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
     assert rejected.status_code == 200
 
@@ -243,13 +244,13 @@ async def test_feature_and_report(client, user_store):
     await client.post(
         f"/v1/admin/courses/{course['id']}/review",
         json={"action": "publish"},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
 
     featured = await client.post(
         f"/v1/admin/courses/{course['id']}/feature",
         json={"isFeatured": True},
-        headers=auth(admin),
+        headers=admin_headers(admin),
     )
     assert featured.json()["isFeatured"] is True
 
@@ -259,6 +260,6 @@ async def test_feature_and_report(client, user_store):
     await client.post(
         f"/v1/courses/{course['id']}/purchase", headers=auth(farmer)
     )
-    report = await client.get("/v1/admin/courses/report", headers=auth(admin))
+    report = await client.get("/v1/admin/courses/report", headers=admin_headers(admin))
     assert report.json()["totalSales"] == 1
     assert report.json()["freeClaims"] == 1

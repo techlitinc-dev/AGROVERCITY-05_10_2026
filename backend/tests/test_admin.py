@@ -8,6 +8,32 @@ ADMIN_MUTATION_HEADERS = {
 }
 
 
+def _seed_admin(user_store, uid="admin-root"):
+    """Seed the legacy admin user doc and return the Firebase admin token used
+    by the unified admin_user mechanism (WS-02)."""
+    user_store[f"users/{uid}"] = {
+        "id": uid,
+        "name": "Super Admin Root",
+        "phone": "+919999999999",
+        "linkedProfiles": ["farmer", "seller"],
+        "activeProfile": "admin",
+        "primaryProfile": "farmer",
+        "isAdmin": True,
+        "agriCoins": 1000,
+    }
+    return "admin-token"
+
+
+def admin_headers(token: str | None = None) -> dict:
+    """Admin request headers for the unified admin_user mechanism; mutating
+    endpoints also require X-Admin-Role + X-Audit-Reason (harmless on GETs)."""
+    return {
+        "Authorization": f"Bearer {token or 'admin-token'}",
+        "X-Admin-Role": "superadmin",
+        "X-Audit-Reason": "test reason",
+    }
+
+
 async def test_admin_overview_metrics(client, user_store):
     # seed normal farmers
     seed_user(user_store, uid="u-f1", active_profile="farmer")

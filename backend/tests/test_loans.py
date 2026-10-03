@@ -426,7 +426,7 @@ async def test_audit_logs_written_for_banker_mutations(client, user_store):
 
 
 async def test_quick_login_bank_manager_persona(client, user_store):
-    resp = await client.post("/v1/auth/quick-login", json={"persona": "bankManager"})
+    resp = await client.post("/v1/auth/quick-login", json={"persona": "bankManager", "mpin": "9876"})
     assert resp.status_code == 200
     user = resp.json()["user"]
     assert user["activeProfile"] == "bankManager"

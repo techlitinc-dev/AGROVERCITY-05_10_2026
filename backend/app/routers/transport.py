@@ -230,7 +230,7 @@ async def create_vehicle(body: OwnerVehicleRequest, uid: str = Depends(_transpor
         "id": f"veh_{uuid.uuid4().hex[:12]}",
         "ownerId": uid,
         "active": True,
-        "docStatus": "verified",  # P0 fix: nothing else ever sets verified; ops review via docReview
+        "docStatus": "pending",
         "docReview": "pending",
         "rejectionReason": None,
         "createdAt": datetime.now(timezone.utc).isoformat(),

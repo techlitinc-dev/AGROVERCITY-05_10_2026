@@ -18,6 +18,7 @@ from app.services import reports, storage
 from app.services.coins import award_coins
 from app.services.diary_analytics import filter_by_range, summarize
 from app.services.users import get_user
+from app.routers.users import require_role
 
 router = APIRouter(prefix="/diary", tags=["diary"])
 
@@ -38,8 +39,7 @@ async def _farmer_or_landlord(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    # Cash management is for EVERY persona (product decision) — the diary
-    # collection stays per-user; role gates only require a valid account.
+    require_role(user, "farmer", "farmLandlord")
     return uid
 
 
