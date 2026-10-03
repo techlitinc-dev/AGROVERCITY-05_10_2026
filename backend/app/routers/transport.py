@@ -23,6 +23,7 @@ from app.models.transport import (
     WeighbridgeSlipRequest,
 )
 from app.routers.users import require_role
+from app.services.billing import entitlement_guard, record_usage
 from app.services.chat import ensure_transport_room
 from app.services.notifications import send_fcm_to_user
 from app.services.notify import notify_user
@@ -224,7 +225,11 @@ async def list_vehicle_types(extended: bool = False, uid: str = Depends(_viewer)
 
 
 @router.post("/vehicles", status_code=201)
-async def create_vehicle(body: OwnerVehicleRequest, uid: str = Depends(_transporter)):
+async def create_vehicle(
+    body: OwnerVehicleRequest,
+    uid: str = Depends(_transporter),
+    _plan: dict = Depends(entitlement_guard("transport", "vehicles")),
+):
     doc = {
         **body.model_dump(),
         "id": f"veh_{uuid.uuid4().hex[:12]}",
@@ -236,6 +241,7 @@ async def create_vehicle(body: OwnerVehicleRequest, uid: str = Depends(_transpor
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
     await set_doc("vehicles", doc["id"], doc)
+    await record_usage(uid, "vehicles")
     return doc
 
 

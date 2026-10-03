@@ -185,6 +185,26 @@ async def razorpay_webhook(
         },
     )
 
+    if event_type.startswith("subscription."):
+        sub_entity = (((event.get("payload") or {}).get("subscription") or {}).get("entity")) or {}
+        provider_ref = sub_entity.get("id")
+        if provider_ref:
+            matches = await query("subscriptions", [("providerRef", "==", provider_ref)], limit=1)
+            if matches:
+                subscription = matches[0]
+                status_map = {
+                    "subscription.activated": "active",
+                    "subscription.charged": "active",
+                    "subscription.halted": "past_due",
+                    "subscription.cancelled": "cancelled",
+                    "subscription.completed": "cancelled",
+                }
+                new_status = status_map.get(event_type)
+                if new_status and subscription.get("status") != new_status:
+                    subscription["status"] = new_status
+                    subscription["updatedAt"] = _now()
+                    await set_doc("subscriptions", subscription["subId"], subscription)
+
     if order_id:
         matches = await query("payments", [("razorpayOrderId", "==", order_id)], limit=1)
         if matches:

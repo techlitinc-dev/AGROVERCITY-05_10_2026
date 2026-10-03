@@ -17,6 +17,7 @@ from app.data.livestock_seed import seed_livestock
 from app.data.schemes_seed import seed_schemes
 from app.data.tree_seed import seed_tree
 from app.services.ai.config_store import seed_ai_config
+from app.services.billing import seed_plans
 from app.routers import (
     addresses,
     admin,
@@ -26,6 +27,7 @@ from app.routers import (
     app_config,
     auth,
     bank_accounts,
+    billing,
     broker,
     chat,
     chatbot,
@@ -169,6 +171,7 @@ app.include_router(loans.router, prefix="/v1")
 app.include_router(land.router, prefix="/v1")
 app.include_router(bank_accounts.router, prefix="/v1")
 app.include_router(kyc.router, prefix="/v1")
+app.include_router(billing.router, prefix="/v1")
 app.include_router(jobs.router, prefix="/v1")
 app.include_router(settlements.router, prefix="/v1")
 app.include_router(schemes.router, prefix="/v1")
@@ -237,6 +240,7 @@ async def startup():
     await seed_cold_storage()
     await seed_courses()
     await seed_ai_config()
+    await seed_plans()
 
 
 # TODO(day-later): remove or keep env-gated permanently before release.

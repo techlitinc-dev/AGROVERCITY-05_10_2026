@@ -14,6 +14,7 @@ from app.models.equipment import (
 )
 from app.routers.equipment import IST, promote_waitlist_head
 from app.routers.users import require_role
+from app.services.billing import entitlement_guard, record_usage
 from app.services.notifications import send_fcm_to_user
 from app.services.users import get_user
 
@@ -82,7 +83,11 @@ async def _pending_owner_booking(booking_id: str, uid: str) -> tuple[dict, dict,
 
 
 @router.post("", status_code=201)
-async def create_equipment(body: EquipmentUpsertRequest, uid: str = Depends(_owner)):
+async def create_equipment(
+    body: EquipmentUpsertRequest,
+    uid: str = Depends(_owner),
+    _plan: dict = Depends(entitlement_guard("equipmentRental", "machines")),
+):
     if body.slotTemplate is not None:
         _validate_slot_template(body.slotTemplate)
     # docStatus verify/reject is an admin action in the Day 14 KYC queue
@@ -104,6 +109,7 @@ async def create_equipment(body: EquipmentUpsertRequest, uid: str = Depends(_own
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
     await set_doc("equipment", doc["id"], doc)
+    await record_usage(uid, "machines")
     return doc
 
 
