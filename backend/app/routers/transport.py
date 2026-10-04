@@ -1,10 +1,12 @@
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from pydantic import BaseModel
 
 from app.core.db import delete_doc, get_doc, query, set_doc
-from app.core.deps import current_user_id
+from app.core.deps import admin_action, current_user_id
 from app.models.transport import (
     AcceptBookingRequest,
     AvailabilityRequest,
@@ -22,8 +24,12 @@ from app.models.transport import (
     VehicleTypeOut,
     WeighbridgeSlipRequest,
 )
+from app.routers.purchases import HANDOVER_OTP_MAX_ATTEMPTS, HANDOVER_OTP_VALID_MINUTES
 from app.routers.users import require_role
-from app.services.billing import entitlement_guard, record_usage
+from app.services import kyc as kyc_service
+from app.services import reports
+from app.services import settlements as settlements_service
+from app.services.billing import effective_plan, entitlement_guard, record_usage
 from app.services.chat import ensure_transport_room
 from app.services.notifications import send_fcm_to_user
 from app.services.notify import notify_user
@@ -49,6 +55,136 @@ VEHICLE_TYPES = ALL_VEHICLE_TYPES
 
 # Aligned with services/settlements.py DEFAULT_CONFIG.transportPct (10%).
 TRANSPORT_COMMISSION_RATE = 0.10
+
+# Surge multiplier hard cap (transporter-side earning lever; never applied farmer-side).
+SURGE_MULTIPLIER_CAP = 1.5
+
+# platform_config/transport_penalties — versioned, effective-dated; admin edits go
+# through maker-checker (phase-07 console), the router only consumes.
+TRANSPORT_PENALTIES_DEFAULTS = {
+    "cancelWindowHours": 24,
+    "strikesToSuspend": 3,
+    "version": 1,
+    "effectiveFrom": "2026-10-01T00:00:00+00:00",
+}
+
+
+async def _transport_penalties() -> dict:
+    """Load the penalty config; a future-dated change is not yet effective."""
+    doc = await get_doc("platform_config", "transport_penalties")
+    if doc is None:
+        doc = dict(TRANSPORT_PENALTIES_DEFAULTS)
+        await set_doc("platform_config", "transport_penalties", doc)
+        return doc
+    effective_from = doc.get("effectiveFrom")
+    if effective_from:
+        try:
+            if datetime.fromisoformat(effective_from) > datetime.now(timezone.utc):
+                return dict(TRANSPORT_PENALTIES_DEFAULTS)
+        except ValueError:
+            return dict(TRANSPORT_PENALTIES_DEFAULTS)
+    config = dict(TRANSPORT_PENALTIES_DEFAULTS)
+    for key in ("cancelWindowHours", "strikesToSuspend", "version"):
+        if key in doc:
+            config[key] = doc[key]
+    return config
+
+
+def _pickup_window_start(booking: dict, cancel_window_hours: int):
+    raw = booking.get("pickupTime") or booking.get("date")
+    if not raw:
+        return None
+    try:
+        pickup_at = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if pickup_at.tzinfo is None:
+        pickup_at = pickup_at.replace(tzinfo=timezone.utc)
+    return pickup_at - timedelta(hours=cancel_window_hours)
+
+
+async def _record_no_show_strike(transporter_id: str):
+    user = await get_user(transporter_id)
+    if user is None:
+        return
+    strikes = (user.get("noShowStrikes") or 0) + 1
+    user["noShowStrikes"] = strikes
+    config = await _transport_penalties()
+    if strikes >= config["strikesToSuspend"]:
+        user["loadBoardSuspended"] = True
+    await set_doc("users", transporter_id, user)
+
+
+async def _assert_load_board_access(uid: str):
+    user = await get_user(uid)
+    if user and user.get("loadBoardSuspended"):
+        _error(403, "SUSPENDED_FROM_LOAD_BOARD", "load board access suspended — contact support")
+
+
+async def _plan_feature_guard(uid: str, feature: str) -> dict:
+    """402 ENTITLEMENT_EXCEEDED when the user's plan lacks a named SaaS feature
+    (instructions.md WS-02 step 13: Free is commission-only; driver
+    sub-accounts / route analytics / priority load board are Pro+)."""
+    plan = await effective_plan(uid, "transport")
+    if feature not in (plan.get("features") or []):
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "ENTITLEMENT_EXCEEDED",
+                "message": f"{feature} is not available on the {plan.get('tier')} plan — upgrade to Pro",
+                "fieldErrors": {},
+                "planId": plan.get("planId"),
+                "feature": feature,
+            },
+        )
+    return plan
+
+
+def _is_driver(user: dict) -> bool:
+    profiles = user.get("linkedProfiles") or []
+    return "driver" in profiles or user.get("primaryProfile") == "driver"
+
+
+async def _fleet_member(uid: str = Depends(current_user_id)) -> str:
+    """Assigned transporter or one of their fleet drivers (T9)."""
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    require_role(user, "transport", "driver")
+    return uid
+
+
+async def _assert_trip_operator(booking: dict, uid: str):
+    """The assigned transporter, or a driver whose fleet owns the trip."""
+    transporter_id = booking.get("transporterId")
+    if uid == transporter_id:
+        return
+    user = await get_user(uid)
+    if user and _is_driver(user) and user.get("fleetOwnerId") == transporter_id:
+        return
+    _error(403, "FORBIDDEN", "only the assigned fleet can operate this trip")
+
+
+# Return-load matching window (T8): a completed/underway trip surfaces open loads
+# whose pickup is near the trip's drop district and whose pickup date falls within
+# this many days of the trip date. Deterministic — AI ranking of these is WS-06 M16.
+RETURN_LOAD_WINDOW_DAYS = 3
+_PLACE_STOPWORDS = {"the", "near", "dist", "district", "apmc", "yard", "mandi"}
+
+
+def _place_tokens(place: str) -> set[str]:
+    tokens = set()
+    for raw in str(place).lower().replace(",", " ").split():
+        token = "".join(ch for ch in raw if ch.isalnum())
+        if len(token) >= 3 and token not in _PLACE_STOPWORDS:
+            tokens.add(token)
+    return tokens
+
+
+def _places_match(pickup: str, drop: str) -> bool:
+    pickup_tokens = _place_tokens(pickup)
+    drop_tokens = _place_tokens(drop)
+    return bool(pickup_tokens & drop_tokens)
 
 ALLOWED_TRANSITIONS = {
     "requested": {"accepted", "cancelled"},
@@ -185,6 +321,74 @@ async def _get_booking(booking_id: str) -> dict:
     return booking
 
 
+# Reminder tasks fire this many days before a vehicle document expires.
+DOC_EXPIRY_REMINDER_DAYS = (30, 7, 1)
+_DOC_EXPIRY_FIELDS = (
+    ("pucExpiry", "PUC"),
+    ("fitnessExpiry", "Fitness certificate"),
+    ("insuranceExpiry", "Insurance"),
+)
+
+
+async def _emit_doc_expiry_reminders(uid: str, vehicle: dict):
+    """emit_task() reminders 30/7/1 days before each vehicle doc expiry (T7)."""
+    today = datetime.now(timezone.utc).date()
+    for field, label in _DOC_EXPIRY_FIELDS:
+        raw = vehicle.get(field)
+        if not raw:
+            continue
+        try:
+            expiry = datetime.fromisoformat(str(raw)).date()
+        except ValueError:
+            continue
+        days_left = (expiry - today).days
+        if days_left < 0 or days_left not in DOC_EXPIRY_REMINDER_DAYS:
+            continue
+        await emit_task(
+            uid,
+            "transport",
+            "transport",
+            f"vehicle_doc_expiry_{field}",
+            f"{label} expiring in {days_left} day(s)",
+            f"{label} {days_left} दिन में समाप्त होगा",
+            f"{vehicle.get('registrationNo', 'Vehicle')} — renew before {expiry.isoformat()}",
+            "high" if days_left <= 7 else "medium",
+            module_deep_link("transport", vehicle.get("id")),
+            f"{vehicle.get('id')}:{field}",
+        )
+
+
+async def _vehicle_docs_verified(vehicle: dict) -> bool:
+    """Real KYC gate (T7): the owner's transport KYC case must have rc+dl
+    verified through the phase-00 pipeline, and no vehicle document
+    (PUC / fitness / insurance) may be past its expiry date."""
+    owner_id = vehicle.get("ownerId")
+    case = await kyc_service.get_case(kyc_service.case_id_for(owner_id, "transport"))
+    if not case:
+        return False
+    verified_types = {
+        doc.get("type")
+        for doc in case.get("docs") or []
+        if doc.get("status") == "verified"
+    }
+    if not {"rc", "dl"} <= verified_types:
+        return False
+    now = datetime.now(timezone.utc)
+    for field in ("pucExpiry", "fitnessExpiry", "insuranceExpiry"):
+        raw = vehicle.get(field)
+        if not raw:
+            continue
+        try:
+            expires = datetime.fromisoformat(str(raw))
+        except ValueError:
+            continue
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= now:
+            return False
+    return True
+
+
 async def _assign_vehicle(
     booking: dict,
     uid: str,
@@ -198,8 +402,11 @@ async def _assign_vehicle(
     vehicle = await get_doc("vehicles", vehicle_id)
     if vehicle is None or vehicle.get("ownerId") != uid:
         _error(403, "NOT_VEHICLE_OWNER", "vehicle does not belong to this transporter")
-    if vehicle.get("docStatus") != "verified":
-        _error(422, "VEHICLE_NOT_VERIFIED", "vehicle documents are not verified", {"vehicleId": "documents not verified"})
+    if not await _vehicle_docs_verified(vehicle):
+        _error(422, "VEHICLE_NOT_VERIFIED", "vehicle documents are not verified or are expired", {"vehicleId": "documents not verified or expired"})
+    vehicle["docStatus"] = "verified"
+    vehicle["docReview"] = "kyc"
+    await set_doc("vehicles", vehicle_id, vehicle)
     booking["vehicleId"] = vehicle_id
     booking["vehicleNo"] = vehicle_no or vehicle.get("registrationNo")
     booking["driverName"] = driver_name or vehicle.get("driverName") or "असाइन किया गया चालक"
@@ -243,6 +450,7 @@ async def create_vehicle(
     }
     await set_doc("vehicles", doc["id"], doc)
     await record_usage(uid, "vehicles")
+    await _emit_doc_expiry_reminders(uid, doc)
     return doc
 
 
@@ -259,7 +467,10 @@ async def list_my_vehicles(verifiedOnly: bool = False, uid: str = Depends(_trans
 async def update_vehicle(vehicle_id: str, body: OwnerVehicleRequest, uid: str = Depends(_transporter)):
     vehicle = await _own_vehicle(vehicle_id, uid)
     vehicle.update(body.model_dump())
+    vehicle["docStatus"] = "pending"
+    vehicle["docReview"] = "pending"
     await set_doc("vehicles", vehicle_id, vehicle)
+    await _emit_doc_expiry_reminders(uid, vehicle)
     return vehicle
 
 
@@ -364,7 +575,10 @@ async def fare_estimate(body: FareEstimateRequest, uid: str = Depends(_viewer)):
     vt = _vehicle_type(body.vehicleType)
     distance_fare = vt["perKmRate"] * body.distanceKm
     base_fare = vt["baseFare"]
-    total = base_fare + distance_fare
+    # Surge is a transporter-side earning lever, hard-capped (never farmer-side):
+    # the estimate applies it to base+distance only after clamping to [1.0, CAP].
+    surge = min(max(body.surgeMultiplier or 1.0, 1.0), SURGE_MULTIPLIER_CAP)
+    total = round((base_fare + distance_fare) * surge, 2)
     loading_labor = 300.0 if body.distanceKm > 10 else 150.0
     toll_estimate = round((body.distanceKm / 50.0) * 85.0) if body.distanceKm >= 50 else 0.0
 
@@ -376,11 +590,13 @@ async def fare_estimate(body: FareEstimateRequest, uid: str = Depends(_viewer)):
         perishableSurcharge=0.0,
         tollEstimate=toll_estimate,
         returnDiscount=0.0,
+        surgeMultiplier=surge,
         breakdown={
             "perKmRate": vt["perKmRate"],
             "capacityTonnes": vt["capacityTonnes"],
             "loadingLabor": loading_labor,
             "tollEstimate": toll_estimate,
+            "surgeMultiplier": surge,
         },
     )
 
@@ -495,6 +711,13 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             "damageNotes": body.damageNotes,
             "deliveredAt": datetime.now(timezone.utc).isoformat(),
         }
+    if body.status == "cancelled":
+        # No-show rule: cancelling inside the pickup window records a strike on
+        # the transporter; strikesToSuspend strikes → load board suspension.
+        penalties = await _transport_penalties()
+        window_start = _pickup_window_start(booking, penalties["cancelWindowHours"])
+        if window_start is not None and datetime.now(timezone.utc) >= window_start:
+            await _record_no_show_strike(booking.get("transporterId") or uid)
     booking["status"] = body.status
     waypoints = booking.get("waypointsLog", [])
     label = "स्वीकृत" if body.status == "accepted" else ("रास्ते में" if body.status == "enRoute" else "डिलीवर पूर्ण")
@@ -535,8 +758,118 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
     return booking
 
 
+class PodOtpVerifyRequest(BaseModel):
+    otp: str
+    podPhotos: list[str] | None = None
+    receiverName: str | None = None
+    receiverPhone: str | None = None
+    damageNotes: str | None = None
+
+
+def _pod_otp_fresh(pod_otp: dict) -> bool:
+    expires_at = pod_otp.get("expiresAt")
+    if not expires_at or not pod_otp.get("otp"):
+        return False
+    try:
+        return datetime.now(timezone.utc) < datetime.fromisoformat(expires_at)
+    except ValueError:
+        return False
+
+
+@router.get("/bookings/{booking_id}/pod-otp")
+async def reveal_pod_otp(booking_id: str, uid: str = Depends(_booker)):
+    """Farmer reveals the 6-digit delivery OTP once the trip is underway.
+    Validity window and attempt cap share the purchase handover-OTP constants."""
+    booking = await _get_booking(booking_id)
+    if uid != booking.get("userId"):
+        _error(403, "FORBIDDEN", "only the booking party can view the POD OTP")
+    if booking.get("status") in ("delivered", "cancelled"):
+        _error(409, "INVALID_STATUS_TRANSITION", f"cannot reveal a POD OTP for a {booking.get('status')} booking")
+    pod_otp = booking.setdefault("podOtp", {})
+    if pod_otp.get("verifiedAt") or not _pod_otp_fresh(pod_otp):
+        pod_otp["otp"] = f"{secrets.randbelow(1000000):06d}"
+        pod_otp["generatedAt"] = datetime.now(timezone.utc).isoformat()
+        pod_otp["expiresAt"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=HANDOVER_OTP_VALID_MINUTES)
+        ).isoformat()
+        pod_otp["attempts"] = 0
+        booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        await set_doc("transport_bookings", booking_id, booking)
+    return {
+        "otp": pod_otp["otp"],
+        "expiresAt": pod_otp["expiresAt"],
+        "verifiedAt": pod_otp.get("verifiedAt"),
+    }
+
+
+@router.post("/bookings/{booking_id}/verify-pod-otp")
+async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = Depends(_transporter)):
+    """Transporter enters the farmer's OTP at physical handover → booking delivered,
+    alongside the existing podPhotos + receiverName proof fields."""
+    booking = await _get_booking(booking_id)
+    if uid != booking.get("transporterId"):
+        _error(403, "FORBIDDEN", "only the assigned transporter can verify the POD OTP")
+    pod_otp = booking.get("podOtp") or {}
+    if pod_otp.get("verifiedAt"):
+        _error(409, "ALREADY_VERIFIED", "POD OTP already verified")
+    if booking.get("status") != "enRoute":
+        _error(409, "ILLEGAL_TRANSITION", f"cannot verify POD OTP from {booking.get('status')}")
+    if not pod_otp.get("otp"):
+        _error(400, "OTP_NOT_GENERATED", "farmer must reveal the OTP first")
+    if not _pod_otp_fresh(pod_otp):
+        _error(422, "OTP_EXPIRED", "POD OTP expired — farmer should reveal again")
+    if (pod_otp.get("attempts") or 0) >= HANDOVER_OTP_MAX_ATTEMPTS:
+        _error(422, "OTP_MAX_ATTEMPTS", "too many attempts — request a new OTP from the farmer")
+    existing_pod = booking.get("pod") or {}
+    if str(body.otp or "").strip() != pod_otp.get("otp"):
+        pod_otp["attempts"] = (pod_otp.get("attempts") or 0) + 1
+        booking["podOtp"] = pod_otp
+        booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        await set_doc("transport_bookings", booking_id, booking)
+        _error(400, "INVALID_OTP", "incorrect POD OTP")
+    photos = body.podPhotos or existing_pod.get("photos")
+    receiver = body.receiverName or existing_pod.get("receiverName")
+    field_errors = {}
+    if not photos:
+        field_errors["podPhotos"] = "at least one delivery photo is required"
+    if not receiver or not receiver.strip():
+        field_errors["receiverName"] = "receiver name is required"
+    if field_errors:
+        _error(422, "POD_REQUIRED", "proof of delivery is required", field_errors)
+    pod_otp["verifiedAt"] = datetime.now(timezone.utc).isoformat()
+    pod_otp["attempts"] = 0
+    booking["podOtp"] = pod_otp
+    booking["pod"] = {
+        "photos": photos,
+        "receiverName": receiver.strip(),
+        "receiverPhone": body.receiverPhone if body.receiverPhone is not None else existing_pod.get("receiverPhone"),
+        "damageNotes": body.damageNotes if body.damageNotes is not None else existing_pod.get("damageNotes"),
+        "deliveredAt": datetime.now(timezone.utc).isoformat(),
+        "otpVerified": True,
+    }
+    booking["status"] = "delivered"
+    waypoints = booking.get("waypointsLog", [])
+    waypoints.append({
+        "waypoint": "delivered",
+        "label": "डिलीवर पूर्ण",
+        "time": datetime.now(timezone.utc).isoformat(),
+    })
+    booking["waypointsLog"] = waypoints
+    booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("transport_bookings", booking_id, booking)
+    await notify_user(
+        booking["userId"],
+        type="trip_delivered",
+        title="Delivered / डिलीवर हुआ",
+        body="Proof of delivery verified with OTP — inspect and rate your transporter",
+        path=f"/dashboard/p/transport/trips/{booking_id}",
+    )
+    return booking
+
+
 @router.post("/bookings/{booking_id}/accept")
 async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str = Depends(_transporter)):
+    await _assert_load_board_access(uid)
     booking = await _get_booking(booking_id)
     if booking.get("status") != "requested":
         _error(409, "ILLEGAL_TRANSITION", "only a requested booking can be accepted")
@@ -711,6 +1044,7 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         if veh:
             vehicle_no = veh.get("registrationNo")
 
+    plan = await effective_plan(uid, "transport")
     bid_doc = {
         "id": f"bid_{uuid.uuid4().hex[:10]}",
         "loadId": load_id,
@@ -722,6 +1056,7 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         "vehicleNo": vehicle_no,
         "estimatedPickupTime": body.estimatedPickupTime,
         "notes": body.notes,
+        "priority": (plan.get("tier") in ("pro", "enterprise")),
         "status": "pending",
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -745,8 +1080,59 @@ async def list_load_bids(load_id: str, uid: str = Depends(_viewer)):
     if load is None:
         _error(404, "LOAD_NOT_FOUND", "open load not found")
     bids = await query(f"transport_loads/{load_id}/bids", [], limit=100)
-    bids.sort(key=lambda b: b.get("quotedFare", 0))
+    # Priority load board (Pro): at equal fare, priority bids rank first.
+    bids.sort(key=lambda b: (b.get("quotedFare", 0), not b.get("priority", False)))
     return {"loadId": load_id, "data": bids, "total": len(bids)}
+
+
+class LoadBidCounterRequest(BaseModel):
+    quotedFare: float
+    notes: str | None = None
+
+
+@router.post("/loads/{load_id}/bids/{bid_id}/counter")
+async def counter_load_bid(
+    load_id: str,
+    bid_id: str,
+    body: LoadBidCounterRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    uid: str = Depends(_booker),
+):
+    """Load owner counters a transporter's bid — exactly one counter round per bid."""
+    from app.services import idempotency
+
+    if not idempotency_key:
+        _error(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required")
+    load = await get_doc("transport_loads", load_id)
+    if load is None or load.get("userId") != uid:
+        _error(404, "LOAD_NOT_FOUND", "load not found or unauthorized")
+    if load.get("status") != "open":
+        _error(409, "LOAD_NOT_OPEN", "load is no longer open for bidding")
+    stored = await idempotency.replay(f"loads.{load_id}.bids.{bid_id}.counter", idempotency_key)
+    if stored is not None:
+        return stored
+    bid = await get_doc(f"transport_loads/{load_id}/bids", bid_id)
+    if bid is None:
+        _error(404, "BID_NOT_FOUND", "bid not found")
+    if bid.get("status") != "pending":
+        _error(409, "BID_NOT_PENDING", "only a pending bid can be countered")
+    if bid.get("counter"):
+        _error(422, "COUNTER_LIMIT_REACHED", "this bid has already been countered once")
+    bid["counter"] = {
+        "quotedFare": body.quotedFare,
+        "notes": body.notes,
+        "by": uid,
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc(f"transport_loads/{load_id}/bids", bid_id, bid)
+    await idempotency.store(f"loads.{load_id}.bids.{bid_id}.counter", idempotency_key, bid)
+    await send_fcm_to_user(
+        bid["transporterId"],
+        "काउंटर ऑफर (Counter Offer)",
+        f"मालिक ने ₹{body.quotedFare} का काउंटर प्रस्ताव भेजा है",
+        {"type": "bid_countered", "loadId": load_id, "bidId": bid_id},
+    )
+    return bid
 
 
 @router.post("/loads/{load_id}/accept-bid")
@@ -757,6 +1143,7 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
     bid = await get_doc(f"transport_loads/{load_id}/bids", bidId)
     if bid is None:
         _error(404, "BID_NOT_FOUND", "bid not found")
+    await _assert_load_board_access(bid["transporterId"])
 
     load["status"] = "booked"
     load["acceptedBidId"] = bidId
@@ -819,8 +1206,9 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
 # ==========================================
 
 @router.post("/bookings/{booking_id}/location")
-async def update_trip_location(booking_id: str, body: TripLocationUpdate, uid: str = Depends(_transporter)):
+async def update_trip_location(booking_id: str, body: TripLocationUpdate, uid: str = Depends(_fleet_member)):
     booking = await _get_booking(booking_id)
+    await _assert_trip_operator(booking, uid)
     now_iso = datetime.now(timezone.utc).isoformat()
     location_data = {
         "lat": body.lat,
@@ -1001,7 +1389,10 @@ async def get_trip_expenses(booking_id: str, uid: str = Depends(_transporter)):
     expenses = await query(f"transport_bookings/{booking_id}/expenses", [], limit=100)
     gross_fare = float(booking.get("fare") or 0.0)
     total_expenses = sum(float(e.get("amount") or 0.0) for e in expenses)
-    platform_commission = round(gross_fare * TRANSPORT_COMMISSION_RATE, 2)
+    # Commission comes from platform_config/settlements.transportPct — the same
+    # config the weekly settlement run charges (single source of truth).
+    config = await settlements_service._config()
+    platform_commission = round(gross_fare * (config["transportPct"] / 100), 2)
     net_profit = round(gross_fare - total_expenses - platform_commission, 2)
 
     return {
@@ -1020,6 +1411,7 @@ async def get_trip_expenses(booking_id: str, uid: str = Depends(_transporter)):
 
 @router.get("/analytics")
 async def get_transport_analytics(uid: str = Depends(_transporter)):
+    await _plan_feature_guard(uid, "routeAnalytics")
     vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=100)
     active_vehicles = [v for v in vehicles if v.get("active", True)]
     bookings = await query("transport_bookings", [("transporterId", "==", uid)], limit=1000)
@@ -1043,3 +1435,318 @@ async def get_transport_analytics(uid: str = Depends(_transporter)):
         "onTimeDeliveryPct": 98.2,
         "averageRating": 4.9,
     }
+
+
+@router.get("/dashboard")
+async def transporter_dashboard(uid: str = Depends(_transporter)):
+    """Home-screen summary (instructions.md WS-02 step 12): today's trips with
+    status, new job requests, fleet availability/location, earnings today/this
+    week (integer paisa), next settlement, document expiries, and return-load
+    matches on today's routes."""
+    today = datetime.now(timezone.utc).date()
+    today_iso = today.isoformat()
+    week_start = (today - timedelta(days=6)).isoformat()
+
+    bookings = await query("transport_bookings", [], limit=1000)
+    vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
+    vehicle_ids = {v["id"] for v in vehicles}
+
+    mine = [
+        b for b in bookings
+        if b.get("transporterId") == uid or b.get("vehicleId") in vehicle_ids
+    ]
+    today_trips_raw = [b for b in mine if b.get("date") == today_iso]
+    today_trips = [
+        {
+            "id": b["id"],
+            "pickup": b.get("pickup"),
+            "drop": b.get("drop"),
+            "status": b.get("status"),
+            "vehicleNo": b.get("vehicleNo"),
+        }
+        for b in today_trips_raw
+    ]
+
+    jobs = [
+        {
+            "id": b["id"],
+            "pickup": b.get("pickup"),
+            "drop": b.get("drop"),
+            "vehicleType": b.get("vehicleType"),
+            "date": b.get("date"),
+            "fare": b.get("fare"),
+        }
+        for b in bookings
+        if b.get("status") == "requested"
+    ]
+
+    delivered = [b for b in mine if b.get("status") == "delivered"]
+    earnings_today_paisa = sum(
+        int(b.get("fare") or 0) for b in delivered if b.get("date") == today_iso
+    ) * 100
+    earnings_week_paisa = sum(
+        int(b.get("fare") or 0) for b in delivered if str(b.get("date") or "") >= week_start
+    ) * 100
+
+    on_trip = {
+        b["vehicleId"]: b for b in mine
+        if b.get("vehicleId") and b.get("status") in ("accepted", "enRoute")
+    }
+    fleet = [
+        {
+            "id": v["id"],
+            "registrationNo": v.get("registrationNo"),
+            "vehicleType": v.get("vehicleType"),
+            "docStatus": v.get("docStatus"),
+            "availableToday": today_iso in (v.get("availableDates") or []),
+            "onTripId": on_trip[v["id"]]["id"] if v["id"] in on_trip else None,
+            "lastLocation": on_trip[v["id"]].get("lastLocation") if v["id"] in on_trip else None,
+        }
+        for v in vehicles
+        if v.get("active", True)
+    ]
+
+    settlements = await query(
+        "settlements", [("role", "==", "transport"), ("entityId", "==", uid)], limit=100
+    )
+    pending = sorted(
+        (s for s in settlements if s.get("status") == "pending"),
+        key=lambda s: s.get("periodStart", ""),
+    )
+    next_settlement = (
+        {
+            "periodStart": pending[0].get("periodStart"),
+            "periodEnd": pending[0].get("periodEnd"),
+            "netRupees": pending[0].get("netRupees"),
+        }
+        if pending
+        else None
+    )
+
+    now = datetime.now(timezone.utc)
+    doc_expiries = []
+    for v in vehicles:
+        for field, label in _DOC_EXPIRY_FIELDS:
+            raw = v.get(field)
+            if not raw:
+                continue
+            try:
+                expires = datetime.fromisoformat(str(raw))
+            except ValueError:
+                continue
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            doc_expiries.append({
+                "vehicleId": v["id"],
+                "registrationNo": v.get("registrationNo"),
+                "doc": field,
+                "label": label,
+                "expiry": expires.isoformat(),
+                "daysLeft": (expires.date() - now.date()).days,
+            })
+    doc_expiries.sort(key=lambda d: d["daysLeft"])
+
+    return_loads = []
+    for trip in [b for b in today_trips_raw if b.get("status") in ("enRoute", "delivered")]:
+        matches = await _match_return_loads(trip)
+        return_loads.append({"tripId": trip["id"], "matches": matches})
+
+    return {
+        "todayTrips": today_trips,
+        "newJobRequests": {"count": len(jobs), "data": jobs[:10]},
+        "fleet": fleet,
+        "earningsTodayPaisa": earnings_today_paisa,
+        "earningsWeekPaisa": earnings_week_paisa,
+        "nextSettlement": next_settlement,
+        "documentExpiries": doc_expiries,
+        "returnLoads": return_loads,
+    }
+
+
+# ==========================================
+# 9. DAMAGE DISPUTES (POD damage claim lane)
+# ==========================================
+
+class DamageDisputeCreateRequest(BaseModel):
+    photos: list[str] = []
+    claimPaisa: int
+    notes: str | None = None
+
+
+class DamageDisputeResolveRequest(BaseModel):
+    resolution: str | None = None
+
+
+def _dispute_participant(booking: dict, uid: str):
+    if uid not in (booking.get("userId"), booking.get("transporterId")):
+        _error(403, "FORBIDDEN", "only the booking parties can access this dispute")
+
+
+@router.post("/bookings/{booking_id}/damage-disputes", status_code=201)
+async def create_damage_dispute(
+    booking_id: str,
+    body: DamageDisputeCreateRequest,
+    uid: str = Depends(_viewer),
+):
+    booking = await _get_booking(booking_id)
+    _dispute_participant(booking, uid)
+    if body.claimPaisa < 0:
+        _error(422, "INVALID_CLAIM", "claim must be non-negative integer paisa", {"claimPaisa": "must be >= 0"})
+    doc = {
+        "id": f"dsp_{uuid.uuid4().hex[:10]}",
+        "bookingId": booking_id,
+        "photos": body.photos,
+        "claimPaisa": body.claimPaisa,
+        "notes": body.notes,
+        "status": "open",
+        "createdBy": uid,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc(f"transport_bookings/{booking_id}/damage_disputes", doc["id"], doc)
+    other = booking.get("transporterId") if uid == booking.get("userId") else booking.get("userId")
+    if other:
+        await notify_user(
+            other,
+            type="damage_dispute_opened",
+            title="Damage dispute / नुकसान विवाद",
+            body=f"Claim of ₹{body.claimPaisa / 100:.2f} filed on booking {booking_id}",
+            path=f"/dashboard/p/transport/trips/{booking_id}",
+        )
+    return doc
+
+
+@router.get("/bookings/{booking_id}/damage-disputes")
+async def list_damage_disputes(booking_id: str, uid: str = Depends(_viewer)):
+    booking = await _get_booking(booking_id)
+    _dispute_participant(booking, uid)
+    disputes = await query(f"transport_bookings/{booking_id}/damage_disputes", [], limit=100)
+    disputes.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return {"bookingId": booking_id, "data": disputes, "total": len(disputes)}
+
+
+@router.post("/bookings/{booking_id}/damage-disputes/{dispute_id}/resolve")
+async def resolve_damage_dispute(
+    booking_id: str,
+    dispute_id: str,
+    body: DamageDisputeResolveRequest,
+    claims: dict = Depends(admin_action("RESOLVE_TRANSPORT_DISPUTE")),
+):
+    """Admin-consumable resolution lane; the phase-07 console UI drives this."""
+    await _get_booking(booking_id)
+    dispute = await get_doc(f"transport_bookings/{booking_id}/damage_disputes", dispute_id)
+    if dispute is None:
+        _error(404, "DISPUTE_NOT_FOUND", "dispute not found")
+    if dispute.get("status") != "open":
+        _error(409, "DISPUTE_NOT_OPEN", f"dispute is {dispute.get('status')}")
+    dispute["status"] = "resolved"
+    dispute["resolution"] = body.resolution
+    dispute["resolvedBy"] = claims["uid"]
+    dispute["resolvedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc(f"transport_bookings/{booking_id}/damage_disputes", dispute_id, dispute)
+    return dispute
+
+
+# ==========================================
+# 10. RETURN-LOAD MATCHING (T8, deterministic)
+# ==========================================
+
+async def _match_return_loads(trip: dict) -> list[dict]:
+    """Open loads whose pickup is near the trip's drop district and whose pickup
+    date falls inside the return window. Deterministic query — the WS-06 M16
+    brief ranks these matches later."""
+    drop = str(trip.get("drop") or "")
+    trip_date = str(trip.get("date") or "")
+    window_end = ""
+    if trip_date:
+        try:
+            trip_day = datetime.fromisoformat(trip_date).date()
+            window_end = (trip_day + timedelta(days=RETURN_LOAD_WINDOW_DAYS)).isoformat()
+        except ValueError:
+            trip_date = ""
+    loads = await query("transport_loads", [], limit=500)
+    matches = []
+    for load in loads:
+        if load.get("status") != "open":
+            continue
+        if not _places_match(str(load.get("pickupLocation") or ""), drop):
+            continue
+        pickup_date = str(load.get("pickupDate") or "")
+        if trip_date and (pickup_date < trip_date or pickup_date > window_end):
+            continue
+        matches.append(load)
+    matches.sort(key=lambda x: x.get("pickupDate", ""))
+    return matches
+
+
+@router.get("/trips/{trip_id}/return-loads")
+async def list_return_loads(trip_id: str, uid: str = Depends(_transporter)):
+    """Open loads near the trip's drop district inside the return window."""
+    trip = await _get_booking(trip_id)
+    if uid != trip.get("transporterId"):
+        _error(403, "FORBIDDEN", "only the assigned transporter can view return loads")
+    if trip.get("status") not in ("enRoute", "delivered"):
+        _error(409, "TRIP_NOT_ACTIVE", "return loads unlock once the trip is underway")
+    matches = await _match_return_loads(trip)
+    return {"tripId": trip_id, "data": matches, "total": len(matches)}
+
+
+# ==========================================
+# 11. FLEET DRIVER SUB-ACCOUNTS (T9)
+# ==========================================
+
+class DriverCreateRequest(BaseModel):
+    name: str
+    phone: str | None = None
+
+
+@router.post("/drivers", status_code=201)
+async def create_driver(body: DriverCreateRequest, uid: str = Depends(_transporter)):
+    """Create a fleet driver sub-account scoped to this transporter (Pro tier).
+    Drivers operate assigned trips (milestones/location pings) but can never
+    read settlements — the settlements router enforces that independently."""
+    await _plan_feature_guard(uid, "driverSubAccounts")
+    doc = {
+        "id": f"drv_{uuid.uuid4().hex[:10]}",
+        "linkedProfiles": ["driver"],
+        "primaryProfile": "driver",
+        "activeProfile": "driver",
+        "name": body.name,
+        "phone": body.phone or "",
+        "fleetOwnerId": uid,
+        "active": True,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("users", doc["id"], doc)
+    return doc
+
+
+@router.get("/drivers")
+async def list_drivers(uid: str = Depends(_transporter)):
+    drivers = await query("users", [], limit=1000)
+    mine = [d for d in drivers if d.get("fleetOwnerId") == uid and _is_driver(d)]
+    return {"data": mine, "total": len(mine)}
+
+
+# ==========================================
+# 12. PER-TRIP COMMISSION INVOICE
+# ==========================================
+
+@router.get("/bookings/{booking_id}/commission-invoice")
+async def commission_invoice(booking_id: str, uid: str = Depends(_transporter)):
+    """PDF invoice for the platform commission on this trip (integer-paisa math
+    identical to the trip P&L and the weekly settlement run)."""
+    booking = await _get_booking(booking_id)
+    if booking.get("transporterId") != uid:
+        _error(403, "FORBIDDEN", "only the assigned transporter can download this invoice")
+    config = await settlements_service._config()
+    pct = config["transportPct"]
+    commission = round(float(booking.get("fare") or 0) * (pct / 100), 2)
+    transporter = await get_user(uid) or {}
+    file_path = reports.build_commission_invoice_pdf(booking, transporter, commission, pct)
+    with open(file_path, "rb") as handle:
+        content = handle.read()
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="commission-invoice-{booking_id}.pdf"'},
+    )

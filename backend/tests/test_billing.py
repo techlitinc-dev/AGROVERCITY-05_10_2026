@@ -53,13 +53,27 @@ async def test_transport_vehicle_limit_enforced(client, user_store):
     token = seed_user(user_store, uid="uid-tr", active_profile="transport")
     headers = auth(token)
 
-    for _ in range(3):
+    # robust.md §6.3: Free = 1 vehicle, commission-only
+    resp = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
+    assert resp.status_code == 201
+
+    blocked = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
+    assert blocked.status_code == 402
+    assert blocked.json()["error"]["code"] == "ENTITLEMENT_EXCEEDED"
+    assert blocked.json()["error"]["limit"] == 1
+
+    subscribed = await client.post(
+        "/v1/billing/subscribe", json={"planId": "transport_pro"}, headers=headers
+    )
+    assert subscribed.status_code == 201
+    # Pro = fleet of 5
+    for _ in range(4):
         resp = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
         assert resp.status_code == 201
 
     blocked = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
     assert blocked.status_code == 402
-    assert blocked.json()["error"]["code"] == "ENTITLEMENT_EXCEEDED"
+    assert blocked.json()["error"]["limit"] == 5
 
 
 async def test_subscription_status_from_webhook(client, user_store, monkeypatch):

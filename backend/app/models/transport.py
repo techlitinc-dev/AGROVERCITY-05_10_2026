@@ -11,6 +11,8 @@ class VehicleTypeOut(BaseModel):
 class FareEstimateRequest(BaseModel):
     vehicleType: str
     distanceKm: float
+    # Transporter-side earning lever only; server-clamped to SURGE_CAP.
+    surgeMultiplier: float | None = None
 
 
 class FareEstimateOut(BaseModel):
@@ -21,6 +23,7 @@ class FareEstimateOut(BaseModel):
     perishableSurcharge: float = 0.0
     tollEstimate: float = 0.0
     returnDiscount: float = 0.0
+    surgeMultiplier: float = 1.0
     breakdown: dict | None = None
 
 

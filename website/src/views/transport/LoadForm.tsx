@@ -324,6 +324,15 @@ export default function LoadForm() {
                   <span>{inr(fare.perishableSurcharge)}</span>
                 </div>
               ) : null}
+              {fare.surgeMultiplier && fare.surgeMultiplier > 1 ? (
+                <>
+                  <div className="trade-invoice-row">
+                    <span>{t('trSurgeRow', { mult: fare.surgeMultiplier })}</span>
+                    <span>×{fare.surgeMultiplier}</span>
+                  </div>
+                  <p className="trade-hint">{t('trSurgeHint')}</p>
+                </>
+              ) : null}
               <div className="trade-invoice-total trade-invoice-row">
                 <span>{t('trFareEstimate')}</span>
                 <span>{inr(fare.totalFare)}</span>

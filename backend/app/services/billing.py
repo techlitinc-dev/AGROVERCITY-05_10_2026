@@ -15,10 +15,15 @@ TIER_MATRIX = [
     ("farmer", "free", 0, {}),
     ("farmLandlord", "free", 0, {"plots": 1, "activeLeases": 1, "listings": 5}),
     ("farmLandlord", "pro", 299, {"listings": 100}),
-    ("transport", "free", 0, {"vehicles": 3}),
-    ("transport", "pro", 499, {"vehicles": 25}),
+    ("transport", "free", 0, {"vehicles": 1}),
+    ("transport", "pro", 499, {"vehicles": 5}),
+    # robust.md §6.3: unlimited fleet, API dispatch, dedicated support (price
+    # set per platform convention — between Pro ₹499 and directBuyer Enterprise).
+    ("transport", "enterprise", 1999, {}),
     ("seller", "free", 0, {"listings": 20}),
     ("seller", "pro", 999, {"listings": 500}),
+    # WS-03 step 8: multi-shop, API, white-label rate boards.
+    ("seller", "enterprise", 4999, {}),
     ("equipmentRental", "free", 0, {"machines": 3}),
     ("equipmentRental", "pro", 399, {"machines": 25}),
     ("broker", "free", 0, {"deals": 5}),
@@ -47,6 +52,30 @@ COMMISSIONS = {
     "directBuyer": "1-2% settlement",
 }
 
+# Named SaaS capabilities per plan (robust.md §6 tier descriptions). Limits
+# cap quantities; features gate capabilities — commission never varies by tier.
+TIER_FEATURES = {
+    "transport_pro": ["driverSubAccounts", "routeAnalytics", "priorityLoadBoard"],
+    "transport_enterprise": [
+        "driverSubAccounts",
+        "routeAnalytics",
+        "priorityLoadBoard",
+        "apiDispatch",
+        "dedicatedSupport",
+    ],
+    "seller_pro": ["analyticsV2", "udhaarLedger", "gstInvoices", "tdsStatements", "procurementStaffSeats"],
+    "seller_enterprise": [
+        "analyticsV2",
+        "udhaarLedger",
+        "gstInvoices",
+        "tdsStatements",
+        "procurementStaffSeats",
+        "multiShop",
+        "apiAccess",
+        "whiteLabelRateBoards",
+    ],
+}
+
 
 def plan_doc(persona: str, tier: str, rupees: int, limits: dict) -> dict:
     return {
@@ -56,7 +85,7 @@ def plan_doc(persona: str, tier: str, rupees: int, limits: dict) -> dict:
         "priceMonthlyPaisa": rupees * 100,
         "limits": limits,
         "commission": COMMISSIONS.get(persona),
-        "features": [],
+        "features": TIER_FEATURES.get(f"{persona}_{tier}", []),
     }
 
 

@@ -21,10 +21,12 @@ import {
   pingLocation,
   recordWeighbridge,
   rejectBooking,
+  returnLoads,
   tripExpenses,
   updateBookingStatus,
   type ExpenseCategory,
   type OwnerVehicle,
+  type ReturnLoad,
   type TransportBooking,
   type TripExpenses,
 } from '../../lib/api/transport';
@@ -35,6 +37,27 @@ import '../../theme/trade.css';
 
 const fmtDate = (iso: string): string =>
   new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+const fmtTime = (iso: string): string =>
+  new Date(iso).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+const tripPagePosition = (): Promise<{ lat: number; lng: number }> =>
+  new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('geolocation unsupported'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(err),
+      { timeout: 8000, maximumAge: 25000 }
+    );
+  });
 
 const fmtDateTime = (iso: string): string =>
   new Date(iso).toLocaleString('en-IN', {
@@ -150,6 +173,8 @@ export default function TripPage() {
   const [expNotes, setExpNotes] = useState('');
   // expenses summary (transporter)
   const [pnl, setPnl] = useState<TripExpenses | null>(null);
+  // return-load matches (transporter, once the trip is underway)
+  const [returnLoadsList, setReturnLoadsList] = useState<ReturnLoad[]>([]);
   // bumped on every booking reload so the P&L refetches after actions
   const [tick, setTick] = useState(0);
   // rate sheet (farmer)
@@ -184,6 +209,31 @@ export default function TripPage() {
       .then(setPnl)
       .catch(() => setPnl(null));
   }, [tripId, isTransporter, tick]);
+
+  // Return-load matching (T8): deterministic backend query, transporter only.
+  useEffect(() => {
+    if (!tripId || !isTransporter) return;
+    if (booking?.status !== 'enRoute' && booking?.status !== 'delivered') {
+      setReturnLoadsList([]);
+      return;
+    }
+    returnLoads(tripId)
+      .then(setReturnLoadsList)
+      .catch(() => setReturnLoadsList([]));
+  }, [tripId, isTransporter, booking?.status]);
+
+  // PWA location ping every 30 s while the transporter has an active trip
+  // (no telematics — spec S16).
+  useEffect(() => {
+    if (!tripId || !isTransporter) return;
+    if (booking?.status !== 'accepted' && booking?.status !== 'enRoute') return;
+    const id = window.setInterval(() => {
+      tripPagePosition()
+        .then((pos) => pingLocation(tripId, pos))
+        .catch(() => undefined);
+    }, 30000);
+    return () => window.clearInterval(id);
+  }, [tripId, isTransporter, booking?.status]);
 
   const closeSheet = () => {
     setSheet(null);
@@ -574,6 +624,36 @@ export default function TripPage() {
                   </p>
                 ) : null}
               </div>
+            </>
+          ) : null}
+
+          {isTransporter && (booking.status === 'enRoute' || booking.status === 'delivered') ? (
+            <>
+              <p className="trade-section-title">{t('trReturnLoads')}</p>
+              {returnLoadsList.length ? (
+                <div className="trade-list">
+                  {returnLoadsList.map((load) => (
+                    <div key={load.id} className="trade-card" style={{ cursor: 'default' }}>
+                      <div className="trade-card-row">
+                        <span className="trade-card-title">{load.crop}</span>
+                        <span className="trade-card-amount">{inr(load.targetFare)}</span>
+                      </div>
+                      <div className="trade-card-row">
+                        <span className="trade-card-sub">
+                          {t('trReturnLoadMeta', {
+                            pickup: load.pickupLocation,
+                            drop: load.dropLocation,
+                            qty: load.quantityQuintals,
+                            date: fmtDate(load.pickupDate),
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="trade-hint">{t('trReturnLoadsEmpty')}</p>
+              )}
             </>
           ) : null}
 

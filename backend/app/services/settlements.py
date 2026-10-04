@@ -3,7 +3,17 @@ from datetime import datetime, timezone
 from app.core.db import get_doc, query, set_doc
 from app.services.payments import create_razorpayx_payout
 
-DEFAULT_CONFIG = {"transportPct": 10, "equipmentRentalPct": 12, "brokerPct": 2}
+DEFAULT_CONFIG = {
+    "transportPct": 10,
+    "equipmentRentalPct": 12,
+    "brokerPct": 2,
+    # WS-03 step 8: vyapari commission 2% min ₹50 (effective-dated, versioned —
+    # admin edits go through maker-checker, the services only consume).
+    "sellerPct": 2,
+    "sellerMinRupees": 50,
+    "version": 1,
+    "effectiveFrom": "2026-10-01T00:00:00+00:00",
+}
 PCT_KEYS = {"transport": "transportPct", "equipmentRental": "equipmentRentalPct", "broker": "brokerPct"}
 
 # TDS 194-O on marketplace gross (integer paisa everywhere in the ledger).
@@ -99,6 +109,7 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
                 {
                     "txnId": doc_id,
                     "persona": role,
+                    "entityId": entity_id,
                     "grossPaisa": gross_paisa,
                     "tdsPaisa": tds_paisa,
                     "section": "194-O",
@@ -163,5 +174,21 @@ async def process_payouts(period_start: str, period_end: str) -> dict:
         settlement["payoutRef"] = payout.get("id")
         settlement["paidAt"] = now
         await set_doc("settlements", settlement["id"], settlement)
+        # Rule 3: every financial mutation writes an audit_logs entry.
+        await set_doc(
+            "audit_logs",
+            f"aud_payout_{settlement['id']}_{now[:19]}",
+            {
+                "action": "SETTLEMENT_PAYOUT",
+                "entityId": settlement["entityId"],
+                "role": settlement.get("role"),
+                "settlementId": settlement["id"],
+                "amountPaisa": int(settlement["netRupees"]) * 100,
+                "payoutRef": payout.get("id"),
+                "periodStart": period_start,
+                "periodEnd": period_end,
+                "at": now,
+            },
+        )
         paid += 1
     return {"paid": paid, "onHold": on_hold, "periodStart": period_start, "periodEnd": period_end}

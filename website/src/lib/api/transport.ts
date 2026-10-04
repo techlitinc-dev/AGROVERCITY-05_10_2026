@@ -136,13 +136,19 @@ export interface FareEstimate {
   perishableSurcharge: number;
   tollEstimate: number;
   returnDiscount: number;
+  surgeMultiplier?: number;
   breakdown?: Record<string, unknown> | null;
 }
 
-export async function fareEstimate(vehicleType: string, distanceKm: number): Promise<FareEstimate> {
+export async function fareEstimate(
+  vehicleType: string,
+  distanceKm: number,
+  surgeMultiplier?: number
+): Promise<FareEstimate> {
   const { data } = await api.post<FareEstimate>('/transport/fare-estimate', {
     vehicleType,
     distanceKm,
+    ...(surgeMultiplier != null ? { surgeMultiplier } : {}),
   });
   return data;
 }
@@ -286,9 +292,9 @@ export interface MyBookingsResponse {
   [key: string]: unknown;
 }
 
-export async function myBookings(status?: string): Promise<MyBookingsResponse> {
+export async function myBookings(status?: string, lotId?: string): Promise<MyBookingsResponse> {
   const { data } = await api.get<MyBookingsResponse>('/users/me/bookings', {
-    params: status ? { status } : {},
+    params: { ...(status ? { status } : {}), ...(lotId ? { lotId } : {}) },
   });
   return data;
 }
@@ -371,6 +377,22 @@ export async function acceptLoadBid(loadId: string, bidId: string): Promise<{ bo
     params: { bidId },
   });
   return data;
+}
+
+export async function counterLoadBid(
+  loadId: string,
+  bidId: string,
+  payload: { quotedFare: number; notes?: string }
+): Promise<LoadBid> {
+  const { data } = await api.post<LoadBid>(`/transport/loads/${loadId}/bids/${bidId}/counter`, payload);
+  return data;
+}
+
+export type ReturnLoad = OpenLoad;
+
+export async function returnLoads(tripId: string): Promise<ReturnLoad[]> {
+  const { data } = await api.get<{ data: ReturnLoad[] }>(`/transport/trips/${tripId}/return-loads`);
+  return data.data;
 }
 
 // ---------- Trip location, weighbridge, expenses ----------

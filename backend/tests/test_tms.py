@@ -201,6 +201,9 @@ async def test_digital_bilty_and_weighbridge_slip(client, user_store):
 
 
 async def test_trip_expenses_and_analytics(client, user_store):
+    from app.services.billing import seed_plans
+
+    await seed_plans()
     token = await _token(client, profiles=["farmer", "transport"], primary="farmer")
     b_resp = await _book(client, token)
     booking_id = b_resp.json()["id"]
@@ -238,7 +241,14 @@ async def test_trip_expenses_and_analytics(client, user_store):
     assert len(data["expenses"]) == 2
     assert data["netProfit"] < data["grossFare"]
 
-    # 4. Check TMS Analytics
+    # 4. Check TMS Analytics (route analytics are a Pro feature — subscribe first)
+    blocked = await client.get("/v1/transport/analytics", headers=_auth(token))
+    assert blocked.status_code == 402
+    assert blocked.json()["error"]["code"] == "ENTITLEMENT_EXCEEDED"
+    subscribed = await client.post(
+        "/v1/billing/subscribe", json={"planId": "transport_pro"}, headers=_auth(token)
+    )
+    assert subscribed.status_code == 201
     analytics_resp = await client.get("/v1/transport/analytics", headers=_auth(token))
     assert analytics_resp.status_code == 200
     an_data = analytics_resp.json()

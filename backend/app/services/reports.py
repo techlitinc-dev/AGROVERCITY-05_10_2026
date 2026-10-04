@@ -152,6 +152,127 @@ def build_rent_receipt_pdf(lease: dict, payment: dict, landlord: dict) -> str:
     return path
 
 
+def build_commission_invoice_pdf(
+    booking: dict, transporter: dict, commission_rupees: float, commission_pct: int
+) -> str:
+    """Per-trip platform commission invoice (phase-02 WS-02, T-commission)."""
+    path = f"/tmp/commission_invoice_{booking.get('id', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Platform Commission Invoice / कमीशन चालान", styles["Title"]),
+        Paragraph(
+            f"Generated on: {datetime.now(timezone.utc).date().isoformat()}", styles["Normal"]
+        ),
+        Spacer(1, 12),
+    ]
+    fare_rupees = float(booking.get("fare") or 0)
+    rows = [
+        ["Invoice For Trip", booking.get("id", "")],
+        ["Transporter", transporter.get("name", "")],
+        ["Route", f"{booking.get('pickup', '')} → {booking.get('drop', '')}"],
+        ["Trip Date", booking.get("date", "")],
+        ["Trip Fare", f"Rs {fare_rupees:.2f}"],
+        ["Commission Rate", f"{commission_pct}%"],
+        ["Commission Amount", f"Rs {commission_rupees:.2f}"],
+    ]
+    table = Table(rows, colWidths=[140, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
+def build_tds_statement_pdf(statement: dict, seller: dict) -> str:
+    """TDS 194-O statement for a settlement period (phase-02 WS-03, S6)."""
+    path = f"/tmp/tds_statement_{statement.get('txnId', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("TDS 194-O Statement / टीडीएस विवरण", styles["Title"]),
+        Paragraph(
+            f"Generated on: {datetime.now(timezone.utc).date().isoformat()}", styles["Normal"]
+        ),
+        Spacer(1, 12),
+    ]
+    gross_paisa = int(statement.get("grossPaisa", 0))
+    tds_paisa = int(statement.get("tdsPaisa", 0))
+    rows = [
+        ["Statement For", statement.get("txnId", "")],
+        ["Seller", seller.get("name", "") or seller.get("businessName", "")],
+        ["Seller GSTIN", seller.get("gstin") or seller.get("gstIn") or "—"],
+        ["Period", statement.get("period", "")],
+        ["Section", statement.get("section", "194-O")],
+        ["Gross GMV", f"Rs {gross_paisa / 100:.2f}"],
+        ["TDS Rate", "1%"],
+        ["TDS Deducted", f"Rs {tds_paisa / 100:.2f}"],
+    ]
+    table = Table(rows, colWidths=[140, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
+def build_gst_invoice_pdf(sale: dict, seller: dict) -> str:
+    """GST tax invoice per completed sale (phase-02 WS-03, S6)."""
+    path = f"/tmp/gst_invoice_{sale.get('id', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    gstin = seller.get("gstin") or seller.get("gstIn") or ""
+    story = [
+        Paragraph("GST Invoice / जीएसटी चालान", styles["Title"]),
+        Paragraph(
+            f"Generated on: {datetime.now(timezone.utc).date().isoformat()}", styles["Normal"]
+        ),
+        Spacer(1, 12),
+    ]
+    rows = [
+        ["Invoice No.", sale.get("billNumber", "")],
+        ["Seller", seller.get("name", "") or seller.get("businessName", "")],
+        ["Seller GSTIN", gstin or "—"],
+        ["Buyer", sale.get("buyerName", "")],
+        ["Item", sale.get("item", "")],
+        ["Quantity", f"{sale.get('quantity', '')} {sale.get('unit', '')}"],
+        ["Rate per Unit", f"Rs {float(sale.get('ratePerUnit', 0) or 0):.2f}"],
+        ["Gross Amount", f"Rs {float(sale.get('grossAmount', 0) or 0):.2f}"],
+        ["Mandi Fee", f"Rs {float(sale.get('mandiFee', 0) or 0):.2f}"],
+        ["Net Amount", f"Rs {float(sale.get('netAmount', 0) or 0):.2f}"],
+        ["Amount Paid", f"Rs {float(sale.get('amountPaid', 0) or 0):.2f}"],
+        ["Balance Due", f"Rs {float(sale.get('balanceDue', 0) or 0):.2f}"],
+        ["Payment Status", sale.get("status", "")],
+    ]
+    table = Table(rows, colWidths=[140, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
 def build_rent_ledger_pdf(lease: dict, payments: list[dict]) -> str:
     """PDF rent ledger for a lease (phase-02 WS-01)."""
     path = f"/tmp/rent_ledger_{lease.get('id', uuid.uuid4().hex[:8])}.pdf"

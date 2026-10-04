@@ -68,6 +68,8 @@ export default function LiveTrackingPage() {
   const [busy, setBusy] = useState(false);
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
+  const tripsRef = useRef(trips);
+  tripsRef.current = trips;
 
   const loadTrips = useCallback(() => {
     setFailed(false);
@@ -117,10 +119,19 @@ export default function LiveTrackingPage() {
     if (selectedId) loadTrack(selectedId);
   }, [selectedId, loadTrack]);
 
-  // Gentle auto-refresh (30s) while a trip is selected — pings are manual.
+  // Auto-refresh (30s) while a trip is selected; active trips also push a
+  // location ping each cycle (PWA pings — no telematics, spec S16).
   useEffect(() => {
     if (!selectedId) return;
-    const id = window.setInterval(() => loadTrack(selectedRef.current), 30000);
+    const id = window.setInterval(() => {
+      loadTrack(selectedRef.current);
+      const trip = (tripsRef.current ?? []).find((x) => x.id === selectedRef.current);
+      if (trip && (trip.status === 'accepted' || trip.status === 'enRoute')) {
+        currentPosition()
+          .then((pos) => pingLocation(selectedRef.current, pos))
+          .catch(() => undefined);
+      }
+    }, 30000);
     return () => window.clearInterval(id);
   }, [selectedId, loadTrack]);
 

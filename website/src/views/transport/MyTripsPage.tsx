@@ -24,7 +24,11 @@ interface TripRow {
   fare: number;
   status: string;
   kind: string;
+  lastLocation?: { waypointLabel?: string; updatedAt?: string } | null;
 }
+
+const fmtPingTime = (iso: string): string =>
+  new Date(iso).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
 const DONE_STATUSES = ['delivered', 'cancelled'];
 
@@ -132,6 +136,18 @@ export default function MyTripsPage() {
                 {t('trPickupDate')}: {fmtDate(trip.date)}
               </span>
             </div>
+            {trip.status === 'enRoute' && trip.lastLocation ? (
+              <div className="trade-card-row">
+                <span className="trade-card-sub">
+                  {t('trEnRoutePing', {
+                    label: trip.lastLocation.waypointLabel || t('trLastPingFallback'),
+                    time: trip.lastLocation.updatedAt
+                      ? fmtPingTime(trip.lastLocation.updatedAt)
+                      : '',
+                  })}
+                </span>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

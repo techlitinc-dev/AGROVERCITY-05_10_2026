@@ -106,12 +106,19 @@ def _shape_bookings(docs: list[dict], kind: str, status: str | None) -> list[dic
 
 
 @router.get("/me/bookings")
-async def get_my_bookings(status: str | None = None, uid: str = Depends(current_user_id)):
+async def get_my_bookings(
+    status: str | None = None,
+    lotId: str | None = None,
+    uid: str = Depends(current_user_id),
+):
     await _require_user(uid)
     equipment = await query("equipment_bookings", [("userId", "==", uid)], limit=500)
     # vet_bookings subcollection lands Day 12; absent source must yield [], not an error
     vet = await query(f"users/{uid}/vet_bookings", [], limit=500)
     transport = await query("transport_bookings", [("userId", "==", uid)], limit=500)
+    if lotId is not None:
+        # produce lot → pickup → delivery transport leg (F12)
+        transport = [d for d in transport if d.get("lotId") == lotId]
     cold_storage = await query(f"users/{uid}/cold_storage_bookings", [], limit=500)
     return {
         "equipment": _shape_bookings(equipment, "equipment", status),

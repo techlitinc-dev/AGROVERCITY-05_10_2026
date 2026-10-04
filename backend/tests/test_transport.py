@@ -45,8 +45,19 @@ async def _add_vehicle(client, token, **overrides):
 
 
 def _verify_vehicle(user_store, vehicle_id):
-    # stands in for the admin KYC action (Day 14)
+    # stands in for the admin KYC review (phase-00 pipeline): the transporter's
+    # transport case has rc+dl verified, so the real gate accepts the vehicle.
     user_store[f"vehicles/{vehicle_id}"]["docStatus"] = "verified"
+    user_store["kyc_cases/kyc_uid-1_transport"] = {
+        "caseId": "kyc_uid-1_transport",
+        "userId": "uid-1",
+        "persona": "transport",
+        "docs": [
+            {"docId": "kyc_uid-1_transport:rc", "type": "rc", "status": "verified"},
+            {"docId": "kyc_uid-1_transport:dl", "type": "dl", "status": "verified"},
+        ],
+        "status": "verified",
+    }
 
 
 def _other_transporter_token(user_store):
@@ -236,7 +247,15 @@ async def test_accept_with_verified_vehicle_ok(client, user_store):
 
 
 async def test_verified_only_filter(client, user_store):
+    from app.services.billing import seed_plans
+
+    await seed_plans()
     token = await _token(client, profiles=("transport",), primary="transport")
+    # two vehicles need the Pro fleet allowance (Free = 1)
+    subscribed = await client.post(
+        "/v1/billing/subscribe", json={"planId": "transport_pro"}, headers=_auth(token)
+    )
+    assert subscribed.status_code == 201
     pending = await _add_vehicle(client, token, registrationNo="MH15 AA 0001")
     verified = await _add_vehicle(client, token, registrationNo="MH15 AA 0002")
     _verify_vehicle(user_store, verified["id"])
@@ -367,3 +386,94 @@ async def test_accept_booking_emits_task(client, user_store):
     assert tasks[0]["module"] == "transport"
     assert tasks[0]["kind"] == "trip_starting"
     assert tasks[0]["deepLink"] == f"{DEEP_LINKS['transport']}/{booking['id']}"
+
+
+async def test_dashboard_summary_fields(client, user_store):
+    from datetime import datetime, timedelta, timezone
+
+    token = await _token(client)
+    today = datetime.now(timezone.utc).date().isoformat()
+    booking = (await _book(client, token, date=today)).json()
+    await _activate(client, token)
+    vehicle = await _add_vehicle(client, token, pucExpiry="2027-01-01")
+    _verify_vehicle(user_store, vehicle["id"])
+
+    # a second requested booking shows up under new job requests
+    await _book(client, token, date=today)
+
+    resp = await client.get("/v1/transport/dashboard", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in (
+        "todayTrips",
+        "newJobRequests",
+        "fleet",
+        "earningsTodayPaisa",
+        "earningsWeekPaisa",
+        "nextSettlement",
+        "documentExpiries",
+        "returnLoads",
+    ):
+        assert key in body
+
+    # before accept the booking is a job request, not one of "my trips" yet
+    assert all(t["id"] != booking["id"] for t in body["todayTrips"])
+    assert body["newJobRequests"]["count"] == 2
+    assert isinstance(body["earningsTodayPaisa"], int)
+    assert body["earningsTodayPaisa"] == 0  # nothing delivered yet
+
+    fleet_row = next(f for f in body["fleet"] if f["id"] == vehicle["id"])
+    assert fleet_row["availableToday"] is False
+    assert fleet_row["onTripId"] is None
+    assert body["nextSettlement"] is None
+    assert body["returnLoads"] == []
+
+    # accept + deliver today's trip -> earnings and on-trip fleet update
+    resp = await client.post(
+        f"/v1/transport/bookings/{booking['id']}/accept",
+        json={"vehicleId": vehicle["id"], "vehicleNo": vehicle["registrationNo"]},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    resp = await client.patch(
+        f"/v1/transport/bookings/{booking['id']}",
+        json={"status": "enRoute"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    resp = await client.patch(
+        f"/v1/transport/bookings/{booking['id']}",
+        json={"status": "delivered", **POD},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+
+    resp = await client.get("/v1/transport/dashboard", headers=_auth(token))
+    body = resp.json()
+    assert body["earningsTodayPaisa"] == booking["fare"] * 100
+    assert body["earningsWeekPaisa"] == booking["fare"] * 100
+    trip = next(t for t in body["todayTrips"] if t["id"] == booking["id"])
+    assert trip["status"] == "delivered"
+    # document expiries list the vehicle's PUC with a positive daysLeft
+    puc = next(d for d in body["documentExpiries"] if d["doc"] == "pucExpiry")
+    assert puc["vehicleId"] == vehicle["id"]
+    assert puc["daysLeft"] > 0
+
+    # next settlement surfaces the earliest pending doc
+    user_store["settlements/stl_x"] = {
+        "id": "stl_x",
+        "role": "transport",
+        "entityId": "uid-1",
+        "periodStart": "2026-09-29",
+        "periodEnd": "2026-10-05",
+        "netRupees": 1080,
+        "status": "pending",
+    }
+    resp = await client.get("/v1/transport/dashboard", headers=_auth(token))
+    assert resp.json()["nextSettlement"] == {
+        "periodStart": "2026-09-29",
+        "periodEnd": "2026-10-05",
+        "netRupees": 1080,
+    }
+    week_ago = (datetime.now(timezone.utc).date() - timedelta(days=6)).isoformat()
+    assert week_ago <= today
