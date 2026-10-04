@@ -87,6 +87,14 @@ const enLandlord: Record<string, string> = {
   llApplyMessage: 'Message to landlord',
   llMyRequestsTitle: 'My lease requests',
   llNoRecords: 'No records found',
+
+  // ---- AI listing quality & compatibility (tasks 6.25, 6.26) ----
+  llTenantCompatibility: 'Tenant compatibility',
+  llListingQuality: 'Listing quality',
+  llTips: 'Tips to improve',
+  llRentFairBand: 'Fair rent band',
+  llRentAboveBand: 'Rent is above typical village band',
+  llRentBelowBand: 'Rent is below typical village band',
 };
 
 registerLocale('en', enLandlord);

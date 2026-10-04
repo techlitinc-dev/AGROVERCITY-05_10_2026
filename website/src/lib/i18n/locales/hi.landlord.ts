@@ -87,6 +87,14 @@ const hiLandlord: Record<string, string> = {
   llApplyMessage: 'भू-स्वामी को संदेश',
   llMyRequestsTitle: 'मेरे पट्टा अनुरोध',
   llNoRecords: 'कोई रिकॉर्ड नहीं मिला',
+
+  // ---- AI listing quality & compatibility (tasks 6.25, 6.26) ----
+  llTenantCompatibility: 'किरायेदार अनुकूलता',
+  llListingQuality: 'लिस्टिंग गुणवत्ता',
+  llTips: 'सुधार के सुझाव',
+  llRentFairBand: 'उचित किराया सीमा',
+  llRentAboveBand: 'किराया सामान्य गांव सीमा से अधिक है',
+  llRentBelowBand: 'किराया सामान्य गांव सीमा से कम है',
 };
 
 registerLocale('hi', hiLandlord);

@@ -106,6 +106,71 @@ def _rank_answers(state: dict) -> tuple[dict, float]:
     )
 
 
+def _seller_rate_check_answers(state: dict) -> tuple[dict, float]:
+    rate = float(state.get("posted_rate") or state.get("postedRate") or 0.0)
+    modal = float(state.get("mandi_modal") or state.get("mandiModal") or 0.0)
+    if rate > 0 and modal > 0:
+        rate_q = rate * 100 if rate < modal / 2 else rate
+        within_fair_band = (modal * 0.75 <= rate_q <= modal * 1.25)
+    else:
+        within_fair_band = True
+    manipulation = float(
+        state.get("manipulation_signal")
+        or state.get("seller_history", {}).get("manipulation_signal")
+        or (0.9 if state.get("simulate_manipulation") else 0.0)
+    )
+    return {"within_fair_band": within_fair_band, "manipulation_signal": manipulation}, 0.9
+
+
+def _transport_match_answers(state: dict) -> tuple[dict, float]:
+    candidates = state.get("candidates") or []
+    def _rank_key(c):
+        vtype = str(c.get("vehicleType") or "")
+        req_vtype = str(state.get("vehicleType") or "")
+        match_bonus = 100.0 if (vtype and req_vtype and (vtype in req_vtype or req_vtype in vtype)) else 0.0
+        dist = float(c.get("distance_km") or 0.0)
+        return match_bonus - dist
+
+    ranked = sorted(candidates, key=_rank_key, reverse=True)
+    ranking = [c.get("id") for c in ranked if isinstance(c, dict) and c.get("id")]
+    return {
+        "fit": 0.88,
+        "noshow_risk": 0.04,
+        "ranking": ranking,
+        "matches": ranked,
+    }, 0.91
+
+
+def _broker_lead_score_answers(state: dict) -> tuple[dict, float]:
+    price_gap = float(state.get("price_gap_pct") or state.get("priceGapPct") or 0.0)
+    round_no = int(state.get("counter_round") or state.get("counterRound") or 0)
+    if round_no >= 2:
+        deadlock_risk = 0.85 if price_gap > 10.0 else 0.55
+    else:
+        deadlock_risk = 0.15
+    quality = 0.85 if state.get("demand_fit", True) else 0.55
+    return {
+        "quality": quality,
+        "deadlock_risk": deadlock_risk,
+    }, 0.92
+
+
+def _equipment_booking_rec_answers(state: dict) -> tuple[dict, float]:
+    dist = float(state.get("distance_km") or 0.0)
+    has_conflict = bool(state.get("slot_conflict"))
+    score = 0.4 if (has_conflict or dist > 40.0) else 0.88
+    return {
+        "score": score,
+        "recommend_approve": score >= 0.6,
+        "conflict_risk": 0.8 if has_conflict else 0.05,
+    }, 0.91
+
+
+def _land_listing_quality_answers(state: dict) -> tuple[dict, float]:
+    answers = question_sets.fallback_answers("land.listing_quality.v1", state)
+    return answers, 0.90
+
+
 async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
     if question_set_id == "tasks.rank.v1":
         return _rank_answers(state)
@@ -113,10 +178,21 @@ async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
         return _intent_answers(state)
     if question_set_id == "chatbot.safety.v1":
         return _safety_answers(state)
+    if question_set_id == "seller.rate_check.v1":
+        return _seller_rate_check_answers(state)
+    if question_set_id == "transport.match.v1":
+        return _transport_match_answers(state)
+    if question_set_id == "broker.lead_score.v1":
+        return _broker_lead_score_answers(state)
+    if question_set_id == "equipment.booking_rec.v1":
+        return _equipment_booking_rec_answers(state)
+    if question_set_id == "land.listing_quality.v1":
+        return _land_listing_quality_answers(state)
     record = _load_fixtures().get(question_set_id)
     if record is not None:
         return dict(record.get("answers") or {}), float(record.get("confidence", 0.9))
     return question_sets.fallback_answers(question_set_id, state), 0.5
+
 
 
 async def generate(prompt: str, opts: dict | None = None) -> str:
@@ -124,6 +200,33 @@ async def generate(prompt: str, opts: dict | None = None) -> str:
 
 
 async def analyze_image(image_bytes: bytes, prompt: str, schema: dict | None = None) -> dict:
+    p_lower = (prompt or "").lower()
+    if "damage" in p_lower or "equipment" in p_lower or "deduction" in p_lower or (schema and "severity" in schema):
+        content_text = p_lower
+        for phrase in ("(minor, moderate, severe)", "minor, moderate, severe", "estimate severity", "severity estimate"):
+            content_text = content_text.replace(phrase, "")
+
+        if any(w in content_text for w in ("heavy", "shattered", "crack", "broken", "engine", "axle", "catastrophic", "severely", "severe")):
+            severity = "severe"
+            band = "₹8,000 - ₹15,000"
+            paisa = 1000000
+        elif any(w in content_text for w in ("minor", "scratch", "dent", "paint", "light", "scuff")):
+            severity = "minor"
+            band = "₹1,000 - ₹3,000"
+            paisa = 200000
+        else:
+            severity = "moderate"
+            band = "₹3,000 - ₹8,000"
+            paisa = 450000
+
+        return {
+            "severity": severity,
+            "suggestedDeductionBand": band,
+            "suggestedDeductionPaisa": paisa,
+            "confidence": 0.88,
+            "notes": "Machine damage assessed by AI vision shim.",
+        }
+
     return {
         "diseaseName": "Early Blight",
         "crop": "Tomato",

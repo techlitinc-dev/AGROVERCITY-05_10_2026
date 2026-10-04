@@ -76,6 +76,7 @@ export interface EquipmentBooking {
   counterRateType?: string;
   counterReason?: string;
   hoursLogged?: number;
+  recommendationScore?: number;
   createdAt?: string;
 }
 
@@ -107,9 +108,20 @@ export interface DamageClaim {
   incidentDate: string;
   description: string;
   estimatedRepairCostRupees: number;
+  claimPaisa?: number;
   photoEvidenceUrls: string[];
+  beforePhotoUrls?: string[];
+  afterPhotoUrls?: string[];
   status: string;
   createdAt: string;
+  aiEstimate?: {
+    severity: string;
+    suggestedDeductionBand: string;
+    suggestedDeductionPaisa: number;
+    confidence: number;
+    confirmed: boolean;
+  } | null;
+  confirmedDeductionPaisa?: number | null;
 }
 
 export interface EquipmentOwnerAnalytics {
@@ -205,6 +217,14 @@ export async function createDamageClaim(data: {
   photoEvidenceUrls?: string[];
 }): Promise<DamageClaim> {
   const res = await api.post<DamageClaim>('/equipment/owner/damage-claims', data);
+  return res.data;
+}
+
+export async function confirmClaimEstimate(
+  claimId: string,
+  data?: { deductionPaisa?: number }
+): Promise<DamageClaim> {
+  const res = await api.post<DamageClaim>(`/equipment/owner/damage-claims/${claimId}/confirm-estimate`, data || {});
   return res.data;
 }
 

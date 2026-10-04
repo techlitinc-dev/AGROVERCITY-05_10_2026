@@ -26,6 +26,12 @@ export interface LandListing {
   plotId?: string;
   status: 'open' | 'leased' | 'closed';
   createdAt: string;
+  qualityAssessment?: {
+    completeness: number;
+    rentBandOk: boolean;
+    tips: Array<{ id: string; tip_en: string; tip_hi: string }>;
+    bandSource: string;
+  } | null;
 }
 
 export interface LeaseRequest {
@@ -44,6 +50,7 @@ export interface LeaseRequest {
   counterRentRupees?: number;
   negotiationRounds?: number;
   landlordNotes?: string;
+  compatibilityScore?: number;
   createdAt: string;
 }
 

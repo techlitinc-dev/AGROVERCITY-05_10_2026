@@ -184,6 +184,20 @@ export default function BookingQueuePage() {
                             >
                               {isFpo ? t('eqPillFpoAuto') : t('eqPillPrivateManual')}
                             </span>
+                            {b.recommendationScore !== undefined ? (
+                              <span
+                                className={`saas-badge ${
+                                  b.recommendationScore >= 0.7
+                                    ? 'saas-badge-success'
+                                    : b.recommendationScore >= 0.5
+                                      ? 'saas-badge-warning'
+                                      : 'saas-badge-danger'
+                                }`}
+                                title={`${t('eqAiRec')}: ${Math.round(b.recommendationScore * 100)}%`}
+                              >
+                                🤖 {t('eqAiRec')}: {Math.round(b.recommendationScore * 100)}%
+                              </span>
+                            ) : null}
                           </div>
                         </td>
                         <td>

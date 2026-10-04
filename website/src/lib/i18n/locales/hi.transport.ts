@@ -216,6 +216,12 @@ const hiTransport: Record<string, string> = {
   tool_settlements_sub: 'साप्ताहिक भुगतान',
   tool_vehicleCalendar: 'उपलब्धता कैलेंडर',
   tool_vehicleCalendar_sub: 'तय ट्रिप और खाली तारीखें',
+
+  // ---- AI Spoke M16 annotations ----
+  trNoShowRisk: 'नो-शो जोखिम',
+  trNoShowRiskLow: 'कम नो-शो जोखिम',
+  trNoShowRiskMed: 'मध्यम नो-शो जोखिम',
+  trNoShowRiskHigh: 'उच्च नो-शो जोखिम',
 };
 
 registerLocale('hi', hiTransport);

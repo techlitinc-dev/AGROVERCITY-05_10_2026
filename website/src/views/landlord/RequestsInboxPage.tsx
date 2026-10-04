@@ -96,6 +96,14 @@ export default function RequestsInboxPage() {
                   {request.farmerKycVerified ? (
                     <span className="ai-badge ai-badge-high">✅ {t('llKycVerified')}</span>
                   ) : null}
+                  {request.compatibilityScore !== undefined ? (
+                    <span
+                      className={`ai-badge ${request.compatibilityScore >= 0.75 ? 'ai-badge-high' : 'ai-badge-med'}`}
+                      title={`${t('llTenantCompatibility')}: ${Math.round(request.compatibilityScore * 100)}%`}
+                    >
+                      🤖 {t('llTenantCompatibility')}: {Math.round(request.compatibilityScore * 100)}%
+                    </span>
+                  ) : null}
                 </div>
                 <div className="dash-task-sub">
                   {t('llDurationMonths')}: {request.durationMonths} ·{' '}

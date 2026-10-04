@@ -259,6 +259,14 @@ const enBroker: Record<string, string> = {
   offerSentAgo: 'sent {time} ago',
   offerTtlChip: 'TTL: {time}',
   offerTtlExpired: 'TTL: Expired',
+
+  // ---- AI Spoke M19 keys ----
+  leadScoreHigh: 'High quality lead',
+  leadScoreMedium: 'Moderate lead',
+  leadScoreLow: 'Low score lead',
+  leadDeadlockRisk: 'Deadlock risk',
+  leadSuggestMediator: 'Mediator suggested',
+  dealDeadlockWarning: 'Deadlock risk high — mediator suggested',
 };
 
 registerLocale('en', enBroker);

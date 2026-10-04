@@ -11,7 +11,7 @@ from app.models.seller import BuyerLedgerEntryCreate, ProcurementLotCreate, Sale
 from app.routers.users import require_role
 from app.services import idempotency
 from app.services import kyc as kyc_service
-from app.services import reports
+from app.services import reports, seller_forecast
 from app.services import settlements as settlements_service
 from app.services.billing import effective_plan
 from app.services.users import get_user
@@ -147,11 +147,73 @@ async def _assert_rate_in_band(crop: str, rate_per_kg: float, mandi_name: str):
     # No reference for the crop → accept; the coverage gap is handled by the admin moderation queue (Day 14 item A6).
 
 
+from app.services.ai import decision_log, gateway
+from app.services.ai.privacy import build_seller_rate_check_state
+
+
 @router.post("/rates")
 async def post_rate(body: SellerRateRequest, ctx: tuple = Depends(_seller_user)):
     _, uid = ctx
     await _assert_shop_kyc(uid)
-    await _assert_rate_in_band(body.crop, body.ratePerKg, body.mandiName)
+
+    # Reference modal price for crop and mandi
+    docs = await query("mandi_prices", [], limit=1000)
+    matches = [d for d in docs if body.crop.lower() in d.get("commodity", "").lower()]
+    reference = next((d for d in matches if _loose_mandi_match(body.mandiName, d.get("mandiName", ""))), None)
+    if reference is None and matches:
+        reference = matches[0]
+    modal = float(reference["modalPrice"]) if reference else 0.0
+
+    state = build_seller_rate_check_state(
+        posted_rate=body.ratePerKg,
+        crop=body.crop,
+        mandi_modal=modal,
+        seven_day_volatility=0.0,
+        seller_id=uid,
+    )
+
+    ai_answers = None
+    try:
+        decision = await gateway.decide(
+            state,
+            "seller.rate_check.v1",
+            ctx=uid,
+            module="seller_rate_check",
+        )
+        ai_answers = decision.answers
+    except Exception as exc:
+        await decision_log.log_decision(
+            module="seller_rate_check",
+            question_set_id="seller.rate_check.v1",
+            version="v1",
+            state=state,
+            answers={"within_fair_band": True, "manipulation_signal": 0.0},
+            confidence=0.0,
+            latency_ms=0,
+            cost_usd=0.0,
+            model="none",
+            source="fallback",
+            fallback_used=True,
+        )
+
+    if ai_answers is not None:
+        if not ai_answers.get("within_fair_band", True):
+            violation = await _band_violation(body.crop, body.ratePerKg, body.mandiName) or f"मंडी भाव ₹{modal} के ±25% सीमा से बाहर"
+            _error(
+                422,
+                "RATE_OUT_OF_BAND",
+                "posted rate is outside the sanity band",
+                {
+                    "ratePerKg": violation,
+                    "band": f"±25% around ₹{modal}/q",
+                    "modalPrice": modal,
+                    "minAllowed": modal * 0.75 / 100,
+                    "maxAllowed": modal * 1.25 / 100,
+                },
+            )
+    else:
+        await _assert_rate_in_band(body.crop, body.ratePerKg, body.mandiName)
+
     doc_id = f"rate_{uuid.uuid4().hex[:12]}"
     doc = {
         **body.model_dump(),
@@ -160,6 +222,12 @@ async def post_rate(body: SellerRateRequest, ctx: tuple = Depends(_seller_user))
         "status": "pending",
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
+    if ai_answers and float(ai_answers.get("manipulation_signal", 0.0)) > 0.8:
+        doc["adminReview"] = True
+        doc["flag"] = "admin_review"
+        doc["reviewStatus"] = "admin_review"
+        doc["manipulationSignal"] = float(ai_answers.get("manipulation_signal", 0.0))
+
     await set_doc("vyapari_rates_pending", doc_id, doc)
     # vyapari_rates:* Redis keys are invalidated only when a rate flips to approved; approval flow is out of scope today.
     return doc
@@ -814,6 +882,8 @@ async def seller_dashboard(ctx: tuple = Depends(_seller_user)):
         else {"nextRunDate": _next_monday(datetime.now(timezone.utc).date())}
     )
 
+    forecast = await seller_forecast.get_seller_forecast(uid)
+
     return {
         "todayProcurement": today_procurement,
         "pendingFarmerPayments": pending_farmer_payments,
@@ -822,4 +892,13 @@ async def seller_dashboard(ctx: tuple = Depends(_seller_user)):
         "openOffers": open_offers,
         "udhaarOutstanding": udhaar_outstanding,
         "settlementEta": settlement_eta,
+        "procurementForecast": forecast,
     }
+
+
+@router.get("/forecast")
+async def get_forecast(ctx: tuple = Depends(_seller_user)):
+    """Procurement demand forecast (M4 / SGR): 24h cached or freshly generated."""
+    _, uid = ctx
+    return await seller_forecast.generate_seller_forecast(uid)
+

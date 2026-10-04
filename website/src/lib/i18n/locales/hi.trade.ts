@@ -321,6 +321,9 @@ const hiTrade: Record<string, string> = {
   ratesEmpty: 'अभी कोई भाव नहीं डाला',
   ratesPosted: 'भाव जमा हुआ — मंजूरी बाकी',
   ratesOutOfBand: 'भाव मंडी मॉडल की सीमा से बाहर है',
+  ratesAiBandWarningTitle: 'भाव बाजार सीमा से बाहर है',
+  ratesAiBandRange: 'अपेक्षित सीमा: {band}',
+  ratesAiBandAllowed: 'स्वीकार्य भाव: ₹{min}/किलो – ₹{max}/किलो',
 
   // ---- Saved farmers ----
   savedEmpty: 'अभी कोई सहेजा किसान नहीं',
@@ -561,6 +564,9 @@ const hiTrade: Record<string, string> = {
   sbRecentSales: 'हाल की बिक्री',
   sbFreshLots: '🌾 नई फसल सूची',
   sbViewAllLots: 'सभी लॉट देखें',
+  sbProcurementForecastTitle: 'AI खरीद मांग पूर्वानुमान',
+  sbProcurementForecastBadge: '7-दिवसीय अनुमान',
+  sbProcurementForecastSub: '90-दिवसीय व्यापार मात्रा और क्षेत्रीय मांग के आधार पर अनुशंसित फसल खरीद।',
 
   // ---- Analytics v2 ----
   anPnL: 'लाभ-हानि सारांश',

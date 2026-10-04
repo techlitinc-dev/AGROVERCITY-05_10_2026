@@ -4,12 +4,29 @@ import StatusPill from '../trade/StatusPill';
 import InsightsPanel from '../intelligence/InsightsPanel';
 import { buyerAnalytics, type BuyerAnalytics } from '../../lib/api/discovery';
 import { myPurchases, type Purchase } from '../../lib/api/purchases';
-import { listLedgers, type KhataResponse } from '../../lib/api/seller';
-import { listProcurement, type ProcurementLot } from '../../lib/api/seller';
-import { listSales, type SaleEntry } from '../../lib/api/seller';
+import { getSellerForecast, listLedgers, listProcurement, listSales, type KhataResponse, type ProcurementLot, type ProcurementSuggestion, type SaleEntry } from '../../lib/api/seller';
 import { browseLots, inr, type Lot } from '../../lib/api/trade';
 import { useT } from '../../lib/i18n';
 import '../../theme/trade.css';
+
+interface ValidatedSellerForecast {
+  suggested_procurement: ProcurementSuggestion[];
+}
+
+function isValidForecast(data: unknown): data is ValidatedSellerForecast {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as ValidatedSellerForecast;
+  if (!Array.isArray(d.suggested_procurement)) return false;
+  if (d.suggested_procurement.length === 0) return false;
+  return d.suggested_procurement.every(
+    (item) =>
+      typeof item?.crop === 'string' &&
+      typeof item?.qty_quintal === 'number' &&
+      item.qty_quintal > 0 &&
+      typeof item?.reason === 'string' &&
+      item.reason.trim().length > 0
+  );
+}
 
 interface BoardData {
   sales: { today: number; outstanding: number; recent: SaleEntry[] };
@@ -31,13 +48,14 @@ export default function SellerHomeBoard() {
   const t = useT();
   const navigate = useNavigate();
   const [data, setData] = useState<BoardData | null>(null);
+  const [forecast, setForecast] = useState<ValidatedSellerForecast | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
     const load = async () => {
       try {
-        const [salesRes, khata, proc, analytics, purchases, lots] = await Promise.all([
+        const [salesRes, khata, proc, analytics, purchases, lots, forecastRes] = await Promise.all([
           listSales(),
           listLedgers(),
           listProcurement(),
@@ -49,6 +67,7 @@ export default function SellerHomeBoard() {
             pageSize: 4,
             total: 0,
           })),
+          getSellerForecast().catch(() => null),
         ]);
         if (!live) return;
         const todayIso = new Date().toISOString().slice(0, 10);
@@ -68,6 +87,11 @@ export default function SellerHomeBoard() {
           recentPurchases: (purchases.data ?? []).slice(0, 4),
           freshLots: lots.data,
         });
+        if (isValidForecast(forecastRes)) {
+          setForecast(forecastRes);
+        } else {
+          setForecast(null);
+        }
       } catch {
         if (live) setFailed(true);
       }
@@ -108,6 +132,48 @@ export default function SellerHomeBoard() {
           <div className="trade-hint">{t('sbActiveDemands', { count: data?.analytics?.activeDemands ?? 0 })}</div>
         </button>
       </div>
+
+      {forecast && isValidForecast(forecast) ? (
+        <div className="trade-card" style={{ marginTop: 14, cursor: 'default' }}>
+          <div className="trade-card-row">
+            <span className="trade-card-title" style={{ fontSize: 16 }}>
+              🔮 {t('sbProcurementForecastTitle')}
+            </span>
+            <span
+              className="trade-pill"
+              style={{ background: 'var(--av-brand-bg, #e1effe)', color: 'var(--av-brand, #1e429f)' }}
+            >
+              {t('sbProcurementForecastBadge')}
+            </span>
+          </div>
+          <p className="trade-hint" style={{ margin: '4px 0 10px' }}>
+            {t('sbProcurementForecastSub')}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {forecast.suggested_procurement.map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  background: 'var(--av-surface-2, #f9fafb)',
+                  border: '1px solid var(--av-border, #e5e7eb)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '0.95rem' }}>{item.crop}</strong>
+                  <span style={{ fontWeight: 600, color: 'var(--av-primary, #057a55)' }}>
+                    {item.qty_quintal} {t('unitQuintal')}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.825rem', marginTop: 4, color: 'var(--av-text-sub, #4b5563)' }}>
+                  {item.reason}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div>

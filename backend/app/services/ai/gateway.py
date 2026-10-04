@@ -134,19 +134,19 @@ async def decide(
     )
     fallback = question_sets.fallback_answers(question_set_id, clean_state)
 
+    if not await config_store.module_enabled(module):
+        return await _finish(
+            module=module, question_set_id=question_set_id, version=version,
+            state=clean_state, answers=fallback, confidence=0.0,
+            source="fallback", escalated=True, started=started, model="none", cost_usd=0.0,
+        )
+
     if settings.ai_provider == "shim":
         answers, confidence = await shim.decide(question_set_id, clean_state)
         return await _finish(
             module=module, question_set_id=question_set_id, version=version,
             state=clean_state, answers=answers, confidence=confidence,
             source="shim", escalated=False, started=started, model="shim", cost_usd=0.0,
-        )
-
-    if not await config_store.module_enabled(module):
-        return await _finish(
-            module=module, question_set_id=question_set_id, version=version,
-            state=clean_state, answers=fallback, confidence=0.0,
-            source="fallback", escalated=True, started=started, model="none", cost_usd=0.0,
         )
 
     try:
@@ -240,15 +240,43 @@ async def generate(prompt: str, opts: dict | None = None) -> str:
         return text
 
 
-async def analyze_image(image_bytes: bytes, prompt: str, schema: dict | None = None) -> dict:
+async def analyze_image(
+    image_bytes: bytes,
+    prompt: str,
+    schema: dict | None = None,
+    module: str = "equipment_booking_rec",
+) -> dict:
     """Image analysis via Gemini vision; shim answer on any failure."""
-    if settings.ai_provider == "shim":
-        return await shim.analyze_image(image_bytes, prompt, schema)
+    started = time.monotonic()
+    clean_prompt = privacy.trim_to_token_budget(privacy.sanitize_text(prompt))
+    if settings.ai_provider == "shim" or not await config_store.module_enabled(module):
+        res = await shim.analyze_image(image_bytes, clean_prompt, schema)
+        await decision_log.log_decision(
+            module=module, question_set_id="vision.analyze.v1", version="v1",
+            state={"prompt": clean_prompt}, answers=res,
+            confidence=float(res.get("confidence", 0.9)), latency_ms=int((time.monotonic() - started) * 1000),
+            cost_usd=0.0, model="shim", source="shim", fallback_used=False,
+        )
+        return res
     try:
-        return await _with_retries(_get_gemini_client().analyze_image, image_bytes, prompt, schema)
+        res = await _with_retries(_get_gemini_client().analyze_image, image_bytes, clean_prompt, schema)
+        await decision_log.log_decision(
+            module=module, question_set_id="vision.analyze.v1", version="v1",
+            state={"prompt": clean_prompt}, answers=res,
+            confidence=float(res.get("confidence", 0.9)), latency_ms=int((time.monotonic() - started) * 1000),
+            cost_usd=0.005, model=settings.ai_gemini_model, source="gemini", fallback_used=False,
+        )
+        return res
     except Exception as exc:  # noqa: BLE001 — degrade, never error
         log.warning("analyze_image failed (%s) — degrading to shim fallback", exc)
-        return await shim.analyze_image(image_bytes, prompt, schema)
+        res = await shim.analyze_image(image_bytes, clean_prompt, schema)
+        await decision_log.log_decision(
+            module=module, question_set_id="vision.analyze.v1", version="v1",
+            state={"prompt": clean_prompt}, answers=res,
+            confidence=0.0, latency_ms=int((time.monotonic() - started) * 1000),
+            cost_usd=0.0, model=settings.ai_gemini_model, source="fallback", fallback_used=True,
+        )
+        return res
 
 
 async def embed(texts: list[str]) -> list[list[float]]:

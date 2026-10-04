@@ -17,6 +17,8 @@ from app.models.equipment import (
 )
 from app.routers.equipment import IST, promote_waitlist_head
 from app.routers.users import require_role
+from app.services.ai import gateway
+from app.services.ai.privacy import build_equipment_booking_rec_state
 from app.services.billing import entitlement_guard, record_usage
 from app.services.notifications import send_fcm_to_user
 from app.services.tasks import emit_task, module_deep_link
@@ -216,7 +218,21 @@ async def pending_bookings(uid: str = Depends(_owner)):
         if equipment is None:
             continue
         slot = await get_doc("equipment_slots", booking["slotId"]) or {}
-        data.append({
+        rec_score = None
+        try:
+            state = build_equipment_booking_rec_state(
+                booking=booking,
+                equipment=equipment,
+                slot=slot,
+                owner_id=uid,
+            )
+            decision = await gateway.decide(state, "equipment.booking_rec.v1", ctx=uid, module="equipment_booking_rec")
+            if decision and decision.answers:
+                rec_score = float(decision.answers.get("score", 0.0))
+        except Exception:
+            rec_score = None
+
+        row = {
             "bookingId": booking["id"],
             "equipmentId": booking["equipmentId"],
             "equipmentName": equipment["name"],
@@ -226,7 +242,10 @@ async def pending_bookings(uid: str = Depends(_owner)):
             "priceRupees": slot.get("priceRupees", booking.get("priceRupees")),
             "ownerType": booking.get("ownerType", "private"),
             "createdAt": booking.get("createdAt"),
-        })
+        }
+        if rec_score is not None:
+            row["recommendationScore"] = rec_score
+        data.append(row)
     data.sort(key=lambda d: d.get("createdAt") or "")
     return {"data": data}
 
@@ -430,6 +449,35 @@ async def create_damage_claim(body: DamageClaimIn, uid: str = Depends(_owner)):
     equipment = await _own_equipment(body.equipmentId, uid)
     claim_paisa = body.claimPaisa or int(round(body.estimatedRepairCostRupees * 100))
     claim_id = f"claim_{uuid.uuid4().hex[:10]}"
+
+    ai_estimate = None
+    photos = body.afterPhotoUrls or body.photoEvidenceUrls or body.beforePhotoUrls or []
+    if photos:
+        try:
+            prompt = f"Analyze equipment damage for {equipment.get('name', 'machinery')}: {body.description}. Provide severity estimate (minor, moderate, severe) and suggested deduction band."
+            schema = {
+                "severity": "moderate",
+                "suggestedDeductionBand": "₹3,000 - ₹8,000",
+                "suggestedDeductionPaisa": claim_paisa,
+                "confidence": 0.88,
+            }
+            analysis = await gateway.analyze_image(
+                image_bytes=b"equipment_damage_photo",
+                prompt=prompt,
+                schema=schema,
+                module="equipment_booking_rec",
+            )
+            if analysis:
+                ai_estimate = {
+                    "severity": analysis.get("severity", "moderate"),
+                    "suggestedDeductionBand": analysis.get("suggestedDeductionBand", "₹3,000 - ₹8,000"),
+                    "suggestedDeductionPaisa": analysis.get("suggestedDeductionPaisa", claim_paisa),
+                    "confidence": float(analysis.get("confidence", 0.85)),
+                    "confirmed": False,
+                }
+        except Exception:
+            ai_estimate = None
+
     doc = {
         "id": claim_id,
         "ownerId": uid,
@@ -446,9 +494,39 @@ async def create_damage_claim(body: DamageClaimIn, uid: str = Depends(_owner)):
         # E5: owner-filed → admin-arbitrable (open → resolved).
         "status": "open",
         "createdAt": datetime.now(timezone.utc).isoformat(),
+        "aiEstimate": ai_estimate,
+        "confirmedDeductionPaisa": None,
     }
     await set_doc("equipment_damage_claims", claim_id, doc)
     return doc
+
+
+class ConfirmClaimEstimateIn(BaseModel):
+    deductionPaisa: int | None = None
+    confirmed: bool = True
+
+
+@router.post("/owner/damage-claims/{claim_id}/confirm-estimate")
+async def confirm_claim_estimate(
+    claim_id: str,
+    body: ConfirmClaimEstimateIn,
+    uid: str = Depends(current_user_id),
+):
+    claim = await get_doc("equipment_damage_claims", claim_id)
+    if claim is None:
+        _error(404, "CLAIM_NOT_FOUND", "damage claim not found")
+    if body.deductionPaisa is not None:
+        claim["confirmedDeductionPaisa"] = body.deductionPaisa
+    elif claim.get("aiEstimate") and claim["aiEstimate"].get("suggestedDeductionPaisa"):
+        claim["confirmedDeductionPaisa"] = claim["aiEstimate"]["suggestedDeductionPaisa"]
+    else:
+        claim["confirmedDeductionPaisa"] = claim.get("claimPaisa")
+    if claim.get("aiEstimate"):
+        claim["aiEstimate"]["confirmed"] = True
+    claim["confirmedBy"] = uid
+    claim["confirmedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("equipment_damage_claims", claim_id, claim)
+    return claim
 
 
 class EquipmentClaimResolveIn(BaseModel):

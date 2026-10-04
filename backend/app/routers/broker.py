@@ -19,6 +19,8 @@ from app.models.broker import (
 )
 from app.routers.users import require_role
 from app.services import storage
+from app.services.ai import gateway
+from app.services.ai.privacy import build_broker_deadlock_state, build_broker_lead_score_state
 from app.services.billing import entitlement_guard, record_usage
 from app.services.notify import notify_user
 from app.services.tasks import DEEP_LINKS, emit_task
@@ -272,6 +274,45 @@ async def _assert_counter_round_available(deal_id: str):
         )
 
 
+async def _evaluate_round_two_deadlock(deal_id: str, deal: dict, amount_offer: float, broker_id: str):
+    messages = await query("deal_messages", [("dealId", "==", deal_id)], limit=500)
+    round_no = sum(1 for m in messages if m.get("amountOffer") is not None)
+    if round_no == 2:
+        initial_rate = float(deal.get("agreedRate") or 1.0)
+        price_gap_pct = abs(amount_offer - initial_rate) / initial_rate * 100.0
+        ttl_left = 24.0
+        expires_at = deal.get("expiresAt")
+        if expires_at:
+            try:
+                exp_dt = datetime.fromisoformat(expires_at)
+                ttl_left = max(0.0, (exp_dt - datetime.now(timezone.utc)).total_seconds() / 3600.0)
+            except Exception:
+                pass
+        deadlock_state = build_broker_deadlock_state(
+            deal=deal,
+            messages=messages,
+            counter_round=round_no,
+            price_gap_pct=price_gap_pct,
+            ttl_hours_remaining=ttl_left,
+            broker_id=broker_id,
+        )
+        try:
+            d_decision = await gateway.decide(
+                deadlock_state,
+                "broker.lead_score.v1",
+                ctx=broker_id,
+                module="broker_lead_score",
+            )
+            deadlock_risk = float(d_decision.answers.get("deadlock_risk", 0.0))
+            deal["deadlockRisk"] = deadlock_risk
+            if deadlock_risk >= 0.5:
+                deal["suggestMediator"] = True
+                deal["suggestedAction"] = "mediator"
+            await set_doc("broker_deals", deal_id, deal)
+        except Exception:
+            pass
+
+
 @router.post("/deals/{deal_id}/messages", status_code=201)
 async def send_deal_message(deal_id: str, body: DealMessageCreate, ctx: tuple = Depends(_broker_user)):
     user, uid = ctx
@@ -296,6 +337,10 @@ async def send_deal_message(deal_id: str, body: DealMessageCreate, ctx: tuple = 
         "createdAt": now,
     }
     await set_doc("deal_messages", msg_id, doc)
+
+    if body.amountOffer is not None:
+        await _evaluate_round_two_deadlock(deal_id, deal, body.amountOffer, uid)
+
     return doc
 
 
@@ -364,6 +409,20 @@ async def create_lead(body: LeadCreate, ctx: tuple = Depends(_broker_user)):
         "createdAt": now,
         "updatedAt": now,
     }
+    try:
+        lead_state = build_broker_lead_score_state(doc, broker_id=uid)
+        decision = await gateway.decide(
+            lead_state,
+            "broker.lead_score.v1",
+            ctx=uid,
+            module="broker_lead_score",
+        )
+        doc["score"] = float(decision.answers.get("quality", 0.5))
+        doc["deadlockRisk"] = float(decision.answers.get("deadlock_risk", 0.0))
+    except Exception:
+        doc["score"] = 0.5
+        doc["deadlockRisk"] = 0.0
+
     await set_doc("broker_leads", lead_id, doc)
     return doc
 
@@ -602,6 +661,20 @@ async def respond_to_requirement(requirement_id: str, ctx: tuple = Depends(_brok
         "createdAt": now,
         "updatedAt": now,
     }
+    try:
+        lead_state = build_broker_lead_score_state(lead, demand_fit=True, broker_id=uid)
+        decision = await gateway.decide(
+            lead_state,
+            "broker.lead_score.v1",
+            ctx=uid,
+            module="broker_lead_score",
+        )
+        lead["score"] = float(decision.answers.get("quality", 0.8))
+        lead["deadlockRisk"] = float(decision.answers.get("deadlock_risk", 0.0))
+    except Exception:
+        lead["score"] = 0.8
+        lead["deadlockRisk"] = 0.0
+
     await set_doc("broker_leads", lead_id, lead)
 
     requirement["responsesCount"] = int(requirement.get("responsesCount", 0)) + 1

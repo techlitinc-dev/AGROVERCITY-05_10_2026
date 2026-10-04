@@ -113,6 +113,8 @@ async def send_deal_message(deal_id: str, body: DealMessageCreate, ctx: tuple = 
     }
     await set_doc("deal_messages", msg_id, doc)
     if body.amountOffer is not None:
+        from app.routers.broker import _evaluate_round_two_deadlock
+        await _evaluate_round_two_deadlock(deal_id, deal, body.amountOffer, deal.get("brokerId"))
         body_text = f"Counter-offer ₹{body.amountOffer}/quintal for {deal.get('commodity', '')}".strip()
     else:
         body_text = f"New message on {deal.get('commodity', 'deal')} — {body.text[:80]}"

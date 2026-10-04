@@ -52,6 +52,8 @@ export interface Deal {
   buyerUid?: string;
   evidence?: EvidenceEntry[];
   cancelReason?: string;
+  deadlockRisk?: number;
+  suggestMediator?: boolean;
 }
 
 export interface DealCreate {
@@ -102,6 +104,8 @@ export interface Lead {
   location?: string;
   notes?: string;
   status: LeadStatus;
+  score?: number;
+  deadlockRisk?: number;
   createdAt: string;
   updatedAt: string;
 }

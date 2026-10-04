@@ -322,6 +322,9 @@ const enTrade: Record<string, string> = {
   ratesEmpty: 'No rates posted yet',
   ratesPosted: 'Rate submitted — pending approval',
   ratesOutOfBand: 'Rate is outside the allowed band around the mandi modal price',
+  ratesAiBandWarningTitle: 'Rate Outside Market Band',
+  ratesAiBandRange: 'Expected band: {band}',
+  ratesAiBandAllowed: 'Allowed rate: ₹{min}/kg – ₹{max}/kg',
 
   // ---- Saved farmers ----
   savedEmpty: 'No saved farmers yet',
@@ -562,6 +565,9 @@ const enTrade: Record<string, string> = {
   sbRecentSales: 'Recent Sales',
   sbFreshLots: '🌾 Fresh Produce Listed',
   sbViewAllLots: 'Browse all lots',
+  sbProcurementForecastTitle: 'AI Procurement Demand Forecast',
+  sbProcurementForecastBadge: '7-Day Outlook',
+  sbProcurementForecastSub: 'Recommended crop procurement based on 90-day trade volumes & regional demand.',
 
   // ---- Analytics v2 ----
   anPnL: 'Profit & Loss Summary',

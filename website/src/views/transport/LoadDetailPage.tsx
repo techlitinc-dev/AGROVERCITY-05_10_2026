@@ -239,7 +239,32 @@ export default function LoadDetailPage() {
                   <div key={bid.id} className="trade-card" style={{ cursor: 'default' }}>
                     <div className="trade-card-row">
                       <span className="trade-card-title">{bid.transporterName}</span>
-                      <span className="trade-card-amount">{inr(bid.quotedFare)}</span>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {bid.noshowRisk !== undefined ? (
+                          <span
+                            style={{
+                              fontSize: '0.75rem',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontWeight: 500,
+                              background:
+                                bid.noshowRisk > 0.4
+                                  ? 'rgba(239, 68, 68, 0.15)'
+                                  : bid.noshowRisk > 0.15
+                                  ? 'rgba(245, 158, 11, 0.15)'
+                                  : 'rgba(16, 185, 129, 0.15)',
+                              color: bid.noshowRisk > 0.4 ? '#dc2626' : bid.noshowRisk > 0.15 ? '#d97706' : '#059669',
+                            }}
+                          >
+                            {bid.noshowRisk > 0.4
+                              ? t('trNoShowRiskHigh')
+                              : bid.noshowRisk > 0.15
+                              ? t('trNoShowRiskMed')
+                              : t('trNoShowRiskLow')}
+                          </span>
+                        ) : null}
+                        <span className="trade-card-amount">{inr(bid.quotedFare)}</span>
+                      </div>
                     </div>
                     <div className="trade-card-row">
                       <span className="trade-card-sub">
@@ -285,7 +310,17 @@ export default function LoadDetailPage() {
       <ConfirmSheet
         open={accepting !== null}
         title={t('trAcceptBid')}
-        body={t('trAcceptBidConfirm')}
+        body={
+          accepting?.noshowRisk !== undefined
+            ? `${t('trAcceptBidConfirm')} (${t('trNoShowRisk')}: ${
+                accepting.noshowRisk > 0.4
+                  ? t('trNoShowRiskHigh')
+                  : accepting.noshowRisk > 0.15
+                  ? t('trNoShowRiskMed')
+                  : t('trNoShowRiskLow')
+              })`
+            : t('trAcceptBidConfirm')
+        }
         confirmLabel={t('trAcceptBid')}
         onConfirm={() => void confirmAcceptBid()}
         onClose={() => setAccepting(null)}

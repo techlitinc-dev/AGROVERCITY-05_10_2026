@@ -27,6 +27,8 @@ from app.models.land import (
 )
 from app.routers.users import require_role
 from app.services import billing, idempotency, reports
+from app.services.ai import gateway
+from app.services.ai.privacy import build_land_listing_quality_state
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
@@ -361,15 +363,48 @@ async def _require_request(request_id: str) -> dict:
 
 @router.post("/listings", status_code=201, response_model=LandListingOut)
 async def create_listing(body: LandListingIn, uid: str = Depends(_landlord)):
+    plot = None
     if body.plotId is not None:
-        await _require_plot(uid, body.plotId)
+        plot = await _require_plot(uid, body.plotId)
     user = await get_user(uid)
+
+    quality_assessment = None
+    try:
+        village = body.village or (plot.get("village") if plot else "")
+        village_stats = None
+        if village:
+            matching = await query("land_listings", [("village", "==", village), ("status", "==", "leased")], limit=20)
+            if len(matching) >= 3:
+                rents = [float(l.get("expectedRentRupees", 0)) / max(0.1, float(l.get("areaAcres", 1))) for l in matching]
+                village_stats = {
+                    "sampleCount": len(matching),
+                    "bandMin": min(rents) * 0.9,
+                    "bandMax": max(rents) * 1.1,
+                }
+        state = build_land_listing_quality_state(
+            listing=body.model_dump(),
+            plot=plot,
+            village_lease_stats=village_stats,
+            landlord_id=uid,
+        )
+        decision = await gateway.decide(state, "land.listing_quality.v1", ctx=uid, module="land_listing_quality")
+        if decision and decision.answers:
+            quality_assessment = {
+                "completeness": float(decision.answers.get("completeness", 0.8)),
+                "rentBandOk": bool(decision.answers.get("rent_band_ok", True)),
+                "tips": decision.answers.get("tips", []),
+                "bandSource": decision.answers.get("band_source", "district_benchmark_default"),
+            }
+    except Exception:
+        quality_assessment = None
+
     listing = LandListingOut(
         id=uuid.uuid4().hex,
         landlordId=uid,
         landlordName=user.get("name", ""),
         status="open",
         createdAt=datetime.now(timezone.utc).isoformat(),
+        qualityAssessment=quality_assessment,
         **body.model_dump(),
     )
     await set_doc("land_listings", listing.id, listing.model_dump())
@@ -408,7 +443,27 @@ async def update_listing(listing_id: str, body: LandListingUpdate, uid: str = De
     listing = await _require_listing(listing_id)
     if listing.get("landlordId") != uid:
         _error(403, "NOT_LISTING_OWNER", "listing belongs to another landlord")
-    listing.update(body.model_dump(exclude_unset=True))
+    updates = body.model_dump(exclude_unset=True)
+    listing.update(updates)
+
+    try:
+        plot = await get_doc(f"users/{uid}/land_plots", listing.get("plotId")) if listing.get("plotId") else None
+        state = build_land_listing_quality_state(
+            listing=listing,
+            plot=plot,
+            landlord_id=uid,
+        )
+        decision = await gateway.decide(state, "land.listing_quality.v1", ctx=uid, module="land_listing_quality")
+        if decision and decision.answers:
+            listing["qualityAssessment"] = {
+                "completeness": float(decision.answers.get("completeness", 0.8)),
+                "rentBandOk": bool(decision.answers.get("rent_band_ok", True)),
+                "tips": decision.answers.get("tips", []),
+                "bandSource": decision.answers.get("band_source", "district_benchmark_default"),
+            }
+    except Exception:
+        pass
+
     await set_doc("land_listings", listing_id, listing)
     return LandListingOut(**listing)
 
@@ -432,6 +487,13 @@ async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)
     if any(r.get("farmerId") == uid and r.get("status") == "pending" for r in existing):
         _error(409, "DUPLICATE_LEASE_REQUEST", "request already sent for this listing")
     user = await get_user(uid)
+    expected_rent = float(listing.get("expectedRentRupees") or 0.0)
+    proposed_rent = float(getattr(body, "proposedRentRupees", None) or expected_rent)
+    ratio = min(1.0, proposed_rent / expected_rent) if expected_rent > 0 else 1.0
+    dur = int(body.durationMonths or 12)
+    dur_score = 1.0 if 6 <= dur <= 36 else 0.8
+    compat_score = round(ratio * 0.7 + dur_score * 0.3, 2)
+
     request = LeaseRequestOut(
         id=uuid.uuid4().hex,
         farmerId=uid,
@@ -440,6 +502,7 @@ async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)
         landlordId=listing["landlordId"],
         status="pending",
         createdAt=datetime.now(timezone.utc).isoformat(),
+        compatibilityScore=compat_score,
         **body.model_dump(),
     )
     await set_doc("lease_requests", request.id, request.model_dump())
@@ -463,6 +526,15 @@ async def list_lease_requests(status: str | None = None, uid: str = Depends(_lan
     requests = await query("lease_requests", [("landlordId", "==", uid)], limit=1000)
     if status is not None:
         requests = [r for r in requests if r.get("status") == status]
+    for r in requests:
+        if r.get("compatibilityScore") is None:
+            listing = await get_doc("land_listings", r.get("listingId", "")) or {}
+            expected_rent = float(listing.get("expectedRentRupees") or 0.0)
+            proposed_rent = float(r.get("proposedRentRupees") or expected_rent)
+            ratio = min(1.0, proposed_rent / expected_rent) if expected_rent > 0 else 1.0
+            dur = int(r.get("durationMonths") or 12)
+            dur_score = 1.0 if 6 <= dur <= 36 else 0.8
+            r["compatibilityScore"] = round(ratio * 0.7 + dur_score * 0.3, 2)
     return _envelope(requests)
 
 

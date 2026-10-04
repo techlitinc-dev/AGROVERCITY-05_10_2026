@@ -257,6 +257,14 @@ const hiBroker: Record<string, string> = {
   offerSentAgo: '{time} पहले भेजा गया',
   offerTtlChip: 'समय शेष: {time}',
   offerTtlExpired: 'समय समाप्त',
+
+  // ---- AI Spoke M19 keys ----
+  leadScoreHigh: 'उच्च गुणवत्ता लीड',
+  leadScoreMedium: 'मध्यम लीड',
+  leadScoreLow: 'कम स्कोर लीड',
+  leadDeadlockRisk: 'डेडलॉक जोखिम',
+  leadSuggestMediator: 'मध्यस्थ का सुझाव',
+  dealDeadlockWarning: 'डेडलॉक जोखिम अधिक — मध्यस्थ का सुझाव',
 };
 
 registerLocale('hi', hiBroker);

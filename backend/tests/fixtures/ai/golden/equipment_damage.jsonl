@@ -1,0 +1,10 @@
+{"id": "dmg-01", "description": "minor scratch on tractor hood paint", "expected_severity": "minor"}
+{"id": "dmg-02", "description": "light scuff on wheel rim", "expected_severity": "minor"}
+{"id": "dmg-03", "description": "rotavator blade bent on buried rock", "expected_severity": "moderate"}
+{"id": "dmg-04", "description": "chipped cultivator tine", "expected_severity": "moderate"}
+{"id": "dmg-05", "description": "harvester conveyor belt torn and loose", "expected_severity": "moderate"}
+{"id": "dmg-06", "description": "engine cracked with heavy oil gushing", "expected_severity": "severe"}
+{"id": "dmg-07", "description": "axle broken in half from heavy impact", "expected_severity": "severe"}
+{"id": "dmg-08", "description": "hydraulic cylinder shattered with severe leakage", "expected_severity": "severe"}
+{"id": "dmg-09", "description": "front grill dented lightly", "expected_severity": "minor"}
+{"id": "dmg-10", "description": "pto shaft bent causing violent vibration", "expected_severity": "moderate"}

@@ -313,3 +313,25 @@ export async function listSellerProducts(): Promise<{ data: SellerProduct[] }> {
   const { data } = await api.get<{ data: SellerProduct[] }>('/seller/products');
   return data;
 }
+
+// ---------- Procurement Forecast (M4) ----------
+
+export interface ProcurementSuggestion {
+  crop: string;
+  qty_quintal: number;
+  reason: string;
+}
+
+export interface SellerForecast {
+  suggested_procurement?: ProcurementSuggestion[];
+}
+
+export async function getSellerForecast(): Promise<SellerForecast | null> {
+  try {
+    const { data } = await api.get<SellerForecast>('/seller/forecast');
+    return data;
+  } catch {
+    return null;
+  }
+}
+

@@ -105,6 +105,14 @@ const hiEquipment: Record<string, string> = {
   eqClaimFiled: 'क्षति दावा दर्ज हो गया',
   eqPhotos: 'फोटो',
   eqStatusResolved: 'निपट गया',
+  eqAiSeverityEstimate: 'एआई क्षति तीव्रता',
+  eqSuggestedDeduction: 'सुझाई गई कटौती',
+  eqConfirmDeduction: 'कटौती की पुष्टि करें',
+  eqConfirmedDeduction: 'कटौती पुष्ट',
+  eqDeductionConfirmedToast: 'क्षति कटौती की पुष्टि हो गई',
+  eqSeverityMinor: 'मामूली',
+  eqSeverityModerate: 'मध्यम',
+  eqSeveritySevere: 'गंभीर',
 
   // ---- Maintenance (task 4.6) ----
   tool_maintenance: 'मरम्मत',
@@ -192,6 +200,9 @@ const hiEquipment: Record<string, string> = {
   eqPinSaved: 'चेक-इन पिन सहेजा गया',
   eqNoPins: 'अभी कोई चेक-इन पिन नहीं',
   eqPinCoords: '{{lat}}, {{lng}}',
+
+  // ---- AI recommendation (task 6.21) ----
+  eqAiRec: 'एआई सिफ़ारिश',
 };
 
 registerLocale('hi', hiEquipment);

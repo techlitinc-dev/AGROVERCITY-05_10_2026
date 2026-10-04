@@ -4,6 +4,7 @@ import EmptyState from '../../components/trade/EmptyState';
 import { useEnsureProfile } from '../../components/trade/useEnsureProfile';
 import { toast } from '../../components/toast';
 import {
+  confirmClaimEstimate,
   createDamageClaim,
   fetchDamageClaims,
   fetchMyEquipment,
@@ -33,12 +34,14 @@ export default function DamageClaimsPage() {
   const [failed, setFailed] = useState(false);
   const [claimOpen, setClaimOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [busyConfirmId, setBusyConfirmId] = useState<string | null>(null);
   const [form, setForm] = useState({
     equipmentId: '',
     bookingId: '',
     incidentDate: new Date().toISOString().slice(0, 10),
     description: '',
     estimatedRepairCostRupees: '',
+    photoUrl: '',
   });
 
   const load = useCallback(() => {
@@ -66,6 +69,7 @@ export default function DamageClaimsPage() {
         incidentDate: form.incidentDate,
         description: form.description,
         estimatedRepairCostRupees: Number(form.estimatedRepairCostRupees),
+        photoEvidenceUrls: form.photoUrl.trim() ? [form.photoUrl.trim()] : undefined,
       });
       setClaimOpen(false);
       setForm({
@@ -74,6 +78,7 @@ export default function DamageClaimsPage() {
         incidentDate: new Date().toISOString().slice(0, 10),
         description: '',
         estimatedRepairCostRupees: '',
+        photoUrl: '',
       });
       toast(t('eqClaimFiled'));
       load();
@@ -81,6 +86,19 @@ export default function DamageClaimsPage() {
       toast(t('actionFailed'), { error: true });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleConfirmDeduction = async (id: string) => {
+    setBusyConfirmId(id);
+    try {
+      await confirmClaimEstimate(id);
+      toast(t('eqDeductionConfirmedToast'));
+      load();
+    } catch {
+      toast(t('actionFailed'), { error: true });
+    } finally {
+      setBusyConfirmId(null);
     }
   };
 
@@ -127,6 +145,7 @@ export default function DamageClaimsPage() {
                     <th>{t('eqIncidentDescription')}</th>
                     <th>{t('eqEstimatedCost')}</th>
                     <th>{t('eqPhotos')}</th>
+                    <th>{t('eqAiSeverityEstimate')}</th>
                     <th>{t('eqStatus')}</th>
                   </tr>
                 </thead>
@@ -141,6 +160,43 @@ export default function DamageClaimsPage() {
                         <td>{c.description}</td>
                         <td style={{ fontWeight: 600 }}>₹{c.estimatedRepairCostRupees.toLocaleString('en-IN')}</td>
                         <td>{c.photoEvidenceUrls?.length ?? 0}</td>
+                        <td>
+                          {c.aiEstimate ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                              <span
+                                className={`saas-badge ${
+                                  c.aiEstimate.severity === 'minor'
+                                    ? 'saas-badge-info'
+                                    : c.aiEstimate.severity === 'severe'
+                                      ? 'saas-badge-danger'
+                                      : 'saas-badge-warning'
+                                }`}
+                              >
+                                🤖 {t(c.aiEstimate.severity === 'minor' ? 'eqSeverityMinor' : c.aiEstimate.severity === 'severe' ? 'eqSeveritySevere' : 'eqSeverityModerate')}
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                {t('eqSuggestedDeduction')}: {c.aiEstimate.suggestedDeductionBand}
+                              </span>
+                              {c.confirmedDeductionPaisa || c.aiEstimate.confirmed ? (
+                                <span className="saas-badge saas-badge-success" style={{ fontSize: '0.7rem' }}>
+                                  ✓ {t('eqConfirmedDeduction')} (₹{Math.round((c.confirmedDeductionPaisa ?? c.aiEstimate.suggestedDeductionPaisa) / 100)})
+                                </span>
+                              ) : c.status === 'open' ? (
+                                <button
+                                  type="button"
+                                  className="saas-btn-primary"
+                                  style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                                  disabled={busyConfirmId === c.id}
+                                  onClick={() => handleConfirmDeduction(c.id)}
+                                >
+                                  {busyConfirmId === c.id ? <span className="av-spinner" aria-hidden /> : `✓ ${t('eqConfirmDeduction')}`}
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>—</span>
+                          )}
+                        </td>
                         <td>
                           <span className={`saas-badge ${meta.cls}`}>
                             {meta.key ? t(meta.key) : c.status}
@@ -228,6 +284,19 @@ export default function DamageClaimsPage() {
               value={form.estimatedRepairCostRupees}
               onChange={(e) => setForm({ ...form, estimatedRepairCostRupees: e.target.value })}
               required
+            />
+          </div>
+          <div className="saas-form-group">
+            <label className="saas-form-label" htmlFor="eq-claim-photo">
+              {t('eqPhotos')} URL
+            </label>
+            <input
+              id="eq-claim-photo"
+              type="url"
+              className="saas-input"
+              placeholder="https://..."
+              value={form.photoUrl}
+              onChange={(e) => setForm({ ...form, photoUrl: e.target.value })}
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>

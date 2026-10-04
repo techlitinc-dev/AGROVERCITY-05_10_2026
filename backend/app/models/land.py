@@ -78,6 +78,7 @@ class LandListingOut(LandListingIn):
     landlordName: str
     status: Literal["open", "leased", "closed"]
     createdAt: str
+    qualityAssessment: dict | None = None
 
 
 class LandListingUpdate(BaseModel):
@@ -110,6 +111,7 @@ class LeaseRequestOut(LeaseRequestIn):
     counterRentRupees: float | None = None
     negotiationRounds: int = 1
     landlordNotes: str | None = None
+    compatibilityScore: float | None = None
 
 
 class RejectRequestIn(BaseModel):

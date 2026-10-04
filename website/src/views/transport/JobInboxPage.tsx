@@ -175,7 +175,32 @@ export default function JobInboxPage() {
                   <span className="trade-card-title">
                     {b.pickup} → {b.drop}
                   </span>
-                  <StatusPill status={b.status} />
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    {b.noshowRisk !== undefined ? (
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontWeight: 500,
+                          background:
+                            b.noshowRisk > 0.4
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : b.noshowRisk > 0.15
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(16, 185, 129, 0.15)',
+                          color: b.noshowRisk > 0.4 ? '#dc2626' : b.noshowRisk > 0.15 ? '#d97706' : '#059669',
+                        }}
+                      >
+                        {b.noshowRisk > 0.4
+                          ? t('trNoShowRiskHigh')
+                          : b.noshowRisk > 0.15
+                          ? t('trNoShowRiskMed')
+                          : t('trNoShowRiskLow')}
+                      </span>
+                    ) : null}
+                    <StatusPill status={b.status} />
+                  </div>
                 </div>
                 <div className="trade-card-row">
                   <span className="trade-card-sub">
@@ -240,6 +265,31 @@ export default function JobInboxPage() {
       ) : null}
 
       <ModalSheet open={sheet === 'accept'} onClose={closeSheet} title={t('trAcceptJob')}>
+        {current && current.noshowRisk !== undefined ? (
+          <div style={{ marginBottom: '8px' }}>
+            <span
+              style={{
+                fontSize: '0.75rem',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontWeight: 500,
+                background:
+                  current.noshowRisk > 0.4
+                    ? 'rgba(239, 68, 68, 0.15)'
+                    : current.noshowRisk > 0.15
+                    ? 'rgba(245, 158, 11, 0.15)'
+                    : 'rgba(16, 185, 129, 0.15)',
+                color: current.noshowRisk > 0.4 ? '#dc2626' : current.noshowRisk > 0.15 ? '#d97706' : '#059669',
+              }}
+            >
+              {current.noshowRisk > 0.4
+                ? t('trNoShowRiskHigh')
+                : current.noshowRisk > 0.15
+                ? t('trNoShowRiskMed')
+                : t('trNoShowRiskLow')}
+            </span>
+          </div>
+        ) : null}
         <p className="trade-hint">{t('trPickVehicle')}</p>
         {verifiedVehicles.length === 0 ? (
           <>

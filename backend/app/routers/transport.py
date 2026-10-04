@@ -29,6 +29,7 @@ from app.routers.users import require_role
 from app.services import kyc as kyc_service
 from app.services import reports
 from app.services import settlements as settlements_service
+from app.services import transport_match
 from app.services.billing import effective_plan, entitlement_guard, record_usage
 from app.services.chat import ensure_transport_room
 from app.services.notifications import send_fcm_to_user
@@ -640,6 +641,9 @@ async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)
             }
         ],
     }
+    match_info = await transport_match.score_transport_match(doc, ctx=uid)
+    doc["noshowRisk"] = match_info.get("noshow_risk", 0.05)
+    doc["fit"] = match_info.get("fit", 0.7)
     await set_doc("transport_bookings", doc["id"], doc)
     return doc
 
@@ -857,6 +861,7 @@ async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = 
     booking["waypointsLog"] = waypoints
     booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
     await set_doc("transport_bookings", booking_id, booking)
+    await transport_match.record_transport_outcome(booking_id, "completed")
     await notify_user(
         booking["userId"],
         type="trip_delivered",
@@ -962,6 +967,7 @@ async def cancel_booking(booking_id: str, body: RejectBookingRequest, uid: str =
     })
     booking["waypointsLog"] = waypoints
     await set_doc("transport_bookings", booking_id, booking)
+    await transport_match.record_transport_outcome(booking_id, "cancelled")
     if booking.get("transporterId"):
         await notify_user(
             booking["transporterId"],
@@ -1025,6 +1031,9 @@ async def post_open_load(body: OpenLoadCreateRequest, uid: str = Depends(_booker
         "bidsCount": 0,
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
+    match_info = await transport_match.score_transport_match(doc, ctx=uid)
+    doc["noshowRisk"] = match_info.get("noshow_risk", 0.05)
+    doc["fit"] = match_info.get("fit", 0.7)
     await set_doc("transport_loads", doc["id"], doc)
     return doc
 
@@ -1675,7 +1684,7 @@ async def _match_return_loads(trip: dict) -> list[dict]:
             continue
         matches.append(load)
     matches.sort(key=lambda x: x.get("pickupDate", ""))
-    return matches
+    return await transport_match.rank_return_loads(trip, matches)
 
 
 @router.get("/trips/{trip_id}/return-loads")

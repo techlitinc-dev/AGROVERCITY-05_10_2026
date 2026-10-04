@@ -217,6 +217,12 @@ const enTransport: Record<string, string> = {
   tool_settlements_sub: 'Weekly payouts',
   tool_vehicleCalendar: 'Availability Calendar',
   tool_vehicleCalendar_sub: 'Assigned trips & free dates',
+
+  // ---- AI Spoke M16 annotations ----
+  trNoShowRisk: 'No-show risk',
+  trNoShowRiskLow: 'Low no-show risk',
+  trNoShowRiskMed: 'Moderate no-show risk',
+  trNoShowRiskHigh: 'High no-show risk',
 };
 
 registerLocale('en', enTransport);

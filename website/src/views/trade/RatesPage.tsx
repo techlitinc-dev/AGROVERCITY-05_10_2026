@@ -32,6 +32,12 @@ export default function RatesPage() {
   const [mandiName, setMandiName] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [aiBandWarning, setAiBandWarning] = useState<{
+    message: string;
+    band?: string;
+    minAllowed?: number;
+    maxAllowed?: number;
+  } | null>(null);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -54,6 +60,7 @@ export default function RatesPage() {
   const submit = async () => {
     if (!validate()) return;
     setBusy(true);
+    setAiBandWarning(null);
     try {
       await postRate({
         crop: crop.trim(),
@@ -65,15 +72,23 @@ export default function RatesPage() {
       setRatePerKg('');
       setMandiName('');
       setErrors({});
+      setAiBandWarning(null);
       load();
     } catch (e) {
       if (isApiError(e)) {
         if (e.code === 'RATE_OUT_OF_BAND') {
-          // render the server's band (modal ±25%) inline in the form
+          // render the server's AI-enriched band inline in the form
+          const msg = e.fieldErrors?.ratePerKg ?? t('ratesOutOfBand');
           setErrors((prev) => ({
             ...prev,
-            ratePerKg: e.fieldErrors?.ratePerKg ?? t('ratesOutOfBand'),
+            ratePerKg: msg,
           }));
+          setAiBandWarning({
+            message: msg,
+            band: typeof e.fieldErrors?.band === 'string' ? e.fieldErrors.band : undefined,
+            minAllowed: e.fieldErrors?.minAllowed ? Number(e.fieldErrors.minAllowed) : undefined,
+            maxAllowed: e.fieldErrors?.maxAllowed ? Number(e.fieldErrors.maxAllowed) : undefined,
+          });
         } else if (e.fieldErrors && Object.keys(e.fieldErrors).length > 0) {
           setErrors(e.fieldErrors);
         } else {
@@ -93,7 +108,10 @@ export default function RatesPage() {
       <LabeledTextField
         label={t('ratesCropLabel')}
         value={crop}
-        onChange={setCrop}
+        onChange={(v) => {
+          setCrop(v);
+          setAiBandWarning(null);
+        }}
         placeholder={t('lotsCropPlaceholder')}
         required
         error={errors.crop}
@@ -101,17 +119,57 @@ export default function RatesPage() {
       <LabeledTextField
         label={t('ratesRateLabel')}
         value={ratePerKg}
-        onChange={setRatePerKg}
+        onChange={(v) => {
+          setRatePerKg(v);
+          setAiBandWarning(null);
+        }}
         type="number"
         inputMode="decimal"
         prefix="₹"
         required
         error={errors.ratePerKg}
       />
+      {aiBandWarning ? (
+        <div
+          className="trade-band-warning"
+          style={{
+            margin: '8px 0 12px',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: 'var(--av-err-bg, #fde8e8)',
+            color: 'var(--av-err, #9b1c1c)',
+            border: '1px solid var(--av-err-border, #f8b4b4)',
+            fontSize: '0.875rem',
+            lineHeight: '1.4',
+          }}
+        >
+          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⚠️</span>
+            <span>{t('ratesAiBandWarningTitle')}</span>
+          </div>
+          <div style={{ marginTop: 4 }}>{aiBandWarning.message}</div>
+          {aiBandWarning.band ? (
+            <div style={{ marginTop: 2, fontSize: '0.8rem', opacity: 0.9 }}>
+              {t('ratesAiBandRange', { band: aiBandWarning.band })}
+            </div>
+          ) : null}
+          {aiBandWarning.minAllowed !== undefined && aiBandWarning.maxAllowed !== undefined ? (
+            <div style={{ marginTop: 2, fontSize: '0.8rem', fontWeight: 500 }}>
+              {t('ratesAiBandAllowed', {
+                min: String(aiBandWarning.minAllowed),
+                max: String(aiBandWarning.maxAllowed),
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <LabeledTextField
         label={t('ratesMandiLabel')}
         value={mandiName}
-        onChange={setMandiName}
+        onChange={(v) => {
+          setMandiName(v);
+          setAiBandWarning(null);
+        }}
         required
         error={errors.mandiName}
       />

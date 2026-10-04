@@ -848,7 +848,7 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`) then `pnpm exec tsc --noEmit && pnpm build` (cwd `website/`) then `git add -A && git commit -m "phase-02 WS-05: Broker DealDesk close-out"` (repo root)
 - EXPECT: pytest fully green; tsc + build clean; commit created.
 - IF FAIL: fix the failing check — never weaken a test; if only the git commit fails, note it and continue (playbook §6) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ## WS-06 — AI spoke decisions (M4, M16, M19, M24, M25)  (see instructions.md §WS-06)
 
@@ -858,196 +858,196 @@
 - RUN: `grep -n "def decide\|def generate\|def analyze_image" backend/app/services/ai/gateway.py && test -d backend/tests/fixtures/ai/golden && grep -rn "ai_decisions" backend/app/services/ai/ | head -3`
 - EXPECT: all three functions listed; golden dir exists; `ai_decisions` referenced.
 - IF FAIL: STOP the phase (playbook §5) — the phase-00 AI foundation is incomplete.
-- [ ]
+- [x]
 
 ### Task 6.2 — Register seller.rate_check.v1 question set
 - DO: Edit `backend/app/services/ai/question_sets.py`: register `seller.rate_check.v1` with schema `{within_fair_band: bool, manipulation_signal: float}`, its threshold, and its deterministic fallback (the static ±25% band rule). Add flag keys: `seller_rate_check` under `platform_config/ai.modules`, its threshold under `platform_config/ai.thresholds`, and `suggest` under `platform_config/ai.automation` (instructions.md §WS-06 intro). Automation is suggest-level only — annotate only (rule 12).
 - RUN: `.venv/bin/python -c "from app.services.ai import question_sets; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the registration syntax — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.3 — Build rate-check privacy state
 - DO: Edit `backend/app/services/ai/privacy.py`: add the M4 state builder producing `{posted rate, crop, mandi modal, 7-day volatility, seller history}` — pseudonymized, ≤1,500 tokens, and NO Aadhaar/phone/email in the payload (rule 11).
 - RUN: `.venv/bin/python -c "from app.services.ai import privacy; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the builder — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.4 — Wire rate check into rates endpoint
 - DO: Edit `backend/app/routers/seller.py` `POST /seller/rates`: build state via the task-6.3 builder, then `result = await gateway.decide(state, "seller.rate_check.v1", ctx)` — never call OpenRouter/Gemini from the router (rule 10). `within_fair_band == false` → 422 with the band in the error payload (the static ±25% rule remains the fallback); `manipulation_signal > 0.8` → write the rate AND flag `admin_review`. On exception/timeout/low budget → fallback to the static rule and log with `fallbackUsed`.
 - RUN: `.venv/bin/python -c "from app.routers import seller; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.5 — Add flagged-rates admin stub route
 - DO: Edit `backend/app/routers/admin.py`: add a stub route listing rates flagged `admin_review` by M4 (stub admin route acceptable per instructions.md §WS-06 step 1; full console is phase-07).
 - RUN: `.venv/bin/python -c "from app.routers import admin; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the route — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.6 — Show AI band warning in RatesPage
 - DO: Edit `website/src/views/trade/RatesPage.tsx`: render the AI-enriched band + warning from the 422 payload inline (extends task 3.3's display; no `alert()`). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the display — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.7 — Add nightly procurement forecast job
 - DO: Create `backend/app/services/seller_forecast.py` (new, following the scheduled-job shape of `backend/app/services/rent_reminders.py`): nightly job per seller over 90-day procurement/sales → call `gateway.generate()` (SGR — Gemini generation only via the gateway) → validate `{suggested_procurement: [{crop, qty_quintal, reason}]}` with Pydantic incl. one repair retry → cache 24 h (per seller/decision_id, never per page-view) → log cost → fallback = static en/hi template text (catalog C4).
 - RUN: `.venv/bin/python -c "import app.main; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the job module — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.8 — Add forecast card to seller dashboard
 - DO: Edit the seller dashboard view (`website/src/views/trade/` home/analytics — read `website/src/views/trade/index.ts` to find it): render the procurement-forecast card from the cached job output; hide the card when the payload fails validation (instructions.md §WS-06 Acceptance: "forecast validates or hides"). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the card — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.9 — Test M4 rate check
 - DO: Create `backend/tests/test_ai_seller_rate_check.py` (new): (1) golden fixture from `backend/tests/fixtures/ai/golden/` passes on `AI_PROVIDER=shim`; (2) fallback test with the gateway raising → static ±25% rule still decides and `fallbackUsed` is logged; (3) flag-off test (`seller_rate_check` off in `platform_config/ai.modules`) proving rate posting works without AI.
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_seller_rate_check.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the call site/question set — never weaken the test — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.10 — Register transport.match.v1 question set
 - DO: Edit `backend/app/services/ai/question_sets.py`: register `transport.match.v1` with schema `{fit: float (per vehicle/load, batch), noshow_risk: float}`, threshold, and fallback = distance sort. Flag keys: `transport_match` in `platform_config/ai.modules` / thresholds / automation=`suggest`.
 - RUN: `.venv/bin/python -c "from app.services.ai import question_sets; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the registration — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.11 — Add transport match batch scoring
 - DO: Create `backend/app/services/transport_match.py` (new): batch-scoring job per new load/booking request building state (route fit, vehicle type, capacity, history) via `privacy.py` (no PII — rule 11) and calling `gateway.decide(state, "transport.match.v1", ctx)`; fallback = distance sort with `fallbackUsed` logged. Call it from `backend/app/routers/transport.py` on new load/booking creation.
 - RUN: `.venv/bin/python -c "from app.routers import transport; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.12 — Rank return-load card with M16
 - DO: Edit the return-load code path from task 2.9: on trip completion, rank the deterministic return-load query results with `transport.match.v1` (flow 5.5) — annotate/reorder only at `suggest`; distance-sort order remains the fallback.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_return_loads.py -q` (cwd `backend/`)
 - EXPECT: all tests pass (deterministic behavior unchanged when the flag is off).
 - IF FAIL: fix the ranking hook — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.13 — Add no-show risk badge
 - DO: Edit `website/src/views/transport/JobInboxPage.tsx` and the bid-accept screen: render the no-show risk badge from `noshow_risk` (suggest-level annotation only). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the badge — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.14 — Register transport outcome hooks
 - DO: Edit the M16 call-site module: register outcome hooks recording `completed` / `cancelled` outcomes back to the AI module (instructions.md §WS-06 SDR step 6).
 - RUN: `.venv/bin/python -c "import app.main; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the hook — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.15 — Test M16 transport matching
 - DO: Create `backend/tests/test_ai_transport_match.py` (new): (1) golden fixture on shim — matched suggestions beat the distance-only baseline on the golden set (instructions.md §WS-06 Acceptance); (2) fallback test with gateway raising → distance sort; (3) flag-off test.
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_transport_match.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the call site/question set — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.16 — Register broker.lead_score.v1 question set
 - DO: Edit `backend/app/services/ai/question_sets.py`: register `broker.lead_score.v1` with schema `{quality: float, deadlock_risk: float}`, threshold, fallback. Flag keys: `broker_lead_score` in `platform_config/ai.modules` / thresholds / automation=`suggest`.
 - RUN: `.venv/bin/python -c "from app.services.ai import question_sets; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the registration — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.17 — Score broker leads and annotate pipeline
 - DO: Edit `backend/app/routers/broker.py`: score new leads via `gateway.decide(state, "broker.lead_score.v1", ctx)` with state (source, history, demand fit) built via `privacy.py`. Edit the broker pipeline dashboard view (`website/src/views/broker/LeadsPage.tsx`) to annotate scores. Suggest-level only.
 - RUN: `.venv/bin/python -c "from app.routers import broker; print('ok')"` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: prints `ok`; tsc exit 0.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.18 — Add deadlock prediction at round 2
 - DO: Edit `backend/app/routers/broker.py`: at round 2 of 3 on a deal, compute `deadlock_risk` from state (message count, price gap, TTL remaining) and surface the suggested mediator action feeding the WS-05 deadlock path (task 5.6). Suggest-level only (rule 12).
 - RUN: `.venv/bin/python -m pytest tests/test_broker_counter_cap.py -q` (cwd `backend/`)
 - EXPECT: all tests pass (WS-05 behavior unchanged with the flag off).
 - IF FAIL: fix the hook — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.19 — Test M19 lead scoring
 - DO: Create `backend/tests/test_ai_broker_lead_score.py` (new): (1) golden-deal fixture on shim; (2) document the measured correlation between high-deadlock predictions and actual deadlocks on the golden deals in a notes file next to the fixture (`backend/tests/fixtures/ai/golden/broker_lead_score_notes.md`, new — instructions.md §WS-06 Acceptance requires documenting it); (3) fallback test; (4) flag-off test.
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_broker_lead_score.py -q && test -f tests/fixtures/ai/golden/broker_lead_score_notes.md` (cwd `backend/`)
 - EXPECT: tests pass; notes file exists.
 - IF FAIL: fix the call site / write the notes — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.20 — Register equipment booking-rec question set
 - DO: Edit `backend/app/services/ai/question_sets.py`: register `equipment.booking_rec.v1` with an approve-recommendation score schema, threshold, fallback. Flag keys: `equipment_booking_rec` in `platform_config/ai.modules` / thresholds / automation=`suggest`.
 - RUN: `.venv/bin/python -c "from app.services.ai import question_sets; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the registration — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.21 — Annotate owner booking queue with M24
 - DO: Edit `backend/app/routers/equipment_owner.py`: approve-recommendation score on each booking request from state (renter history, slot conflicts, distance) via `gateway.decide(state, "equipment.booking_rec.v1", ctx)` — annotate only, never auto-approve (rule 12). Edit `website/src/views/equipment/BookingQueuePage.tsx` to show the score. Strings via `t()` en+hi.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_approve.py -q` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: tests pass (behavior unchanged with flag off); tsc exit 0.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.22 — Add damage photo severity estimate
 - DO: Edit the damage-claim code path from task 4.12: claim photos → `gateway.analyze_image()` (G-vision, only via the gateway — rule 10) returning severity estimate + suggested deduction band; SUGGEST-ONLY — owner/admin always confirms the final deduction (rule 12). Edit `website/src/views/equipment/DamageClaimsPage.tsx` to show the suggestion with an explicit confirm control.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_damage.py -q` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: tests pass; tsc exit 0.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.23 — Test M24 equipment AI
 - DO: Create `backend/tests/test_ai_equipment.py` (new): (1) golden damage set on shim — severity within ±1 band ≥ 75% (instructions.md §WS-06 Acceptance); (2) fallback test with gateway raising; (3) flag-off test proving the queue and damage flow work without AI.
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_equipment.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the call site/question set — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.24 — Register land.listing_quality.v1 question set
 - DO: Edit `backend/app/services/ai/question_sets.py`: register `land.listing_quality.v1` with schema `{completeness: float, rent_band_ok: bool}`, threshold, fallback. Flag keys: `land_listing_quality` in `platform_config/ai.modules` / thresholds / automation=`suggest`.
 - RUN: `.venv/bin/python -c "from app.services.ai import question_sets; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the registration — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.25 — Add listing-quality scoring on save
 - DO: Edit `backend/app/routers/land.py`: on listing save, call `gateway.decide(state, "land.listing_quality.v1", ctx)` → completeness score + actionable tips ("photo add karein" style) with en+hi strings, and rent vs village band check — band from real lease data where available, else district defaults LABELED as such (flow 5.9). Suggest-level only.
 - RUN: `.venv/bin/python -m pytest tests/test_land.py tests/test_land_market.py -q` (cwd `backend/`)
 - EXPECT: all tests pass (behavior unchanged with flag off).
 - IF FAIL: fix the hook — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.26 — Add tenant compatibility score
 - DO: Edit `backend/app/routers/land.py` and `website/src/views/landlord/RequestsInboxPage.tsx`: tenant-request compatibility score annotated on each request in the landlord's inbox (suggest-level). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the annotation — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.27 — Test M25 listing quality
 - DO: Create `backend/tests/test_ai_land_listing.py` (new): (1) golden fixture on shim; (2) fallback test with gateway raising; (3) flag-off test; (4) assert tips render in both en and hi.
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_land_listing.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the call site/locale keys — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.28 — Verify ai_decisions logging fields
 - DO: No new features. Verify every AI call site writes `ai_decisions` rows with cost + confidence + `fallbackUsed` (instructions.md §WS-06 Verification) and that no AI payload builder emits PII.
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest tests/ -q -k "ai_" && grep -rn "fallbackUsed" backend/app/services/ai/ | wc -l && grep -rni "aadhaar\|phone\|email" backend/app/services/ai/privacy.py | grep -vi "mask\|pseudonym\|strip\|remove\|hash\|redact\|no_\|exclude" | wc -l` (cwd `backend/`)
 - EXPECT: all `ai_` tests pass; `fallbackUsed` count ≥ 1; the PII grep count is `0` (only masking/stripping references allowed).
 - IF FAIL: add the missing logging field / remove the PII from the payload builder — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 6.29 — Checkpoint WS-06
 - DO: Run the workstream verification block (instructions.md §WS-06 Verification), then commit.

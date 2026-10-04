@@ -164,7 +164,32 @@ export default function LeadsPage() {
               <span className="trade-card-title">
                 {lead.type === 'farmer' ? '🌾' : lead.type === 'buyer' ? '🏪' : '⚖️'} {lead.name}
               </span>
-              <span className="trade-card-sub">{t(`leadStatus_${lead.status}`)}</span>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {lead.score !== undefined ? (
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontWeight: 500,
+                      background:
+                        lead.score >= 0.75
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : lead.score >= 0.5
+                          ? 'rgba(245, 158, 11, 0.15)'
+                          : 'rgba(107, 114, 128, 0.15)',
+                      color: lead.score >= 0.75 ? '#059669' : lead.score >= 0.5 ? '#d97706' : '#6b7280',
+                    }}
+                  >
+                    {lead.score >= 0.75
+                      ? t('leadScoreHigh')
+                      : lead.score >= 0.5
+                      ? t('leadScoreMedium')
+                      : t('leadScoreLow')}
+                  </span>
+                ) : null}
+                <span className="trade-card-sub">{t(`leadStatus_${lead.status}`)}</span>
+              </div>
             </div>
             <div className="trade-card-row">
               <span className="trade-card-sub">

@@ -105,6 +105,14 @@ const enEquipment: Record<string, string> = {
   eqClaimFiled: 'Damage claim filed',
   eqPhotos: 'Photos',
   eqStatusResolved: 'Resolved',
+  eqAiSeverityEstimate: 'AI severity estimate',
+  eqSuggestedDeduction: 'Suggested deduction',
+  eqConfirmDeduction: 'Confirm deduction',
+  eqConfirmedDeduction: 'Deduction confirmed',
+  eqDeductionConfirmedToast: 'Damage deduction confirmed',
+  eqSeverityMinor: 'Minor',
+  eqSeverityModerate: 'Moderate',
+  eqSeveritySevere: 'Severe',
 
   // ---- Maintenance (task 4.6) ----
   tool_maintenance: 'Maintenance',
@@ -192,6 +200,9 @@ const enEquipment: Record<string, string> = {
   eqPinSaved: 'Check-in pin saved',
   eqNoPins: 'No check-in pins yet',
   eqPinCoords: '{{lat}}, {{lng}}',
+
+  // ---- AI recommendation (task 6.21) ----
+  eqAiRec: 'AI recommendation',
 };
 
 registerLocale('en', enEquipment);

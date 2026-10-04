@@ -494,3 +494,20 @@ async def update_finance_loan_status(
         },
     )
     return loans_service.to_out(loan).model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Module M4 — AI Flagged Rates Review (WS-06 step 1)
+# ---------------------------------------------------------------------------
+@router.get("/rates/flagged")
+@router.get("/flagged-rates")
+async def list_flagged_rates(user: dict = Depends(admin_user)):
+    """Stub route listing rates flagged admin_review by M4 (full console in phase-07)."""
+    rates = await query("vyapari_rates_pending", [], limit=1000)
+    flagged = [
+        r for r in rates
+        if r.get("adminReview") or r.get("reviewStatus") == "admin_review" or r.get("flag") == "admin_review"
+    ]
+    flagged.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+    return {"data": flagged, "total": len(flagged)}
+

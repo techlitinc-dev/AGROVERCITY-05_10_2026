@@ -10,7 +10,29 @@ import time
 
 from app.core.db import get_doc, set_doc
 
-DEFAULT_AI_CONFIG = {"modules": {}, "thresholds": {}, "automation": {}}
+DEFAULT_AI_CONFIG = {
+    "modules": {
+        "seller_rate_check": True,
+        "transport_match": True,
+        "broker_lead_score": True,
+        "equipment_booking_rec": True,
+        "land_listing_quality": True,
+    },
+    "thresholds": {
+        "seller.rate_check.v1": 0.75,
+        "transport.match.v1": 0.75,
+        "broker.lead_score.v1": 0.75,
+        "equipment.booking_rec.v1": 0.75,
+        "land.listing_quality.v1": 0.75,
+    },
+    "automation": {
+        "seller.rate_check.v1": "suggest",
+        "transport.match.v1": "suggest",
+        "broker.lead_score.v1": "suggest",
+        "equipment.booking_rec.v1": "suggest",
+        "land.listing_quality.v1": "suggest",
+    },
+}
 CACHE_TTL_SECONDS = 60.0
 
 _cache: dict = {"doc": None, "at": 0.0}

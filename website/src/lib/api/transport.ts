@@ -200,6 +200,8 @@ export interface TransportBooking {
   cancellationReason?: string | null;
   cancelledBy?: string | null;
   lot?: { crop: string; quantityQuintals: number; expectedRate: number } | null;
+  noshowRisk?: number;
+  fit?: number;
   createdAt: string;
 }
 
@@ -320,6 +322,8 @@ export interface OpenLoad {
   createdAt?: string;
   /** Present on my own loads. */
   acceptedBidId?: string | null;
+  noshowRisk?: number;
+  fit?: number;
 }
 
 export interface LoadPayload {
@@ -356,6 +360,8 @@ export interface LoadBid {
   estimatedPickupTime?: string | null;
   notes?: string | null;
   status: 'pending' | 'accepted';
+  noshowRisk?: number;
+  fit?: number;
   createdAt: string;
 }
 
