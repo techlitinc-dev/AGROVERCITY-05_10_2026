@@ -20,6 +20,8 @@ from app.routers.purchases import (
     _participant,
     _redact,
     _release_escrow,
+    maybe_award_vyapari_verified,
+    probation_gate_escrow,
 )
 from app.routers.users import require_role
 from app.services.notify import notify_user
@@ -55,6 +57,7 @@ async def fund_escrow(purchase_id: str, body: EscrowFundIn, uid: str = Depends(c
     amount = body.amount or purchase.get("totalAmount") or 0
     if amount <= 0 or amount > purchase.get("totalAmount", 0):
         _error(422, "VALIDATION_ERROR", "invalid escrow amount", {"amount": "must be between 1 and totalAmount"})
+    await probation_gate_escrow(purchase["buyerId"], purchase_id, amount)
     escrow.update(
         status="held",
         amount=amount,
@@ -192,7 +195,7 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
         purchase["finalAmount"] = purchase["totalAmount"]
         purchase["status"] = "completed"
         _append_event(purchase, "qc", f"grade {body.grade}")
-        _release_escrow(purchase)
+        await _release_escrow(purchase)
         _append_event(purchase, "completed")
         _issue_invoice(purchase)
     else:
@@ -205,6 +208,7 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
     if purchase["status"] == "completed":
+        await maybe_award_vyapari_verified(purchase["buyerId"])
         for party in (purchase["farmerId"], purchase["buyerId"]):
             await notify_user(
                 party,
@@ -235,11 +239,12 @@ async def resolve_dispute(purchase_id: str, body: ResolveIn, uid: str = Depends(
     escrow = purchase.setdefault("escrow", {})
     escrow["disputeResolvedAt"] = _now()
     escrow["releaseAt"] = _now()
-    _release_escrow(purchase)
+    await _release_escrow(purchase)
     _append_event(purchase, "completed")
     _issue_invoice(purchase)
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
+    await maybe_award_vyapari_verified(purchase["buyerId"])
     await notify_user(
         purchase["buyerId"],
         type="dispute_resolved",

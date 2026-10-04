@@ -3,6 +3,20 @@ import pytest
 from tests.test_mandi import MANDI_PRICES
 from tests.test_users import _auth, _register
 
+
+def _verify_shop_kyc(user_store, uid="uid-1"):
+    """stands in for the admin KYC review: the seller shop case is verified."""
+    user_store[f"kyc_cases/kyc_{uid}_seller"] = {
+        "caseId": f"kyc_{uid}_seller",
+        "userId": uid,
+        "persona": "seller",
+        "status": "verified",
+        "docs": [
+            {"docId": f"kyc_{uid}_seller:apmc_licence", "type": "apmc_licence", "status": "verified"},
+            {"docId": f"kyc_{uid}_seller:gst", "type": "gst", "status": "verified"},
+        ],
+    }
+
 VYAPARI_RATES = [
     {"id": "vyapari-1", "crop": "Tomato (टमाटर)", "rateDisplay": "₹24/kg", "priceChange": "₹2", "changeDir": "up", "mandiName": "Nashik Mandi", "vyapariCount": 3, "lastUpdated": "10 mins ago"},
     {"id": "vyapari-2", "crop": "Onion (प्याज)", "rateDisplay": "₹18/kg", "priceChange": "₹1", "changeDir": "down", "mandiName": "Pimpalgaon Mandi", "vyapariCount": 5, "lastUpdated": "15 mins ago"},
@@ -16,6 +30,7 @@ def seeded(user_store):
         user_store[f"vyapari_rates/{doc['id']}"] = doc
     for doc in MANDI_PRICES:
         user_store[f"mandi_prices/{doc['id']}"] = doc
+    _verify_shop_kyc(user_store)
     return user_store
 
 

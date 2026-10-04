@@ -47,7 +47,7 @@ async def release_due_escrows() -> dict:
         if not is_due(escrow, now):
             pending += 1
             continue
-        _release_escrow(purchase)
+        await _release_escrow(purchase)
         purchase["updatedAt"] = datetime.now(timezone.utc).isoformat()
         await set_doc("purchases", purchase["id"], purchase)
         released += 1

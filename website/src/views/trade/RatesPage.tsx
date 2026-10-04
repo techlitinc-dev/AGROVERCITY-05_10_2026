@@ -69,7 +69,11 @@ export default function RatesPage() {
     } catch (e) {
       if (isApiError(e)) {
         if (e.code === 'RATE_OUT_OF_BAND') {
-          setErrors((prev) => ({ ...prev, ratePerKg: t('ratesOutOfBand') }));
+          // render the server's band (modal ±25%) inline in the form
+          setErrors((prev) => ({
+            ...prev,
+            ratePerKg: e.fieldErrors?.ratePerKg ?? t('ratesOutOfBand'),
+          }));
         } else if (e.fieldErrors && Object.keys(e.fieldErrors).length > 0) {
           setErrors(e.fieldErrors);
         } else {

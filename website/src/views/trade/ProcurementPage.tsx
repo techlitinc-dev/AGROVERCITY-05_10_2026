@@ -3,6 +3,7 @@ import LabeledTextField from '../../components/LabeledTextField';
 import ModalSheet from '../../components/ModalSheet';
 import ConfirmSheet from '../../components/trade/ConfirmSheet';
 import EmptyState from '../../components/trade/EmptyState';
+import PhotoUploader from '../../components/trade/PhotoUploader';
 import StatusPill from '../../components/trade/StatusPill';
 import ToolShell from '../../components/trade/ToolShell';
 import { useEnsureProfile } from '../../components/trade/useEnsureProfile';
@@ -46,6 +47,7 @@ export default function ProcurementPage() {
   const [ratePerQuintal, setRatePerQuintal] = useState('');
   const [qualityDeductionPct, setQualityDeductionPct] = useState('0');
   const [weighbridgeSlipNo, setWeighbridgeSlipNo] = useState('');
+  const [weighbridgeSlipPhotos, setWeighbridgeSlipPhotos] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -83,6 +85,7 @@ export default function ProcurementPage() {
     setRatePerQuintal('');
     setQualityDeductionPct('0');
     setWeighbridgeSlipNo('');
+    setWeighbridgeSlipPhotos([]);
     setNotes('');
     setErrors({});
   };
@@ -114,6 +117,7 @@ export default function ProcurementPage() {
         ratePerQuintal: Math.round(rate * 100) / 100,
         qualityDeductionPct: deductPct,
         weighbridgeSlipNo: weighbridgeSlipNo.trim() || undefined,
+        weighbridgeSlipUrl: weighbridgeSlipPhotos[0] || undefined,
         notes: notes.trim() || undefined,
       });
       toast(t('procAdded'));
@@ -228,6 +232,16 @@ export default function ProcurementPage() {
                 {t('perQuintal')}
               </span>
             </div>
+            {lot.weighbridgeSlipUrl ? (
+              <a
+                href={lot.weighbridgeSlipUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="trade-card-sub"
+              >
+                📷 {t('procSlipPhoto')}
+              </a>
+            ) : null}
             {lot.paymentStatus !== 'paid' ? (
               <div className="trade-actions-row">
                 <button
@@ -325,6 +339,10 @@ export default function ProcurementPage() {
           value={weighbridgeSlipNo}
           onChange={setWeighbridgeSlipNo}
         />
+        <div className="av-field">
+          <span className="av-label">{t('procSlipPhoto')}</span>
+          <PhotoUploader photos={weighbridgeSlipPhotos} onChange={setWeighbridgeSlipPhotos} min={0} max={1} />
+        </div>
         <LabeledTextField label={t('procNotes')} value={notes} onChange={setNotes} />
 
         <div className="trade-invoice-box">

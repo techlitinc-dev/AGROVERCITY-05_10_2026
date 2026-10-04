@@ -379,6 +379,8 @@ const hi: Record<string, string> = {
   tool_krishiRatna_sub: 'कॉइन इनाम',
   tool_sellProduce: 'उपज बेचें',
   tool_sellProduce_sub: 'अपनी फसल लिस्ट करें',
+  tool_farmerProcurement: 'मेरी खरीदारी',
+  tool_farmerProcurement_sub: 'व्यापारी भुगतान और रसीदें',
   tool_buyDemands: 'खरीद मांगें',
   tool_buyDemands_sub: 'खरीद की ज़रूरतें',
   tool_landlordPlots: 'मेरे प्लॉट',

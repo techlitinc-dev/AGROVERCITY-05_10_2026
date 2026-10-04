@@ -179,6 +179,7 @@ async def list_my_offers(
     if targetType:
         docs = [d for d in docs if d.get("targetType") == targetType]
     docs = [await _expire_if_due(d) for d in docs]
+    docs = [await _with_verified_flag(d) for d in docs]
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize
@@ -194,9 +195,18 @@ async def _participant_offer(offer_id: str, uid: str) -> dict:
     return doc
 
 
+async def _with_verified_flag(doc: dict) -> dict:
+    """WS-03: expose the buyer's Verified Vyapari tier so farmer-facing offer
+    surfaces can render the trust badge."""
+    from_user = await get_user(doc.get("fromId") or "")
+    enriched = dict(doc)
+    enriched["fromVerified"] = bool((from_user or {}).get("vyapariVerified"))
+    return enriched
+
+
 @router.get("/{offer_id}")
 async def get_offer(offer_id: str, uid: str = Depends(current_user_id)):
-    return await _expire_if_due(await _participant_offer(offer_id, uid))
+    return await _with_verified_flag(await _expire_if_due(await _participant_offer(offer_id, uid)))
 
 
 @router.post("/{offer_id}/accept")

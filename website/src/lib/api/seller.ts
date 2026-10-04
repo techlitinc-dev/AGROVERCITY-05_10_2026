@@ -139,6 +139,7 @@ export interface ProcurementLot {
   paymentMode?: string;
   utrNumber?: string;
   weighbridgeSlipNo?: string;
+  weighbridgeSlipUrl?: string;
   jFormNumber: string;
   notes?: string;
   createdAt: string;
@@ -165,6 +166,7 @@ export interface ProcurementPayload {
   paymentStatus?: ProcurementPayStatus;
   paymentMode?: string;
   weighbridgeSlipNo?: string;
+  weighbridgeSlipUrl?: string;
   notes?: string;
 }
 
@@ -193,6 +195,78 @@ export async function payProcurement(
     {},
     { params: { paymentMode, utrNo } }
   );
+  return data;
+}
+
+// ---------- Farmer-facing procurement payments (S4) ----------
+
+export interface ProcurementPayment {
+  id: string;
+  jFormNumber?: string;
+  crop: string;
+  variety?: string;
+  netWeightQuintals?: number;
+  ratePerQuintal?: number;
+  finalAmount?: number;
+  paymentStatus: string;
+  paymentMode?: string;
+  utrNumber?: string;
+  receiptNo?: string;
+  paidAt?: string;
+  amountPaisa?: number;
+  sellerName?: string;
+  createdAt?: string;
+}
+
+export async function myProcurementPayments(): Promise<{
+  data: ProcurementPayment[];
+  pendingCount: number;
+  total: number;
+}> {
+  const { data } = await api.get('/seller/procurement/mine');
+  return data;
+}
+
+export async function procurementReceipt(paymentId: string): Promise<ProcurementPayment> {
+  const { data } = await api.get(`/seller/procurement/mine/${paymentId}/receipt`);
+  return data;
+}
+
+// ---------- Buyer network / B2B (S5) ----------
+
+export interface BulkOrder {
+  id: string;
+  buyerId: string;
+  buyerName: string;
+  buyerPhone?: string;
+  crop: string;
+  quantityQuintals: number;
+  targetPricePerQuintal?: number | null;
+  neededBy?: string | null;
+  notes?: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface DirectoryBuyer {
+  buyerName: string;
+  buyerPhone?: string;
+  companyName?: string;
+  ledgerEntries: number;
+  bulkOrders: number;
+}
+
+export async function listBulkOrders(): Promise<{
+  data: BulkOrder[];
+  openCount: number;
+  total: number;
+}> {
+  const { data } = await api.get('/seller/bulk-orders');
+  return data;
+}
+
+export async function buyerDirectory(): Promise<{ data: DirectoryBuyer[]; total: number }> {
+  const { data } = await api.get('/seller/buyer-directory');
   return data;
 }
 

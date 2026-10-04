@@ -23,6 +23,20 @@ ALL_PROFILES = [
 ]
 
 
+def _verify_shop_kyc(user_store, uid="omni-user-777"):
+    """stands in for the admin KYC review: the seller shop case is verified."""
+    user_store[f"kyc_cases/kyc_{uid[:8]}_seller"] = {
+        "caseId": f"kyc_{uid[:8]}_seller",
+        "userId": uid,
+        "persona": "seller",
+        "status": "verified",
+        "docs": [
+            {"docId": f"kyc_{uid[:8]}_seller:apmc_licence", "type": "apmc_licence", "status": "verified"},
+            {"docId": f"kyc_{uid[:8]}_seller:gst", "type": "gst", "status": "verified"},
+        ],
+    }
+
+
 def seed_omni_user(user_store, uid="omni-user-777"):
     """Seeds a single user entity possessing all 6 linked agricultural personas."""
     user_store[f"users/{uid}"] = {
@@ -163,6 +177,7 @@ async def test_omni_user_as_transporter(client, user_store):
 @pytest.mark.asyncio
 async def test_omni_user_as_seller(client, user_store):
     token = seed_omni_user(user_store)
+    _verify_shop_kyc(user_store)
     await _activate_persona(client, token, "seller")
 
     # 1. Post Daily Mandi Buying Rate

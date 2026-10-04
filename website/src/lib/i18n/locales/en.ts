@@ -393,6 +393,8 @@ const en: Record<string, string> = {
   tool_krishiRatna_sub: 'Coin rewards',
   tool_sellProduce: 'Sell Produce',
   tool_sellProduce_sub: 'List your crop',
+  tool_farmerProcurement: 'My Procurements',
+  tool_farmerProcurement_sub: 'Vyapari payments & receipts',
   tool_buyDemands: 'Buy Demands',
   tool_buyDemands_sub: 'Farm buy requirements',
   tool_landlordPlots: 'My Plots',

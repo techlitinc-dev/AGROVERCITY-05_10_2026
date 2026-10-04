@@ -13,6 +13,7 @@ import { saveFarmer } from '../../lib/api/discovery';
 import { createOffer } from '../../lib/api/offers';
 import { openDirectChat } from '../../lib/api/chat';
 import { createPurchase } from '../../lib/api/purchases';
+import { myBookings, type MyBookingsResponse } from '../../lib/api/transport';
 import { isApiError } from '../../lib/api/client';
 import { getLot, inr, type Lot } from '../../lib/api/trade';
 import { useT } from '../../lib/i18n';
@@ -52,6 +53,7 @@ export default function LotDetailPage() {
   const [offerErrors, setOfferErrors] = useState<Record<string, string>>({});
   const [offering, setOffering] = useState(false);
   const [chatting, setChatting] = useState(false);
+  const [transportLeg, setTransportLeg] = useState<MyBookingsResponse["transport"][number] | null>(null);
 
   const load = useCallback(() => {
     if (!lotId) return;
@@ -69,6 +71,15 @@ export default function LotDetailPage() {
   }, [lotId]);
 
   useEffect(load, [load]);
+
+  // Produce lot → pickup → delivery: show this lot's transport leg when one
+  // of the viewer's transport bookings is tied to it (F12).
+  useEffect(() => {
+    if (!lotId) return;
+    myBookings(undefined, lotId)
+      .then((res) => setTransportLeg(res.transport?.[0] ?? null))
+      .catch(() => setTransportLeg(null));
+  }, [lotId]);
 
   const openOfferSheet = () => {
     if (!lot) return;
@@ -232,6 +243,29 @@ export default function LotDetailPage() {
       </div>
 
       <PriceWithBenchmark crop={lot.crop} quantityQuintals={lot.quantityQuintals} price={lot.expectedRate} />
+
+      {transportLeg ? (
+        <section className="trade-card" style={{ marginTop: 12 }}>
+          <div className="trade-card-row">
+            <span className="trade-section-title" style={{ margin: 0 }}>
+              {t('lotTransportLegTitle')}
+            </span>
+            <StatusPill status={transportLeg.status} />
+          </div>
+          <p className="trade-hint" style={{ margin: '8px 0 4px' }}>
+            🚚 {transportLeg.vehicleType} · {transportLeg.pickup} → {transportLeg.drop}
+          </p>
+          <div className="trade-actions">
+            <button
+              type="button"
+              className="av-btn av-btn-ghost"
+              onClick={() => navigate(`/dashboard/p/transport/trips/${transportLeg.id}`)}
+            >
+              {t('lotTransportLegCta')}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {isOpen ? (
         <div className="trade-actions">

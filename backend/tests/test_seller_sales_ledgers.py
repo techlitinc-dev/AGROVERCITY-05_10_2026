@@ -1,13 +1,29 @@
 import pytest
 from tests.test_users import _auth, _register
 
-async def _seller_token(client):
+
+def _verify_shop_kyc(user_store, uid="uid-1"):
+    """stands in for the admin KYC review: the seller shop case is verified."""
+    user_store[f"kyc_cases/kyc_{uid}_seller"] = {
+        "caseId": f"kyc_{uid}_seller",
+        "userId": uid,
+        "persona": "seller",
+        "status": "verified",
+        "docs": [
+            {"docId": f"kyc_{uid}_seller:apmc_licence", "type": "apmc_licence", "status": "verified"},
+            {"docId": f"kyc_{uid}_seller:gst", "type": "gst", "status": "verified"},
+        ],
+    }
+
+
+async def _seller_token(client, user_store):
     resp = await _register(client, profiles=["seller"], primaryProfile="seller")
+    _verify_shop_kyc(user_store)
     return resp.json()["accessToken"]
 
 @pytest.mark.asyncio
-async def test_seller_sales_and_ledgers(client):
-    token = await _seller_token(client)
+async def test_seller_sales_and_ledgers(client, user_store):
+    token = await _seller_token(client, user_store)
     headers = _auth(token)
 
     # 1. Create a cash sale
@@ -101,3 +117,75 @@ async def test_seller_sales_and_ledgers(client):
     )
     assert resp_pay.status_code == 200
     assert resp_pay.json()["paymentStatus"] == "paid"
+
+
+@pytest.mark.asyncio
+async def test_seller_dashboard_summary_fields(client, user_store):
+    from tests.test_mandi import MANDI_PRICES
+
+    for doc in MANDI_PRICES:
+        user_store[f"mandi_prices/{doc['id']}"] = doc
+    token = await _seller_token(client, user_store)
+    headers = _auth(token)
+
+    # procurement today (unpaid -> pending farmer payment)
+    resp = await client.post(
+        "/v1/seller/procurement",
+        headers=headers,
+        json={
+            "farmerName": "Eknath Shinde",
+            "crop": "Pomegranate (अनार भगवा)",
+            "grossWeightKg": 3200.0,
+            "tareWeightKg": 200.0,
+            "netWeightQuintals": 30.0,
+            "ratePerQuintal": 7500.0,
+            "qualityDeductionPct": 2.0,
+            "paymentStatus": "unpaid",
+        },
+    )
+    assert resp.status_code == 201
+    lot = resp.json()
+    # in-band rate
+    resp = await client.post(
+        "/v1/seller/rates",
+        headers=headers,
+        json={"crop": "Tomato", "ratePerKg": 21, "mandiName": "Pimpalgaon Baswant APMC"},
+    )
+    assert resp.status_code == 200
+    # udhaar entry
+    resp = await client.post(
+        "/v1/seller/ledgers",
+        headers=headers,
+        json={
+            "buyerName": "Suresh Patil",
+            "buyerPhone": "9823001122",
+            "type": "credit_sale",
+            "amount": 2000.0,
+        },
+    )
+    assert resp.status_code == 201
+
+    resp = await client.get("/v1/seller/dashboard", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in (
+        "todayProcurement",
+        "pendingFarmerPayments",
+        "stockPosition",
+        "rateStatus",
+        "openOffers",
+        "udhaarOutstanding",
+        "settlementEta",
+    ):
+        assert key in body
+
+    assert body["todayProcurement"]["lotsCount"] == 1
+    assert body["todayProcurement"]["quantityQuintals"] == 30.0
+    assert body["todayProcurement"]["amountPaisa"] == int(round(lot["finalAmount"] * 100))
+    assert body["pendingFarmerPayments"]["count"] == 1
+    assert body["pendingFarmerPayments"]["pinned"] is True
+    assert body["stockPosition"][0]["crop"].startswith("Pomegranate")
+    assert body["rateStatus"] == {"pendingCount": 1, "inBand": 1, "outOfBand": 0}
+    assert body["openOffers"]["count"] == 0
+    assert body["udhaarOutstanding"]["netPaisa"] == 200000
+    assert "nextRunDate" in body["settlementEta"]

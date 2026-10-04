@@ -15,6 +15,15 @@ def _error(status_code: int, code: str, message: str, field_errors: dict | None 
     )
 
 
+async def _no_driver_settlements(uid: str = Depends(current_user_id)) -> str:
+    """Fleet drivers operate trips but can never read settlement/payout data (T9)."""
+    user = await get_user(uid)
+    profiles = (user or {}).get("linkedProfiles") or []
+    if "driver" in profiles and "transport" not in profiles:
+        _error(403, "DRIVERS_CANNOT_VIEW_SETTLEMENTS", "drivers cannot view settlements")
+    return uid
+
+
 async def _my_settlements(uid: str, role: str) -> dict:
     user = await get_user(uid)
     if user is None:
@@ -30,15 +39,15 @@ async def _my_settlements(uid: str, role: str) -> dict:
 
 
 @router.get("/transport/settlements")
-async def transport_settlements(uid: str = Depends(current_user_id)):
+async def transport_settlements(uid: str = Depends(_no_driver_settlements)):
     return await _my_settlements(uid, "transport")
 
 
 @router.get("/equipment/settlements")
-async def equipment_settlements(uid: str = Depends(current_user_id)):
+async def equipment_settlements(uid: str = Depends(_no_driver_settlements)):
     return await _my_settlements(uid, "equipmentRental")
 
 
 @router.get("/broker/settlements")
-async def broker_settlements(uid: str = Depends(current_user_id)):
+async def broker_settlements(uid: str = Depends(_no_driver_settlements)):
     return await _my_settlements(uid, "broker")

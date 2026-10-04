@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 PaymentMode = Literal["cash", "upi", "credit", "bank_transfer"]
 LedgerType = Literal["credit_sale", "payment_received", "adjustment"]
-ProcurementPaymentStatus = Literal["unpaid", "partial", "paid"]
+ProcurementPaymentStatus = Literal["unpaid", "partial", "paid", "udhaar"]
 
 class SaleEntryCreate(BaseModel):
     buyerName: str
@@ -23,6 +23,7 @@ class BuyerLedgerEntryCreate(BaseModel):
     companyName: str = ""
     type: LedgerType = "payment_received"
     amount: float = Field(gt=0)
+    amountPaisa: int | None = Field(default=None, ge=0)
     paymentMode: str = "upi"
     reference: str = ""
     notes: str = ""
@@ -40,6 +41,7 @@ class ProcurementLotCreate(BaseModel):
     paymentStatus: ProcurementPaymentStatus = "unpaid"
     paymentMode: str = "bank_transfer"
     weighbridgeSlipNo: str = ""
+    weighbridgeSlipUrl: str = ""
     notes: str = ""
 
 

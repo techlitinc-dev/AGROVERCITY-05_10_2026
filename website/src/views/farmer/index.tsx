@@ -3,6 +3,7 @@ import FarmerContractDetailPage from './FarmerContractDetailPage';
 import FarmerContractsPage from './FarmerContractsPage';
 import FarmerDealDetailPage from './FarmerDealDetailPage';
 import FarmerOffersPage from './FarmerOffersPage';
+import FarmerProcurementPage from './FarmerProcurementPage';
 
 /**
  * Farmer-side registries — the brokerOffers tool (incoming dalal offers, P2)
@@ -12,6 +13,7 @@ import FarmerOffersPage from './FarmerOffersPage';
 export const FARMER_PAGES: Record<string, ComponentType> = {
   brokerOffers: FarmerOffersPage,
   myContracts: FarmerContractsPage,
+  farmerProcurement: FarmerProcurementPage,
 };
 
 export {
@@ -19,4 +21,5 @@ export {
   FarmerContractsPage,
   FarmerDealDetailPage,
   FarmerOffersPage,
+  FarmerProcurementPage,
 };

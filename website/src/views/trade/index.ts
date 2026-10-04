@@ -2,6 +2,8 @@ import type { ComponentType } from 'react';
 import AnalyticsPage from './AnalyticsPage';
 import BankAccountsPage from './BankAccountsPage';
 import BrowseDemandsPage from './BrowseDemandsPage';
+import BulkOrdersPage from './BulkOrdersPage';
+import BuyerDirectoryPage from './BuyerDirectoryPage';
 import ChatListPage from './ChatListPage';
 import ChatRoomPage from './ChatRoomPage';
 import DemandForm from './DemandForm';
@@ -42,6 +44,8 @@ export const TRADE_PAGES: Record<string, ComponentType> = {
   pos: PosPage,
   procurement: ProcurementPage,
   rates: RatesPage,
+  buyerDirectory: BuyerDirectoryPage,
+  bulkOrders: BulkOrdersPage,
   notifications: NotificationsPage,
   bankAccounts: BankAccountsPage,
 };
@@ -50,6 +54,8 @@ export {
   AnalyticsPage,
   BankAccountsPage,
   BrowseDemandsPage,
+  BulkOrdersPage,
+  BuyerDirectoryPage,
   ChatListPage,
   ChatRoomPage,
   DemandForm,

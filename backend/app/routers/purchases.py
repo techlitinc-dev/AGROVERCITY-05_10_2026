@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.direct import AdvanceIn, CancelIn, PickupIn, PurchaseCreate
+from app.services import settlements as settlements_service
 from app.services.chat import ensure_chat_room
 from app.services.notify import notify_user
 from app.services.users import get_user
@@ -14,10 +15,9 @@ router = APIRouter(prefix="/purchases", tags=["purchases"])
 
 TERMINAL_STATUSES = ("completed", "cancelled")
 
-# Spec C5 commission engine — default: 2% on the Vyapari side, min ₹50,
-# 0% farmer side (seasonal promos configurable). Kept as constants v1.
-COMMISSION_RATE = 0.02
-COMMISSION_MIN_RUPEES = 50
+# Spec C5 commission engine — config-driven via platform_config/settlements
+# (sellerPct / sellerMinRupees; see commission_for below). Defaults: 2% min ₹50,
+# 0% farmer side (seasonal promos configurable).
 # Spec F11 — handover OTP: 6-digit, single-use, 15-minute validity.
 HANDOVER_OTP_VALID_MINUTES = 15
 HANDOVER_OTP_MAX_ATTEMPTS = 5
@@ -32,6 +32,69 @@ STATUS_TRANSITIONS: dict[str, set[str]] = {
     "completed": set(),
     "cancelled": set(),
 }
+
+
+# features/Vyapari.md: new Vyaparis get a probation tier — max 3 bookings and a
+# ₹50,000 cumulative escrow cap until the Verified trust tier is earned.
+PROBATION_BOOKING_CAP = 3
+PROBATION_ESCROW_CAP_RUPEES = 50000
+
+
+async def probation_gate_booking(buyer_id: str):
+    user = await get_user(buyer_id)
+    if user is None or user.get("vyapariVerified"):
+        return
+    if "seller" not in (user.get("linkedProfiles") or []):
+        return  # probation applies to vyapari buyers only
+    purchases = await query("purchases", [("buyerId", "==", buyer_id)], limit=1000)
+    bookings = [p for p in purchases if p.get("status") != "cancelled"]
+    if len(bookings) >= PROBATION_BOOKING_CAP:
+        _error(
+            403,
+            "PROBATION_BOOKING_CAP",
+            f"new vyaparis are limited to {PROBATION_BOOKING_CAP} bookings until the Verified tier is earned",
+        )
+
+
+async def probation_gate_escrow(buyer_id: str, purchase_id: str, amount: int):
+    user = await get_user(buyer_id)
+    if user is None or user.get("vyapariVerified"):
+        return
+    if "seller" not in (user.get("linkedProfiles") or []):
+        return
+    purchases = await query("purchases", [("buyerId", "==", buyer_id)], limit=1000)
+    funded = sum(
+        int((p.get("escrow") or {}).get("amount", 0) or 0)
+        for p in purchases
+        if p.get("id") != purchase_id and p.get("status") != "cancelled"
+    )
+    if funded + int(amount) > PROBATION_ESCROW_CAP_RUPEES:
+        _error(
+            403,
+            "PROBATION_ESCROW_CAP",
+            f"new vyaparis are capped at ₹{PROBATION_ESCROW_CAP_RUPEES:,} cumulative escrow"
+            " until the Verified tier is earned",
+        )
+
+
+# features/Vyapari.md: 3 completed bookings earn the "Verified Vyapari" tier.
+VERIFIED_TIER_MIN_COMPLETED = 3
+
+
+async def maybe_award_vyapari_verified(buyer_id: str):
+    """Flip the trust tier once the probation requirements are met — the badge
+    surfaces to farmers and the probation caps stop applying."""
+    user = await get_user(buyer_id)
+    if user is None or user.get("vyapariVerified"):
+        return
+    if "seller" not in (user.get("linkedProfiles") or []):
+        return
+    purchases = await query("purchases", [("buyerId", "==", buyer_id)], limit=1000)
+    completed = [p for p in purchases if p.get("status") == "completed"]
+    if len(completed) >= VERIFIED_TIER_MIN_COMPLETED:
+        user["vyapariVerified"] = True
+        user["vyapariVerifiedAt"] = _now()
+        await set_doc("users", buyer_id, user)
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -67,14 +130,18 @@ def _amount_due(purchase: dict) -> int:
     return billable - _paid_total(purchase)
 
 
-def commission_for(amount: int) -> int:
-    """Spec C5 — commission on the settled amount (vyapari side)."""
+async def commission_for(amount: int) -> int:
+    """Spec C5 — commission on the settled amount (vyapari side), config-driven
+    from platform_config/settlements (default 2% min ₹50; WS-03 step 8)."""
     if amount <= 0:
         return 0
-    return max(COMMISSION_MIN_RUPEES, round(amount * COMMISSION_RATE))
+    config = await settlements_service._config()
+    pct = float(config.get("sellerPct", 2))
+    floor = int(config.get("sellerMinRupees", 50))
+    return max(floor, round(amount * pct / 100))
 
 
-def _release_escrow(purchase: dict):
+async def _release_escrow(purchase: dict):
     """Release held escrow at settlement (spec C4): minus commission.
 
     WS-03 release clock: once handover starts the clock (`releaseAt`), the
@@ -93,7 +160,7 @@ def _release_escrow(purchase: dict):
         except ValueError:
             pass
     final = purchase.get("finalAmount") or purchase.get("totalAmount") or 0
-    commission = commission_for(final)
+    commission = await commission_for(final)
     escrow.update(
         status="released",
         releasedAt=_now(),
@@ -156,6 +223,7 @@ async def _new_purchase(
     unit: str,
     price: int,
 ) -> dict:
+    await probation_gate_booking(buyer_id)
     purchase = {
         "id": f"pur_{uuid.uuid4().hex[:12]}",
         "buyerId": buyer_id,

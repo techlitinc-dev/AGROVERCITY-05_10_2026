@@ -217,84 +217,84 @@
 - RUN: `test -f backend/app/routers/transport.py && test -f backend/app/services/settlements.py && test -f backend/app/routers/jobs.py && test -f backend/app/routers/purchase_settlement.py && test -f website/src/views/transport/TripPage.tsx && test -f website/src/views/transport/LiveTrackingPage.tsx && test -f website/src/views/transport/SettlementsPage.tsx && test -f website/src/views/transport/JobInboxPage.tsx && test -f website/src/views/transport/LoadDetailPage.tsx && test -f website/src/lib/api/transport.ts && test -f features/farm_transporter.md && test -f plan/transporters_plan.md && grep -q "transportPct" backend/app/services/settlements.py`
 - EXPECT: exit 0.
 - IF FAIL: a "Read first" file is missing — STOP the phase (playbook §5) with the failing path.
-- [ ]
+- [x]
 
 ### Task 2.2 — Add farmer POD-OTP endpoint
 - DO: Edit `backend/app/routers/transport.py`: add `GET /transport/bookings/{id}/pod-otp` (farmer-facing) which creates a 6-digit OTP on the booking with a validity window and attempt counter, reusing the handover-OTP shape and constants `HANDOVER_OTP_VALID_MINUTES` / `HANDOVER_OTP_MAX_ATTEMPTS` from `backend/app/routers/purchase_settlement.py` (import them). Standard error envelope on failure (rule 7).
 - RUN: `.venv/bin/python -c "from app.routers import transport; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the import/syntax error in `transport.py` — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.3 — Add transporter verify-POD-OTP endpoint
 - DO: Edit `backend/app/routers/transport.py`: add `POST /transport/bookings/{id}/verify-pod-otp` (transporter-facing) which, on a valid OTP, marks the booking `delivered` alongside the existing `podPhotos` + `receiverName` fields; expired OTP → 422; attempts ≥ `HANDOVER_OTP_MAX_ATTEMPTS` → 422 (rule 7 envelope).
 - RUN: `.venv/bin/python -c "from app.routers import transport; print('ok')"` (cwd `backend/`)
 - EXPECT: prints `ok`, exit 0.
 - IF FAIL: fix the error in `transport.py` — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.4 — Test OTP POD flows
 - DO: Create `backend/tests/test_transport_pod_otp.py` (new) covering: happy path (farmer gets OTP, transporter verifies, booking becomes `delivered`), expired OTP → 422, and max-attempts lockout → 422.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_pod_otp.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix `transport.py` — never weaken the test — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.5 — Add one-round bid counter endpoint
 - DO: Edit `backend/app/routers/transport.py`: add `POST /transport/loads/{id}/bids/{bidId}/counter` allowing exactly one counter round on a load bid; a second counter on the same bid → 422 (rule 7 envelope, `Idempotency-Key` on the write). Create `backend/tests/test_transport_bids.py` (new) covering counter accepted then second counter rejected.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_bids.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoint — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.6 — Add transport damage dispute lane
 - DO: Edit `backend/app/routers/transport.py`: promote `pod.damageNotes` into a real dispute record — `POST /transport/bookings/{id}/damage-disputes` with fields `{bookingId, photos: [], claimPaisa: <integer paisa>, notes, status: "open", createdBy, createdAt}`; `GET` for both farmer and transporter; status flow `open → resolved` via an admin-consumable endpoint (console UI is phase-07). Create `backend/tests/test_transport_disputes.py` (new) covering create + status transition.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_disputes.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoints — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.7 — Add cancellation/no-show penalty config
 - DO: Create a versioned config doc `platform_config/transport_penalties` with fields `{cancelWindowHours, strikesToSuspend, version, effectiveFrom}` loaded by `backend/app/routers/transport.py` (config changes effective-dated, admin-editable with maker-checker — instructions.md §WS-02 step 4). Add a test to `backend/tests/test_transport_disputes.py` asserting the config loads with defaults present.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_disputes.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the config loader — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.8 — Record no-show strikes and suspension
 - DO: Edit `backend/app/routers/transport.py`: cancelling within `cancelWindowHours` of the pickup window records a strike on the transporter; at `strikesToSuspend` strikes the transporter is suspended from the load board (accept → 403 with the error envelope). Create `backend/tests/test_transport_strikes.py` (new) covering strike recording and suspension at the threshold.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_strikes.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the strike logic — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.9 — Add return-load matching query
 - DO: Edit `backend/app/routers/transport.py`: add `GET /transport/trips/{id}/return-loads` which, on/after trip completion, runs the deterministic query: open loads whose pickup is near the trip's drop district within the return window (T8; AI ranking is WS-06 M16, not here). Create `backend/tests/test_transport_return_loads.py` (new) with a matching and a non-matching load.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_return_loads.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the query — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.10 — Add return-load card UI
 - DO: Edit `website/src/views/transport/TripPage.tsx` and the transport dashboard tile: render the return-load card from `GET /transport/trips/{id}/return-loads` via `website/src/lib/api/transport.ts`. Strings via `t()` with keys added to BOTH `website/src/lib/i18n/locales/en.transport.ts` and `hi.transport.ts`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the card wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.11 — Add driver sub-users
 - DO: Edit `backend/app/routers/transport.py`: driver sub-accounts scoped to a fleet (T9, Pro tier) — a driver can ping milestones/location on assigned trips but any settlements read → 403. Create `backend/tests/test_transport_drivers.py` (new) covering driver ping allowed + settlements read forbidden.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_drivers.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the scoping — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.12 — Add surge multiplier cap
 - DO: Edit `backend/app/routers/transport.py`: fare estimate carries a `surgeMultiplier` field, server-clamped to a hard cap of 1.5, never applied farmer-side (transporter-side earning lever only). Edit the fare breakdown card in the transport views to show the multiplier transparently (`t()` en+hi keys). Create `backend/tests/test_transport_surge.py` (new) asserting a 2.0 request is stored as 1.5.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_surge.py -q && grep -rn "surgeMultiplier" website/src/views/farmer/ | wc -l` (cwd `backend/` for pytest, repo root for grep)
 - EXPECT: tests pass; grep count is `0` (surge never rendered farmer-side).
 - IF FAIL: fix the clamp / remove the farmer-side render — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.13 — Replace KYC shim with real pipeline
 - PRECONDITION: `grep -rln "kyc" backend/app/routers/ backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 KYC pipeline missing.
@@ -302,14 +302,14 @@
 - RUN: `.venv/bin/python -m pytest tests/test_transport_kyc.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.14 — Emit KYC expiry reminder tasks
 - DO: Edit `backend/app/routers/transport.py`: emit `emit_task()` reminders 30 / 7 / 1 days before each vehicle document expiry. Add a test to `backend/tests/test_transport_kyc.py` asserting a reminder task is emitted for a doc expiring in 7 days.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_kyc.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the reminder emission — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.15 — Wire RazorpayX weekly payouts
 - PRECONDITION: `grep -rln "payout" backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 RazorpayX payout client missing.
@@ -317,49 +317,49 @@
 - RUN: `.venv/bin/python -m pytest tests/test_transport_payouts.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the payout wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.16 — Verify trip P&L matches commission config
 - DO: Add a test (new `backend/tests/test_transport_pnl.py`) asserting `GET /bookings/{id}/expenses` trip P&L commission equals `platform_config/settlements.transportPct` (10%) of the trip fare in integer paisa (instructions.md §WS-02 step 9: verify it still matches).
 - RUN: `.venv/bin/python -m pytest tests/test_transport_pnl.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the P&L computation to match the config — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.17 — Add per-trip commission invoice PDF
 - DO: Edit `backend/app/routers/transport.py`: add `GET /transport/bookings/{id}/commission-invoice` returning a PDF invoice for the trip's commission. Add a test to `backend/tests/test_transport_pnl.py` asserting 200 + PDF content type.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_pnl.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoint — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.18 — Assert audit_logs on payouts
 - DO: Edit the payout path from task 2.15 so every payout writes an `audit_logs` entry (rule 3). Add a test to `backend/tests/test_transport_payouts.py` asserting the audit doc exists after a payout.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_payouts.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: add the missing audit write — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.19 — Add PWA location pings
 - DO: Edit `website/src/views/transport/TripPage.tsx` and `website/src/views/transport/LiveTrackingPage.tsx`: post a location ping every 30 s while a trip is active (30 s refresh already exists — hook into it) via `website/src/lib/api/transport.ts`; edit the farmer My Trips view to show the vehicle en route from the latest ping. No telematics (spec S16). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the ping wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.20 — Add lotId transport linkage
 - DO: Edit `backend/app/routers/transport.py`: booking create accepts an optional `lotId` tying produce lot → pickup → delivery (F12). Edit `website/src/views/trade/LotDetailPage.tsx` to render the booking's transport leg when `lotId` is set. Create `backend/tests/test_transport_lot.py` (new) asserting the linkage persists.
 - RUN: `.venv/bin/python -m pytest tests/test_transport_lot.py -q` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: tests pass; tsc exit 0.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.21 — Add transporter dashboard summary
 - DO: Edit `backend/app/routers/transport.py`: dashboard summary returns today's trips with status, new job requests, vehicle availability/location, earnings today/this week (integer paisa), next settlement, document expiries, and return-load matches on today's routes (instructions.md §WS-02 step 12). Add a test asserting the fields exist.
 - RUN: `.venv/bin/python -m pytest tests/test_transport.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the summary — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.22 — Enforce transporter entitlements
 - PRECONDITION: `grep -rln "entitlement" backend/app/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 billing entitlements missing.
@@ -367,14 +367,14 @@
 - RUN: `.venv/bin/python -m pytest tests/test_transport_entitlements.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.23 — Grep transport phone fields
 - DO: No new features. Verify no phone field renders anywhere in the transport module incl. the bilty (rule 4).
 - RUN: `grep -rn "farmerPhone\|transporterPhone\|driverPhone" website/src/views/transport/ website/src/views/farmer/`
 - EXPECT: no output.
 - IF FAIL: remove/mask every match (use the masked-text pattern) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 2.24 — HUMAN CHECK: transporter end-to-end flow
 - PRECONDITION: `curl -s http://localhost:8000/v1/health` — if it does not return `"status":"ok"`, redo task 1.27 first.
@@ -398,105 +398,105 @@
 - RUN: `test -f backend/app/routers/seller.py && test -f backend/app/routers/mandi.py && test -f backend/app/routers/purchases.py && test -f backend/app/routers/purchase_settlement.py && test -f website/src/views/trade/RatesPage.tsx && test -f website/src/views/trade/ProcurementPage.tsx && test -f website/src/views/trade/KhataPage.tsx && test -f website/src/views/trade/PosPage.tsx && test -f website/src/views/trade/PurchasesPage.tsx && test -f website/src/lib/api/seller.ts && test -f website/src/components/trade/PhotoUploader.tsx && test -f features/Vyapari.md && grep -q "RATE_OUT_OF_BAND" backend/app/routers/seller.py`
 - EXPECT: exit 0.
 - IF FAIL: a "Read first" file is missing — STOP the phase (playbook §5) with the failing path.
-- [ ]
+- [x]
 
 ### Task 3.2 — Enforce 2-hour rate edit window
 - DO: Edit `backend/app/routers/seller.py`: the rate doc stores `createdAt`; any edit to a posted rate more than 2 hours after `createdAt` → 422 with the error envelope (keep the existing ±25% `RATE_OUT_OF_BAND` band check untouched — S2). Create `backend/tests/test_seller_rate_window.py` (new) covering: edit inside 2 h succeeds, edit after 2 h → 422.
 - RUN: `.venv/bin/python -m pytest tests/test_seller_rate_window.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the window check — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.3 — Show rate band inline in RatesPage
 - DO: Edit `website/src/views/trade/RatesPage.tsx`: on a 422 from the rates endpoint, render the band from the error payload inline in the form — never `alert()` (rule 6). Strings via `t()` with keys added to BOTH `en.trade.ts` and `hi.trade.ts`.
 - RUN: `pnpm exec tsc --noEmit && grep -c "alert(" src/views/trade/RatesPage.tsx; true` (cwd `website/`)
 - EXPECT: tsc exit 0; grep count is `0`.
 - IF FAIL: fix the inline display / remove the dialog — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.4 — Add weighbridge slip upload
 - DO: Edit `website/src/views/trade/ProcurementPage.tsx`: add a weighbridge slip photo upload on procurement entry reusing the existing `website/src/components/trade/PhotoUploader.tsx` (Firebase Storage); save the resulting URL on the procurement doc as `weighbridgeSlipUrl` via `website/src/lib/api/seller.ts` (backend `backend/app/routers/purchases.py` persists the field — add it there too). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit && cd ../backend && .venv/bin/python -c "from app.routers import purchases; print('ok')"` (cwd `website/` then `backend/`)
 - EXPECT: tsc exit 0; prints `ok`.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.5 — Add procurement payment status
 - DO: Edit `backend/app/routers/purchases.py`: each procurement gets `paymentStatus: "paid" | "udhaar"` with a transition endpoint accepting `Idempotency-Key` and the standard error envelope (rule 7); integer paisa amounts only. Create `backend/tests/test_procurement_payment.py` (new) covering paid and udhaar transitions.
 - RUN: `.venv/bin/python -m pytest tests/test_procurement_payment.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the transitions — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.6 — Add farmer payment-pending trust card
 - DO: Edit the farmer's view of a procurement (farmer-facing view in `website/src/views/farmer/` or the shared purchase detail — read `website/src/views/trade/PurchaseDetailPage.tsx` first to find where the farmer sees it): while `paymentStatus == "udhaar"` render a "payment pending" trust card; when `paid`, show the receipt (instructions.md §WS-03 step 2). Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the card — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.7 — Add mark-paid flow with receipt
 - DO: Edit `backend/app/routers/purchases.py`: marking a procurement paid generates a receipt retrievable by the farmer (PDF or receipt doc — follow the existing receipt shape in `purchase_settlement.py` if present). Add a test to `backend/tests/test_procurement_payment.py` covering udhaar → paid with receipt.
 - RUN: `.venv/bin/python -m pytest tests/test_procurement_payment.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the flow — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.8 — Extend udhaar ledger balances
 - DO: Edit `backend/app/routers/seller.py`: extend the existing khata `/seller/ledgers` into a per-buyer udhaar ledger with running balances in integer paisa (S7). Create `backend/tests/test_udhaar_ledger.py` (new) covering: udhaar entries accumulate, payments reduce, ledger reconciles to zero.
 - RUN: `.venv/bin/python -m pytest tests/test_udhaar_ledger.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the ledger math — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.9 — Add GST invoice PDF
 - DO: Edit `backend/app/routers/seller.py`: add `GET /seller/sales/{id}/invoice.pdf` generating a GST invoice PDF per completed sale (S6). Create `backend/tests/test_seller_documents.py` (new) asserting 200 + PDF content type.
 - RUN: `.venv/bin/python -m pytest tests/test_seller_documents.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoint — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.10 — Add TDS 194-O statements
 - DO: Edit `backend/app/routers/seller.py` / `backend/app/services/settlements.py`: add a TDS 194-O statement per settlement period (downloadable). Create `backend/tests/test_tds.py` (new) covering the TDS math on a known settlement (integer paisa).
 - RUN: `.venv/bin/python -m pytest tests/test_tds.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the TDS computation — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.11 — Enforce new-vyapari probation caps
 - DO: Edit `backend/app/routers/seller.py` / `backend/app/routers/purchase_settlement.py`: until the trust tier is earned, a vyapari is limited to 3 completed bookings and a ₹50,000 cumulative escrow cap (features/Vyapari.md); a 4th booking or escrow above the cap → 403 with the error envelope. Create `backend/tests/test_vyapari_probation.py` (new) covering both caps.
 - RUN: `.venv/bin/python -m pytest tests/test_vyapari_probation.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the caps — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.12 — Award Verified Vyapari trust tier
 - DO: Edit `backend/app/routers/seller.py`: on completing the probation requirements (task 3.11), set the vyapari's trust tier field so the "Verified Vyapari" badge is earned. Add a test to `backend/tests/test_vyapari_probation.py` asserting the tier flips after the 3rd completed booking within the escrow cap.
 - RUN: `.venv/bin/python -m pytest tests/test_vyapari_probation.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the tier award — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.13 — Show Verified Vyapari badge to farmers
 - DO: Edit the farmer-facing offer/procurement surfaces (`website/src/views/farmer/`, `website/src/views/trade/` offer cards): render the "Verified Vyapari" badge when the vyapari's trust tier field is set. Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the badge wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.14 — Add buyer network endpoints
 - DO: Edit `backend/app/routers/seller.py`: buyer network / B2B (S5) — a buyer directory listing plus incoming bulk orders where wholesale buyers post requirements to the vyapari (new collection + GET/POST endpoints, error envelope + `Idempotency-Key` on writes). Create `backend/tests/test_buyer_network.py` (new) covering post-a-requirement and list-directory.
 - RUN: `.venv/bin/python -m pytest tests/test_buyer_network.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoints — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.15 — Build buyer network views
 - DO: Create `website/src/views/trade/BuyerDirectoryPage.tsx` (new) and `website/src/views/trade/BulkOrdersPage.tsx` (new) over the task-3.14 endpoints via `website/src/lib/api/seller.ts`; register both in the trade pages registry (`website/src/views/trade/index.ts` `TRADE_PAGES`) and routes if the pattern requires it. Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the views/registry — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.16 — Gate rates and procurement on shop KYC
 - PRECONDITION: `grep -rln "kyc" backend/app/routers/ backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 KYC pipeline missing.
@@ -504,14 +504,14 @@
 - RUN: `.venv/bin/python -m pytest tests/test_shop_kyc_gate.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.17 — Add vyapari dashboard summary
 - DO: Edit `backend/app/routers/seller.py`: dashboard summary returns today's procurement (quantity + integer paisa), pending farmer payments (trust-critical, pinned), stock position, rate-posting status vs mandi band, open offers/negotiations, udhaar outstanding, and settlement ETA (instructions.md §WS-03 step 7). Add a test asserting the fields exist.
 - RUN: `.venv/bin/python -m pytest tests/test_seller_sales_ledgers.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the summary — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.18 — Extend vyapari commission config and entitlements
 - PRECONDITION: `grep -rln "entitlement" backend/app/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 billing entitlements missing.
@@ -519,14 +519,14 @@
 - RUN: `.venv/bin/python -m pytest tests/test_vyapari_entitlements.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the config/gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.19 — Assert audit_logs and no external payments
 - DO: Edit `backend/app/routers/purchases.py` / `seller.py` so every payment-status mutation writes `audit_logs` (rule 3) — add a test to `backend/tests/test_procurement_payment.py` asserting it. Then verify no external payment links anywhere in the trade module (rule 4).
 - RUN: `.venv/bin/python -m pytest tests/test_procurement_payment.py -q && grep -rni "paytm\|phonepe\|upi://\|gpay" website/src/views/trade/ | wc -l` (cwd `backend/` then repo root)
 - EXPECT: tests pass; grep count is `0`.
 - IF FAIL: add the audit write / remove the external link — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 3.20 — HUMAN CHECK: bahi-khata day flow
 - PRECONDITION: `curl -s http://localhost:8000/v1/health` — if it does not return `"status":"ok"`, redo task 1.27 first.
@@ -550,7 +550,7 @@
 - RUN: `test -f website/src/views/equipment/EquipmentOwnerHomeBoard.tsx && test -f website/src/views/equipment/index.tsx && test -f website/src/lib/api/equipmentOwner.ts && test -f backend/app/routers/equipment_owner.py && test -f backend/app/routers/equipment.py && test -f backend/tests/test_equipment_owner.py && test -f backend/tests/test_equipment.py && test -f backend/tests/test_equipment_approve.py && test -f "features/farm_equipment owner.md" && grep -q "equipmentRentalPct" backend/app/services/settlements.py`
 - EXPECT: exit 0.
 - IF FAIL: a "Read first" file is missing — STOP the phase (playbook §5) with the failing path.
-- [ ]
+- [x]
 
 ### Task 4.2 — Create equipment FleetPage view
 - DO: Create `website/src/views/equipment/FleetPage.tsx` (new): machine fleet list + add/edit machine, moved out of `EquipmentOwnerHomeBoard.tsx`, calling `website/src/lib/api/equipmentOwner.ts`. Strings via `t()`; no `alert()`/`confirm()` — toast/modal only (rule 6).

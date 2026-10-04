@@ -108,6 +108,18 @@ export default function OffersPage() {
                   {tab === 'received'
                     ? `${t('offerFrom')} ${counterparty}`
                     : `${t('offerTo')} ${counterparty}`}
+                  {tab === 'received' && offer.fromVerified ? (
+                    <span
+                      className="trade-pill"
+                      style={{
+                        marginLeft: 8,
+                        color: 'var(--av-success)',
+                        borderColor: 'var(--av-success)',
+                      }}
+                    >
+                      ✓ {t('verifiedBadge')}
+                    </span>
+                  ) : null}
                 </span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   {offer.status === 'pending' || offer.status === 'countered' ? (

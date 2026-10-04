@@ -24,6 +24,7 @@ const TOOL_LIST: Tool[] = [
   { id: 'referEarn', icon: '🎁', color: '#CA8A04' },
   { id: 'advisory', icon: '📷', color: '#0284C7' },
   { id: 'mandi', icon: '📈', color: '#EA580C' },
+  { id: 'farmerProcurement', icon: '🧾', color: '#43A047' },
   { id: 'marketplace', icon: '🛒', color: '#84CC16' },
   { id: 'myProducts', icon: '📦', color: '#EA580C' },
   { id: 'buyers', icon: '🤝', color: '#D97706' },
@@ -56,6 +57,8 @@ const TOOL_LIST: Tool[] = [
   { id: 'vehicleCalendar', icon: '📅', color: '#0284C7' },
   { id: 'settlements', icon: '💸', color: '#0284C7' },
   { id: 'sellerProducts', icon: '🏷️', color: '#EA580C' },
+  { id: 'buyerDirectory', icon: '🤝', color: '#0EA5E9' },
+  { id: 'bulkOrders', icon: '📦', color: '#0EA5E9' },
   { id: 'brokerHome', icon: '🤝', color: '#14B8A6' },
   { id: 'deals', icon: '🤝', color: '#14B8A6' },
   { id: 'commissions', icon: '💰', color: '#14B8A6' },
@@ -127,7 +130,7 @@ const UNIVERSAL = ['courses', 'courseDetail', 'myLibrary', 'vetHome', 'milkSlips
 export const PROFILE_ROUTES: Record<string, string[]> = {
   farmer: [
     'home', 'mandi', 'sellProduce', 'marketplace', 'orderTracking', 'addressBook', 'buyers',
-    'brokerOffers', 'myContracts',
+    'brokerOffers', 'myContracts', 'farmerProcurement',
     'advisory', 'profitLoss', 'water', 'schemes', 'loanTracking', 'loanDetail', 'landlordPlots',
     'landListings', 'leaseRequests',
     'landlordLeases', 'landlordRent', 'womenFarmer', 'fpo', 'equipment', 'landLegal', 'climate',
@@ -149,7 +152,8 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
     'sellerHome', 'sellerProducts', 'sellerAnalytics', 'mandi', 'buyers', 'marketplace',
     'orderTracking', 'myBookings', 'addressBook', 'profitLoss', 'postHarvest', 'livestockDairy',
     'treePlantation', 'browseLots', 'demands', 'purchases', 'myOffers', 'savedFarmers',
-    'analytics', 'khata', 'pos', 'procurement', 'rates', 'farmDiary', ...COMMON,
+    'analytics', 'khata', 'pos', 'procurement', 'rates', 'buyerDirectory', 'bulkOrders',
+    'farmDiary', ...COMMON,
   ],
   equipmentRental: [
     'equipmentOwnerHome', 'machineManage', 'slotCalendarManage', 'equipment', 'settlements',

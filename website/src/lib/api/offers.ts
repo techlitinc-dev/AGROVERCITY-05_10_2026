@@ -28,6 +28,8 @@ export interface Offer {
   fromId: string;
   fromName: string;
   fromRole: string;
+  /** WS-03: true when the buyer earned the Verified Vyapari trust tier. */
+  fromVerified?: boolean;
   toId: string;
   toName: string;
   pricePerUnit: number;
