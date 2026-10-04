@@ -256,6 +256,9 @@ const enBroker: Record<string, string> = {
   foTagFairWeighing: 'Fair weighing',
   foTagOnTimePickup: 'On-time pickup',
   foTagFairPrice: 'Fair price',
+  offerSentAgo: 'sent {time} ago',
+  offerTtlChip: 'TTL: {time}',
+  offerTtlExpired: 'TTL: Expired',
 };
 
 registerLocale('en', enBroker);

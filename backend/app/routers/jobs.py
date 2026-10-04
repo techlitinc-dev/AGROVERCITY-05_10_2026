@@ -144,3 +144,41 @@ async def kyc_expiry_reminders_job(x_cron_secret: str | None = Header(None, alia
     from app.services.kyc import expiry_reminders
 
     return await expiry_reminders()
+
+
+@router.post("/broker/offers/expire")
+async def expire_stale_broker_offers(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-05 step 1: auto-expire negotiating deals whose offer TTL lapsed."""
+    _check_cron_secret(x_cron_secret)
+    from datetime import datetime, timezone
+
+    from app.core.db import query, set_doc
+    from app.services.notify import notify_user
+
+    now = datetime.now(timezone.utc)
+    deals = await query("broker_deals", [("status", "==", "negotiating")], limit=2000)
+    expired = 0
+    for deal in deals:
+        raw = deal.get("expiresAt")
+        if not raw:
+            continue
+        try:
+            due = datetime.fromisoformat(str(raw))
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if due > now:
+            continue
+        deal["status"] = "expired"
+        deal["updatedAt"] = now.isoformat()
+        await set_doc("broker_deals", deal["id"], deal)
+        await notify_user(
+            deal.get("brokerId"),
+            type="deal_offer_expired",
+            title="Offer expired / ऑफर समाप्त",
+            body=f"{deal.get('commodity', '')} — the farmer's response window closed",
+            path=f"/dashboard/p/broker/deals/{deal['id']}",
+        )
+        expired += 1
+    return {"expired": expired}

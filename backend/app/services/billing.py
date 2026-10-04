@@ -24,10 +24,14 @@ TIER_MATRIX = [
     ("seller", "pro", 999, {"listings": 500}),
     # WS-03 step 8: multi-shop, API, white-label rate boards.
     ("seller", "enterprise", 4999, {}),
-    ("equipmentRental", "free", 0, {"machines": 3}),
-    ("equipmentRental", "pro", 399, {"machines": 25}),
+    ("equipmentRental", "free", 0, {"machines": 1}),
+    ("equipmentRental", "pro", 399, {"machines": 5}),
+    # WS-04 step 10: fleet unlimited, operator management, API.
+    ("equipmentRental", "enterprise", 1499, {}),
     ("broker", "free", 0, {"deals": 5}),
-    ("broker", "pro", 799, {"deals": 100}),
+    # WS-05 step 11: unlimited deals + CRM bulk tools, mandi-trend analytics,
+    # priority leads (commission still stacks on top of the subscription).
+    ("broker", "pro", 799, {}),
     ("dairyManager", "free", 0, {"animals": 20, "members": 25, "agentSeats": 0}),
     ("dairyManager", "pro", 1499, {"animals": 200, "agentSeats": 5}),
     ("instructor", "free", 0, {"courses": 1}),
@@ -63,6 +67,15 @@ TIER_FEATURES = {
         "apiDispatch",
         "dedicatedSupport",
     ],
+    "equipmentRental_pro": ["analytics", "maintenanceSuite", "priorityListing"],
+    "equipmentRental_enterprise": [
+        "analytics",
+        "maintenanceSuite",
+        "priorityListing",
+        "operatorManagement",
+        "apiAccess",
+    ],
+    "broker_pro": ["crmBulkTools", "mandiTrendAnalytics", "priorityLeads"],
     "seller_pro": ["analyticsV2", "udhaarLedger", "gstInvoices", "tdsStatements", "procurementStaffSeats"],
     "seller_enterprise": [
         "analyticsV2",

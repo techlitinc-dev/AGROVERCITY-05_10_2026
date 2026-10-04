@@ -1056,3 +1056,367 @@ Conventions used below:
 - EXPECT: backend suite green (incl. `test_vet_gating.py`, `test_dairy_gaushala_analytics.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
 - [ ]
+
+## WS-07 — AI console decisions (M14, M15, M17, M18)  (see instructions.md §WS-07)
+
+> Recipe (SDR) for every brief: register question set → privacy.py state builder
+> (pseudonymized, ≤1,500 tokens, NO Aadhaar/phone/email) → `gateway.decide(state,
+> "<id>.v1", ctx)` only → act at `suggest` = annotate only → fallback +
+> `fallbackUsed` on exception/timeout/low budget → every call logged to
+> `ai_decisions` with cost + confidence → outcome hook → tests (golden shim,
+> fallback, flag-off). Never call OpenRouter/Gemini from a router. Credit/insurance
+> paths launch and stay at `suggest` (rule 12).
+
+### Task 7.1 — Verify phase-00 AI foundation exists
+- PRECONDITION: `test -d backend/app/services/ai && test -f backend/app/services/ai/gateway.py && grep -q "def decide" backend/app/services/ai/gateway.py && test -f backend/app/services/ai/question_sets.py && test -f backend/app/services/ai/privacy.py` — if this fails, phase-00 AI foundation is missing: STOP the phase (playbook §5); do NOT stub around it.
+- DO: read-only: read `backend/app/services/ai/gateway.py`, `question_sets.py`, `privacy.py`, `budgets.py` (or the budget module present) to learn the exact registration/builder/decide/logging patterns before touching anything.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -c "from app.services.ai import gateway, question_sets, privacy; print('ai foundation ok')"`
+- EXPECT: exit 0, prints `ai foundation ok`.
+- IF FAIL: report the import error and STOP the phase (playbook §5) — the dependency is broken, not this WS.
+- [ ]
+
+### Task 7.2 — Register M14 question set loans.prescreen.v1
+- DO: in `backend/app/services/ai/question_sets.py` register `loans.prescreen.v1` following the exact pattern of an existing registered set: output schema `{riskBand: "low"|"medium"|"high", missingDocs: list[str], confidence: float}`, score threshold field per the file's convention, a DETERMINISTIC fallback (e.g. riskBand from a rule over land size + repayment history fields, missingDocs from required-docs minus uploaded-docs — rule-based, no AI), and automation level `"suggest"`.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.3 — Add M14 privacy state builder
+- DO: in `backend/app/services/ai/privacy.py` add builder `build_loan_prescreen_state(application: dict) -> dict` following the file's existing builder pattern: pseudonymized ids, only loan-relevant fields (amount, purpose, land/crop aggregates, repayment history summary, uploaded doc types), ≤1,500 tokens, and assert-strip Aadhaar/phone/email fields the same way existing builders do (rule 11).
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.4 — Wire M14 into loan submit + queue read
+- DO: in `backend/app/routers/loans.py`: on application submit (apply path, shared with `finance.py` if that is where submit lives — put the call in `backend/app/services/loans.py` if both routers share it) and on `GET /loans/queue`, compute prescreen via `result = await gateway.decide(state, "loans.prescreen.v1", ctx)` using the task 7.3 builder; store/return the annotation as `ai: {riskBand, missingDocs}` on the application/queue rows; sort the queue by risk band per the gateway result. HARD CONSTRAINTS: AI never mutates application status (sorting + annotation only); on exception/timeout/low budget use the registered fallback and log with `fallbackUsed`; every call logged to `ai_decisions` with cost + confidence (use the gateway's built-in logging — do not hand-roll).
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_credit_desk_web.py tests/test_finance.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.5 — Emit farmer tasks for AI-flagged missing docs
+- PRECONDITION: `test -f backend/app/services/tasks.py && grep -q "def emit_task" backend/app/services/tasks.py` — if fails, STOP the phase (playbook §5).
+- DO: in the M14 path added in task 7.4: when the annotation's `missingDocs` is non-empty, call `emit_task(...)` to the farmer with title_en/title_hi for the missing-doc request and the loan-tracker upload deep link (same task pattern as task 3.11; dedupe via the task engine's sourceId mechanism so re-scoring does not duplicate tasks).
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.6 — Register M14 outcome hook
+- DO: in the AI outcomes module from phase-00 (`backend/app/services/ai/` — the outcomes/decision_log file present there): register an outcome hook for `loans.prescreen.v1` recording outcomes `approved|rejected|defaulted`, and call it from the approve/reject handlers in `backend/app/routers/loans.py` (and a defaulted marker wherever default is recorded, if such a transition exists — if none exists, register the hook and note the defaulted source as absent; do not invent a status).
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.7 — Wire M14 badges in CreditDesk UI
+- DO: in `website/src/views/bank/LoanQueuePage.tsx` and `LoanDetailPage.tsx` render the `ai` annotation (risk band badge + missing-docs badge) using the seam from task 3.17; absent `ai` → screens unchanged. Strings via `t()` en+hi (add keys to the bank section files).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix type errors, re-run — else STOP.
+- [ ]
+
+### Task 7.8 — Test M14: golden, fallback, flag-off
+- DO: create `backend/tests/test_ai_loans_prescreen.py` (new): (1) golden fixture set of applications with manager labels — with `AI_PROVIDER=shim`, ranking correlation ≥ 0.7 vs the labels (Spearman or pairwise-accuracy per the AI plan's convention — use the same assertion style any existing AI test in `backend/tests/` uses; if none exists, use pairwise accuracy ≥ 0.7); (2) gateway raising → deterministic fallback used and response logged with `fallbackUsed`; (3) AI flag off → `GET /loans/queue` returns submitted-order with no `ai` field and zero status mutations.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_loans_prescreen.py -q`
+- EXPECT: exit 0, all three tests pass.
+- IF FAIL: fix code until green — never weaken the correlation assertion — else STOP.
+- [ ]
+
+### Task 7.9 — Register M15 question set insurance.triage.v1
+- DO: in `backend/app/services/ai/question_sets.py` register `insurance.triage.v1`: output schema `{photoQuality: "ok"|"poor", completeness: float, retakeGuidance: {en: str, hi: str}, fraudSignal: float, triageReasons: list[str], suggestedSurveyor: str|None}`, threshold per convention, deterministic fallback (completeness from required-photo-count ratio, fraudSignal 0.0, guidance from static checklist strings en+hi), automation level `"suggest"`.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.10 — Add M15 privacy state builder
+- DO: in `backend/app/services/ai/privacy.py` add `build_claim_triage_state(claim: dict) -> dict`: pseudonymized claim id, crop/loss-type/photo-count/photo-metadata aggregates only, ≤1,500 tokens, no Aadhaar/phone/email (rule 11) — same strip pattern as task 7.3.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.11 — Wire M15 instant feedback at intimation
+- DO: in `backend/app/routers/insurance_claims.py` `POST /insurance/claims` handler: after saving the claim, compute triage via `gateway.decide(state, "insurance.triage.v1", ctx)` (task 7.10 state) and include in the response an annotation `{photoQuality, completeness, retakeGuidance:{en,hi}}` so the farmer gets same-day retake guidance; store the full triage result on the claim doc for the provider console. HARD CONSTRAINTS: filing is never blocked by the annotation; fallback + `fallbackUsed` on any gateway failure; `ai_decisions` logging via the gateway.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_insurance_claims.py tests/test_claims_desk_web.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.12 — Wire M15 provider badges + fraud flag (never auto-reject)
+- DO: in `backend/app/routers/insurance.py` provider claims endpoints: include the stored triage annotation (reasons + suggestedSurveyor) on claim list/detail responses; when `fraudSignal > 0.8` set a `fraudFlag: true` annotation field only. HARD CONSTRAINT: no auto-reject — the human decision path (review/approve/reject handlers) stays byte-identical with AI on or off; verify no triage value is read in any status-transition handler.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_insurance_provider.py tests/test_claims_desk_web.py -q && grep -n "fraudSignal\|fraudFlag\|triage" app/routers/insurance.py | grep -i "reject" || true`
+- EXPECT: pytest exit 0; the grep pipeline prints nothing (no fraud/triage reference inside reject logic).
+- IF FAIL: remove the coupling, re-run — else STOP.
+- [ ]
+
+### Task 7.13 — Register M15 outcome hook + UI feedback surfaces
+- DO: (1) register an outcome hook for `insurance.triage.v1` in the phase-00 outcomes module (outcome = final claim decision + whether retake guidance was followed). (2) Website: in the farmer intimation result (`website/src/views/farmer/FarmerClaimIntimatePage.tsx`) render the instant photo-quality/completeness feedback + retake guidance (en/hi from the response); in `website/src/views/insurance/ClaimsQueuePage.tsx`/`ClaimDetailPage.tsx` render triage badges with reasons, suggested surveyor, and a fraud flag chip when `fraudFlag` is true. All via `t()`; absent annotation → screens unchanged.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_claims_desk_web.py -q && cd ../website && pnpm exec tsc --noEmit`
+- EXPECT: both exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.14 — Test M15: golden, fallback, flag-off, zero auto-reject
+- DO: create `backend/tests/test_ai_insurance_triage.py` (new): (1) golden fixture: incomplete claims (missing photos) get `completeness < 1` + non-empty retake guidance in the intimation response on shim; (2) gateway raising → fallback annotation + `fallbackUsed` logged; (3) flag off → intimation response has no triage annotation and filing still succeeds; (4) a claim fixture engineered with `fraudSignal > 0.8` (shim returns it) is flagged but its status is unchanged and it can still be approved by a human — assert zero auto-rejections across the whole test module.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_insurance_triage.py -q`
+- EXPECT: exit 0, all four tests pass.
+- IF FAIL: fix code until green — never delete the zero-auto-reject assertion — else STOP.
+- [ ]
+
+### Task 7.15 — Register M17 question set dairy.adulteration.v1
+- DO: in `backend/app/services/ai/question_sets.py` register `dairy.adulteration.v1`: output schema `{anomaly: bool, confidence: float, baseline: {fatAvg: float, snfAvg: float, windowDays: 30}}`, threshold per convention, deterministic fallback (anomaly = |today − 30-day mean| > 2× stddev over the member's own history; insufficient history → anomaly false, confidence 0), automation level `"suggest"`.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.16 — Add M17 privacy state builder
+- DO: in `backend/app/services/ai/privacy.py` add `build_adulteration_state(member_history: list[dict], today: dict) -> dict`: pseudonymized member ref, FAT/SNF series + today's reading only, ≤1,500 tokens, no names/phones (rule 11).
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.17 — Wire M17 per collection entry (flag, never block)
+- DO: in `backend/app/routers/livestock_dairy.py` collection-recording path (`POST /livestock/procurement/collections`, shared with collection-check if that is where FAT/SNF lands): load the member's 30-day FAT/SNF baseline, call `gateway.decide(state, "dairy.adulteration.v1", ctx)`, and store `{anomaly, confidence}` as an annotation on the collection doc. HARD CONSTRAINTS: the collection ALWAYS saves (flagged, not blocked) — gateway failure → fallback + `fallbackUsed`, still saves; `ai_decisions` logging via gateway.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.18 — Add M17 weekly route-level batch job
+- DO: in `backend/app/routers/jobs.py` add a weekly job (follow the file's existing job registration pattern) that aggregates the last 7 days of collection annotations per route and writes a route-level anomaly summary doc (route id, flagged count, total, top members by flag rate) for the dairy console; the job reads stored annotations — it makes no new gateway calls per collection.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/routers/jobs.py && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
+- EXPECT: exit 0 both.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.19 — Register M17 outcome hook + UI flag surfaces
+- DO: (1) register an outcome hook for `dairy.adulteration.v1` (outcome = manager confirms/dismisses the flag; add a manager confirm/dismiss endpoint in `backend/app/routers/dairy_manager.py` — `POST /dairy-manager/collections/{id}/flag-review {action: "confirm"|"dismiss"}` writing the outcome + audit_logs row). (2) Website: show the anomaly flag on the console collections ledger (`website/src/views/dairy/collections/CollectionsPage.tsx`) with a confirm/dismiss action, and a note line on the member statement view (`MemberStatementPage.tsx`) when the cycle contains flagged collections — strings en+hi (`en.dairy.ts`/`hi.dairy.ts`).
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q && cd ../website && pnpm exec tsc --noEmit`
+- EXPECT: both exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.20 — Test M17: detection rate, zero false-blocks, fallback
+- DO: create `backend/tests/test_ai_dairy_adulteration.py` (new): (1) a seeded adulteration pattern (member history at stable FAT/SNF, then a diluted reading) is flagged on shim — assert seeded anomalous entries flagged ≥85% across the fixture set; (2) zero false-blocks — every collection POST in the module returns success regardless of flag; (3) gateway raising → fallback annotation + collection still saves; (4) flag-off → collections save with no annotation; (5) statement data for a cycle with a flagged collection carries the note field the UI renders.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_dairy_adulteration.py -q`
+- EXPECT: exit 0, all five tests pass.
+- IF FAIL: fix code until green — never weaken the ≥85% assertion — else STOP.
+- [ ]
+
+### Task 7.21 — Register M18 question set contracts.attractiveness.v1
+- DO: in `backend/app/services/ai/question_sets.py` register `contracts.attractiveness.v1`: output schema `{incomeVsMandi: float, riskFlags: list[str], explanation: str}`, threshold per convention, deterministic fallback (incomeVsMandi from formula-pricing terms vs the 12-week mandi average the backend already has via mandi data; explanation from a static template), automation level `"suggest"`.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.22 — Add M18 privacy state builder
+- DO: in `backend/app/services/ai/privacy.py` add `build_contract_attractiveness_state(contract: dict, mandiTrend: list, farmerCropHistory: list) -> dict`: contract terms (formula pricing), crop mandi trend series, aggregated farmer crop history — pseudonymized, ≤1,500 tokens, no PII (rule 11).
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
+- EXPECT: exit 0.
+- IF FAIL: fix syntax, re-run — else STOP.
+- [ ]
+
+### Task 7.23 — Wire M18 score onto contracts with cached explanation
+- DO: in `backend/app/routers/contracts.py` (create/update path, and a `GET` enrichment if the farmer card reads the contract doc): compute `gateway.decide(state, "contracts.attractiveness.v1", ctx)` (task 7.22 state; mandi trend + farmer crop history from the existing mandi/crop data sources) and store `attractiveness: {incomeVsMandi, riskFlags, explanation, decisionId}` on the contract doc. HARD CONSTRAINTS: the Gemini/SGR explanation is CACHED per `decision_id` — a second read of the same contract makes NO new gateway call and writes no new `ai_decisions` row; fallback + `fallbackUsed` on failure; e-sign flow untouched.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_contracts.py tests/test_contracts_direct.py tests/test_direct_buyer.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.24 — Register M18 outcome hook
+- DO: register an outcome hook for `contracts.attractiveness.v1` in the phase-00 outcomes module (outcome = farmer accepted / declined the contract) and call it from the contract accept/decline handlers in `backend/app/routers/contracts.py` — hook call only, no change to the e-sign logic.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_contracts.py tests/test_contracts_direct.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix until green — else STOP.
+- [ ]
+
+### Task 7.25 — Render M18 score on grow-for-us card
+- DO: in `website/src/views/farmer/FarmerContractDetailPage.tsx` (the card sections from task 2.25): when the contract carries `attractiveness`, render the income-vs-mandi score, risk flags, and an explanation sheet (expand/collapse pattern the view already uses or a simple details section) showing the cached explanation — including when the score shows the contract is WORSE than mandi (no hiding negative results); when absent (flag off), the static fallback from task 2.25 renders and everything else works. Strings via `t()` en+hi.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix type errors, re-run — else STOP.
+- [ ]
+
+### Task 7.26 — Test M18: golden ranking, cache, flag-off
+- DO: create `backend/tests/test_ai_contracts_attractiveness.py` (new): (1) golden contract fixtures rank sensibly on shim (better-than-mandi contract scores higher than a worse-than-mandi one); (2) reading the same contract twice → exactly one `ai_decisions` row for that `decision_id` (cache honored); (3) gateway raising → fallback stored with `fallbackUsed`; (4) flag off → contract has no `attractiveness` field and accept/e-sign flow is byte-identical.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_contracts_attractiveness.py -q`
+- EXPECT: exit 0, all four tests pass.
+- IF FAIL: fix code until green — else STOP.
+- [ ]
+
+### Task 7.27 — Verify automation levels pinned at suggest
+- DO: read-only verification that the four new sets are configured at `suggest` and that no credit/insurance path exceeds `require_confirm` (rule 12).
+- RUN: `grep -n "prescreen\|triage\|adulteration\|attractiveness" backend/app/services/ai/question_sets.py | head -12 && grep -rn "require_confirm\|\"auto\"\|'auto'" backend/app/routers/loans.py backend/app/routers/insurance.py backend/app/routers/insurance_claims.py`
+- EXPECT: first grep shows the four registrations (each with its level field per the file's convention); second grep prints nothing (no confirm/auto escalation in credit/insurance routers).
+- IF FAIL: set the level to `suggest` / remove the escalation, re-run — else STOP.
+- [ ]
+
+### Task 7.28 — Run full AI suite on shim
+- DO: run the whole backend suite with the shim provider.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
+- EXPECT: exit 0, fully green including the four new `test_ai_*.py` modules; CI never calls paid APIs.
+- IF FAIL: fix the failing module, re-run — else STOP.
+- [ ]
+
+### Task 7.29 — HUMAN CHECK: AI annotations visible, flags-off unchanged
+- DO: HUMAN CHECK. Dev server + website running with `AI_PROVIDER=shim`: (1) bank queue shows sorted order with risk-band/missing-doc badges; switch the AI flag off → queue returns to submitted order, screens otherwise unchanged. (2) File an incomplete insurance claim → same-day retake guidance shows en/hi; provider queue shows triage reasons; no claim is ever auto-rejected. (3) Dairy collections ledger shows an anomaly flag on a seeded collection; member statement shows the note line en/hi. (4) Grow-for-us card shows score + explanation; reload the page → confirm no new `ai_decisions` row (check via backend logs/test), and a worse-than-mandi contract honestly says so.
+- RUN: (manual — no command)
+- EXPECT: human confirms all four annotations with shim and unchanged screens with flags off.
+- IF FAIL: note failing item, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task 7.30 — Checkpoint WS-07
+- DO: run the WS-07 Verification block, then commit.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-07: AI console decisions M14 M15 M17 M18"`
+- EXPECT: backend suite green on shim (incl. all four `test_ai_*.py`), tsc+build clean, commit created.
+- IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
+- [ ]
+
+## Phase-final gate  (phase-03/readme.md exit gate + execution-plan/README.md §4)
+
+### Task F.1 — Gate item: bank decisions all audit-logged
+- DO: verify via tests + human spot-check that every approve/reject/info-request decision writes `audit_logs` with reason.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
+- EXPECT: exit 0 (audit-row assertions from tasks 3.15–3.16 pass).
+- IF FAIL: return to the failing assertion's task and fix — else STOP.
+- [ ]
+
+### Task F.2 — Gate item: insurance claim courier-trackable + cycle time measurable
+- DO: verify claim stage tracking end-to-end and stats cycle-time data.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_claims_desk_web.py -q`
+- EXPECT: exit 0 (stage timeline + `/provider/stats` assertions pass).
+- IF FAIL: fix the failing assertion's code — else STOP.
+- [ ]
+
+### Task F.3 — Gate item: warehouse receipt verifiable + attachable as collateral
+- DO: verify receipt retrieval by number and attachment to a CreditDesk application.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_storehouse_web.py tests/test_cold_storage.py -q -k "receipt or storehouse"`
+- EXPECT: exit 0.
+- IF FAIL: fix the failing code — else STOP.
+- [ ]
+
+### Task F.4 — Gate item: dairy farmer ledger + real payout rail
+- DO: verify farmer milk-money ledger data and batch mark-paid payout execution + 409 retry.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
+- EXPECT: exit 0 (ledger/payout/statement assertions pass).
+- IF FAIL: fix the failing code — else STOP.
+- [ ]
+
+### Task F.5 — Gate item: sliding QC computes to the rupee on both screens
+- DO: verify sliding settlement math server-side; both-screen rendering was human-checked in task 2.32 — re-confirm if any QC code changed since.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_purchase_settlement.py -q`
+- EXPECT: exit 0 (to-the-rupee assertions pass).
+- IF FAIL: fix the failing code — else STOP.
+- [ ]
+
+### Task F.6 — Gate item: 3-round cap + org role 403s
+- DO: verify `NEGOTIATION_CLOSED` past 3 rounds and `ORG_ROLE_REQUIRED` gates.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_demands_offers.py tests/test_buyer_org.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the failing code — else STOP.
+- [ ]
+
+### Task F.7 — Gate item: AI never auto-approves credit/insurance
+- DO: verify `loans.prescreen.v1` / `insurance.triage.v1` annotate only, `fraud_signal > 0.8` flags but never rejects, `require_confirm` cap respected.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_loans_prescreen.py tests/test_ai_insurance_triage.py tests/test_ai_dairy_adulteration.py tests/test_ai_contracts_attractiveness.py -q`
+- EXPECT: exit 0 (zero-auto-reject and no-status-mutation assertions pass).
+- IF FAIL: fix the failing code — else STOP.
+- [ ]
+
+### Task F.8 — Gate item: no tier gate bypassed
+- DO: verify server-side enforcement of: dairy 25-member Free cap, directBuyer 1-contract Free cap, vet ₹299 Pro, cold-storage ₹1,999 Pro per facility.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_direct_buyer.py tests/test_vet_gating.py tests/test_storehouse_web.py -q -k "entitlement or tier or cap or gate"`
+- EXPECT: exit 0 with tier-gate tests selected and passing (if `-k` selects nothing in one file, run that file in full and confirm the tier tests from tasks 1.30/2.26/6.7/5.17 pass).
+- IF FAIL: fix the failing gate — else STOP.
+- [ ]
+
+### Task F.9 — Global gate: backend suite fully green
+- DO: run the full backend test suite.
+- RUN: `cd backend && .venv/bin/python -m pytest -q`
+- EXPECT: exit 0 — fully green including all pre-existing dairy/gaushala/contracts suites.
+- IF FAIL: if the failure is in this phase's code, fix it; if unrelated to your workstreams, STOP the phase (playbook §5).
+- [ ]
+
+### Task F.10 — Global gate: website typecheck + build clean
+- DO: run website typecheck and production build.
+- RUN: `cd website && pnpm exec tsc --noEmit && pnpm build`
+- EXPECT: exit 0, build completes with no errors.
+- IF FAIL: fix the reported errors, re-run — else STOP.
+- [ ]
+
+### Task F.11 — Global gate: full suite green with AI_PROVIDER=shim
+- DO: run the backend suite explicitly on the shim provider.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the failing module, re-run — else STOP.
+- [ ]
+
+### Task F.12 — Global gate: locale parity spot-check
+- DO: verify en/hi key parity for every locale section touched in this phase.
+- RUN: `cd website && for f in dairy trade bank insurance coldstorage gaushala vetnet; do echo "== $f"; diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.$f.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.$f.ts | sort); done`
+- EXPECT: every diff prints nothing.
+- IF FAIL: add the missing keys to the lagging locale file, re-run — else STOP.
+- [ ]
+
+### Task F.13 — HUMAN CHECK flow 1: dairy end-to-end
+- DO: HUMAN CHECK. Dev server + website running. RFQ → bid compare → accept → OTP collection with grade/qty/photo → payout batch via the real rail (409 on retry) → farmer ledger (slips + payments + NET) + PDF statement matching the ledger to the paisa. No "coming soon" reachable from any screen touched.
+- RUN: (manual — no command)
+- EXPECT: human confirms the full loop from dashboard deep-link to completion.
+- IF FAIL: note failing step, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.14 — HUMAN CHECK flow 2: direct buyer end-to-end
+- DO: HUMAN CHECK. Contract → farmer MPIN e-sign → slot PO (idempotent replay returns same purchase) → escrow by finance-role member → sliding QC with photos → release → invoice with 1–2% commission + TDS note; both parties' screens show identical ₹ amounts with no spreadsheet step.
+- RUN: (manual — no command)
+- EXPECT: human confirms the full flow.
+- IF FAIL: note failing step, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.15 — HUMAN CHECK flow 3: bank end-to-end
+- DO: HUMAN CHECK. Queue → farmer-360 → approve with reason → disburse → EMI schedule renders; farmer tracker updates within one refresh, doc-request task arrives and responds via deep link, EMI reminder notification fires.
+- RUN: (manual — no command)
+- EXPECT: human confirms the full flow.
+- IF FAIL: note failing step, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.16 — HUMAN CHECK flow 4: insurance end-to-end
+- DO: HUMAN CHECK. 72-h intimation with photos → surveyor assign → assess (`assessedLossPercent`) → approve → DBT disburse; farmer courier-style tracker shows every stage with timestamps; one full reject → appeal → re-entry cycle.
+- RUN: (manual — no command)
+- EXPECT: human confirms the full flow.
+- IF FAIL: note failing step, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.17 — HUMAN CHECK flow 5: cold storage end-to-end
+- DO: HUMAN CHECK. Facility + chambers → booking approve → inward register (lot/grade/photo) → release; farmer retrieves warehouse receipt by number and attaches it to a CreditDesk application; bank manager sees it in the document list.
+- RUN: (manual — no command)
+- EXPECT: human confirms the full flow.
+- IF FAIL: note failing step, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.18 — HUMAN CHECK flow 6: vet/gaushala end-to-end
+- DO: HUMAN CHECK. Vaccination-due task appears on the farmer dashboard from the task deep link and auto-resolves on mark-vaccinated; public gaushala transparency page renders logged-out with zero PII.
+- RUN: (manual — no command)
+- EXPECT: human confirms both.
+- IF FAIL: note failing step, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.19 — HUMAN CHECK flow 7: AI annotations end-to-end
+- DO: HUMAN CHECK. Each of the four AI annotations (loan prescreen badges, claim triage feedback, dairy anomaly flag, contract attractiveness score) visible with shim; flags off → every screen unchanged minus badges; no status mutation attributable to AI anywhere.
+- RUN: (manual — no command)
+- EXPECT: human confirms all four + flags-off parity.
+- IF FAIL: note failing item, fix minimally, re-check — else STOP.
+- [ ]
+
+### Task F.20 — Final phase commit
+- DO: commit any remaining gate fixes.
+- RUN: `git add -A && git commit -m "phase-03: final gate — Finance & Ops Console Personas" || true; git log --oneline -8`
+- EXPECT: log shows the WS-01…WS-07 checkpoint commits (and the final commit if there were changes).
+- IF FAIL: note the git failure in the report and continue (playbook §6 — checkpoints are not blocking).
+- [ ]

@@ -79,6 +79,10 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     for role, entities in totals.items():
         pct = config[PCT_KEYS[role]]
+        if role == "broker":
+            # WS-05 step 11: brokerPct stays configurable 0-10 (effective-dated,
+            # maker-checker); commission stacks with the subscription tier.
+            pct = min(10, max(0, int(pct)))
         for entity_id, bucket in entities.items():
             doc_id = f"st_{role}_{entity_id[:8]}_{period_start}"
             existing = await get_doc("settlements", doc_id)

@@ -601,3 +601,170 @@ async def test_deal_creation_emits_task(client, user_store):
     assert task["kind"] == "deal_confirmation_pending"
     assert task["deepLink"] == f"{DEEP_LINKS['farmer_deals']}/{deal_id}"
     assert task["userId"] == "uid-f1"
+
+
+# ---- WS-05: offer TTL + auto-expire + counter cap + escalation ----
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+
+async def _deal(client, user_store, broker):
+    _seed_farmer(user_store)
+    resp = await client.post("/v1/broker/deals", json=DEAL_BODY, headers=auth(broker))
+    assert resp.status_code == 201
+    return resp.json()
+
+
+async def test_offer_carries_expires_at_default_24h(client, user_store):
+    broker = _seed_broker(user_store)
+    deal = await _deal(client, user_store, broker)
+    created = datetime.fromisoformat(deal["createdAt"])
+    expires = datetime.fromisoformat(deal["expiresAt"])
+    delta = expires - created
+    assert timedelta(hours=23) < delta < timedelta(hours=25)
+
+
+async def test_offer_ttl_config_clamped_24_48(client, user_store):
+    broker = _seed_broker(user_store)
+    user_store["platform_config/broker_offer_ttl"] = {
+        "ttlHours": 72, "version": 1, "effectiveFrom": "2026-10-01T00:00:00+00:00",
+    }
+    deal = await _deal(client, user_store, broker)
+    created = datetime.fromisoformat(deal["createdAt"])
+    expires = datetime.fromisoformat(deal["expiresAt"])
+    assert timedelta(hours=47) < expires - created < timedelta(hours=49)  # clamped to 48
+
+
+async def test_auto_expire_job_flips_stale_negotiating(client, user_store):
+    broker = _seed_broker(user_store)
+    deal = await _deal(client, user_store, broker)
+    fresh = await _deal(client, user_store, broker)
+    user_store[f"broker_deals/{deal['id']}"]["expiresAt"] = (
+        datetime.now(timezone.utc) - timedelta(minutes=1)
+    ).isoformat()
+
+    resp = await client.post("/v1/jobs/broker/offers/expire")
+    assert resp.status_code == 200
+    assert resp.json() == {"expired": 1}
+    assert user_store[f"broker_deals/{deal['id']}"]["status"] == "expired"
+    assert user_store[f"broker_deals/{fresh['id']}"]["status"] == "negotiating"
+
+
+async def test_counter_round_cap_locks_at_three(client, user_store):
+    broker = _seed_broker(user_store)
+    farmer = _seed_farmer(user_store)
+    deal = await _deal(client, user_store, broker)
+    # exchange counters broker -> farmer -> broker -> farmer
+    rounds = [
+        (f"/v1/broker/deals/{deal['id']}/messages", broker, 2100),
+        (f"/v1/farmer/deals/{deal['id']}/messages", farmer, 2150),
+        (f"/v1/broker/deals/{deal['id']}/messages", broker, 2125),
+    ]
+    for i, (url, token, offer) in enumerate(rounds):
+        resp = await client.post(
+            url,
+            json={"text": f"round {i}", "amountOffer": offer},
+            headers=auth(token),
+        )
+        assert resp.status_code == 201, resp.json()
+    # fourth counter from either side is refused
+    resp = await client.post(
+        f"/v1/broker/deals/{deal['id']}/messages",
+        json={"text": "one more", "amountOffer": 2130},
+        headers=auth(broker),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "COUNTER_LIMIT_REACHED"
+    resp = await client.post(
+        f"/v1/farmer/deals/{deal['id']}/messages",
+        json={"text": "farmer reply", "amountOffer": 2140},
+        headers=auth(farmer),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "COUNTER_LIMIT_REACHED"
+
+
+async def test_deadlock_escalation_to_admin_queue(client, user_store):
+    broker = _seed_broker(user_store)
+    deal = await _deal(client, user_store, broker)
+    resp = await client.post(
+        f"/v1/broker/deals/{deal['id']}/escalate",
+        params={"reason": "farmer unresponsive after 3 rounds"},
+        headers=auth(broker),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["escalatedAt"]
+    assert resp.json()["escalationReason"] == "farmer unresponsive after 3 rounds"
+
+    tasks = [d for k, d in user_store.items() if k.startswith("tasks/")]
+    assert any(t["kind"] == "deal_deadlock_escalation" for t in tasks)
+
+    again = await client.post(
+        f"/v1/broker/deals/{deal['id']}/escalate", headers=auth(broker)
+    )
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "ALREADY_ESCALATED"
+
+
+async def test_unverified_broker_blocked_from_payment_capture(client, user_store):
+    """B1: broker licence/GST through the phase-00 KYC pipeline gate the
+    money-movement action with the error envelope."""
+    broker = _seed_broker(user_store)
+    deal = await _deal(client, user_store, broker)
+    user_store[f"broker_deals/{deal['id']}"]["status"] = "accepted"
+
+    resp = await client.post(
+        f"/v1/broker/deals/{deal['id']}/payment-capture", headers=auth(broker)
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "BROKER_KYC_REQUIRED"
+
+    # once verified through the pipeline the same action succeeds
+    user_store["kyc_cases/kyc_uid-b1_broker"] = {
+        "caseId": "kyc_uid-b1_broker",
+        "userId": "uid-b1",
+        "persona": "broker",
+        "status": "verified",
+        "docs": [
+            {"docId": "kyc_uid-b1_broker:arhtiya_licence", "type": "arhtiya_licence", "status": "verified"},
+            {"docId": "kyc_uid-b1_broker:gst", "type": "gst", "status": "verified"},
+        ],
+    }
+    resp = await client.post(
+        f"/v1/broker/deals/{deal['id']}/payment-capture", headers=auth(broker)
+    )
+    assert resp.status_code == 200
+
+
+async def test_broker_dashboard_summary_fields(client, user_store):
+    broker = _seed_broker(user_store)
+    deal = await _deal(client, user_store, broker)
+    user_store[f"broker_deals/{deal['id']}"]["status"] = "negotiating"
+    user_store["broker_leads/lead-1"] = {
+        "id": "lead-1", "brokerId": "uid-b1", "status": "active",
+        "commodity": "Onion", "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+    user_store["settlements/stl_b1"] = {
+        "id": "stl_b1", "role": "broker", "entityId": "uid-b1",
+        "periodStart": "2026-09-29", "periodEnd": "2026-10-05",
+        "netRupees": 2200, "status": "pending",
+    }
+
+    resp = await client.get("/v1/broker/dashboard", headers=auth(broker))
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in ("pipeline", "activeDeals", "newLeads", "offersAwaiting",
+                "dealsNeedingEvidence", "commission", "network"):
+        assert key in body
+
+    assert body["pipeline"] == {"negotiating": 1}
+    assert body["activeDeals"] == 1
+    assert body["newLeads"] == 1
+    assert body["offersAwaiting"]["count"] == 1
+    ttl = body["offersAwaiting"]["data"][0]
+    assert 23 < ttl["ttlHoursLeft"] < 25  # fresh offer, 24h TTL
+    assert ttl["expired"] is False
+    assert body["commission"]["pendingPaisa"] == 220000
+    assert body["commission"]["earnedPaisa"] == 0
+    assert body["network"]["farmers"] == 1
+    assert body["network"]["buyers"] == 1

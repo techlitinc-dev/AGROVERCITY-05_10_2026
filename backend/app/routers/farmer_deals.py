@@ -90,6 +90,13 @@ async def get_deal_messages(deal_id: str, ctx: tuple = Depends(_farmer_user)):
 async def send_deal_message(deal_id: str, body: DealMessageCreate, ctx: tuple = Depends(_farmer_user)):
     user, uid = ctx
     deal = await _load_deal(user, deal_id)
+    from app.routers.broker import moderate_deal_text
+
+    await moderate_deal_text(body.text, uid)
+    if body.amountOffer is not None:
+        from app.routers.broker import _assert_counter_round_available
+
+        await _assert_counter_round_available(deal_id)
     msg_id = f"msg_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     sender_name = user.get("fullName") or user.get("vernacularName") or user.get("name", "Farmer")
@@ -177,3 +184,22 @@ async def upload_deal_evidence(
     deal["updatedAt"] = datetime.now(timezone.utc).isoformat()
     await set_doc("broker_deals", deal_id, deal)
     return entry
+
+
+@router.get("/deals/{deal_id}/vault")
+async def view_deal_vault(deal_id: str, ctx: tuple = Depends(_farmer_user)):
+    """B4: farmer-side view of the typed vault — same post-acceptance gate."""
+    from app.models.broker import VAULT_KINDS
+    from app.routers.broker import VAULT_OPEN_STATUSES
+
+    _, uid = ctx
+    deal = await _load_deal_user(deal_id, uid)
+    if deal.get("status") not in VAULT_OPEN_STATUSES:
+        _error(409, "VAULT_LOCKED", "the document vault opens once the deal is accepted")
+    evidence = [e for e in (deal.get("evidence") or []) if e.get("kind") in VAULT_KINDS]
+    return {"dealId": deal_id, "status": deal.get("status"), "data": evidence, "total": len(evidence)}
+
+
+async def _load_deal_user(deal_id: str, uid: str) -> dict:
+    doc = await _load_deal(await get_user(uid) or {}, deal_id)
+    return doc

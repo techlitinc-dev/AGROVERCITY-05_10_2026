@@ -31,7 +31,29 @@ async def provider_rating_fields(provider_id: str) -> dict:
     return {"ratingAvg": aggregate["ratingAvg"], "ratingCount": aggregate["ratingCount"]}
 
 
-async def _resolve_provider(kind: str, booking_id: str, uid: str) -> str:
+async def _resolve_provider(kind: str, booking_id: str, uid: str, target_role: str | None = None) -> str:
+    if kind == "deal":
+        # WS-05 step 8: two-sided deal ratings — the rater must be a deal
+        # participant and the deal must be completed.
+        deal = await get_doc("broker_deals", booking_id)
+        if deal is None:
+            _error(404, "DEAL_NOT_FOUND", "deal not found")
+        if uid not in (deal.get("brokerId"), deal.get("sellerUid")):
+            _error(403, "FORBIDDEN", "only a deal party can rate this deal")
+        if deal.get("status") != "completed":
+            _error(409, "NOT_COMPLETED", "only completed deals can be rated")
+        if target_role == "broker":
+            if uid != deal.get("sellerUid"):
+                _error(403, "FORBIDDEN", "only the farmer rates the broker")
+            return deal["brokerId"]
+        if target_role == "farmer":
+            if uid != deal.get("brokerId"):
+                _error(403, "FORBIDDEN", "only the broker rates the farmer")
+            seller = deal.get("sellerUid")
+            if not seller:
+                _error(404, "DEAL_NOT_FOUND", "deal has no linked farmer")
+            return seller
+        _error(422, "VALIDATION_ERROR", "targetRole is required for deal ratings", {"targetRole": "broker|farmer"})
     if kind == "transport":
         booking = await get_doc("transport_bookings", booking_id)
         if booking is None or booking.get("userId") != uid:
@@ -62,12 +84,12 @@ async def create_rating(body: RatingIn, uid: str = Depends(current_user_id)):
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    provider_id = await _resolve_provider(body.bookingKind, body.bookingId, uid)
-    existing = await query(
-        "ratings",
-        [("bookingId", "==", body.bookingId), ("bookingKind", "==", body.bookingKind)],
-        limit=1,
-    )
+    provider_id = await _resolve_provider(body.bookingKind, body.bookingId, uid, body.targetRole)
+    # WS-05 step 8: deal ratings are two-sided — one rating per PARTY per deal
+    filters = [("bookingId", "==", body.bookingId), ("bookingKind", "==", body.bookingKind)]
+    if body.bookingKind == "deal":
+        filters.append(("raterId", "==", uid))
+    existing = await query("ratings", filters, limit=1)
     if existing:
         _error(409, "ALREADY_RATED", "आप पहले ही रेटिंग दे चुके हैं")
     rating_id = f"rat_{uuid.uuid4().hex[:12]}"

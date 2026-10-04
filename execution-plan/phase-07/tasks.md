@@ -1036,3 +1036,306 @@ Conventions used below:
 - IF FAIL: fix the failing test/build error first — if `git commit` fails only for identity reasons, note it and continue (playbook §6) — else STOP (playbook §5).
 - [ ]
 
+## WS-07 — Admin copilot (M31)  (see instructions.md §WS-07)
+
+### Task 7.1 — Verify WS-07 prerequisite files
+- PRECONDITION: `test -d backend/app/services/ai && test -f backend/app/services/ai/gateway.py && test -f backend/app/routers/admin.py && test -f backend/app/routers/analytics.py` — if this fails, STOP the phase (playbook §5): the AI gateway is a phase-00/M1 deliverable.
+- DO: no file changes. Read `backend/app/services/ai/gateway.py` and the M31 brief + ai.md §5.10 in `missing-features/ai_implementation_plan.md` before starting Task 7.2.
+- RUN: `cd backend && .venv/bin/python -c "from app.services.ai import gateway; assert hasattr(gateway, 'generate')"`
+- EXPECT: exit 0, no output.
+- IF FAIL: the gateway does not expose `generate` as phase-00 specified — STOP (playbook §5) and report the contradiction.
+- [ ]
+
+### Task 7.2 — Create copilot whitelisted read-only tools
+- DO: create `backend/app/services/copilot.py` (new) with: (a) four plain read-only async functions over Firestore — `get_kyc_backlog(by_state: bool = False)`, `get_settlement_holds()`, `get_fraud_queue()`, `get_scan_clusters(district: str | None = None, crop: str | None = None)` — each containing ONLY read calls (no `set_doc`/delete — read-only by construction); (b) a `TOOLS: dict[str, Callable]` whitelist mapping the four tool names to the functions; (c) `async def dispatch_tool(name: str, args: dict, role: str) -> dict` that raises `ValueError("TOOL_NOT_WHITELISTED")` for any `name` not in `TOOLS`, and filters each tool's result to data the caller's `role` may see before returning it.
+- RUN: `cd backend && .venv/bin/python -c "from app.services.copilot import TOOLS, dispatch_tool; assert sorted(TOOLS) == ['get_fraud_queue', 'get_kyc_backlog', 'get_scan_clusters', 'get_settlement_holds']"`
+- EXPECT: exit 0, no output.
+- IF FAIL: fix `copilot.py` until the import and whitelist assertion pass — else STOP (playbook §5).
+- [ ]
+
+### Task 7.3 — Add SGR tool-call generation with fallback
+- DO: in `backend/app/services/copilot.py` add `async def answer_query(prompt: str, role: str) -> dict`: call `gateway.generate(prompt, model="gemini-2.5-pro", json_schema=<tool-call schema>)` (the SGR recipe — all model calls through the gateway only); validate the tool-call output with a Pydantic model `CopilotToolCall {tool: str, args: dict}`; on validation failure retry ONCE with a repair prompt; on second failure return the static fallback: template text (en + hi) listing the four canned queries, with `"fallback": True` in the result. On success execute via `dispatch_tool` and return `{answer, tool, args, dataSource: tool name, asOf: ISO timestamp}`.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -c "import asyncio; from app.services.copilot import answer_query; r = asyncio.run(answer_query('show KYC backlog by state', 'superadmin')); assert 'asOf' in r"`
+- EXPECT: exit 0, no assertion error (works on shim).
+- IF FAIL: fix `answer_query` until the shim smoke check passes — else STOP (playbook §5).
+- [ ]
+
+### Task 7.4 — Add POST /admin/copilot/query endpoint
+- DO: create `backend/app/routers/admin_copilot.py` (new) with `POST /copilot/query` (router prefix `/admin`, full path `/v1/admin/copilot/query`) guarded by `app.services.admin_auth.current_admin_user` (all admin tiers): body `{prompt: str = Field(..., min_length=3)}`; calls `copilot.answer_query(prompt, role=user["adminRole"])`; writes EVERY query plus the tools-called to `audit_logs` (via `log_admin_action`, `module="copilot"`, `action="query"`) and to `ai_decisions` with cost + confidence (via the gateway's decision logging from phase-00); returns the answer dict including `dataSource` and `asOf`. Register the router in `backend/app/main.py` with `app.include_router(admin_copilot.router, prefix="/v1")` next to the other admin includes.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_admin.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the endpoint/registration until green — else STOP (playbook §5).
+- [ ]
+
+### Task 7.5 — Add nightly briefing generation
+- DO: in `backend/app/services/copilot.py` add `async def generate_briefing() -> dict`: aggregate all four whitelisted tools into a briefing doc written to `admin_briefings/latest` in the shape of ai.md §5.10 (e.g. "KYC backlog 34 (MH 22), 2 payout anomalies held, disease cluster in Nashik onion") — a list of items, each `{text, deepLink, preTriage}` where `deepLink` is the `/admin/*` path of the owning queue and `preTriage` carries the tool's raw summary; the function must complete in under 60 seconds. Add a cron endpoint `POST /jobs/admin-briefing/run` in `backend/app/routers/jobs.py` following that file's exact `X-Cron-Secret` pattern, calling `generate_briefing`.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -c "import asyncio, time; from app.services.copilot import generate_briefing; t=time.time(); b=asyncio.run(generate_briefing()); assert time.time()-t < 60; assert isinstance(b, dict)"`
+- EXPECT: exit 0 — briefing generates in under 60s on shim.
+- IF FAIL: fix `generate_briefing` until the smoke check passes — else STOP (playbook §5).
+- [ ]
+
+### Task 7.6 — Add briefing read endpoint
+- DO: in `backend/app/routers/admin_copilot.py` add `GET /copilot/briefing` (full path `/v1/admin/copilot/briefing`) guarded by `current_admin_user`, returning the `admin_briefings/latest` doc (404 `NOT_FOUND` with the standard envelope when no briefing has been generated yet).
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_admin.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the endpoint until green — else STOP (playbook §5).
+- [ ]
+
+### Task 7.7 — Create copilot guardrail and flow tests
+- DO: create `backend/tests/test_admin_copilot.py` (new) with `AI_PROVIDER=shim`: (a) guardrail — register a fake WRITE-capable tool (one that calls `set_doc`) into `copilot.TOOLS` inside the test and assert `POST /v1/admin/copilot/query` / `dispatch_tool` rejects executing it (only whitelisted read-only tools can execute); (b) a query with a canned shim tool-call returns an answer containing `dataSource` (tool name) and `asOf` timestamp; (c) every query writes an `audit_logs` entry (`module="copilot"`) and an `ai_decisions` record with cost + confidence; (d) results are role-scoped (a tool's output contains only data the caller's role may see); (e) `generate_briefing` produces the `admin_briefings/latest` doc with items carrying `deepLink` values starting with `/admin/`.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_admin_copilot.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the implementation, never the assertions — else STOP (playbook §5).
+- [ ]
+
+### Task 7.8 — Create copilot panel component
+- DO: create `website/src/views/admin/CopilotPanel.tsx` (new): a chat-style query box posting to new `adminApi.copilotQuery(prompt, role)` (add to `website/src/lib/api/admin.ts`), rendering answer cards that CITE THEIR DATA SOURCE — each card shows the tool name and the as-of timestamp from the response; the static fallback (en/hi canned-query list) renders as a normal answer card when `"fallback": true`. All strings via `t()` (`admin.copilot.*`).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the reported type errors — else STOP (playbook §5).
+- [ ]
+
+### Task 7.9 — Create briefing dashboard card
+- DO: create `website/src/views/admin/BriefingCard.tsx` (new) rendering the briefing items from new `adminApi.getCopilotBriefing()` (add to `website/src/lib/api/admin.ts`), each item a link navigating to its `deepLink` admin queue; an empty-state message (via `t()`) when no briefing exists. Mount `BriefingCard` and `CopilotPanel` on `website/src/views/admin/AdminHomePage.tsx`. All strings via `t()` (`admin.briefing.*`).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the reported type errors — else STOP (playbook §5).
+- [ ]
+
+### Task 7.10 — Add WS-07 locale keys (en + hi)
+- DO: append to `website/src/lib/i18n/locales/en.admin.ts` and `website/src/lib/i18n/locales/hi.admin.ts` the identical set of `admin.copilot.*` and `admin.briefing.*` keys used by Tasks 7.8–7.9 (including the fallback canned-query list in both languages) — English values in en, Hindi values in hi.
+- RUN: `cd website && pnpm exec tsc --noEmit && diff <(grep -oE "^[[:space:]]+[A-Za-z0-9_.]+:" src/lib/i18n/locales/en.admin.ts | sort) <(grep -oE "^[[:space:]]+[A-Za-z0-9_.]+:" src/lib/i18n/locales/hi.admin.ts | sort)`
+- EXPECT: `tsc` exits 0; `diff` exits 0 with no output.
+- IF FAIL: add the missing key(s) shown by the diff — else STOP (playbook §5).
+- [ ]
+
+### Task 7.11 — HUMAN CHECK: copilot query and briefing deep link
+- DO: HUMAN CHECK — ask the operator to run, in order:
+  1. Start the API: `cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000` (with `AI_PROVIDER=shim`).
+  2. In the admin console home, ask the copilot "show KYC backlog by state" — confirm the answer card shows a data-source citation (tool name + timestamp).
+  3. Trigger `curl -s -X POST http://localhost:8000/v1/jobs/admin-briefing/run` (add `-H "X-Cron-Secret: <secret>"` if `CRON_SECRET` is set) — confirm the briefing card on the admin home now lists items.
+  4. Click a briefing item — confirm it lands in the correct admin queue.
+- RUN: none (human-executed; executor records the outcome).
+- EXPECT: the human confirms all four steps behaved as listed.
+- IF FAIL: record which step failed with full output and STOP (playbook §5).
+- [ ]
+
+### Task 7.12 — WS-07 checkpoint: full verification and commit
+- DO: run the WS-07 Verification block from instructions.md, then commit.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-07 WS-07: Admin copilot (M31)"`
+- EXPECT: full backend suite green on shim (including `test_admin_copilot.py`); `tsc` and `pnpm build` exit 0; commit succeeds.
+- IF FAIL: fix the failing test/build error first — if `git commit` fails only for identity reasons, note it and continue (playbook §6) — else STOP (playbook §5).
+- [ ]
+
+## WS-08 — AI health page + calibration  (see instructions.md §WS-08)
+
+### Task 8.1 — Verify WS-08 prerequisite files
+- PRECONDITION: `test -d backend/app/services/ai && test -f backend/app/services/ai/gateway.py && test -f backend/app/services/approvals.py && test -d backend/tests/fixtures/ai/golden` — if this fails, STOP the phase (playbook §5): the AI gateway and `ai_decisions` logging are phase-00 deliverables; the golden fixtures come from WS-02 Task 2.11.
+- DO: no file changes. Read `backend/app/services/ai/gateway.py` (specifically how `ai_decisions` records are written) and `missing-features/ai_implementation_plan.md` §7 before starting Task 8.2.
+- RUN: `cd backend && .venv/bin/python -c "from app.services.ai import gateway"`
+- EXPECT: exit 0, no output.
+- IF FAIL: STOP (playbook §5) and report the missing module.
+- [ ]
+
+### Task 8.2 — Create weekly calibration job
+- DO: create `backend/app/services/ai/calibration.py` (new) with `async def run_weekly_calibration() -> dict`: aggregate the `ai_decisions` collection into per-question-set metrics — `accuracy` (against outcome hooks), `confidenceBucketReliability`, `fallbackRate`, `costPerModule` — and write a doc to `ai_calibration/weekly-YYYY-WW` (ISO week id) containing all four metric families per question set. When a question set's accuracy dropped more than 5 points vs the previous week's doc, set `regressionAlert: true` on that entry and emit a log line (dashboard badge wiring happens in Task 8.4). Add a cron endpoint `POST /jobs/ai-calibration/run` in `backend/app/routers/jobs.py` following that file's exact `X-Cron-Secret` pattern, calling `run_weekly_calibration`.
+- RUN: `cd backend && .venv/bin/python -c "from app.services.ai.calibration import run_weekly_calibration"`
+- EXPECT: exit 0, no output.
+- IF FAIL: fix `calibration.py` until the import passes — else STOP (playbook §5).
+- [ ]
+
+### Task 8.3 — Create calibration job unit tests
+- DO: create `backend/tests/test_ai_calibration.py` (new): seed fixture `ai_decisions` records (multiple question sets, confidence buckets, fallback flags, costs, and outcome hooks) into the fake store, run `run_weekly_calibration`, and assert the produced `ai_calibration/weekly-YYYY-WW` doc contains the expected aggregates for all four metric families; also seed a previous-week doc with accuracy 5+ points higher and assert `regressionAlert: true` on the affected question set.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_ai_calibration.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the implementation, never the assertions — else STOP (playbook §5).
+- [ ]
+
+### Task 8.4 — Add AI health endpoint
+- DO: in `backend/app/routers/admin.py` add `GET /ai/health` guarded by `require_admin_role("superadmin", "compliance_officer", "finance_admin", "agronomist", "operations_lead", "content_moderator")`: a per-module (per-question-set) table of the four calibration metrics plus `trendVsPreviousWeek` (delta vs the prior `ai_calibration` doc), `regressionAlert` flags, and the golden-set versions listed from `backend/tests/fixtures/ai/golden/`.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_admin.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the endpoint until green — else STOP (playbook §5).
+- [ ]
+
+### Task 8.5 — Add AI config validator and endpoints
+- DO: in `backend/app/services/ai/` add `config.py` (new) with `def validate_ai_config(config: dict) -> None` enforcing the automation-level caps (global rule 12): credit, insurance, and legal question sets may NEVER exceed `require_confirm` (an attempt to set one to `auto` raises `ValueError("AI_AUTOMATION_LEVEL_FORBIDDEN")`); question sets not in the phase-G allowlist may not exceed `suggest`. In `backend/app/routers/admin.py` add `GET /platform-config/ai` and `PUT /platform-config/ai` (`Depends(admin_mutation_context)`): the PUT runs `validate_ai_config` (violations → 422 `AI_AUTOMATION_LEVEL_FORBIDDEN` via the standard envelope), then routes through `approvals.maybe_require_approval` (maker-checker mandatory per ai_implementation_plan.md §7) and audit with `previousState`/`newState` (`module="ai-config"`). Guard: `require_admin_role("superadmin")`.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_admin.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the validator/endpoints until green — else STOP (playbook §5).
+- [ ]
+
+### Task 8.6 — Test AI config governance flow
+- DO: append to `backend/tests/test_ai_calibration.py`: (a) a `PUT /v1/admin/platform-config/ai` attempting to set a credit decision question set to automation level `auto` → 422 `AI_AUTOMATION_LEVEL_FORBIDDEN`; (b) a valid threshold edit on `kyc.authenticity_risk.v1` creates a pending `admin_approvals` doc, and only after a SECOND distinct admin approves does the new value appear in `GET /v1/admin/platform-config/ai`; (c) the `audit_logs` contain the edit with non-null `previousState` and `newState`.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_calibration.py -q`
+- EXPECT: all tests pass (exit 0).
+- IF FAIL: fix the implementation, never the assertions — else STOP (playbook §5).
+- [ ]
+
+### Task 8.7 — Create AI health page
+- DO: create `website/src/views/admin/AiHealthPage.tsx` (new): a per-module metrics table from new `adminApi.getAiHealth()` showing accuracy, confidence-bucket reliability, fallback rate, and cost per module with `trendVsPreviousWeek` deltas and a visible badge on `regressionAlert` rows; a golden-set versions list; and a threshold/automation-level editor for question sets saving via `ConfirmActionModal` to new `adminApi.putAiConfig(payload, reason, role)` (maker-checkered server-side; surface the 422 `AI_AUTOMATION_LEVEL_FORBIDDEN` error from the envelope when a cap is violated). Add both functions to `website/src/lib/api/admin.ts`. All strings via `t()` (`admin.aihealth.*`).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the reported type errors — else STOP (playbook §5).
+- [ ]
+
+### Task 8.8 — Register AI health route
+- DO: in `website/src/App.tsx`, under the `/admin` route, add child route `/admin/ai-health` → `AiHealthPage` wrapped in `RequireAdminRole` with the roles from its `ADMIN_MODULES` entry (add the entry to `ADMIN_MODULES` in `website/src/views/admin/AdminShell.tsx` if not already present, with its `admin.nav.*` label key).
+- RUN: `cd website && pnpm exec tsc --noEmit && grep -c 'path="/admin/' src/App.tsx`
+- EXPECT: `tsc` exits 0; grep prints a count of at least 34.
+- IF FAIL: fix the route registration — else STOP (playbook §5).
+- [ ]
+
+### Task 8.9 — Add WS-08 locale keys (en + hi)
+- DO: append to `website/src/lib/i18n/locales/en.admin.ts` and `website/src/lib/i18n/locales/hi.admin.ts` the identical set of `admin.aihealth.*` keys used by Task 8.7 (metric names, trend labels, regression badge, editor labels, error message for the automation cap) — English values in en, Hindi values in hi.
+- RUN: `cd website && pnpm exec tsc --noEmit && diff <(grep -oE "^[[:space:]]+[A-Za-z0-9_.]+:" src/lib/i18n/locales/en.admin.ts | sort) <(grep -oE "^[[:space:]]+[A-Za-z0-9_.]+:" src/lib/i18n/locales/hi.admin.ts | sort)`
+- EXPECT: `tsc` exits 0; `diff` exits 0 with no output.
+- IF FAIL: add the missing key(s) shown by the diff — else STOP (playbook §5).
+- [ ]
+
+### Task 8.10 — HUMAN CHECK: maker-checkered threshold edit
+- DO: HUMAN CHECK — ask the operator to run, in order:
+  1. Start the API: `cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+  2. In the admin console as `superadmin`, open `/admin/ai-health` and edit the `kyc.authenticity_risk.v1` threshold — confirm the edit becomes a pending approval instead of applying immediately.
+  3. Approve it as a SECOND distinct admin — confirm the new value is live on the AI Health page.
+  4. Confirm `GET /v1/admin/audit?module=ai-config` shows the edit with previous/new state.
+- RUN: none (human-executed; executor records the outcome).
+- EXPECT: the human confirms all four steps behaved as listed.
+- IF FAIL: record which step failed with full output and STOP (playbook §5).
+- [ ]
+
+### Task 8.11 — WS-08 checkpoint: full verification and commit
+- DO: run the WS-08 Verification block from instructions.md, then commit.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-07 WS-08: AI health page + calibration"`
+- EXPECT: full backend suite green on shim (including `test_ai_calibration.py`); `tsc` and `pnpm build` exit 0; commit succeeds.
+- IF FAIL: fix the failing test/build error first — if `git commit` fails only for identity reasons, note it and continue (playbook §6) — else STOP (playbook §5).
+- [ ]
+
+## Phase-final gate  (see readme.md "Exit gate" and instructions.md "Phase-final verification")
+
+### Task F.1 — Exit gate: RBAC tier matrix proven by tests
+- DO: no file changes. Run the RBAC test suites that prove server-side 403 on cross-tier access.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_admin_rbac.py tests/test_admin.py -q`
+- EXPECT: all tests pass (exit 0) — the tier-vs-endpoint matrix and the FORBIDDEN_ADMIN_ROLE cases are green.
+- IF FAIL: fix the guard wiring, never the assertions — else STOP (playbook §5).
+- [ ]
+
+### Task F.2 — Exit gate: 27 admin routes registered
+- DO: no file changes. Verify all 27 superadmin modules plus the copilot/AI-health pages are reachable at `/admin/*`.
+- RUN: `cd website && grep -oE 'path="/admin/[^"]*"' src/App.tsx | sort -u | wc -l`
+- EXPECT: prints a number ≥ 29 (27 module routes + `/admin` shell children incl. copilot panel home and AI health).
+- IF FAIL: find the module from `ADMIN_MODULES` in `website/src/views/admin/AdminShell.tsx` whose route is missing in `App.tsx` and register it — else STOP (playbook §5).
+- [ ]
+
+### Task F.3 — Exit gate: audit immutability and maker-checker green
+- DO: no file changes. Verify the audit service exposes no mutation path and the maker-checker/approvals tests pass.
+- RUN: `cd backend && grep -nE "def (update|delete)" app/services/audit.py; test $? -eq 1 && .venv/bin/python -m pytest tests/test_admin_rbac.py tests/test_admin_settlements.py -q`
+- EXPECT: the grep finds no update/delete function in `audit.py` (exit 1), and both test files pass — proving > ₹10,000 maker-checker and audit on every mutation.
+- IF FAIL: remove any mutation path from `audit.py` or fix the failing approval test — else STOP (playbook §5).
+- [ ]
+
+### Task F.4 — Exit gate: KYC queue real and Aadhaar masked
+- DO: no file changes. Verify no hardcoded KYC rows remain and no unmasked Aadhaar appears in fixtures, AI code, or schemas.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_admin_kyc.py -q && ! grep -rEn "\b[0-9]{12}\b" tests/fixtures/ai/golden app/services/ai/kyc_schemas.py`
+- EXPECT: KYC tests green on shim; the grep finds no 12-digit Aadhaar-like numbers (the `!` makes no-match a success).
+- IF FAIL: remove the offending unmasked value / hardcoded row — else STOP (playbook §5).
+- [ ]
+
+### Task F.5 — Exit gate: settlements and commission config green
+- DO: no file changes.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_admin_settlements.py tests/test_admin_finance.py -q`
+- EXPECT: all tests pass (exit 0) — batch run, mark-paid with ref, ₹10,000 maker-checker, ₹50,000 dual sign-off, effective-dated versioned commission edits, and rate-table overlap rejection are green.
+- IF FAIL: fix the failing implementation — else STOP (playbook §5).
+- [ ]
+
+### Task F.6 — Exit gate: dispute triage routing green
+- DO: no file changes.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_admin_disputes.py -q`
+- EXPECT: all tests pass (exit 0) — every dispute type routes to the correct RBAC queue, `slaDueAt` present, fallback routing on gateway exception.
+- IF FAIL: fix the failing implementation — else STOP (playbook §5).
+- [ ]
+
+### Task F.7 — Exit gate: copilot whitelist and audit green
+- DO: no file changes.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_admin_copilot.py -q`
+- EXPECT: all tests pass (exit 0) — the write-capable tool rejection, per-query audit logging, role scoping, and briefing generation are green.
+- IF FAIL: fix the failing implementation — else STOP (playbook §5).
+- [ ]
+
+### Task F.8 — Exit gate: AI health calibration green
+- DO: no file changes.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_calibration.py -q`
+- EXPECT: all tests pass (exit 0) — calibration aggregates, regression alert, and the maker-checkered config edit with the automation-cap rejection are green.
+- IF FAIL: fix the failing implementation — else STOP (playbook §5).
+- [ ]
+
+### Task F.9 — Exit gate: no "coming soon" reachable in /admin/*
+- DO: no file changes. Sweep the admin UI and router stubs for placeholder text.
+- RUN: `cd website && grep -rni "coming soon" src/views/admin/ src/App.tsx src/lib/i18n/locales/en.admin.ts src/lib/i18n/locales/hi.admin.ts; test $? -eq 1`
+- EXPECT: the grep prints nothing (exit 1) so the final `test` exits 0.
+- IF FAIL: replace the placeholder with the real view or hide the nav entry (never a fabricated page) — else STOP (playbook §5).
+- [ ]
+
+### Task F.10 — Global gate: backend suite fully green
+- DO: no file changes.
+- RUN: `cd backend && .venv/bin/python -m pytest -q`
+- EXPECT: the FULL backend suite passes (exit 0), including all new `test_admin_*` suites.
+- IF FAIL: fix the failure; if it is unrelated to phase-07 work, STOP (playbook §5 global-gate clause) and report — else fix and re-run.
+- [ ]
+
+### Task F.11 — Global gate: website typecheck and build clean
+- DO: no file changes.
+- RUN: `cd website && pnpm exec tsc --noEmit && pnpm build`
+- EXPECT: both commands exit 0.
+- IF FAIL: fix the reported error and re-run — else STOP (playbook §5).
+- [ ]
+
+### Task F.12 — Global gate: full suite green on AI shim
+- DO: no file changes.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
+- EXPECT: the FULL backend suite passes with `AI_PROVIDER=shim` (exit 0).
+- IF FAIL: fix the failing AI path (deterministic fallback required — no test may depend on a live model) — else STOP (playbook §5).
+- [ ]
+
+### Task F.13 — Global gate: en/hi locale parity
+- DO: no file changes.
+- RUN: `cd website && diff <(grep -oE "^[[:space:]]+[A-Za-z0-9_.]+:" src/lib/i18n/locales/en.admin.ts | sort) <(grep -oE "^[[:space:]]+[A-Za-z0-9_.]+:" src/lib/i18n/locales/hi.admin.ts | sort)`
+- EXPECT: `diff` exits 0 with no output — every admin key exists in both locales.
+- IF FAIL: add the missing key(s) shown by the diff — else STOP (playbook §5).
+- [ ]
+
+### Task F.14 — HUMAN CHECK: tier login and forbidden navigation
+- DO: HUMAN CHECK — ask the operator to run, in order:
+  1. Start the API: `cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000`.
+  2. Log in to the admin console once per tier (superadmin, compliance_officer, finance_admin, agronomist, operations_lead, content_moderator) — confirm the nav shows ONLY that tier's modules each time.
+  3. As a lower tier, paste a direct URL to a forbidden module (e.g. `finance_admin` → `/admin/kyc`) — confirm the 403/forbidden screen renders.
+- RUN: none (human-executed; executor records the outcome).
+- EXPECT: the human confirms all three steps behaved as listed.
+- IF FAIL: record which step failed and STOP (playbook §5).
+- [ ]
+
+### Task F.15 — HUMAN CHECK: KYC and settlements end-to-end
+- DO: HUMAN CHECK — ask the operator to run, in order:
+  1. Upload a KYC document in the dev app → confirm AI extraction is visible in `/admin/kyc`, risk < 0.3 auto-advances (higher risk lands in the queue with reasons), then approve with reason + MPIN → user verified. Confirm no unmasked Aadhaar in UI, logs, or fixtures.
+  2. Trigger a weekly settlement batch → approve a hold (maker-checker if > ₹10,000) → mark paid with a payment ref → confirm the audit trail is complete in `GET /v1/admin/audit?module=settlements`.
+- RUN: none (human-executed; executor records the outcome).
+- EXPECT: the human confirms both flows behaved as listed.
+- IF FAIL: record which step failed and STOP (playbook §5).
+- [ ]
+
+### Task F.16 — HUMAN CHECK: dispute, copilot, and AI health flows
+- DO: HUMAN CHECK — ask the operator to run, in order:
+  1. Open a dispute in the dev app → confirm it routes to the correct RBAC queue with a visible SLA clock → resolve it.
+  2. Ask the copilot a whitelisted query → confirm the answer cites its data source; confirm the nightly briefing card deep-links into the right queues.
+  3. Open `/admin/ai-health` → confirm a calibration row is present for the current week and a config edit goes through maker-checker.
+- RUN: none (human-executed; executor records the outcome).
+- EXPECT: the human confirms all three flows behaved as listed.
+- IF FAIL: record which step failed and STOP (playbook §5).
+- [ ]
+
+### Task F.17 — Phase-final commit
+- DO: commit any remaining gate fixes.
+- RUN: `git add -A && git commit -m "phase-07 final: admin console exit gate green" || true`
+- EXPECT: commit succeeds, or prints "nothing to commit" (both acceptable).
+- IF FAIL: if `git commit` fails only for identity reasons, note it in the report and continue (playbook §6) — else STOP (playbook §5).
+- [ ]

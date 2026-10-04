@@ -389,7 +389,7 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`) then `pnpm exec tsc --noEmit && pnpm build` (cwd `website/`) then `git add -A && git commit -m "phase-02 WS-02: Transporter AgriFleet close-out"` (repo root)
 - EXPECT: pytest fully green; tsc + build clean; commit created.
 - IF FAIL: fix the failing check — never weaken a test; if only the git commit fails, note it and continue (playbook §6) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ## WS-03 — Vyapari "FarmLink" close-out  (see instructions.md §WS-03)
 
@@ -541,7 +541,7 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`) then `pnpm exec tsc --noEmit && pnpm build` (cwd `website/`) then `git add -A && git commit -m "phase-02 WS-03: Vyapari FarmLink close-out"` (repo root)
 - EXPECT: pytest fully green; tsc + build clean; commit created.
 - IF FAIL: fix the failing check — never weaken a test; if only the git commit fails, note it and continue (playbook §6) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ## WS-04 — Equipment Owner "MachineBazaar" close-out  (see instructions.md §WS-04)
 
@@ -557,77 +557,77 @@
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.3 — Create equipment BookingQueuePage view
 - DO: Create `website/src/views/equipment/BookingQueuePage.tsx` (new): booking queue with approve / reject / counter actions, moved out of the monolith. Strings via `t()`; no `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.4 — Create equipment DispatchPage view
 - DO: Create `website/src/views/equipment/DispatchPage.tsx` (new): dispatch view with the dispatch timeline (machines out + return). Strings via `t()`; no `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.5 — Create equipment DamageClaimsPage view
 - DO: Create `website/src/views/equipment/DamageClaimsPage.tsx` (new): damage-claim list + file-claim form with before/after photos. Strings via `t()`; no `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.6 — Create equipment MaintenancePage view
 - DO: Create `website/src/views/equipment/MaintenancePage.tsx` (new): maintenance log per machine + next-service-due display. Strings via `t()`; no `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.7 — Create equipment RoiAnalyticsPage view
 - DO: Create `website/src/views/equipment/RoiAnalyticsPage.tsx` (new): per-machine ROI analytics. Strings via `t()`; no `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix type errors in the new file only — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.8 — Register EQUIPMENT_PAGES and routes
 - DO: In `website/src/views/equipment/index.tsx` export an `EQUIPMENT_PAGES` map for the pages from tasks 4.2–4.7 plus the existing `EquipmentOwnerHomeBoard` (pattern: `TRANSPORT_PAGES`). Merge it into `website/src/views/dashboard/ToolPage.tsx` and add deep routes in `website/src/App.tsx` (transport deep-route pattern). Remove every `alert()` left in the equipment module; trim the moved sections out of `EquipmentOwnerHomeBoard.tsx` so each renders in exactly one place. Remove demo fallbacks the monolith carried (rule 1: no `?? <hardcoded>` fallbacks in new code).
 - RUN: `pnpm exec tsc --noEmit && grep -rn "alert(\|confirm(" src/views/equipment/ | wc -l` (cwd `website/`)
 - EXPECT: tsc exit 0; grep count is `0`.
 - IF FAIL: fix wiring / remove remaining dialogs — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.9 — Create farmer machine-browse view
 - DO: Create `website/src/views/farmer/EquipmentBrowsePage.tsx` (new, toolId `equipment`): browse machines near me using the existing farmer-face endpoints in `backend/app/routers/equipment.py` via an API wrapper. Strings via `t()` with keys added to new locale splits `website/src/lib/i18n/locales/en.equipment.ts` and `hi.equipment.ts` (new, same shape as `en.broker.ts`) imported in `website/src/main.tsx` below the landlord imports.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the new view — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.10 — Create farmer slot booking views
 - DO: Create `website/src/views/farmer/EquipmentSlotsPage.tsx` (new): slot calendar + book / waitlist / cancel actions calling the existing slots/book/waitlist/cancel endpoints in `backend/app/routers/equipment.py` (backend already exists — this is pure web build plus i18n). Wire both farmer equipment views into the farmer `PROFILE_ROUTES` toolId `equipment` in `website/src/lib/dashboard.ts` and `ToolPage.tsx`/`App.tsx` as the registry pattern requires. Strings via `t()` en+hi.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the views/wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.11 — Add maintenance log and reminders
 - DO: Edit `backend/app/routers/equipment_owner.py`: maintenance log per machine (E3) plus a service-due schedule field on the machine doc (hours-based or date-based); service-due reminders emitted as dashboard tasks via `emit_task()`. Create `backend/tests/test_equipment_maintenance.py` (new) covering log append + due-reminder emission.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_maintenance.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the maintenance logic — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.12 — Add damage deposit claims
 - DO: Edit `backend/app/routers/equipment_owner.py`: damage-deposit claims (E5) with before/after photos, claim amount in integer paisa, owner-filed → admin-arbitrable status flow (`open → resolved`). Create `backend/tests/test_equipment_damage.py` (new) covering the transitions.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_damage.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the claim flow — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.13 — Add equipment KYC gate
 - PRECONDITION: `grep -rln "kyc" backend/app/routers/ backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 KYC pipeline missing.
@@ -635,28 +635,28 @@
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_kyc.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.14 — Add pricing engine quote
 - DO: Edit `backend/app/routers/equipment.py` / `equipment_owner.py`: machine doc carries `pricing: {hourly?, perAcre?, package?}` and booking quote computation uses it (integer paisa). Create `backend/tests/test_equipment_pricing.py` (new) covering an hourly quote, a per-acre quote, and a package quote.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_pricing.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the quote math — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.15 — Add FPO auto-confirm bookings
 - DO: Edit `backend/app/routers/equipment.py`: FPO bookings auto-confirm while private bookings stay manual-approve (instructions.md §WS-04 step 6); edit `website/src/views/equipment/BookingQueuePage.tsx` to surface the FPO-auto-confirm vs private-manual distinction (`t()` en+hi). Add a test to `backend/tests/test_equipment_approve.py` covering both paths.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_approve.py -q` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: tests pass; tsc exit 0.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.16 — Add dispatch check-in pins
 - DO: Edit `backend/app/routers/equipment_owner.py`: manual/event location pins at dispatch and at return (E4-lite — no GPS tracker for v1); edit `website/src/views/equipment/DispatchPage.tsx` to render the pins on the dispatch timeline. Create `backend/tests/test_equipment_checkin.py` (new) asserting both pins persist.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_checkin.py -q` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: tests pass; tsc exit 0.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.17 — Wire real 12% equipment payouts
 - PRECONDITION: `grep -rln "payout" backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 RazorpayX payout client missing.
@@ -664,14 +664,14 @@
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_payouts.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the payout wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.18 — Add owner dashboard summary
 - DO: Edit `backend/app/routers/equipment_owner.py`: dashboard summary returns machines + today's utilization, pending approvals, machines out now + return ETA, damage claims open, next service due, weekly income + next payout (integer paisa) (instructions.md §WS-04 step 9). Add a test asserting the fields exist.
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_owner.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the summary — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.19 — Enforce equipment entitlements
 - PRECONDITION: `grep -rln "entitlement" backend/app/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 billing entitlements missing.
@@ -679,7 +679,7 @@
 - RUN: `.venv/bin/python -m pytest tests/test_equipment_entitlements.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 4.20 — HUMAN CHECK: equipment book-to-payout flow
 - PRECONDITION: `curl -s http://localhost:8000/v1/health` — if it does not return `"status":"ok"`, redo task 1.27 first.
@@ -694,7 +694,7 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`) then `pnpm exec tsc --noEmit && pnpm build` (cwd `website/`) then `git add -A && git commit -m "phase-02 WS-04: Equipment MachineBazaar close-out"` (repo root)
 - EXPECT: pytest fully green; tsc + build clean; commit created.
 - IF FAIL: fix the failing check — never weaken a test; if only the git commit fails, note it and continue (playbook §6) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ## WS-05 — Broker "DealDesk" close-out  (see instructions.md §WS-05)
 
@@ -703,56 +703,56 @@
 - RUN: `test -f backend/app/routers/broker.py && test -f backend/app/routers/farmer_deals.py && test -f backend/app/models/broker.py && test -f backend/app/routers/ratings.py && test -f backend/tests/test_broker_deals.py && test -f website/src/views/broker/DealsPage.tsx && test -f website/src/views/farmer/FarmerOffersPage.tsx && test -f website/src/views/farmer/FarmerDealDetailPage.tsx && test -f website/src/lib/api/broker.ts && test -f website/src/components/broker/DealMathCard.tsx && test -f website/src/components/broker/OfferCard.tsx && test -f website/src/components/broker/MaskedPhoneText.tsx && test -f website/src/components/broker/D4TextGuard.ts && test -f plan/broker_plan.md && grep -q "brokerPct" backend/app/services/settlements.py`
 - EXPECT: exit 0.
 - IF FAIL: a "Read first" file is missing — STOP the phase (playbook §5) with the failing path.
-- [ ]
+- [x]
 
 ### Task 5.2 — Add offer expiresAt field
 - DO: Edit `backend/app/routers/broker.py` and `backend/app/models/broker.py`: every deal offer gets `expiresAt` (ISO string) = creation + TTL, where TTL hours come from a config value (configurable 24–48 h, default 24 h — instructions.md §WS-05 step 1). Add a test to `backend/tests/test_broker_deals.py` asserting a new offer carries `expiresAt` ≈ 24 h out by default.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_deals.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the field — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.3 — Add offer auto-expire job
 - DO: Edit the broker offer code path (or the jobs module): an auto-expire job flips stale `negotiating` offers past `expiresAt` to `expired`. Create `backend/tests/test_broker_offer_ttl.py` (new) covering: fresh offer stays `negotiating`, stale offer flips to `expired`.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_offer_ttl.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the job — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.4 — Add TTL countdown chip
 - DO: Edit `website/src/components/broker/OfferCard.tsx`: alongside the existing "sent Xh ago" display, add a TTL countdown chip driven by `expiresAt`. Strings via `t()` with keys in BOTH `en.broker.ts` and `hi.broker.ts`.
 - RUN: `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix the chip — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.5 — Add 3-round counter cap
 - DO: Edit `backend/app/routers/broker.py` and `backend/app/routers/farmer_deals.py`: track counter rounds per deal; at round 3 the deal locks — further counters → 422, only accept/decline remain (instructions.md §WS-05 step 2). Create `backend/tests/test_broker_counter_cap.py` (new) covering rounds 1–2 allowed, round-3 lock, counter-after-lock → 422.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_counter_cap.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the cap — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.6 — Add deadlock resolution path
 - DO: Edit `backend/app/routers/broker.py`: a locked deal (task 5.5) offers a mediator/admin resolution action that creates an admin-queue record (console UI is phase-07). Add a test to `backend/tests/test_broker_counter_cap.py` covering the deadlock → mediator record.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_counter_cap.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the path — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.7 — Extend evidence into typed vault
 - DO: Edit `backend/app/routers/broker.py`: extend the existing evidence upload `POST /broker/deals/{id}/evidence` (kind-capped) into a typed vault (B4) with kinds `weigh_slip`, `quality_report`, `payment_proof`; both parties can view the vault post-acceptance, not before. Create `backend/tests/test_broker_vault.py` (new) covering kind validation + post-acceptance visibility.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_vault.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the vault — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.8 — Add buyer requirement postings
 - DO: Edit `backend/app/routers/broker.py`: new collection + endpoints (B3) for buyer requirement postings ("need 50q onion @ ₹X") that brokers/farmers can respond to; wire responses into the lead pipeline reusing the existing "Make deal" prefill. Create `backend/tests/test_broker_requirements.py` (new) covering post + respond.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_requirements.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the endpoints — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.9 — Wire broker commission payout
 - PRECONDITION: `grep -rln "payout" backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 RazorpayX payout client missing.
@@ -760,7 +760,7 @@
 - RUN: `.venv/bin/python -m pytest tests/test_broker_payouts.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the payout wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.10 — Add Razorpay split at capture
 - PRECONDITION: `grep -rln "razorpay" backend/app/services/payments.py` — if empty, STOP the phase (playbook §5): phase-00 money rails missing.
@@ -768,7 +768,7 @@
 - RUN: `.venv/bin/python -m pytest tests/test_broker_split.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the split — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.11 — Add broker KYC documents
 - PRECONDITION: `grep -rln "kyc" backend/app/routers/ backend/app/services/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 KYC pipeline missing.
@@ -776,35 +776,35 @@
 - RUN: `.venv/bin/python -m pytest tests/test_broker_deals.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the KYC wiring — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.12 — Add Proven Broker tier and SLA
 - DO: Edit `backend/app/routers/broker.py`: "Proven Broker" trust tier with a 48–72 h approval SLA (B1); the SLA clock is visible to the broker (field on the KYC/tier record); SLA breach escalates to the admin queue. Create `backend/tests/test_broker_kyc_sla.py` (new) covering SLA-breach escalation.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_kyc_sla.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the SLA logic — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.13 — Persist two-sided deal ratings
 - DO: Edit `backend/app/routers/ratings.py`: two-sided ratings on completed deals persisted server-side (broker ↔ farmer), one rating per party per completed deal. Edit `website/src/views/farmer/FarmerDealDetailPage.tsx` to call this API, replacing the current localStorage fallback (remove the fallback — rule 1). Create `backend/tests/test_deal_ratings.py` (new) covering both sides + duplicate rejection.
 - RUN: `.venv/bin/python -m pytest tests/test_deal_ratings.py -q` (cwd `backend/`) then `pnpm exec tsc --noEmit` (cwd `website/`)
 - EXPECT: tests pass; tsc exit 0; no localStorage rating fallback remains.
 - IF FAIL: fix the failing side — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.14 — Add deal dispute workflow
 - DO: Edit `backend/app/routers/broker.py`: dispute record on a deal with fields `{dealId, category, evidenceFreeze: true, slaTimer, status: "open", createdBy, createdAt}` wired to the admin-queue endpoints (instructions.md §WS-05 step 9). Create `backend/tests/test_broker_disputes.py` (new) covering create + evidence freeze + SLA field.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_disputes.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the workflow — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.15 — Add broker dashboard summary
 - DO: Edit `backend/app/routers/broker.py`: dashboard summary returns active deals by stage (pipeline), new leads, offers awaiting response + TTL countdown, deals needing evidence, commission earned/pending/paid (integer paisa), and network size (farmers/buyers saved) (instructions.md §WS-05 step 10). Add a test asserting the fields exist.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_deals.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the summary — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.16 — Enforce broker entitlements and commission stack
 - PRECONDITION: `grep -rln "entitlement" backend/app/ | head -1` — if empty, STOP the phase (playbook §5): phase-00 billing entitlements missing.
@@ -812,28 +812,28 @@
 - RUN: `.venv/bin/python -m pytest tests/test_broker_entitlements.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the gate/stack — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.17 — Add server-side deal message moderation
 - DO: Edit the deal message code path (`backend/app/routers/broker.py` / chat service): server-side moderation regex rejecting phone numbers, UPI IDs, and external links in deal messages + a strike ladder per sender (rule 4). Create `backend/tests/test_broker_moderation.py` (new) covering: message with phone → rejected + strike; N strikes → restricted.
 - RUN: `.venv/bin/python -m pytest tests/test_broker_moderation.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the moderation — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.18 — Sweep broker masked surfaces and locale parity
 - DO: No new features. Verify `MaskedPhoneText` + `D4TextGuard` wrap every phone/text surface in the broker module, and full en/hi parity for broker keys (rule 6).
 - RUN: `grep -rn "alert(\|confirm(" website/src/views/broker/ website/src/views/farmer/ ; diff <(grep -oE "^  [a-zA-Z0-9_]+:" website/src/lib/i18n/locales/en.broker.ts | sort) <(grep -oE "^  [a-zA-Z0-9_]+:" website/src/lib/i18n/locales/hi.broker.ts | sort)`
 - EXPECT: the grep returns nothing; the diff produces no output.
 - IF FAIL: wrap the surface / add the missing locale keys — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.19 — Seed and soak 50 concurrent deals
 - DO: Create `backend/tests/test_broker_soak.py` (new): seed 50 concurrent deals and drive each through its stages (offer → counter → contract → accept → evidence → completed) asserting no errors and that the commission ledger reconciles: Σ deal commissions == settlement gross (instructions.md §WS-05 Acceptance).
 - RUN: `.venv/bin/python -m pytest tests/test_broker_soak.py -q` (cwd `backend/`)
 - EXPECT: all tests pass.
 - IF FAIL: fix the stage transitions/ledger — never weaken the test — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 5.20 — HUMAN CHECK: broker deal lifecycle
 - PRECONDITION: `curl -s http://localhost:8000/v1/health` — if it does not return `"status":"ok"`, redo task 1.27 first.

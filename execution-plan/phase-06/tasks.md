@@ -820,3 +820,530 @@ Conventions used below:
 - EXPECT: pytest green; build clean; commit visible in `git log -1 --oneline`.
 - IF FAIL: fix the failure; if only git commit fails, note it and continue (playbook §6).
 - [ ]
+
+## WS-06 — PWA & offline  (see instructions.md §WS-06)
+
+### Task 6.1 — Add vite-plugin-pwa dependency
+- DO: Add `vite-plugin-pwa` as a devDependency of the website (the project has no PWA plugin today).
+- RUN: `cd website && pnpm add -D vite-plugin-pwa && grep -c "vite-plugin-pwa" package.json`
+- EXPECT: exit 0; grep count >= 1.
+- IF FAIL: re-run `pnpm add -D vite-plugin-pwa` once; if the registry is unreachable, STOP (playbook §5) with the full output.
+- [ ]
+
+### Task 6.2 — Configure PWA plugin in vite.config.ts
+- DO: In `website/vite.config.ts` (read it first) add `VitePWA` from `vite-plugin-pwa` to the plugins array with: `registerType: 'autoUpdate'`; `manifest`: `{name: 'AGROVERCITY', short_name: 'AGROVERCITY', display: 'standalone', start_url: '/', theme_color: '#16A34A', background_color: '#ffffff', icons: [{src: '/icon-192.png', sizes: '192x192', type: 'image/png'}, {src: '/icon-512.png', sizes: '512x512', type: 'image/png'}]}`; `workbox`: precache the app shell (default), `runtimeCaching`: (a) `GET` requests matching `/v1/reference/` → `CacheFirst`, (b) requests for locale files (`/src/lib/i18n/` or emitted locale chunks) → `CacheFirst`, (c) other API `GET`s → `NetworkFirst`; NEVER cache non-GET requests (add no handler for POST/PUT/DELETE).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the config typing (import `VitePWA` from `vite-plugin-pwa`) and re-run.
+- [ ]
+
+### Task 6.3 — Add PWA icons
+- DO: Create directory `website/public/` if missing; copy the existing icons: `cp flutter-prototype/web/icons/Icon-192.png website/public/icon-192.png` and `cp flutter-prototype/web/icons/Icon-512.png website/public/icon-512.png` (run from repo root as part of DO).
+- RUN: `test -f website/public/icon-192.png && test -f website/public/icon-512.png`
+- EXPECT: exit 0.
+- IF FAIL: if the source icons are missing, STOP (playbook §5) and report; do not invent substitute artwork.
+- [ ]
+
+### Task 6.4 — Register the service worker
+- DO: In `website/src/main.tsx` (read it first) register the service worker via the virtual module: `import { registerSW } from 'virtual:pwa-register';` and call `registerSW({ immediate: true })` at startup. If tsc cannot resolve the virtual module, add `/// <reference types="vite-plugin-pwa/client" />` to `website/src/vite-env.d.ts` (create the file with just that line if missing).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: add the type reference line to `website/src/vite-env.d.ts` and re-run.
+- [ ]
+
+### Task 6.5 — Verify build emits manifest and service worker
+- DO: Build the site and confirm the PWA artifacts are emitted.
+- RUN: `cd website && pnpm build && ls dist/manifest.webmanifest dist/sw.js`
+- EXPECT: exit 0; both files listed.
+- IF FAIL: re-check task 6.2 config (plugin must be in `plugins`, `registerType` set) and re-run.
+- [ ]
+
+### Task 6.6 — Create offline outbox store
+- DO: Create `website/src/lib/offline/outbox.ts` (new). Top-of-file doc comment must document the 3-line opt-in pattern for other forms: `import { enqueueOp } from '../lib/offline/outbox'` / wrap the submit call / on network failure call `enqueueOp({idempotencyKey, method, path, body})`. Implementation: localStorage-backed queue (key `av_outbox`) of operations shaped EXACTLY like the backend's `SyncOperation` (`{idempotencyKey: string, method: string, path: string, body: object, queuedAt: string}` — read `backend/app/routers/sync.py`); export `enqueueOp(op)` (caller supplies a client-generated `idempotencyKey` — generate with `crypto.randomUUID()`), `pendingCount()`, `subscribe(cb)` for count changes, and `flush()` which posts `{operations: [...]}` to `POST /v1/sync` via the existing client in `website/src/lib/api/client.ts` and removes successfully applied/duplicate ops from the queue. Register a `window.addEventListener('online', flush)` listener at module load. Never silently drop an op that returns `status: "error"` — keep it queued.
+- RUN: `cd website && pnpm exec tsc --noEmit && grep -c "idempotencyKey" website/src/lib/offline/outbox.ts`
+- EXPECT: tsc exit 0; grep count >= 1.
+- IF FAIL: fix the store and re-run.
+- [ ]
+
+### Task 6.7 — Pending-sync indicator and toasts
+- DO: In `website/src/lib/offline/outbox.ts` `flush()`: on successful sync of all queued ops fire `toast(t('offline.synced'))`; on network failure or any op staying queued fire `toast(t('offline.syncFailed'), { error: true })` — use `website/src/components/toast.ts` (read it first). In `website/src/views/dashboard/DashboardHome.tsx` add a small pending-sync badge subscribing to `pendingCount()` via `subscribe`, showing `t('offline.pendingSync', {count})` when count > 0.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the wiring and re-run.
+- [ ]
+
+### Task 6.8 — Offline i18n keys
+- DO: Add `offline.pendingSync` ("{count} change(s) waiting to sync"), `offline.synced` ("All changes synced"), `offline.syncFailed` ("Sync failed — will retry when online") to `website/src/lib/i18n/locales/en.trade.ts` and `hi.trade.ts` with Hindi translations.
+- RUN: `cd website && pnpm exec tsc --noEmit && grep -c "offline.syncFailed" website/src/lib/i18n/locales/hi.trade.ts`
+- EXPECT: tsc exit 0; grep count >= 1.
+- IF FAIL: add the missing keys and re-run.
+- [ ]
+
+### Task 6.9 — Wire farm-diary form to the outbox
+- DO: In the farm-diary entry form under `website/src/views/diary/` (read the folder; find the form that POSTs a diary entry): wrap the submit so that on network failure (axios error without a response, or `navigator.onLine === false`) it calls `enqueueOp({idempotencyKey: crypto.randomUUID(), method: 'POST', path: <the same diary endpoint path>, body: <the form payload>})` and shows `toast(t('offline.pendingSync', {count: 1}))` instead of an error. Online behavior unchanged.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the form wiring and re-run.
+- [ ]
+
+### Task 6.10 — Wire one profile form to the outbox
+- DO: Apply the same 3-line opt-in pattern to the main profile-edit form (look in `website/src/views/onboarding/` and `website/src/views/farmer/` for the form that PUTs the user profile — use the one hitting `PUT /v1/users/me`): on network failure enqueue `{method: 'PUT', path: '/v1/users/me', body}` with a fresh idempotency key; online behavior unchanged.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the form wiring and re-run.
+- [ ]
+
+### Task 6.11 — Verify /v1/sync dispatch covers both mutation types
+- DO: Read `backend/app/services/sync.py` `dispatch` and confirm it can replay `POST <diary endpoint>` and `PUT /v1/users/me` (the two ops wired in tasks 6.9–6.10). If either mutation type is missing from the dispatch table, add it following the existing entries' pattern. Do not change the `SyncOperation` shape.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_sync.py -q`
+- EXPECT: exit 0.
+- IF FAIL: extend `app/services/sync.py` dispatch for the missing mutation type and re-run.
+- [ ]
+
+### Task 6.12 — Add outbox replay integration test
+- DO: In `backend/tests/test_sync.py` add a test replaying a batch containing the diary-create op and the profile-update op (exact shapes from tasks 6.9–6.10), then replaying the SAME batch again: assert the first pass applies both and the second pass returns them as `duplicate` (server-side idempotency via `idempotencyKey`) — no double-apply.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_sync.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the idempotency handling in `app/services/sync.py` and re-run.
+- [ ]
+
+### Task 6.13 — Convert top-level routes to React.lazy
+- DO: In `website/src/App.tsx` convert the top-level persona/module route components (the heavy views: trade pages, dairy, landlord, transport, instructor, and the new admin/support/search views) to `React.lazy(() => import(...))` with a single `<Suspense fallback={...}>` wrapper around the route tree (fallback = a minimal loading element using `t()`; add key `app.loading` to `en.ts` + `hi.ts`). Keep `/`, `/auth`, and `/legal/:page` eager. Move heavy deps (maps, charts) behind lazy boundaries — any view importing `@googlemaps/js-api-loader` must be lazy.
+- RUN: `cd website && pnpm exec tsc --noEmit && pnpm build`
+- EXPECT: exit 0; build succeeds.
+- IF FAIL: fix the lazy imports/Suspense placement and re-run.
+- [ ]
+
+### Task 6.14 — Measure first-load bundle <400 KB
+- DO: Inspect the `pnpm build` output and compute the first-load JS gzip size: the entry chunk plus all chunks imported eagerly (i.e. NOT behind `React.lazy`). Record the sizes for the PR description.
+- RUN: `cd website && pnpm build && node -e "const fs=require('fs'),zlib=require('zlib'),path=require('path');const dir='dist/assets';let total=0;for(const f of fs.readdirSync(dir)){if(!f.endsWith('.js'))continue;if(/^(?!index).+/.test(f)&&fs.existsSync(path.join(dir,f))){/* count only entry-ish chunks below */}}const entry=fs.readdirSync(dir).filter(f=>/^index.*\.js$/.test(f));let gz=0;for(const f of entry){gz+=zlib.gzipSync(fs.readFileSync(path.join(dir,f))).length}console.log('entry gzip bytes:',gz);process.exit(gz<400*1024?0:1)"`
+- EXPECT: exit 0 — entry chunk gzip < 400 KB.
+- IF FAIL: identify the largest eager import in the entry chunk (`pnpm build` output lists sizes), move it behind a `React.lazy` boundary in `App.tsx`, and re-run.
+- [ ]
+
+### Task 6.15 — HUMAN CHECK: install + offline draft + Lighthouse
+- PRECONDITION: `curl -sf http://localhost:8000/v1/health > /dev/null` — else start both dev servers (header conventions); if still failing, STOP (playbook §5).
+- DO: HUMAN CHECK — human performs: (1) serve the production build (`cd website && pnpm preview`) and open it in Chrome → install prompt fires → app launches standalone. (2) DevTools → Network → Offline → create a farm-diary draft → it appears as pending-sync → go Online → the draft syncs exactly once; trigger a second replay (re-run flush) → no duplicate diary entry server-side. (3) Run Lighthouse PWA check → installability passes (manifest + SW + HTTPS/localhost).
+- RUN: (manual — no command)
+- EXPECT: human confirms all three behaviors.
+- IF FAIL: record the diverging step and STOP (playbook §5).
+- [ ]
+
+### Task 6.16 — WS-06 checkpoint: verify + commit
+- DO: Run the full WS-06 Verification block, then commit.
+- RUN: `cd backend && .venv/bin/python -m pytest -q` then `cd website && pnpm exec tsc --noEmit && pnpm build` then `git add -A && git commit -m "phase-06 WS-06: PWA & offline"`
+- EXPECT: pytest green; build clean; commit visible in `git log -1 --oneline`.
+- IF FAIL: fix the failure; if only git commit fails, note it and continue (playbook §6).
+- [ ]
+
+## WS-07 — i18n completion + M32 localization pipeline  (see instructions.md §WS-07)
+
+### Task 7.1 — Create locale parity checker
+- DO: Create `website/scripts/check_locales.mjs` (new). It must: (a) parse every locale file + module pair in `website/src/lib/i18n/locales/` (`en.ts` is the 436-key base; module pairs like `en.trade.ts`/`hi.trade.ts` count toward their locale), extracting keys with a regex over `'key':` entries; (b) diff every locale against the en base + en module keys, printing per-locale `missing`/`extra`/`approved` counts — approved keys = keys present in the REAL locale files only; it must ignore the `website/src/lib/i18n/drafts/` directory entirely (ai-draft keys never satisfy parity); (c) compare counts against `website/scripts/locale_baseline.json` (shape `{ "<locale>": <approvedCount>, ... }`): if the file is missing or run with `--write-baseline`, write current counts and exit 0; otherwise exit 1 when any locale's approved count dropped below baseline, or when en/hi parity breaks (hi missing any en key); otherwise exit 0.
+- RUN: `cd website && node scripts/check_locales.mjs && test -f scripts/locale_baseline.json`
+- EXPECT: exit 0 on first run; baseline file created.
+- IF FAIL: fix the script (check the key-regex against `en.ts`'s actual formatting — read it) and re-run.
+- [ ]
+
+### Task 7.2 — Wire locales:check into package scripts and build
+- DO: In `website/package.json` add script `"locales:check": "node scripts/check_locales.mjs"` and make the gate part of the build by changing `"build"` to `"pnpm locales:check && tsc --noEmit && vite build"` (this is the CI parity gate — any CI running the build now enforces it; no separate CI config exists in the repo).
+- RUN: `cd website && pnpm locales:check && pnpm build`
+- EXPECT: both exit 0.
+- IF FAIL: if the gate fails on real missing keys, note the counts and continue to task 7.3 — do NOT weaken the gate.
+- [ ]
+
+### Task 7.3 — Organize phase-06 views into module locale pairs
+- DO: Following the existing `en.trade.ts`/`hi.trade.ts` pattern (read one pair plus how they are registered in the i18n index), move the phase-06 keys added to `en.trade.ts`/`hi.trade.ts` into dedicated module pairs: chat-hub/strike keys (`chat.*`) → `en.chat.ts` + `hi.chat.ts` (new); notification-prefs, consent, deletion, offline keys (`notif.*`, `consent.*`, `delete.*`, `offline.*`) → `en.settings.ts` + `hi.settings.ts` (new); support keys (`support.*`) → `en.support.ts` + `hi.support.ts` (new); trust/rate/admin keys (`trust.*`, `rate.*`) → `en.admin.ts` + `hi.admin.ts` (new). Register each new pair exactly the way the existing module pairs are registered (read `website/src/lib/i18n/index.ts` and one module pair file to find the registration/import site).
+- RUN: `cd website && pnpm exec tsc --noEmit && pnpm locales:check`
+- EXPECT: both exit 0; no key counts regress vs baseline.
+- IF FAIL: fix the registration of the new pairs and re-run.
+- [ ]
+
+### Task 7.4 — Create Gemini translation script with locked glossary
+- PRECONDITION: `test -d backend/app/services/ai` — if this fails, STOP the phase (playbook §5).
+- DO: Create `backend/scripts/translate_locales.py` (new). Docstring documents the draft convention: drafts are written to `website/src/lib/i18n/drafts/{locale}.draft.ts` with `export const status = 'ai-draft'` and are excluded from the build until approved. Behavior: (a) parse `en.ts` + en module pairs for the full key set; parse the target locale's real files for existing keys; diff → missing keys; (b) batch missing keys to Gemini (model from env `AI_GEMINI_MODEL`, via the same client config other backend AI code uses — read `backend/app/core/config.py`) with the locked `GLOSSARY` constant passed as do-not-translate terms — `GLOSSARY = ["mandi", "khasra", "7/12", "FPO", "PMFBY", "AGROVERCITY", "vyapari", "mandi bhav", "kisan", "Razorpay", "UPI"]` (keep these plus any agri terms you find already untranslated in `hi.ts`); (c) write the draft file; (d) upsert one `locale_approvals` doc per drafted key `{locale, key, enSource, draft, status: "pending"}` (doc id `{locale}__{key}`). CLI: `--locale <code>` required, `--shim` flag producing deterministic offline drafts (key + untranslated glossary preserved, body wrapped as `[<locale>] <en text>`) so CI/dev never calls paid APIs.
+- RUN: `cd backend && .venv/bin/python -m py_compile scripts/translate_locales.py`
+- EXPECT: exit 0.
+- IF FAIL: fix and re-run.
+- [ ]
+
+### Task 7.5 — Glossary protection test
+- DO: Create `backend/tests/test_translate_locales.py` (new): run the script's draft-generation function in `--shim` mode for locale `ta` against the real `en.ts` keys; assert (a) every glossary term in `GLOSSARY` appears verbatim (untranslated) in any draft value whose en source contained it, and (b) the draft file is written under `website/src/lib/i18n/drafts/` (use a tmp output dir override so the test does not dirty the repo — add an optional `out_dir` parameter to the script for this).
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_translate_locales.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the script's glossary handling and re-run.
+- [ ]
+
+### Task 7.6 — Locale approval endpoints
+- DO: In `backend/app/routers/admin.py` add: `GET /locale-drafts?locale=<code>` (admin-gated, cursor pagination) listing `locale_approvals` docs with `status: "pending"`; `POST /locale-approvals` (admin-gated, body `{locale, key, action: "approve"|"reject"}`, accepts `Idempotency-Key`) updating the doc to `status: "approved"|"rejected"` with `reviewedBy` + `reviewedAt` — this is the audit record (who, when, key). Standard error envelope.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/routers/admin.py && .venv/bin/python -m pytest tests/test_admin.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the endpoints and re-run.
+- [ ]
+
+### Task 7.7 — Approval endpoint tests
+- DO: Create `backend/tests/test_locale_approvals.py` (new): seed pending `locale_approvals` docs → admin lists them → approve one → doc has `status: "approved"`, `reviewedBy`, `reviewedAt`; reject one → `status: "rejected"`; non-admin → 403 on both endpoints.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_locale_approvals.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the endpoints and re-run.
+- [ ]
+
+### Task 7.8 — Create apply-approvals script
+- DO: Create `backend/scripts/apply_locale_approvals.py` (new): reads all `locale_approvals` docs with `status: "approved"` and `applied != true`; for each, inserts `{key}: {draft}` into the target real locale file `website/src/lib/i18n/locales/{locale}.ts` before its closing brace (match the file's existing entry style — read it first; skip keys already present); then marks the docs `applied: true`. CLI: `--locale <code>` optional filter.
+- RUN: `cd backend && .venv/bin/python -m py_compile scripts/apply_locale_approvals.py`
+- EXPECT: exit 0.
+- IF FAIL: fix and re-run.
+- [ ]
+
+### Task 7.9 — Create LocaleReviewPage admin view
+- DO: Create `website/src/views/admin/LocaleReviewPage.tsx` (new): locale selector; fetch `GET /v1/admin/locale-drafts?locale=...` (add wrappers to `website/src/lib/api/admin.ts`); render each draft key side-by-side (en source vs draft) with approve/reject buttons POSTing to `/v1/admin/locale-approvals`; approved/rejected rows update in place. Strings via `t()` — add needed keys to `en.admin.ts` + `hi.admin.ts`. Add the route in `website/src/App.tsx` beside the other admin routes.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the type errors and re-run.
+- [ ]
+
+### Task 7.10 — Generate ta drafts (shim mode)
+- DO: Run the translation script for `ta` in shim mode (real Gemini runs are the human operator's call with real keys; the pipeline is identical).
+- RUN: `cd backend && .venv/bin/python scripts/translate_locales.py --locale ta --shim && ls website/src/lib/i18n/drafts/ta.draft.ts`
+- EXPECT: exit 0; draft file exists and (from the script's stdout) covers the keys missing from `ta` (en base 436 − ta's current approved keys).
+- IF FAIL: fix the script error shown and re-run.
+- [ ]
+
+### Task 7.11 — Approve ta keys and apply
+- DO: Approve all pending `ta` approval docs (scripted, not one-by-one: `cd backend && .venv/bin/python -c` snippet or a small `--locale ta --approve-all` helper you add to `apply_locale_approvals.py` — follow the endpoint's audit fields by setting `reviewedBy: "script:bulk"`, `reviewedAt` on each), then run the apply script to promote them into `ta.ts`.
+- RUN: `cd backend && .venv/bin/python scripts/apply_locale_approvals.py --locale ta && cd website && pnpm locales:check`
+- EXPECT: apply exits 0; `pnpm locales:check` exits 0 and its per-locale output shows `ta` with 0 missing keys (436/436 approved).
+- IF FAIL: inspect which keys are still missing (`node scripts/check_locales.mjs` prints them), re-run the pipeline for those, and re-check.
+- [ ]
+
+### Task 7.12 — Update the approved-key baseline
+- DO: Regenerate the baseline so the new approved counts (including ta at 436) become the enforced floor, and commit it with the workstream checkpoint.
+- RUN: `cd website && node scripts/check_locales.mjs --write-baseline && pnpm locales:check`
+- EXPECT: exit 0 both.
+- IF FAIL: fix the baseline write and re-run.
+- [ ]
+
+### Task 7.13 — Prove the CI gate fails on regression
+- DO: Scripted proof: remove one approved key from `website/src/lib/i18n/locales/ta.ts` (comment it out via `git stash`-able edit — simplest: copy the file to /tmp, delete one entry line, run the gate, restore). Steps: `cp` the file to a temp path; delete one key line; run `pnpm locales:check` → MUST exit non-zero; restore the file from the temp copy; run the gate again → MUST exit 0.
+- RUN: `cd website && cp src/lib/i18n/locales/ta.ts /tmp/ta.ts.bak && sed -i "/^  '[^']*':/d" src/lib/i18n/locales/ta.ts && sed -i "s/^}/  '__placeholder__': 'x'\n}/" src/lib/i18n/locales/ta.ts 2>/dev/null; node scripts/check_locales.mjs; code=$?; cp /tmp/ta.ts.bak src/lib/i18n/locales/ta.ts; node scripts/check_locales.mjs; code2=$?; echo "gate-on-regression=$code gate-after-restore=$code2"; test $code -ne 0 -a $code2 -eq 0`
+- EXPECT: final exit 0 with output `gate-on-regression=<non-zero> gate-after-restore=0`.
+- IF FAIL: if the gate passed on the regressed file, fix `check_locales.mjs` baseline comparison and re-run the whole proof.
+- [ ]
+
+### Task 7.14 — HUMAN CHECK: review UI + glossary
+- PRECONDITION: `curl -sf http://localhost:8000/v1/health > /dev/null` — else start both dev servers (header conventions); if still failing, STOP (playbook §5).
+- DO: HUMAN CHECK — human performs: (1) open LocaleReviewPage → ta draft keys render side-by-side (en source vs draft); (2) spot-check that glossary terms (mandi, khasra, 7/12, FPO, PMFBY, AGROVERCITY) appear untranslated in every draft containing them; (3) reject one key → it leaves the pending list and is not promoted; (4) confirm `pnpm build` passes with unapproved drafts excluded (drafts directory is not imported anywhere).
+- RUN: (manual — no command)
+- EXPECT: human confirms all four.
+- IF FAIL: record the diverging step and STOP (playbook §5).
+- [ ]
+
+### Task 7.15 — WS-07 checkpoint: verify + commit
+- DO: Run the full WS-07 Verification block, then commit.
+- RUN: `cd backend && .venv/bin/python -m pytest -q` then `cd website && pnpm locales:check && pnpm exec tsc --noEmit && pnpm build` then `git add -A && git commit -m "phase-06 WS-07: i18n completion + M32 localization pipeline"`
+- EXPECT: pytest green; locales:check and build clean; commit visible in `git log -1 --oneline`.
+- IF FAIL: fix the failure; if only git commit fails, note it and continue (playbook §6).
+- [ ]
+
+## WS-08 — Search embeddings upgrade (M23)  (see instructions.md §WS-08)
+
+### Task 8.1 — Locate the phase-05 keyword search
+- DO: Inventory-only task (no edits): locate the phase-05 keyword search implementation.
+- RUN: `grep -rln "def .*search\|/search" backend/app/routers/ backend/app/services/ | head -20`
+- EXPECT: exit 0. Record the output in your task report. If no router-level search exists (phase-05 still in flight), this workstream's new `routers/search.py` delivers the keyword fallback itself — that is already what tasks 8.2+ specify, so proceed either way.
+- IF FAIL: re-run with `grep -rln "search" backend/app/routers/ | head -20`; if still nothing, proceed — the fallback gets built in task 8.2.
+- [ ]
+
+### Task 8.2 — Create search router with keyword fallback
+- DO: Create `backend/app/routers/search.py` (new), `APIRouter(prefix="/search", tags=["search"])`: `GET ""` (full path `/v1/search?q=...&cursor=...&limit=...`) with the standard error envelope and cursor pagination (shape `{"data": [...], "nextCursor": ...}`). Implement `_keyword_search(index: str, q: str, limit: int) -> list[dict]`: case-insensitive substring match over the title/name/body fields of the collection each index maps to — `schemes` → the collection used by `backend/app/routers/schemes.py`, `products` → `backend/app/routers/marketplace.py`, `news` → `backend/app/routers/content.py`, `crops` → the crops collection used by the lots/mandi routers (read `backend/app/routers/lots.py` and `backend/app/routers/mandi.py`), `courses` → `backend/app/routers/courses.py`, `lots` → `backend/app/routers/lots.py` (read each router for its exact collection + title fields). Default behavior (no AI): query ALL indexes by keyword and return grouped hits `[{index, docId, title, snippet, score}]` (keyword score = 1.0 for title match, 0.5 for body match).
+- RUN: `cd backend && .venv/bin/python -m py_compile app/routers/search.py`
+- EXPECT: exit 0.
+- IF FAIL: fix and re-run.
+- [ ]
+
+### Task 8.3 — Mount search router + keyword test
+- DO: Mount `search.router` in `backend/app/main.py` under `/v1` (same include pattern as task 4.7). Create `backend/tests/test_search.py` (new): seed two scheme docs and one news doc in the fake store; `GET /v1/search?q=pm-kisan` → the scheme hit appears with `index: "schemes"`; `q` matching nothing → empty `data`, valid envelope.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_search.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the router/mount and re-run.
+- [ ]
+
+### Task 8.4 — Register search.intent.v1
+- PRECONDITION: `test -f backend/app/services/ai/question_sets.py` — if this fails, STOP the phase (playbook §5).
+- DO: In `backend/app/services/ai/question_sets.py` register `search.intent.v1`: output `index` (choice: `schemes`, `products`, `news`, `crops`, `courses`, `lots`); fallback = query all indexes by keyword (represent as `index: null` or a `all` value per the file's choice-field pattern — match the file's conventions); level `suggest`.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
+- EXPECT: exit 0.
+- IF FAIL: match the file's registration API and re-run.
+- [ ]
+
+### Task 8.5 — Wire intent routing into /v1/search
+- PRECONDITION: `test -d backend/app/services/ai` — if this fails, STOP the phase (playbook §5).
+- DO: In `backend/app/routers/search.py` `GET /v1/search`: call `gateway.decide(state, "search.intent.v1", ctx)` (pseudonymized state — the query text only; no PII) and restrict/target the keyword queries to the chosen index(es), placing that index's group first in the response. On exception → fallback: query all indexes by keyword (task 8.2 behavior). Extend `backend/tests/test_search.py`: shimmed intent for "pyaz ka bhav" → `lots` (or `crops` per shim mapping) returns that group first; shimmed intent for "PM-Kisan" → `schemes` first.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_search.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the routing — never weaken the ordering assertions — and re-run.
+- [ ]
+
+### Task 8.6 — Add reindex() to the search index helper
+- PRECONDITION: `test -f backend/app/services/search_index.py` — if this fails, STOP the phase (playbook §5).
+- DO: In `backend/app/services/search_index.py` add `async def reindex(indexes: list[str] | None = None) -> dict`: iterate the source collections for the given indexes (default all six), `upsert_document` each doc whose `updatedAt`/modified marker is newer than its stored `search_index` entry (store a checkpoint doc `search_index_meta/last_run` `{cursor, updatedAt}` so the job is resumable), and return counts per index. Idempotent: running twice in a row re-embeds nothing.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/services/search_index.py`
+- EXPECT: exit 0.
+- IF FAIL: fix and re-run.
+- [ ]
+
+### Task 8.7 — Cosine merge with keyword-wins-ties ordering
+- PRECONDITION: `test -f backend/app/services/search_index.py` — if this fails, STOP the phase (playbook §5).
+- DO: In `backend/app/routers/search.py` merge semantic hits into results: for each index, get `search_similar(index, q)` hits and merge with keyword hits by `docId` — final score = keyword score + cosine score, keyword wins ties (sort by score desc, then by `hasKeywordMatch` desc). With the AI flag off or shim, skip the embedding path entirely (keyword-only). Extend `backend/tests/test_search.py` with a merge-ordering fixture: a doc that matches keyword AND cosine ranks above a doc matching cosine only, which ranks above no match.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_search.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the merge comparator and re-run.
+- [ ]
+
+### Task 8.8 — Add search reindex job
+- DO: In `backend/app/routers/jobs.py` add `POST /search_reindex` (full path `/v1/jobs/search_reindex`, same guard pattern as existing jobs) calling `reindex()`. Extend `backend/tests/test_search.py`: run the job twice → first run embeds the seeded docs (vectors stored), second run reports 0 re-embedded (idempotent + resumable).
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_search.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the job/reindex checkpoint logic and re-run.
+- [ ]
+
+### Task 8.9 — Shim-mode keyword-only invariant test
+- DO: In `backend/tests/test_search.py` add `test_shim_keyword_only`: with `AI_PROVIDER=shim` (and again with the search module flag off), `GET /v1/search?q=...` returns keyword-only results — assert the embedding path was never called (monkeypatch `search_index.search_similar` to raise if called).
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_search.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the flag/shim branch in `app/routers/search.py` and re-run.
+- [ ]
+
+### Task 8.10 — Create search API wrapper
+- DO: Create `website/src/lib/api/search.ts` (new): `search(q: string, cursor?: string)` calling `GET /v1/search`, typed result `{index, docId, title, snippet, score}` and the paginated envelope, following the existing wrapper pattern (read `website/src/lib/api/client.ts`).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the wrapper and re-run.
+- [ ]
+
+### Task 8.11 — Create SearchResultsPage view
+- DO: Create `website/src/views/search/SearchResultsPage.tsx` (new): reads `?q=` from the URL, calls `search(q)`, renders results GROUPED by module — group headings for mandi/lots, schemes, courses, news, products (order the groups as the API returns them) — each result row deep-links into its module route (map `index` → route: `lots`/`crops` → mandi/lots route, `schemes` → schemes route, `courses` → courses route, `news` → news route, `products` → marketplace route; read `website/src/App.tsx` for the actual paths). Group headings + empty state via `t()`; add keys (`search.title`, `search.empty`, `search.group.lots`, `search.group.schemes`, `search.group.courses`, `search.group.news`, `search.group.products`) to `en.trade.ts` + `hi.trade.ts`.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the type errors and re-run.
+- [ ]
+
+### Task 8.12 — Route + global search-box wiring
+- DO: In `website/src/App.tsx` add route `/search` rendering `SearchResultsPage`. Wire the global search box from the all-tools launcher (robust §7.24 — read `website/src/components/dashboard/` for the launcher/tools-sheet component; if it has no search input yet, add one at its top) so submitting a query navigates to `/search?q=<query>`.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the wiring and re-run.
+- [ ]
+
+### Task 8.13 — HUMAN CHECK: search flows
+- PRECONDITION: `curl -sf http://localhost:8000/v1/health > /dev/null` — else start both dev servers (header conventions); if still failing, STOP (playbook §5).
+- DO: HUMAN CHECK — human performs: (1) from the launcher search "pyaz ka bhav" → mandi/lots group renders first; search "PM-Kisan" → schemes first. (2) Run `POST /v1/jobs/search_reindex` → completes. (3) Edit a scheme doc's text → re-run reindex → the new text is findable semantically (a related phrasing, not the exact words, returns the scheme). (4) Repeat a query with the AI flag off → keyword-only results, nothing breaks.
+- RUN: (manual — no command)
+- EXPECT: human confirms all four.
+- IF FAIL: record the diverging step and STOP (playbook §5).
+- [ ]
+
+### Task 8.14 — WS-08 checkpoint: verify + commit
+- DO: Run the full WS-08 Verification block, then commit.
+- RUN: `cd backend && .venv/bin/python -m pytest -q` then `cd website && pnpm exec tsc --noEmit && pnpm build` then `git add -A && git commit -m "phase-06 WS-08: search embeddings upgrade (M23)"`
+- EXPECT: pytest green; build clean; commit visible in `git log -1 --oneline`.
+- IF FAIL: fix the failure; if only git commit fails, note it and continue (playbook §6).
+- [ ]
+
+## WS-09 — Analytics taxonomy  (see instructions.md §WS-09)
+
+### Task 9.1 — Add batch event ingest endpoint
+- DO: In `backend/app/routers/analytics.py` (extend, do NOT fork) add `POST /events` (full path `/v1/analytics/events`): accepts `{events: [...]}` (max 50) where each event is `{eventId, persona, name, props (flat map, string/number/bool values only), sessionId, clientTs}`; the server adds `userId` (from auth) and `serverTs`; rejects any `name` not in the canonical list `["screen_view", "task_shown", "task_clicked", "task_completed", "notification_sent", "notification_opened", "deep_link_completed", "transaction_completed", "plan_upgraded", "support_resolved", "support_escalated"]` (422 `ANALYTICS_UNKNOWN_EVENT`); dedupes on `eventId` (doc id = `eventId` in collection `analytics_events` — a second write with the same id is a no-op reported as duplicate); requires the `Idempotency-Key` header per the repo write pattern. Response `{applied, duplicates}`.
+- RUN: `cd backend && .venv/bin/python -m py_compile app/routers/analytics.py && .venv/bin/python -m pytest tests/test_analytics.py -q`
+- EXPECT: exit 0, existing analytics tests green.
+- IF FAIL: fix the endpoint and re-run.
+- [ ]
+
+### Task 9.2 — Event ingest dedupe tests
+- DO: Create `backend/tests/test_analytics_events.py` (new): (1) POST a batch of 3 valid events → `applied == 3`, docs exist in `analytics_events` with `serverTs` set; (2) re-POST the same batch → `duplicates == 3`, `applied == 0`, still exactly 3 docs; (3) an event with `name: "hacked_event"` → 422; (4) no PII guard: `props` values that look like phone numbers (regex `[6-9]\d{9}`) → that event rejected 422.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_analytics_events.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the endpoint (never weaken the assertions) and re-run.
+- [ ]
+
+### Task 9.3 — North-star aggregation endpoint
+- DO: In `backend/app/routers/analytics.py` add `GET /north-star` (admin-gated) computing over `analytics_events` (+ settlement ledger for money truth — read `backend/app/services/settlements.py` for the ledger source): (1) `weeklyTransactingFarmers` — distinct farmer `userId`s with a `transaction_completed` event in the last 7 days; (2) `gmvPerMarketplace` — sum of `props.gmv_paisa` from `transaction_completed` grouped by `props.marketplace` (integer paisa out); (3) `takeRateRevenuePaisa` — sum of `props.take_rate_paisa` (integer paisa); (4) `paidPlanConversion` — `plan_upgraded` count / distinct users with any event; (5) `tasksPerUserPerWeek` — `task_completed` count last 7 days / distinct users with `task_shown`; (6) `deepLinkCompletionRate` — `deep_link_completed` / `notification_sent` count. Extend `backend/tests/test_analytics_events.py`: seed events computing to known values for all six metrics and assert each number exactly.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_analytics_events.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the aggregation until the seeded numbers match exactly.
+- [ ]
+
+### Task 9.4 — Create website analytics beacon
+- DO: Create `website/src/lib/analytics.ts` (new): `track(name, props?)` building an event `{eventId: crypto.randomUUID(), persona: <active persona from the onboarding store>, name, props, sessionId: <one per tab, generated at module load>, clientTs: new Date().toISOString()}` and queueing it in memory; flush every 15s and on `pagehide`/`visibilitychange` (hidden) via `POST /v1/analytics/events` using the client from `website/src/lib/api/client.ts` with an `Idempotency-Key` header (one per flush batch, `crypto.randomUUID()`). Call `track` from `website/src/main.tsx` once to initialize the flush timers.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the beacon and re-run.
+- [ ]
+
+### Task 9.5 — Track screen_view on route change
+- DO: In `website/src/App.tsx` add a small component inside the router that calls `track('screen_view', {path: location.pathname})` on every location change (`useLocation` + `useEffect`).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the hook placement and re-run.
+- [ ]
+
+### Task 9.6 — Track dashboard task funnel
+- PRECONDITION: `test -f backend/app/routers/tasks.py` — phase-01 Action Center backend; if this fails, STOP the phase (playbook §5).
+- DO: In the phase-01 Action Center surface on the dashboard (read `website/src/views/dashboard/DashboardHome.tsx` and the task-card component it renders): fire `track('task_shown', {taskId})` when a task card renders, `track('task_clicked', {taskId})` on tap, `track('task_completed', {taskId})` when the task completes (hook the same completion signal the Action Center already uses — do not invent a new one).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the wiring and re-run.
+- [ ]
+
+### Task 9.7 — Track notification open + deep-link completion
+- DO: In `website/src/views/trade/NotificationsPage.tsx`: fire `track('notification_opened', {notificationId})` when a notification is tapped, and `track('deep_link_completed', {notificationId, deepLink})` when the deep-linked target action completes (hook the completion at the deep-link landing: if the landing is the dashboard task, fire it from the same completion signal as task 9.6, including the originating `notificationId` when present in the route state).
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the wiring and re-run.
+- [ ]
+
+### Task 9.8 — Server-side money + plan events
+- DO: Server-side only for money (never trust the client for GMV): (a) in the order/settlement completion path (`backend/app/services/settlements.py` and/or the order completion endpoint — read both, emit at the point money actually settles), write an `analytics_events` doc `transaction_completed` with `props.gmv_paisa` and `props.take_rate_paisa` as INTEGER paisa (no floats for money), `eventId` derived deterministically from the transaction id (`txn_<id>`) so retries dedupe; (b) in the plan-upgrade path (find it — grep for subscription/plan upgrade in `backend/app/routers/`), emit `plan_upgraded` with `props.plan`. Extend `backend/tests/test_analytics_events.py`: completing a seeded settlement/order writes exactly one `transaction_completed` event with the expected paisa integers.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_analytics_events.py tests/test_settlements.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the emit point and re-run.
+- [ ]
+
+### Task 9.9 — Support outcome events
+- DO: In `backend/app/routers/support.py` `POST /ask`: after writing the `support_conversations` doc, also write an `analytics_events` doc — `support_resolved` (with `props.sources_count`) when an answer was returned, `support_escalated` (with `props.category`) when a ticket was created. `eventId` = `support_<conversation doc id>` for dedupe. Extend `backend/tests/test_support_agent.py`: one resolved and one escalated ask each produce exactly one matching analytics event.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_support_agent.py tests/test_analytics_events.py -q`
+- EXPECT: exit 0.
+- IF FAIL: fix the emit and re-run.
+- [ ]
+
+### Task 9.10 — Create MetricsPage admin view
+- DO: Create `website/src/views/admin/MetricsPage.tsx` (new): fetch `GET /v1/analytics/north-star` (add wrapper to `website/src/lib/api/admin.ts`) and render all six metrics as labeled cards: weekly transacting farmers, GMV per marketplace (render paisa ÷ 100 as ₹ at DISPLAY time only — values stay integer paisa in the API), take-rate revenue, paid-plan conversion, tasks/user/week, deep-link completion rate. Labels via `t()` — add keys (`metrics.title`, `metrics.wtf`, `metrics.gmv`, `metrics.takeRate`, `metrics.paidConversion`, `metrics.tasksPerUser`, `metrics.deepLinkRate`) to `en.admin.ts` + `hi.admin.ts`. Add the route in `website/src/App.tsx` beside the other admin routes.
+- RUN: `cd website && pnpm exec tsc --noEmit`
+- EXPECT: exit 0.
+- IF FAIL: fix the type errors and re-run.
+- [ ]
+
+### Task 9.11 — HUMAN CHECK: metrics move on real flows
+- PRECONDITION: `curl -sf http://localhost:8000/v1/health > /dev/null` — else start both dev servers (header conventions); if still failing, STOP (playbook §5).
+- DO: HUMAN CHECK — human performs: (1) complete a dashboard task reached from a push deep link → MetricsPage deep-link completion rate and tasks/user/week move; (2) upgrade a plan in staging → paid-plan conversion moves; (3) confirm all six metrics render numbers from real `analytics_events` (not zeros-with-errors — open the network tab and confirm the endpoint returned data).
+- RUN: (manual — no command)
+- EXPECT: human confirms all three.
+- IF FAIL: record the diverging step and STOP (playbook §5).
+- [ ]
+
+### Task 9.12 — WS-09 checkpoint: verify + commit
+- DO: Run the full WS-09 Verification block, then commit.
+- RUN: `cd backend && .venv/bin/python -m pytest -q` then `cd website && pnpm exec tsc --noEmit && pnpm build` then `git add -A && git commit -m "phase-06 WS-09: analytics taxonomy"`
+- EXPECT: pytest green; build clean; commit visible in `git log -1 --oneline`.
+- IF FAIL: fix the failure; if only git commit fails, note it and continue (playbook §6).
+- [ ]
+
+## Phase-final gate
+
+Each exit-gate item from `phase-06/readme.md` as its own verifiable task, then the global verification gate (`execution-plan/README.md` §4 + instructions.md "Phase-final verification").
+
+### Task G.1 — Exit gate: chat guardrail quality
+- DO: Prove the WS-01 exit-gate items: red-team evasion set ≥90% caught in the golden test, benign false positives <5%, regex-only mode works with the AI flag off, send-latency regression <300ms.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_chat_moderation.py -q -k "golden or flag_off or latency"`
+- EXPECT: exit 0 — the golden, flag-off, and latency tests (tasks 1.14) all pass.
+- IF FAIL: re-open the failing WS-01 task and fix it; never lower the thresholds.
+- [ ]
+
+### Task G.2 — Exit gate: notifications integrity
+- DO: Prove the WS-02 exit-gate items: digest batches 3→1, hi copy renders, zero notifications lost with `AI_PROVIDER=shim` / AI disabled, quiet hours enforced.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_notifications_dispatch.py -q`
+- EXPECT: exit 0 — quiet-hours table, digest batching, pref filtering, and AI-disabled delivery tests all pass.
+- IF FAIL: re-open the failing WS-02 task and fix it.
+- [ ]
+
+### Task G.3 — Exit gate: fraud detection with provenance
+- DO: Prove the WS-03 exit-gate items: seeded fraud ring caught (`risk > 0.8`, soft_hold + queue), legitimate settlements unaffected, every hold carries AI reason + `decision_id`.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_trust_fraud.py -q`
+- EXPECT: exit 0.
+- IF FAIL: re-open the failing WS-03 task and fix it.
+- [ ]
+
+### Task G.4 — Exit gate: consent, export, deletion
+- DO: Prove the WS-04 exit-gate items: consent toggles persist, DPDP export downloads a complete archive, account deletion purges end-to-end.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_consents.py tests/test_account.py tests/test_data_export.py -q`
+- EXPECT: exit 0.
+- IF FAIL: re-open the failing WS-04 task and fix it.
+- [ ]
+
+### Task G.5 — Exit gate: support agent invariants
+- DO: Prove the WS-05 exit-gate items: app-help answers cite FAQ source doc ids; money/account questions escalate 100%; full flow works on shim.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_support_agent.py -q`
+- EXPECT: exit 0 — intent table, money-escalation invariant, citation-required, shim golden all pass.
+- IF FAIL: re-open the failing WS-05 task and fix it.
+- [ ]
+
+### Task G.6 — Exit gate: PWA artifacts + bundle size
+- DO: Prove the WS-06 exit-gate scriptable items: build emits manifest + service worker; first-load entry chunk <400 KB gzip. (Install prompt, offline sync, and Lighthouse were human-verified in task 6.15 — re-confirm in G.13.)
+- RUN: `cd website && pnpm build && ls dist/manifest.webmanifest dist/sw.js && node -e "const fs=require('fs'),zlib=require('zlib'),path=require('path');const dir='dist/assets';const entry=fs.readdirSync(dir).filter(f=>/^index.*\.js$/.test(f));let gz=0;for(const f of entry){gz+=zlib.gzipSync(fs.readFileSync(path.join(dir,f))).length}console.log('entry gzip bytes:',gz);process.exit(gz<400*1024?0:1)"`
+- EXPECT: exit 0 — artifacts listed and entry gzip under 400 KB.
+- IF FAIL: return to tasks 6.13–6.14 and shrink the eager bundle; never delete the size check.
+- [ ]
+
+### Task G.7 — Exit gate: ta parity + glossary + CI gate
+- DO: Prove the WS-07 exit-gate items: `ta` at 436/436 approved keys, glossary terms untranslated, parity gate green (and proven to fail on regression in task 7.13).
+- RUN: `cd website && pnpm locales:check && ! grep -rn "मंडी भाव translation\|khasra.*translated" src/lib/i18n/drafts/ 2>/dev/null; grep -c "mandi\|khasra\|7/12\|FPO\|PMFBY\|AGROVERCITY" src/lib/i18n/drafts/ta.draft.ts 2>/dev/null || true`
+- EXPECT: `pnpm locales:check` exits 0 with `ta` showing 0 missing keys; glossary terms appear verbatim (untranslated) in the draft file where present (final grep count > 0 if drafts exist, or drafts already applied and removed — either is acceptable; state which in your report).
+- IF FAIL: return to WS-07 tasks 7.10–7.13 and complete the ta pipeline properly.
+- [ ]
+
+### Task G.8 — Exit gate: search behavior
+- DO: Prove the WS-08 exit-gate scriptable items: intent routing ("pyaz ka bhav" → mandi/lots first on shim mapping), reindex idempotency, shim keyword-only mode.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_search.py -q`
+- EXPECT: exit 0.
+- IF FAIL: re-open the failing WS-08 task and fix it.
+- [ ]
+
+### Task G.9 — Exit gate: analytics north-star
+- DO: Prove the WS-09 exit-gate items: all six north-star metrics compute from real `analytics_events`; duplicate event ids dedupe; deep-link completion chain (sent → opened → deep_link_completed) is computable.
+- RUN: `cd backend && .venv/bin/python -m pytest tests/test_analytics_events.py -q`
+- EXPECT: exit 0.
+- IF FAIL: re-open the failing WS-09 task and fix it.
+- [ ]
+
+### Task G.10 — Global gate: backend suite green
+- DO: Run the full backend suite (global verification gate, execution-plan/README.md §4).
+- RUN: `cd backend && .venv/bin/python -m pytest -q`
+- EXPECT: exit 0 — fully green including every new test file from this phase.
+- IF FAIL: if the failure is in code this phase touched, fix it; if it fails for reasons unrelated to your workstreams, STOP (playbook §5) with the full output.
+- [ ]
+
+### Task G.11 — Global gate: website typecheck + build
+- DO: Run the website half of the global gate.
+- RUN: `cd website && pnpm exec tsc --noEmit && pnpm build`
+- EXPECT: exit 0 — clean (build also runs the locales parity gate per task 7.2).
+- IF FAIL: fix the type/build error and re-run.
+- [ ]
+
+### Task G.12 — Global gate: full suite on AI shim
+- DO: Prove the whole app works with AI disabled/shimmed.
+- RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
+- EXPECT: exit 0 — full suite green with `AI_PROVIDER=shim`.
+- IF FAIL: find the code path that hard-depends on a real provider, give it a deterministic fallback, and re-run.
+- [ ]
+
+### Task G.13 — HUMAN CHECK: manual sweep, one flow per workstream
+- PRECONDITION: `curl -sf http://localhost:8000/v1/health > /dev/null` — else start both dev servers (header conventions); if still failing, STOP (playbook §5).
+- DO: HUMAN CHECK — human re-confirms the nine phase flows (from the dashboard task deep-link where applicable): (1) WS-01: booking chat → regex violation blocked + strike notice in hi → evasive message caught with AI on → Chats hub unread badge in a second persona; (2) WS-02: push → tap → dashboard task → action completed; digest batches 3→1; quiet-hours hold at 22:00; AI off → still delivered; (3) WS-03: fraud scan on seeded ring → hold with reason + decision_id → finance_admin releases with an audit_logs reason; legit settlement batch settles; (4) WS-04: consent toggle persists → export downloads → delete account from the website → purged; (5) WS-05: cited FAQ answer; money question → human ticket → thread reply visible; (6) WS-06: install PWA; offline draft → reconnect → synced once; Lighthouse PWA pass; (7) WS-07: ta approved-complete; inject a missing key → CI gate fails → revert → green; (8) WS-08: "pyaz ka bhav" → mandi/lots first; shim → keyword-only; (9) WS-09: all six north-star metrics render; deep-link completion rate reflects the WS-02 run.
+- RUN: (manual — no command)
+- EXPECT: human confirms all nine flows.
+- IF FAIL: record the diverging flow(s) and STOP (playbook §5).
+- [ ]
+
+### Task G.14 — Global gate: no "coming soon" reachable
+- DO: Verify no surface touched by this phase can render a "coming soon" placeholder.
+- RUN: `grep -rni "coming soon" website/src/views/chat website/src/views/settings website/src/views/support website/src/views/search website/src/views/admin website/src/components/ReportBlockMenu.tsx website/src/components/RatePrompt.tsx website/src/lib/offline 2>/dev/null; test $? -eq 1`
+- EXPECT: exit 0 — grep finds nothing in the phase-06 surfaces.
+- IF FAIL: replace the placeholder with the real view from the relevant workstream (or remove the dead nav entry pointing to it) and re-run.
+- [ ]
+
+### Task G.15 — Phase-final commit
+- DO: Commit the final phase state.
+- RUN: `git add -A && git commit -m "phase-06: cross-cutting platform services complete" && git log -1 --oneline`
+- EXPECT: exit 0; log line shows the phase-06 completion commit.
+- IF FAIL: if there is nothing new to commit, run `git log -1 --oneline` and confirm the WS-09 checkpoint commit is present, then mark done; if commit fails for identity reasons, note it and finish (playbook §6).
+- [ ]

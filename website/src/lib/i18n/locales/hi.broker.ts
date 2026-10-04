@@ -254,6 +254,9 @@ const hiBroker: Record<string, string> = {
   foTagFairWeighing: 'सही कांटा',
   foTagOnTimePickup: 'समय पर पिकअप',
   foTagFairPrice: 'उचित भाव',
+  offerSentAgo: '{time} पहले भेजा गया',
+  offerTtlChip: 'समय शेष: {time}',
+  offerTtlExpired: 'समय समाप्त',
 };
 
 registerLocale('hi', hiBroker);

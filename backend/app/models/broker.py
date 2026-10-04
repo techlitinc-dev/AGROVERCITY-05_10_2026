@@ -1,10 +1,17 @@
 from typing import Literal
 from pydantic import BaseModel, Field
 
-DealStatus = Literal["negotiating", "contract_issued", "accepted", "in_transit", "completed", "cancelled"]
+DealStatus = Literal["negotiating", "contract_issued", "accepted", "in_transit", "completed", "cancelled", "expired"]
 LeadType = Literal["farmer", "buyer", "trader"]
 LeadStatus = Literal["active", "contacted", "negotiating", "converted", "dropped"]
-EvidenceKind = Literal["photo", "weighbridge", "loading", "delivery", "damage"]
+EvidenceKind = Literal[
+    "photo", "weighbridge", "loading", "delivery", "damage",
+    # B4: typed deal-document vault
+    "weigh_slip", "quality_report", "payment_proof",
+]
+VAULT_KINDS = ("weigh_slip", "quality_report", "payment_proof")
+# B4: each typed vault kind is capped separately from the general evidence pool
+MAX_VAULT_PER_KIND = 5
 
 class DealCreate(BaseModel):
     buyerName: str
@@ -55,6 +62,14 @@ class LeadUpdate(BaseModel):
 class RespondRequest(BaseModel):
     action: Literal["accept", "decline"]
     reason: str = ""
+
+
+class BuyerRequirementCreate(BaseModel):
+    commodity: str
+    quantityQuintals: float = Field(gt=0)
+    targetRate: float = Field(gt=0)
+    location: str = ""
+    notes: str = ""
 
 class DealCancelRequest(BaseModel):
     reason: str = ""

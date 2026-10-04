@@ -87,3 +87,40 @@ async def create_razorpayx_payout(
             },
         )
     return resp.json()
+
+
+async def create_razorpay_split_payment(
+    amount_paise: int,
+    farmer_leg_paise: int,
+    commission_leg_paise: int,
+    reference_id: str,
+) -> dict:
+    """B7: buyer payment splits at capture into the farmer leg + the platform
+    commission leg (route/split). Integer paisa; the two legs must sum to the
+    gross. Dev shim when Razorpay keys are unset."""
+    if farmer_leg_paise + commission_leg_paise != amount_paise:
+        raise ValueError("split legs must sum to the gross amount")
+    if not settings.razorpay_key_id:
+        return {
+            "id": f"pay_split_dev_{reference_id}",
+            "status": "captured",
+            "dryRun": True,
+            "amountPaisa": amount_paise,
+            "farmerLegPaisa": farmer_leg_paise,
+            "commissionLegPaisa": commission_leg_paise,
+        }
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(
+            "https://api.razorpay.com/v1/payments/create/recurring",  # placeholder route
+            auth=(settings.razorpay_key_id, settings.razorpay_key_secret),
+            json={
+                "amount": amount_paise,
+                "currency": "INR",
+                "reference_id": reference_id,
+                "routes": [
+                    {"leg": "farmer", "amount": farmer_leg_paise},
+                    {"leg": "platform_commission", "amount": commission_leg_paise},
+                ],
+            },
+        )
+        return resp.json()
