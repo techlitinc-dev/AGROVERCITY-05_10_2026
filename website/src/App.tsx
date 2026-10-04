@@ -28,6 +28,7 @@ import { LoadDetailPage, LoadForm, TripPage, VehicleForm } from './views/transpo
 import { DealDetailPage, DealFormPage } from './views/broker';
 import { ContractDetailPage, ContractFormPage } from './views/directbuyer';
 import { FarmerContractDetailPage, FarmerDealDetailPage } from './views/farmer';
+// Deep-routes routed alongside registries (LANDLORD_PAGES, EQUIPMENT_PAGES)
 import {
   LandAnalyticsPageRoute,
   LeasesPageRoute,

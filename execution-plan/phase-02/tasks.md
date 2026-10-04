@@ -1054,7 +1054,7 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`) then `pnpm build` (cwd `website/`) then `git add -A && git commit -m "phase-02 WS-06: AI spoke decisions M4 M16 M19 M24 M25"` (repo root)
 - EXPECT: pytest fully green (incl. golden-fixture shim tests, fallback tests, flag-off tests per brief); build clean; commit created.
 - IF FAIL: fix the failing check — never weaken a test; if only the git commit fails, note it and continue (playbook §6) — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ## Phase-final gate
 
@@ -1063,35 +1063,35 @@
 - RUN: `.venv/bin/python -m pytest -q` (cwd `backend/`)
 - EXPECT: fully green — 0 failed (rule 9).
 - IF FAIL: fix the failing test's code — never delete the assertion — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task F.2 — Run website typecheck and build
 - DO: Run the global gate website command.
 - RUN: `pnpm exec tsc --noEmit && pnpm build` (cwd `website/`)
 - EXPECT: both clean, exit 0.
 - IF FAIL: fix the type/build errors — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task F.3 — Run full suite with AI shim
 - DO: Re-run the entire backend suite with the shim provider (phase-final verification item 3).
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest -q` (cwd `backend/`)
 - EXPECT: fully green.
 - IF FAIL: fix the shim-mode failure — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task F.4 — Verify en/hi locale parity
 - DO: Verify every new key exists in both `en.*` and `hi.*` for each locale file touched this phase (phase-final verification item 4).
 - RUN: `for f in landlord transport trade broker equipment; do echo "== $f"; diff <(grep -oE "^  [a-zA-Z0-9_]+:" website/src/lib/i18n/locales/en.$f.ts | sort) <(grep -oE "^  [a-zA-Z0-9_]+:" website/src/lib/i18n/locales/hi.$f.ts | sort); done` (repo root)
 - EXPECT: no diff output under any `==` header.
 - IF FAIL: add the missing key(s) to the locale file that lacks them — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task F.5 — Verify monolith refactor wiring
 - DO: Verify both monolith refactors are routed via registries + `App.tsx` with zero `alert()`/`confirm()` (readme exit gate item 6).
 - RUN: `grep -n "LANDLORD_PAGES\|EQUIPMENT_PAGES" website/src/views/dashboard/ToolPage.tsx website/src/App.tsx website/src/views/landlord/index.tsx website/src/views/equipment/index.tsx && grep -rn "alert(\|confirm(\|prompt(" website/src/views/landlord/ website/src/views/equipment/ | wc -l`
 - EXPECT: registry references found in all four files; dialog grep count is `0`.
 - IF FAIL: complete the wiring / remove the dialogs — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task F.6 — HUMAN CHECK: Landlord exit-gate flow
 - PRECONDITION: `curl -s http://localhost:8000/v1/health` — if it does not return `"status":"ok"`, redo task 1.27 first.
@@ -1153,4 +1153,5 @@
 - RUN: `git add -A && git commit -m "phase-02: final gate green"` (repo root)
 - EXPECT: commit created (or "nothing to commit" if the tree is clean — that is also success).
 - IF FAIL: note the git failure and continue (playbook §6).
-- [ ]
+- [x]
+
