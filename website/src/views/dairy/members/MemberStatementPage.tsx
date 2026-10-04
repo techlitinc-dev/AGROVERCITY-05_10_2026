@@ -4,7 +4,14 @@ import ToolShell from '../../../components/trade/ToolShell';
 import { useEnsureProfile } from '../../../components/trade/useEnsureProfile';
 import { toast } from '../../../components/toast';
 import { isApiError } from '../../../lib/api/client';
-import { fmtINR, fmtL, getMemberStatement, type MemberStatement } from '../../../lib/api/dairy';
+import {
+  downloadMemberStatementPdf,
+  fmtINR,
+  fmtL,
+  getMemberStatement,
+  triggerBlobDownload,
+  type MemberStatement,
+} from '../../../lib/api/dairy';
 import { csvDate, downloadCsv } from '../../../lib/csv';
 import { useT } from '../../../lib/i18n';
 import EmptyState from '../components/EmptyState';
@@ -24,6 +31,7 @@ export default function MemberStatementPage() {
   const [applied, setApplied] = useState<{ from: string; to: string }>({ from: '', to: '' });
   const [failed, setFailed] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const load = useCallback(() => {
     if (!memberId) return;
@@ -73,6 +81,23 @@ export default function MemberStatementPage() {
     );
     toast(t('dairyCsvDone'));
   }, [statement, member, applied, t]);
+
+  const downloadPdf = useCallback(async () => {
+    if (!memberId) return;
+    setDownloadingPdf(true);
+    try {
+      const blob = await downloadMemberStatementPdf(
+        memberId,
+        applied.from || undefined,
+        applied.to || undefined
+      );
+      triggerBlobDownload(blob, `statement-${memberId}.pdf`);
+    } catch {
+      toast(t('dairyActionFailed'), { error: true });
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [memberId, applied, t]);
 
   if (notFound) {
     return (
@@ -138,6 +163,14 @@ export default function MemberStatementPage() {
                 </button>
                 <button type="button" className="av-btn av-btn-ghost" onClick={exportCsv}>
                   ⬇ {t('dairyCsvExportCsv')}
+                </button>
+                <button
+                  type="button"
+                  className="av-btn av-btn-ghost"
+                  onClick={() => void downloadPdf()}
+                  disabled={downloadingPdf}
+                >
+                  📄 {downloadingPdf ? t('dairyPdfDownloading') : t('dairyPdfDownload')}
                 </button>
               </div>
             </div>

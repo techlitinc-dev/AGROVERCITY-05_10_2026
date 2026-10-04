@@ -32,7 +32,7 @@ from app.models.livestock import (
     VetRecord,
     VetRecordIn,
 )
-from app.routers.livestock_dairy import dairy_agent_record
+from app.routers.livestock_dairy import dairy_agent_record, send_unlinked_slip_if_eligible
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
 from app.services.users import get_user
@@ -450,6 +450,7 @@ async def record_milk_collection(body: MilkCollectionIn, uid: str = Depends(_any
     if rate_chart_id:
         doc["rateChartId"] = rate_chart_id
     await set_doc("milk_collections", col_id, doc)
+    await send_unlinked_slip_if_eligible(uid, body.memberId, body.farmerCode, doc)
     return doc
 
 

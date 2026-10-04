@@ -12,7 +12,9 @@ import {
 } from '../../../lib/api/dairy';
 import { useDairyStore } from '../../../stores/dairy';
 import { useT } from '../../../lib/i18n';
+import { extractKycRequiredLink } from '../../../lib/api/client';
 import EmptyState from '../components/EmptyState';
+import KycRequiredNotice from '../components/KycRequiredNotice';
 import { fmtDate } from '../components/SlipCard';
 import StatusChip from '../components/StatusChip';
 import '../../../theme/dairy-ops.css';
@@ -33,6 +35,7 @@ export default function PaymentsPage() {
   const [batches, setBatches] = useState<PaymentBatch[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [kycDeepLink, setKycDeepLink] = useState<string | null>(null);
 
   const monthStart = `${todayStr().slice(0, 7)}-01`;
   const from = batchPeriod.from || monthStart;
@@ -55,12 +58,18 @@ export default function PaymentsPage() {
     }
     setGenerating(true);
     try {
+      setKycDeepLink(null);
       const batch = await generateBatch(from, to);
       setBatchPeriod({ from, to });
       toast(t('dairyOpsPayGenerated'));
       navigate(`/dairy/console/payments/${batch.id}`);
-    } catch {
-      toast(t('actionFailed'), { error: true });
+    } catch (err) {
+      const link = extractKycRequiredLink(err);
+      if (link) {
+        setKycDeepLink(link);
+      } else {
+        toast(t('actionFailed'), { error: true });
+      }
     } finally {
       setGenerating(false);
     }
@@ -69,6 +78,9 @@ export default function PaymentsPage() {
   return (
     <ToolShell toolId="dairyConsole" backTo="/dairy/console">
       <div className="dairy-wrap">
+        {kycDeepLink ? (
+          <KycRequiredNotice deepLink={kycDeepLink} onDismiss={() => setKycDeepLink(null)} />
+        ) : null}
         <div className="dairy-section" style={{ marginTop: 4 }}>
           <span className="dairy-section-title">🗓️ {t('dairyOpsPayGenerate')}</span>
           <div className="dairy-ops-dates">

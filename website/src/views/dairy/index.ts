@@ -17,6 +17,7 @@ import OrderDetailPage from './sales/OrderDetailPage';
 import StockPage from './stock/StockPage';
 import ReportsPage from './reports/ReportsPage';
 import AnalyticsPage from './analytics/AnalyticsPage';
+import RoutePlannerPage from './routes/RoutePlannerPage';
 import '../../theme/dairy.css';
 
 /**
@@ -27,6 +28,7 @@ import '../../theme/dairy.css';
 export const DAIRY_PAGES: Record<string, ComponentType> = {
   livestockDairy: DairyHubPage,
   dairyConsole: DairyConsoleHome,
+  dairyRoutePlanner: RoutePlannerPage,
 };
 
 export {
@@ -47,5 +49,6 @@ export {
   OrderDetailPage,
   StockPage,
   ReportsPage,
+  RoutePlannerPage,
 };
 export { AnalyticsPage };

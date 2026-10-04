@@ -472,7 +472,7 @@ export default function DashboardHome() {
             <SectionTitle title={t(section.titleKey)} />
             <div className={index === 0 ? 'dash-grid-2' : 'dash-grid-3'}>
               {section.tiles.map((tile) => (
-                <ToolTile key={tile} id={tile} />
+                <ToolTile key={tile} id={tile} deepLink={config.deepLinks?.[tile]} />
               ))}
             </div>
           </section>

@@ -8,6 +8,8 @@ import StatusPill from '../../components/trade/StatusPill';
 import Timeline from '../../components/trade/Timeline';
 import ToolShell from '../../components/trade/ToolShell';
 import { toast } from '../../components/toast';
+import PhotoUploader from '../../components/trade/PhotoUploader';
+import { recordCollectionCheck } from '../../lib/api/dairyMarketplace';
 import { isApiError } from '../../lib/api/client';
 import {
   amountDue,
@@ -133,6 +135,13 @@ export default function PurchaseDetailPage() {
   const [otpBusy, setOtpBusy] = useState(false);
   // buyer OTP verify sheet
   const [otpCode, setOtpCode] = useState('');
+  // dairy collection check
+  const [dairyFat, setDairyFat] = useState('6.5');
+  const [dairySnf, setDairySnf] = useState('9.0');
+  const [dairyGrade, setDairyGrade] = useState<'accepted' | 'regraded' | 'rejected'>('accepted');
+  const [dairyQty, setDairyQty] = useState('');
+  const [dairyPhotos, setDairyPhotos] = useState<string[]>([]);
+  const [dairyCheckRecorded, setDairyCheckRecorded] = useState(false);
 
   const load = useCallback(() => {
     if (!purchaseId) return;
@@ -290,6 +299,31 @@ export default function PurchaseDetailPage() {
         setBusy(false);
       }
     })();
+  };
+
+  const handleRecordCollectionCheck = async () => {
+    if (!purchase) return;
+    setBusy(true);
+    try {
+      await recordCollectionCheck({
+        farmerId: purchase.farmerId,
+        farmerName: purchase.farmerName,
+        milkType: purchase.variety || 'Buffalo',
+        quantityLiters: Number(dairyQty || purchase.quantity),
+        fatPercent: Number(dairyFat),
+        snfPercent: Number(dairySnf),
+        ratePerLiter: purchase.agreedPricePerUnit / 100,
+        qualityStatus: dairyGrade,
+        evidencePhotoUrl: dairyPhotos[0] || '',
+        farmerOtpVerified: false,
+      });
+      setDairyCheckRecorded(true);
+      toast(t('dairyCollectionCheckRecorded'));
+    } catch (e) {
+      failToast(e);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openPickup = () => {
@@ -456,7 +490,17 @@ export default function PurchaseDetailPage() {
               <span className="trade-card-title">
                 {purchase.crop} · {purchase.quantity} {unitLabel(t, purchase.unit)}
               </span>
-              <StatusPill status={purchase.status} />
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {purchase.source?.type === 'dairy' ? (
+                  <span
+                    className="trade-pill"
+                    style={{ color: '#0369a1', borderColor: '#0369a1', background: '#e0f2fe' }}
+                  >
+                    {t('purchase.sourceDairy')}
+                  </span>
+                ) : null}
+                <StatusPill status={purchase.status} />
+              </div>
             </div>
             <div className="trade-card-row">
               <span className="trade-card-sub">{fmtDate(purchase.createdAt)}</span>
@@ -603,6 +647,101 @@ export default function PurchaseDetailPage() {
                 ) : null}
               </div>
             </>
+          ) : null}
+
+          {purchase.source?.type === 'dairy' ? (
+            <div className="trade-card" style={{ cursor: 'default' }}>
+              <div className="trade-card-row">
+                <span className="trade-card-title">{t('dairyCollectionCheckTitle')}</span>
+                {dairyCheckRecorded ? (
+                  <span className="trade-pill" style={{ color: 'var(--av-success)', borderColor: 'var(--av-success)' }}>
+                    ✓ {t('dairyCollectionCheckRecorded')}
+                  </span>
+                ) : null}
+              </div>
+              <p className="trade-hint">{t('dairyCollectionCheckSub')}</p>
+              {dairyCheckRecorded ? (
+                <div className="trade-detail-grid" style={{ marginTop: '0.5rem' }}>
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('dairyFat')}</div>
+                    <div className="trade-detail-value">{dairyFat}%</div>
+                  </div>
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('dairySnf')}</div>
+                    <div className="trade-detail-value">{dairySnf}%</div>
+                  </div>
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('dairyQualityGrade')}</div>
+                    <div className="trade-detail-value">{dairyGrade}</div>
+                  </div>
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('commonQuantity')}</div>
+                    <div className="trade-detail-value">{dairyQty || purchase.quantity} L</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <label className="trade-label">{t('dairyFat')}</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        className="trade-input"
+                        value={dairyFat}
+                        onChange={(e) => setDairyFat(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="trade-label">{t('dairySnf')}</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        className="trade-input"
+                        value={dairySnf}
+                        onChange={(e) => setDairySnf(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <label className="trade-label">{t('dairyQualityGrade')}</label>
+                      <select
+                        className="trade-input"
+                        value={dairyGrade}
+                        onChange={(e) => setDairyGrade(e.target.value as 'accepted' | 'regraded' | 'rejected')}
+                      >
+                        <option value="accepted">{t('dairyGradeAccepted')}</option>
+                        <option value="regraded">{t('dairyGradeRegraded')}</option>
+                        <option value="rejected">{t('dairyGradeRejected')}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="trade-label">{t('commonQuantity')} (L)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        className="trade-input"
+                        value={dairyQty || String(purchase.quantity)}
+                        onChange={(e) => setDairyQty(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="trade-label">{t('dairyEvidencePhoto')}</label>
+                    <PhotoUploader photos={dairyPhotos} onChange={setDairyPhotos} min={1} max={4} />
+                  </div>
+                  <button
+                    type="button"
+                    className="av-btn av-btn-primary"
+                    disabled={busy}
+                    onClick={handleRecordCollectionCheck}
+                  >
+                    {busy ? <span className="av-spinner" aria-hidden /> : t('dairyRecordCheckCta')}
+                  </button>
+                </div>
+              )}
+            </div>
           ) : null}
 
           {isFarmer && purchase.escrow?.status === 'held' ? (

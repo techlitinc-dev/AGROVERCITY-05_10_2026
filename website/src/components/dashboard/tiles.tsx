@@ -3,13 +3,13 @@ import { useT } from '../../lib/i18n';
 import { TOOL_BY_ID } from '../../lib/dashboard';
 import type { Persona } from '../../lib/personas';
 
-/** Tool tile linking to the placeholder page for a tool/route id. */
-export function ToolTile({ id }: { id: string }) {
+export function ToolTile({ id, deepLink }: { id: string; deepLink?: string }) {
   const t = useT();
   const tool = TOOL_BY_ID[id];
   if (!tool) return null;
+  const target = deepLink || tool.deepLink || `/dashboard/p/${id}`;
   return (
-    <Link className="dash-tile" to={`/dashboard/p/${id}`}>
+    <Link className="dash-tile" to={target}>
       <span
         className="dash-tile-icon"
         style={{ background: `${tool.color}22`, color: tool.color }}

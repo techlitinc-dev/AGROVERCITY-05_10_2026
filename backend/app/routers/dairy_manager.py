@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.routers.livestock_dairy import _manager_or_agent
+from app.routers.livestock_dairy import _manager_or_agent, assert_fssai_kyc
 from app.routers.purchases import _new_purchase
 from app.routers.users import require_role
 from app.services import idempotency
@@ -170,6 +170,7 @@ async def list_dairy_demands(user: dict = Depends(_manager)):
 
 @router.post("/demands", status_code=201)
 async def create_dairy_demand(body: DairyDemandIn, user: dict = Depends(_manager)):
+    await assert_fssai_kyc(user["id"])
     did = f"dm_{uuid.uuid4().hex[:8]}"
     doc = {
         "id": did,
@@ -418,6 +419,7 @@ async def get_dairy_rate_chart():
 
 @router.put("/rate-chart")
 async def update_dairy_rate_chart(body: RateChartUpdateIn, user: dict = Depends(_manager)):
+    await assert_fssai_kyc(user["id"])
     chart = await get_dairy_rate_chart()
     chart["baseCowRate"] = body.baseCowRate
     chart["baseBuffaloRate"] = body.baseBuffaloRate

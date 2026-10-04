@@ -41,56 +41,56 @@ Conventions used below:
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix the type errors shown, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.5 — Build farmer RFQ list page
 - DO: create `website/src/views/dairyMarket/FarmerRfqsPage.tsx` (new): lists open demands via `listOpenDemands()`; each row links to the bid-comparison screen (Task 1.6). All user-facing strings via `t()` — no hardcoded strings, no `alert()`/`confirm()`. Export it from `website/src/views/dairyMarket/index.tsx` following the existing export pattern there.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.6 — Build bid-comparison screen with accept action
 - DO: create `website/src/views/dairyMarket/BidComparePage.tsx` (new): for a given demand id, renders bids side-by-side with columns rate (₹ from integer paisa), quantity, pickup date; an "Accept" button per bid calls `acceptBid(bidId)` and on success navigates to the created purchase's `PurchaseDetailPage` route (reuse the existing route path used by `website/src/views/trade/PurchasesPage.tsx`). All strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.7 — Register farmer RFQ + bid-compare routes
 - DO: in `website/src/App.tsx` add routes for `FarmerRfqsPage` and `BidComparePage` following the exact pattern of the existing dairyMarket routes in that file; if dairyMarket tools are surfaced via `DAIRY_MARKET_PAGES` in `website/src/views/dashboard/ToolPage.tsx`, register the two pages there under new toolIds `dairyFarmerRfqs` and `dairyBidCompare`, and add those toolIds to `TOOL_LIST` + the farmer persona list in `website/src/lib/dashboard.ts` following the existing entry shape.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors (missing import/registry key), re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.8 — Add dairy context chip to PurchaseDetailPage
 - DO: in `website/src/views/trade/PurchaseDetailPage.tsx` add a small context chip rendered only when `purchase.source?.type === 'dairy'`, showing label from `t()` key `purchase.sourceDairy` (do not change any other rendering; do not touch the OTP handover flow).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.9 — Wire FAT/SNF collection-check at dairy handover
 - DO: in `website/src/views/trade/PurchaseDetailPage.tsx`, when `purchase.source?.type === 'dairy'`, render a collection-check form (FAT, SNF numeric inputs + grade + qty + photo evidence using the page's existing photo-upload sheet) that calls `POST /dairy-manager/collection-check` via a new typed wrapper `recordCollectionCheck()` added to `website/src/lib/api/dairyMarketplace.ts` (match the request body the router expects — read the handler first). Collections record FAT/SNF at handover, before OTP release; strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.10 — Add dairy i18n keys en+hi
 - DO: in `website/src/lib/i18n/locales/en.dairy.ts` and `website/src/lib/i18n/locales/hi.dairy.ts` add every `t()` key introduced in tasks 1.5–1.9 (same key in BOTH files), including `purchase.sourceDairy` and dairy terms: FAT→फैट, SNF→एसएनएफ, shift→सुबह/शाम. Keys must be identical sets in both files.
 - RUN: `cd website && pnpm exec tsc --noEmit && diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.dairy.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.dairy.ts | sort)`
 - EXPECT: tsc exit 0 and diff prints nothing (key parity).
 - IF FAIL: add the missing key(s) to the file diff flags, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.11 — Build route-planner view (text tour, no map)
 - DO: create `website/src/views/dairy/routes/RoutePlannerPage.tsx` (new): per route (from `GET /dairy-manager/routes` via a typed wrapper added to `website/src/lib/api/dairyMarketplace.ts`) show the member list, AM/PM (सुबह/शाम) ordering controls, and a region-sorted text tour list. Hard constraint (guardrail G5): NO map/GPS component — text tour only. Strings via `t()`; export from the dairy views index following the existing pattern; register route/toolId `dairyRoutePlanner` in `ToolPage.tsx` (DAIRY_PAGES) + `dashboard.ts` like task 1.7.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.12 — Add pickup-agent sub-accounts backend
 - DO: in `backend/app/routers/livestock_dairy.py` add pickup-agent sub-accounts extending the existing member/team pattern in that file: `dairy_agents` sub-docs `{uid, name, phone, routeIds: [], active: bool}` under the dairy, with endpoints `POST /livestock/dairy/agents` (create), `GET /livestock/dairy/agents` (list), `DELETE /livestock/dairy/agents/{uid}` (deactivate → `active: false`). Standard error envelope; `Idempotency-Key` on the create.
@@ -127,21 +127,21 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
 - EXPECT: exit 0 (seed fixtures in these tests already create KYC-approved managers, or update fixtures minimally to grant fssai approval — fixtures only, never weaken assertions).
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.17 — Test FSSAI gate blocks unapproved manager
 - DO: in `backend/tests/test_dairy_web_flows.py` add test: manager without approved fssai doc gets 403 `KYC_REQUIRED` on demand create, rate-chart write, and payment-batch create; after granting approval, all three succeed.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q -k kyc`
 - EXPECT: exit 0, the new test passes.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.18 — Surface KYC_REQUIRED deep link in dairy console
 - DO: in the dairy console demand form, rate-chart page (`website/src/views/dairy/ratechart/`), and payments page (`website/src/views/dairy/payments/PaymentsPage.tsx`): when an API call returns envelope code `KYC_REQUIRED`, render an inline notice with a link to the KYC upload page (the deepLink from the response; fallback route = the website's existing KYC upload route — find it via `grep -rn "kyc" website/src/App.tsx`), preselecting docType `fssai` if the page supports a query param. Strings via `t()` en+hi (add keys to `en.dairy.ts`/`hi.dairy.ts`).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.19 — Wire batch mark-paid to RazorpayX payout rail
 - PRECONDITION: `grep -qi "payout" backend/app/services/settlements.py` — if this fails, the phase-00 payout rail is missing: STOP the phase (playbook §5).
@@ -149,63 +149,63 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.20 — Test batch payouts, 409 retry, audit rows
 - DO: in `backend/tests/test_dairy_web_flows.py` add test: batch with ≥2 member entries → mark-paid executes ≥2 payouts through the (stubbed/fixtured) payout rail; immediate retry returns 409 `ALREADY_PAID`; one `audit_logs` row exists per payout.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q -k payout`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.21 — Add per-member statement PDF endpoint
 - DO: in `backend/app/routers/livestock_dairy.py` add `GET /livestock/dairy/members/{id}/statement` returning a PDF generated via `backend/app/services/reports.py` (follow that service's existing PDF function pattern): statement lists the member's slips, payment entries, deductions, and NET for the cycle, integer paisa rendered as ₹. Access: the dairy manager or the linked farmer (`dairy_members.farmerUid`) only — 403 otherwise.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.22 — Add statement download to MemberStatementPage
 - DO: in `website/src/views/dairy/members/MemberStatementPage.tsx` add a "Download PDF" button calling `GET /livestock/dairy/members/{id}/statement` via a typed wrapper in `website/src/lib/api/dairy.ts` (blob download, filename `statement-<memberId>.pdf`). String via `t()` en+hi.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.23 — Add statement download to farmer My Dairy
 - DO: in `website/src/views/dairy/MyDairyPage.tsx` add the same statement download entry point (farmer's own linked member id from the existing farmer dairy data the page already loads), using the wrapper from task 1.22. String via `t()` en+hi.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.24 — Add milk-money ledger summary card to MyDairyPage
 - DO: in `website/src/views/dairy/MyDairyPage.tsx` add a ledger summary card showing for the current cycle: liters, gross, deduction, NET, paid/pending — sourced from `GET /livestock/dairy/farmer/payments` + `GET /livestock/dairy/farmer/analytics` via typed wrappers in `website/src/lib/api/dairy.ts`. ₹ from integer paisa; every label via `t()` en+hi. Do not remove the existing slips/payments sections.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.25 — Deep-link ledger from farmer dashboard home
 - DO: in `website/src/lib/dashboard.ts` add/adjust the farmer persona home config (`PERSONA_HOME_CONFIG`) so the dairy entry deep-links to `MyDairyPage`'s ledger card (follow the existing deep-link field pattern in that file; the farmer-link rule: `dairy_members.farmerUid` is the linkage — no new linkage mechanism).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.26 — Add SMS/WhatsApp slip fallback for unlinked members
 - DO: in `backend/app/routers/livestock_dairy.py` in the `POST /livestock/procurement/collections` handler: after saving, if the member has no linked `farmerUid`, send an SMS/WhatsApp slip (slipNumber, liters, FAT/SNF, rate, amount) via the existing notification service (`backend/app/services/notify.py` / `notifications.py` — use the same send function other handlers in this file already use). Gate the send behind the Pro-tier entitlement feature `"auto_sms_slips"` (task 1.14 pattern). Add any new config keys as placeholders to `backend/.env.example` ONLY — never touch `.env`.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.27 — Test SMS slip gating
 - DO: in `backend/tests/test_dairy_web_flows.py` add tests: collection for unlinked member with Pro entitlement fires exactly one slip send (assert via the file's existing notify mock/fixture pattern); Free-tier dairy sends nothing; collection for linked member sends nothing.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q -k slip`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.28 — Enforce dairy tiers server-side
 - PRECONDITION: `grep -q "def require_entitlement" backend/app/services/billing.py` — if fails, STOP the phase (playbook §5).
@@ -213,42 +213,42 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.29 — Add marketplace commission lines to settlement invoice
 - DO: in the settlement/invoice path (`backend/app/routers/purchase_settlement.py` invoice builder — read it first, follow the existing invoice line pattern): when `purchase.source.type == "dairy"`, append a commission line computed integer paisa: 3% for milk, 5% for produce, 2% for livestock (select by the demand/purchase category field already on the doc; if no category field exists, use the demand doc's category). No floats.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.30 — Test tier cap and commission line
 - DO: in `backend/tests/test_dairy_web_flows.py` add tests: 26th member on Free tier → 402/403 entitlement error; dairy-sourced purchase invoice contains the commission line at exactly 3% of the milk trade amount (integer paisa equality).
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.31 — Sweep new dairy code for hard-rule violations
 - DO: read-only sweep of files created/modified in WS-01: `website/src/views/dairyMarket/FarmerRfqsPage.tsx`, `BidComparePage.tsx`, `website/src/views/dairy/routes/RoutePlannerPage.tsx`, `MyDairyPage.tsx`, `PurchaseDetailPage.tsx` changes. Confirm: no `alert(`/`confirm(`/`prompt(`, no `?? <number>` fallbacks, no hardcoded user-facing strings (all labels via `t()`), no map/GPS import in RoutePlannerPage.
 - RUN: `grep -n "alert(\|confirm(\|prompt(\|?? [0-9]" website/src/views/dairyMarket/FarmerRfqsPage.tsx website/src/views/dairyMarket/BidComparePage.tsx website/src/views/dairy/routes/RoutePlannerPage.tsx website/src/views/dairy/MyDairyPage.tsx; grep -ni "map\|gps" website/src/views/dairy/routes/RoutePlannerPage.tsx | grep -vi "map(" | head`
 - EXPECT: first grep prints nothing; second grep prints nothing map/GPS-component related (array `.map(` is fine).
 - IF FAIL: remove the violating code, re-run the affected task's check — else STOP.
-- [ ]
+- [x]
 
 ### Task 1.32 — HUMAN CHECK: dairy marketplace loop end-to-end
 - DO: HUMAN CHECK. Start the dev server (`cd backend && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000`) and website (`cd website && pnpm dev`). With two test accounts (dairy manager + linked member farmer): (1) manager posts a demand; (2) farmer opens RFQ list, compares ≥2 bids side-by-side, accepts one; (3) purchase opens with dairy chip; (4) record collection-check with FAT/SNF + photo; (5) farmer OTP release completes; (6) invoice shows 3% milk commission line; (7) run the plan/dairy_plan.md §10-style checklist for regressions; (8) toggle en⇄hi on FarmerRfqsPage, BidComparePage, RoutePlannerPage, MyDairyPage ledger card.
 - RUN: (manual — no command)
 - EXPECT: human confirms all 8 steps work and every new screen renders both languages with no raw `t()` keys visible.
 - IF FAIL: note the failing step, fix via a new minimal edit, re-check — else STOP (playbook §5).
-- [ ]
+- [x]
 
 ### Task 1.33 — Checkpoint WS-01
 - DO: run the WS-01 Verification block from instructions.md, then commit.
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-01: Dairy DairyOS marketplace vision + money rails"`
 - EXPECT: backend suite fully green (incl. `test_dairy_web_flows.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run the full line — if git commit alone fails (identity etc.), note it and continue (playbook §6).
-- [ ]
+- [x]
 
 ## WS-02 — Direct Buyer "ProcurePro" finish  (see instructions.md §WS-02)
 

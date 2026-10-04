@@ -16,6 +16,16 @@ def seed_user(user_store, uid="uid-1", active_profile="farmer", **overrides):
         "createdAt": "2026-09-16T00:00:00+00:00",
         **overrides,
     }
+    profiles = overrides.get("linkedProfiles") or [active_profile]
+    if "dairyManager" in profiles or active_profile == "dairyManager":
+        case_id = f"kyc_{uid[:8]}_dairyManager"
+        user_store[f"kyc_cases/{case_id}"] = {
+            "caseId": case_id,
+            "userId": uid,
+            "persona": "dairyManager",
+            "status": "verified",
+            "docs": [{"docId": f"{case_id}:fssai", "type": "fssai", "status": "verified"}],
+        }
     return create_access_token(uid)
 
 

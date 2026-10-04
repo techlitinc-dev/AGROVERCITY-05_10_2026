@@ -34,6 +34,7 @@ TIER_MATRIX = [
     ("broker", "pro", 799, {}),
     ("dairyManager", "free", 0, {"animals": 20, "members": 25, "agentSeats": 0}),
     ("dairyManager", "pro", 1499, {"animals": 200, "agentSeats": 5}),
+    ("dairyManager", "enterprise", 4999, {}),
     ("instructor", "free", 0, {"courses": 1}),
     ("instructor", "pro", 499, {"courses": 20}),
     ("directBuyer", "free", 0, {"orders": 10}),
@@ -86,6 +87,16 @@ TIER_FEATURES = {
         "multiShop",
         "apiAccess",
         "whiteLabelRateBoards",
+    ],
+    "dairyManager_pro": ["auto_sms_slips", "agentSeats", "routePlanner", "analytics"],
+    "dairyManager_enterprise": [
+        "auto_sms_slips",
+        "agentSeats",
+        "routePlanner",
+        "analytics",
+        "multiCenterUnions",
+        "api",
+        "customRateEngines",
     ],
 }
 
@@ -200,6 +211,9 @@ async def check_entitlement(user_id: str, persona: str, feature: str) -> dict:
     plan = await effective_plan(user_id, persona)
     limit = (plan.get("limits") or {}).get(feature)
     used = await usage_count(user_id, feature)
+    if feature == "members":
+        existing_members = await query("dairy_members", [("centerId", "==", user_id)], limit=500)
+        used = max(used, len(existing_members))
     if limit is not None and used >= int(limit):
         _raise_over_limit(plan, feature, int(limit), used)
     return plan
@@ -219,5 +233,23 @@ def entitlement_guard(persona: str, feature: str):
 
     async def dep(uid: str = Depends(current_user_id)):
         return await check_entitlement(uid, persona, feature)
+
+    return dep
+
+
+def require_entitlement(persona_or_feature: str, feature: str | None = None):
+    """FastAPI dependency: blocks over-limit requests with the 402 envelope."""
+    from fastapi import Depends
+
+    from app.core.deps import current_user_id
+
+    async def dep(uid: str = Depends(current_user_id)):
+        if feature is None:
+            from app.services.users import get_user
+
+            user = await get_user(uid)
+            persona = (user.get("activeProfile") or user.get("primaryProfile") or "farmer") if user else "farmer"
+            return await check_entitlement(uid, persona, persona_or_feature)
+        return await check_entitlement(uid, persona_or_feature, feature)
 
     return dep

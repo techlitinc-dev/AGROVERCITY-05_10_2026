@@ -13,7 +13,9 @@ import {
   type RateChartInput,
 } from '../../../lib/api/dairy';
 import { useT } from '../../../lib/i18n';
+import { extractKycRequiredLink } from '../../../lib/api/client';
 import EmptyState from '../components/EmptyState';
+import KycRequiredNotice from '../components/KycRequiredNotice';
 import RateChartForm from '../components/RateChartForm';
 import SpeciesToggle from '../components/SpeciesToggle';
 import StatusChip from '../components/StatusChip';
@@ -30,6 +32,7 @@ export default function RateChartPage() {
   const [editing, setEditing] = useState<RateChart | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [kycDeepLink, setKycDeepLink] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -48,11 +51,19 @@ export default function RateChartPage() {
   const submit = async (payload: RateChartInput) => {
     setBusy(true);
     try {
+      setKycDeepLink(null);
       if (editing) await updateRateChart(editing.id, payload);
       else await createRateChart(payload);
       toast(t('dairyRcSaved'));
       setSheetOpen(false);
       load();
+    } catch (err) {
+      const link = extractKycRequiredLink(err);
+      if (link) {
+        setKycDeepLink(link);
+      } else {
+        toast(t('dairyActionFailed'), { error: true });
+      }
     } finally {
       setBusy(false);
     }
@@ -61,6 +72,9 @@ export default function RateChartPage() {
   return (
     <ToolShell toolId="dairyConsole" backTo="/dairy/console">
       <div className="dairy-wrap">
+        {kycDeepLink ? (
+          <KycRequiredNotice deepLink={kycDeepLink} onDismiss={() => setKycDeepLink(null)} />
+        ) : null}
         <div className="dairy-actions" style={{ marginTop: 4 }}>
           <button type="button" className="av-btn av-btn-primary" onClick={openNew}>
             ＋ {t('dairyRcNew')}

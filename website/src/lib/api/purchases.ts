@@ -75,7 +75,7 @@ export interface Purchase {
   buyerName: string;
   farmerId: string;
   farmerName: string;
-  source: { type: 'offer' | 'lot'; refId: string };
+  source: { type: 'offer' | 'lot' | 'dairy' | string; refId: string };
   crop: string;
   variety?: string;
   quantity: number;

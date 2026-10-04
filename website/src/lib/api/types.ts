@@ -4,6 +4,7 @@ export interface ApiErrorBody {
   code: string;
   message: string;
   fieldErrors?: Record<string, string>;
+  deepLink?: string;
 }
 
 /** Backend user doc (merged over defaults). Kept permissive on purpose. */

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.core.db import set_doc
+from app.core.db import get_doc, set_doc
 from app.core.deps import current_user_id
 from app.models.direct import PayIn, QcIn, RateIn, ResolveIn
 from app.routers.purchases import (
@@ -175,6 +175,17 @@ async def verify_handover(purchase_id: str, body: dict, uid: str = Depends(curre
     return _redact(purchase, uid)
 
 
+async def _apply_invoice(purchase: dict):
+    source = purchase.get("source") or {}
+    demand = None
+    if isinstance(source, dict) and source.get("type") == "dairy" and source.get("refId"):
+        if not purchase.get("category"):
+            demand = await get_doc("dairy_demands", source["refId"])
+            if demand and demand.get("category"):
+                purchase["category"] = demand["category"]
+    _issue_invoice(purchase, demand=demand)
+
+
 @router.post("/{purchase_id}/qc")
 async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_user_id)):
     purchase = await _participant(purchase_id, uid)
@@ -197,7 +208,7 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
         _append_event(purchase, "qc", f"grade {body.grade}")
         await _release_escrow(purchase)
         _append_event(purchase, "completed")
-        _issue_invoice(purchase)
+        await _apply_invoice(purchase)
     else:
         purchase["finalAmount"] = round(purchase["agreedPricePerUnit"] * body.acceptedQty)
         purchase["status"] = "qcDisputed"
@@ -241,7 +252,7 @@ async def resolve_dispute(purchase_id: str, body: ResolveIn, uid: str = Depends(
     escrow["releaseAt"] = _now()
     await _release_escrow(purchase)
     _append_event(purchase, "completed")
-    _issue_invoice(purchase)
+    await _apply_invoice(purchase)
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
     await maybe_award_vyapari_verified(purchase["buyerId"])

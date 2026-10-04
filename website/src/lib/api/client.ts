@@ -39,16 +39,36 @@ export class ApiError extends Error {
   code: string;
   status: number;
   fieldErrors?: Record<string, string>;
+  deepLink?: string;
   constructor(body: ApiErrorBody | undefined, status: number) {
     super(body?.message ?? `Request failed (${status})`);
     this.code = body?.code ?? `HTTP_${status}`;
     this.status = status;
     this.fieldErrors = body?.fieldErrors;
+    this.deepLink = body?.deepLink;
   }
 }
 
 export function isApiError(e: unknown): e is ApiError {
   return e instanceof ApiError;
+}
+
+export function extractKycRequiredLink(err: unknown): string | null {
+  if (!err) return null;
+  const anyErr = err as Record<string, unknown> & { response?: { data?: { error?: { code?: string; deepLink?: string }; detail?: { code?: string; deepLink?: string } } } };
+  if (
+    anyErr.code === 'KYC_REQUIRED' ||
+    anyErr.response?.data?.error?.code === 'KYC_REQUIRED' ||
+    anyErr.response?.data?.detail?.code === 'KYC_REQUIRED'
+  ) {
+    return (
+      (anyErr.deepLink as string | undefined) ||
+      anyErr.response?.data?.error?.deepLink ||
+      anyErr.response?.data?.detail?.deepLink ||
+      '/dashboard/profile?section=kyc&docType=fssai'
+    );
+  }
+  return null;
 }
 
 interface RetryConfig extends AxiosRequestConfig {

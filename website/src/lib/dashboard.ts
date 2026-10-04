@@ -10,6 +10,7 @@ export interface Tool {
   id: string;
   icon: string;
   color: string;
+  deepLink?: string;
 }
 
 const TOOL_LIST: Tool[] = [
@@ -19,7 +20,7 @@ const TOOL_LIST: Tool[] = [
   { id: 'treePlantation', icon: '🌳', color: '#15803D' },
   { id: 'liveChannels', icon: '📺', color: '#E11D48' },
   { id: 'agriNews', icon: '📰', color: '#0284C7' },
-  { id: 'livestockDairy', icon: '🐄', color: '#D97706' },
+  { id: 'livestockDairy', icon: '🐄', color: '#D97706', deepLink: '/dairy/me#dairy-ledger-card' },
   { id: 'farmDiary', icon: '📖', color: '#4F46E5' },
   { id: 'referEarn', icon: '🎁', color: '#CA8A04' },
   { id: 'advisory', icon: '📷', color: '#0284C7' },
@@ -104,6 +105,9 @@ const TOOL_LIST: Tool[] = [
   { id: 'settings', icon: '⚙️', color: '#64748B' },
   { id: 'profileEdit', icon: '✏️', color: '#64748B' },
   { id: 'helpSupport', icon: '🆘', color: '#64748B' },
+  { id: 'dairyFarmerRfqs', icon: '🥛', color: '#0284C7' },
+  { id: 'dairyBidCompare', icon: '⚖️', color: '#0284C7' },
+  { id: 'dairyRoutePlanner', icon: '🗺️', color: '#0284C7' },
 ];
 
 export const TOOL_BY_ID: Record<string, Tool> = Object.fromEntries(
@@ -135,7 +139,7 @@ const UNIVERSAL = ['courses', 'courseDetail', 'myLibrary', 'vetHome', 'milkSlips
 export const PROFILE_ROUTES: Record<string, string[]> = {
   farmer: [
     'home', 'mandi', 'sellProduce', 'marketplace', 'orderTracking', 'addressBook', 'buyers',
-    'brokerOffers', 'myContracts', 'farmerProcurement',
+    'brokerOffers', 'myContracts', 'farmerProcurement', 'dairyFarmerRfqs', 'dairyBidCompare',
     'advisory', 'profitLoss', 'water', 'schemes', 'loanTracking', 'loanDetail', 'landlordPlots',
     'landListings', 'leaseRequests',
     'landlordLeases', 'landlordRent', 'womenFarmer', 'fpo', 'equipment', 'landLegal', 'climate',
@@ -171,7 +175,7 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
   ],
   instructor: ['instructorHome', 'courseDetail', 'settlements', ...COMMON],
   dairyManager: [
-    'dairyManagerHome', 'livestock', 'livestockDairy', 'dairyConsole', 'gaushalaConsole',
+    'dairyManagerHome', 'dairyRoutePlanner', 'dairyFarmerRfqs', 'dairyBidCompare', 'livestock', 'livestockDairy', 'dairyConsole', 'gaushalaConsole',
     'vetNetwork', 'settlements', ...COMMON,
   ],
   bankManager: ['bankManagerHome', 'loanDashboard', 'loanReview', 'settlements', ...COMMON],
@@ -228,6 +232,8 @@ export interface PersonaHomeConfig {
   liveCardKey: string;
   /** Extra promo banners (farmer dashboard). */
   banners?: Array<'buyDemands' | 'hotOffer' | 'mandi' | 'referEarn'>;
+  /** Deep links for persona-specific overrides (e.g. dairy ledger card). */
+  deepLinks?: Record<string, string>;
 }
 
 /** Per-persona dashboard layout — mirrors mobile views/profile_home/*. */
@@ -257,6 +263,9 @@ export const PERSONA_HOME_CONFIG: Record<string, PersonaHomeConfig> = {
     ],
     liveCardKey: 'dashLiveMandi',
     banners: ['buyDemands', 'hotOffer', 'mandi', 'referEarn'],
+    deepLinks: {
+      livestockDairy: '/dairy/me#dairy-ledger-card',
+    },
   },
   farmLandlord: {
     metrics: ['Total Land', 'Active Tenants', 'Monthly Income'],

@@ -21,6 +21,9 @@ import {
   type MilkSlip,
   type ProcurementRoute,
 } from '../../lib/api/dairyMarketplace';
+import { extractKycRequiredLink } from '../../lib/api/client';
+import { toast } from '../../components/toast';
+import KycRequiredNotice from '../dairy/components/KycRequiredNotice';
 import '../../theme/saas_personas.css';
 
 export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean }) {
@@ -33,6 +36,7 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
   const [rateChart, setRateChart] = useState<DairyRateChart | null>(null);
   const [milkSlips, setMilkSlips] = useState<MilkSlip[]>([]);
   const [loading, setLoading] = useState(true);
+  const [kycDeepLink, setKycDeepLink] = useState<string | null>(null);
 
   // Modals
   const [demandModalOpen, setDemandModalOpen] = useState(false);
@@ -133,12 +137,18 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
 
   const handleCreateDemand = async (e: React.FormEvent) => {
     e.preventDefault();
+    setKycDeepLink(null);
     try {
       await createDairyDemand(newDemand);
       setDemandModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to post milk demand');
+      const link = extractKycRequiredLink(err);
+      if (link) {
+        setKycDeepLink(link);
+      } else {
+        toast('Failed to post milk demand', { error: true });
+      }
     }
   };
 
@@ -149,7 +159,7 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
       setBidModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to submit bid');
+      toast('Failed to submit bid', { error: true });
     }
   };
 
@@ -164,7 +174,7 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
       setCounterModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to counter bid');
+      toast('Failed to counter bid', { error: true });
     }
   };
 
@@ -181,7 +191,7 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
       setRouteModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to schedule route');
+      toast('Failed to schedule route', { error: true });
     }
   };
 
@@ -192,23 +202,32 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
       setCollectionModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to record collection check');
+      toast('Failed to record collection check', { error: true });
     }
   };
 
   const handleSaveRateChart = async (e: React.FormEvent) => {
     e.preventDefault();
+    setKycDeepLink(null);
     try {
       await updateRateChart(chartEdit);
       setRateChartModalOpen(false);
       await loadData();
     } catch (err) {
-      alert('Failed to update rate chart');
+      const link = extractKycRequiredLink(err);
+      if (link) {
+        setKycDeepLink(link);
+      } else {
+        toast('Failed to update rate chart', { error: true });
+      }
     }
   };
 
   return (
     <div className="saas-container">
+      {kycDeepLink ? (
+        <KycRequiredNotice deepLink={kycDeepLink} onDismiss={() => setKycDeepLink(null)} />
+      ) : null}
       {/* Hero Section */}
       <div className="saas-hero-card">
         <div className="saas-hero-header">
@@ -645,6 +664,9 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
         <div className="saas-modal-backdrop" onClick={() => setDemandModalOpen(false)}>
           <div className="saas-modal" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0, color: '#f8fafc' }}>Post Daily Milk Procurement Demand</h3>
+            {kycDeepLink ? (
+              <KycRequiredNotice deepLink={kycDeepLink} onDismiss={() => setKycDeepLink(null)} />
+            ) : null}
             <form onSubmit={handleCreateDemand}>
               <div className="saas-form-group">
                 <label className="saas-form-label">Milk Type</label>
@@ -932,6 +954,9 @@ export default function DairyManagerHomeBoard({ embedded }: { embedded?: boolean
         <div className="saas-modal-backdrop" onClick={() => setRateChartModalOpen(false)}>
           <div className="saas-modal" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0, color: '#f8fafc' }}>Update FAT & SNF Rate Matrix</h3>
+            {kycDeepLink ? (
+              <KycRequiredNotice deepLink={kycDeepLink} onDismiss={() => setKycDeepLink(null)} />
+            ) : null}
             <form onSubmit={handleSaveRateChart}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div className="saas-form-group">

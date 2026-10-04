@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -19,9 +19,11 @@ from app.models.livestock_mgmt import (
 )
 from app.routers.users import require_role
 from app.services import idempotency
-from app.services.billing import entitlement_guard, record_usage
+from app.services.billing import entitlement_guard, record_usage, require_entitlement
 from app.services.notifications import send_fcm_to_user
+from app.services.settlements import create_razorpayx_payout
 from app.services.tasks import DEEP_LINKS, emit_task
+from app.services import kyc as kyc_service
 from app.services.users import get_user
 
 router = APIRouter(tags=["livestock"])
@@ -34,6 +36,28 @@ def _error(status_code: int, code: str, message: str, field_errors: dict | None 
         status_code=status_code,
         detail={"code": code, "message": message, "fieldErrors": field_errors or {}},
     )
+
+
+async def assert_fssai_kyc(uid: str):
+    cases = await kyc_service.cases_for_user(uid)
+    has_fssai = False
+    for c in cases:
+        for d in c.get("docs") or []:
+            if (d.get("type") == "fssai" or d.get("docType") == "fssai") and d.get("status") in ("verified", "approved"):
+                has_fssai = True
+                break
+        if has_fssai:
+            break
+    if not has_fssai:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "KYC_REQUIRED",
+                "message": "FSSAI licence document must be verified before proceeding",
+                "deepLink": "/dashboard/profile?section=kyc&docType=fssai",
+            },
+        )
+
 
 
 def _envelope(docs: list[dict], page: int, page_size: int) -> dict:
@@ -50,6 +74,65 @@ async def _notify(uid: str, title: str, body: str, data: dict):
     if not uid:
         return
     await send_fcm_to_user(uid, title, body, data)
+
+
+async def send_unlinked_slip_if_eligible(
+    manager_id: str,
+    member_id: str | None,
+    farmer_code: str | None,
+    slip_doc: dict,
+) -> None:
+    member = None
+    if member_id:
+        member = await get_doc("dairy_members", member_id)
+    elif farmer_code:
+        m_list = await query(
+            "dairy_members",
+            [("centerId", "==", manager_id), ("memberCode", "==", farmer_code)],
+            limit=1,
+        )
+        if m_list:
+            member = m_list[0]
+
+    if not member or member.get("farmerUid"):
+        return
+
+    from app.services.billing import effective_plan
+
+    plan = await effective_plan(manager_id, "dairyManager")
+    is_pro = plan.get("tier") in ("pro", "enterprise") or "auto_sms_slips" in (
+        plan.get("features") or []
+    )
+    if not is_pro:
+        return
+
+    slip_no = slip_doc.get("slipNumber", "")
+    liters = slip_doc.get("liters", 0)
+    fat = slip_doc.get("fatPercent", 0)
+    snf = slip_doc.get("snfPercent", 0)
+    rate = slip_doc.get("ratePerLiter", 0)
+    amount = slip_doc.get("totalAmount", 0)
+
+    title = f"दूध पर्ची (Milk Slip): {slip_no}"
+    body_msg = (
+        f"पर्ची: {slip_no} | मात्रा: {liters}L | "
+        f"फैट: {fat}% | SNF: {snf}% | "
+        f"दर: ₹{rate}/L | कुल: ₹{amount}"
+    )
+    recipient_id = member.get("phone") or member.get("id") or manager_id
+    data = {
+        "kind": "milk_slip_sms",
+        "type": "milk_slip_sms",
+        "slipNumber": str(slip_no),
+        "liters": str(liters),
+        "fatPercent": str(fat),
+        "snfPercent": str(snf),
+        "rate": str(rate),
+        "amount": str(amount),
+        "memberId": member.get("id", ""),
+        "phone": member.get("phone", ""),
+    }
+    await _notify(recipient_id, title, body_msg, data)
 
 
 async def _manager(uid: str = Depends(current_user_id)) -> str:
@@ -120,7 +203,11 @@ async def list_members(
 
 
 @router.post("/livestock/dairy/members", status_code=201)
-async def create_member(body: DairyMemberIn, uid: str = Depends(_manager_no_agents)):
+async def create_member(
+    body: DairyMemberIn,
+    uid: str = Depends(_manager_no_agents),
+    _plan: dict = Depends(require_entitlement("dairyManager", "members")),
+):
     member_id = f"mem_{uuid.uuid4().hex[:12]}"
     doc = {
         "id": member_id,
@@ -137,6 +224,7 @@ async def create_member(body: DairyMemberIn, uid: str = Depends(_manager_no_agen
         "createdAt": _now(),
     }
     await set_doc("dairy_members", member_id, doc)
+    await record_usage(uid, "members")
     return doc
 
 
@@ -178,11 +266,18 @@ async def member_statement(
     member_id: str,
     date_from: str | None = None,
     date_to: str | None = None,
-    uid: str = Depends(_manager),
+    format: str | None = None,
+    accept: str | None = Header(None),
+    uid: str = Depends(current_user_id),
 ):
     member = await get_doc("dairy_members", member_id)
-    if not member or member.get("centerId") != uid:
+    if not member:
         _error(404, "MEMBER_NOT_FOUND", "member not found")
+    is_manager = member.get("centerId") == uid
+    is_farmer = bool(member.get("farmerUid")) and member.get("farmerUid") == uid
+    if not (is_manager or is_farmer):
+        _error(403, "FORBIDDEN", "access denied to member statement")
+
     collections = await query("milk_collections", [("memberId", "==", member_id)], limit=1000)
     if date_from:
         collections = [c for c in collections if c.get("date", "") >= date_from]
@@ -195,6 +290,21 @@ async def member_statement(
     if date_to:
         payments = [p for p in payments if p.get("createdAt", "")[:10] <= date_to]
     payments.sort(key=lambda d: d.get("createdAt", ""))
+
+    if format == "pdf" or (accept and "application/pdf" in accept):
+        from app.services.reports import build_member_statement_pdf
+
+        pdf_path = build_member_statement_pdf(
+            member, collections, payments, date_from or "", date_to or ""
+        )
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="statement-{member_id}.pdf"'},
+        )
+
     return {
         "member": member,
         "collections": collections,
@@ -317,6 +427,7 @@ async def list_rate_chart_versions(
 
 @router.post("/livestock/dairy/rate-chart", status_code=201)
 async def create_rate_chart(body: RateChartIn, uid: str = Depends(_manager_no_agents)):
+    await assert_fssai_kyc(uid)
     chart_id = f"rc_{uuid.uuid4().hex[:12]}"
     doc = {
         "id": chart_id,
@@ -342,6 +453,7 @@ async def create_rate_chart(body: RateChartIn, uid: str = Depends(_manager_no_ag
 
 @router.put("/livestock/dairy/rate-chart/{chart_id}")
 async def update_rate_chart(chart_id: str, body: RateChartIn, uid: str = Depends(_manager_no_agents)):
+    await assert_fssai_kyc(uid)
     doc = await get_doc("rate_charts", chart_id)
     if not doc or doc.get("centerId") != uid:
         _error(404, "RATE_CHART_NOT_FOUND", "rate chart not found")
@@ -382,6 +494,7 @@ async def list_payment_batches(
 
 @router.post("/livestock/dairy/payments/batches", status_code=201)
 async def generate_payment_batch(body: PaymentBatchGenerateIn, uid: str = Depends(_manager_no_agents)):
+    await assert_fssai_kyc(uid)
     members = await _center_members(uid)
     member_ids = {m["id"] for m in members}
     collections = await query("milk_collections", [], limit=2000)
@@ -456,21 +569,61 @@ async def mark_batch_paid(batch_id: str, body: PaymentBatchMarkPaidIn, uid: str 
     if batch.get("status") == "paid":
         _error(409, "ALREADY_PAID", "batch is already marked paid")
     entries = await query("payment_entries", [("batchId", "==", batch_id)], limit=1000)
+    now_str = _now()
     for entry in entries:
-        entry["status"] = "paid"
-        entry["payoutRef"] = body.payoutRef or f"UTR-{uuid.uuid4().hex[:10].upper()}"
-        await set_doc("payment_entries", entry["id"], entry)
         member = await get_doc("dairy_members", entry["memberId"])
+        bank_details = (member or {}).get("bankDetails") or {}
+        fund_account_id = (
+            bank_details.get("fundAccountId")
+            or bank_details.get("razorpayFundAccountId")
+            or bank_details.get("accountNumber")
+            or (member or {}).get("farmerUid")
+            or entry["memberId"]
+        )
+        amount_paisa = int(round(float(entry.get("netAmount", 0)) * 100))
+        ref_id = f"batch_{batch_id}_{entry['id']}"
+        payout = await create_razorpayx_payout(fund_account_id, amount_paisa, ref_id)
+        payout_id = body.payoutRef or payout.get("id") or f"UTR-{uuid.uuid4().hex[:10].upper()}"
+
+        entry["status"] = "paid"
+        entry["payoutRef"] = payout_id
+        entry["paidAt"] = now_str
+        await set_doc("payment_entries", entry["id"], entry)
+
+        audit_id = f"aud_dairy_payout_{batch_id}_{entry['id']}"
+        await set_doc(
+            "audit_logs",
+            audit_id,
+            {
+                "id": audit_id,
+                "actor": uid,
+                "action": "DAIRY_BATCH_PAYOUT",
+                "status": "paid",
+                "batchId": batch_id,
+                "batch_id": batch_id,
+                "memberId": entry["memberId"],
+                "member_id": entry["memberId"],
+                "amount": amount_paisa,
+                "amountPaisa": amount_paisa,
+                "payoutRef": payout_id,
+                "entryId": entry["id"],
+                "createdAt": now_str,
+                "at": now_str,
+            },
+        )
+
         farmer_uid = (member or {}).get("farmerUid", "")
         await _notify(
             farmer_uid,
             "दूध भुगतान जमा (Milk Payment Paid)",
             f"आपका दूध भुगतान ₹{entry['netAmount']} जमा हो गया है।",
             {"kind": "payment_paid", "batchId": batch_id, "entryId": entry["id"],
-             "netAmount": str(entry["netAmount"]), "payoutRef": entry["payoutRef"]},
+             "netAmount": str(entry["netAmount"]), "payoutRef": payout_id},
         )
     batch["status"] = "paid"
-    batch["paidAt"] = _now()
+    batch["paidAt"] = now_str
+    if body.payoutRef:
+        batch["payoutRef"] = body.payoutRef
     await set_doc("payment_batches", batch_id, batch)
     return batch
 
@@ -521,6 +674,7 @@ async def farmer_slips(
     return {
         **_envelope(docs, page, pageSize),
         "memberCode": (member or {}).get("memberCode", ""),
+        "memberId": (member or {}).get("id", ""),
     }
 
 

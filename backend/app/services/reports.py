@@ -365,3 +365,99 @@ def upload_to_storage(local_path: str, dest_path: str) -> str:
     blob.upload_from_filename(local_path)
     blob.make_public()
     return blob.public_url
+
+
+def build_member_statement_pdf(
+    member: dict,
+    slips: list[dict],
+    payments: list[dict],
+    from_date: str = "",
+    to_date: str = "",
+) -> str:
+    path = f"/tmp/dairy_stmt_{member.get('id', 'mem')}_{uuid.uuid4().hex[:8]}.pdf"
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    styles = getSampleStyleSheet()
+    title_text = "Dairy Member Milk Statement"
+    sub_text = f"Member: {member.get('name', '')} ({member.get('memberCode', '')}) | Village: {member.get('village', '-')}"
+    if from_date and to_date:
+        sub_text += f" | Period: {from_date} to {to_date}"
+
+    story = [
+        Paragraph(title_text, styles["Title"]),
+        Paragraph(sub_text, styles["Normal"]),
+        Spacer(1, 12),
+        Paragraph("Milk Collection Slips", styles["Heading2"]),
+        Spacer(1, 6),
+    ]
+
+    slip_rows = [["Date", "Shift", "Species", "Liters", "FAT %", "SNF %", "Rate", "Amount"]]
+    total_liters = 0.0
+    total_gross = 0.0
+    for s in slips:
+        l = float(s.get("liters") or 0.0)
+        rate = float(s.get("ratePerLiter") or 0.0)
+        amt = float(s.get("amount") or 0.0)
+        total_liters += l
+        total_gross += amt
+        slip_rows.append([
+            str(s.get("date", "")),
+            str(s.get("shift", "")),
+            str(s.get("species", "")),
+            f"{l:.1f} L",
+            f"{s.get('fatPercent', 0):.1f}",
+            f"{s.get('snfPercent', 0):.1f}",
+            f"Rs {rate:.2f}",
+            f"Rs {amt:.2f}",
+        ])
+    slip_rows.append(["", "", "Total", f"{total_liters:.1f} L", "", "", "", f"Rs {total_gross:.2f}"])
+    t_slips = Table(slip_rows, colWidths=[70, 55, 60, 60, 50, 50, 65, 80])
+    t_slips.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+        ])
+    )
+    story.append(t_slips)
+    story.append(Spacer(1, 16))
+
+    story.append(Paragraph("Payment Batches & Deductions", styles["Heading2"]))
+    story.append(Spacer(1, 6))
+
+    pay_rows = [["Batch / Date", "Gross", "Deductions", "NET Amount", "Status", "Payout Ref"]]
+    total_deductions = 0.0
+    total_net = 0.0
+    for p in payments:
+        gross = float(p.get("amount") or 0.0)
+        ded = float(p.get("deduction") or 0.0)
+        net = float(p.get("netAmount") or 0.0)
+        total_deductions += ded
+        total_net += net
+        pay_rows.append([
+            str(p.get("batchId", p.get("createdAt", "")))[:12],
+            f"Rs {gross:.2f}",
+            f"Rs {ded:.2f}",
+            f"Rs {net:.2f}",
+            str(p.get("status", "")),
+            str(p.get("payoutRef", "-")),
+        ])
+    pay_rows.append(["Total", f"Rs {total_gross:.2f}", f"Rs {total_deductions:.2f}", f"Rs {total_net:.2f}", "", ""])
+    t_pays = Table(pay_rows, colWidths=[90, 75, 75, 85, 65, 100])
+    t_pays.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#059669")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("LINEABOVE", (0, -1), (-1, -1), 1, colors.black),
+        ])
+    )
+    story.append(t_pays)
+    doc.build(story)
+    return path

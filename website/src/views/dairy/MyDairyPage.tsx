@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import SegmentedControl from '../../components/SegmentedControl';
 import ToolShell from '../../components/trade/ToolShell';
 import {
+  downloadMemberStatementPdf,
   fmtINR,
   fmtL,
   getActiveRateChart,
   getFarmerAnalytics,
   getFarmerPayments,
   getFarmerSlips,
+  triggerBlobDownload,
   type DairySpecies,
   type FarmerAnalytics,
   type MilkCollection,
@@ -15,6 +17,7 @@ import {
   type RateChart,
 } from '../../lib/api/dairy';
 import { isApiError } from '../../lib/api/client';
+import { toast } from '../../components/toast';
 import { useT } from '../../lib/i18n';
 import { useDairyStore } from '../../stores/dairy';
 import '../../theme/dairy-analytics.css';
@@ -49,6 +52,8 @@ export default function MyDairyPage() {
   const [slips, setSlips] = useState<MilkCollection[] | null>(null);
   const [payments, setPayments] = useState<PaymentEntry[] | null>(null);
   const [memberCode, setMemberCode] = useState<string | null>(null);
+  const [memberId, setMemberId] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [failed, setFailed] = useState(false);
   const [analytics, setAnalytics] = useState<FarmerAnalytics | null>(null);
 
@@ -62,6 +67,8 @@ export default function MyDairyPage() {
       .then(([slipsRes, paymentsRes]) => {
         setSlips(slipsRes.data);
         setMemberCode(slipsRes.memberCode);
+        const memId = slipsRes.memberId || slipsRes.data[0]?.memberId || paymentsRes.data[0]?.memberId || null;
+        if (memId) setMemberId(memId);
         setPayments(paymentsRes.data);
       })
       .catch(() => setFailed(true));
@@ -74,13 +81,62 @@ export default function MyDairyPage() {
     let stale = false;
     getFarmerAnalytics()
       .then((res) => {
-        if (!stale) setAnalytics(res);
+        if (!stale) {
+          setAnalytics(res);
+          if (res.member?.id) setMemberId(res.member.id);
+        }
       })
       .catch(() => {});
     return () => {
       stale = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (window.location.hash === '#dairy-ledger-card') {
+      const el = document.getElementById('dairy-ledger-card');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, []);
+
+  const downloadStatement = useCallback(async () => {
+    const idToUse = memberId || analytics?.member?.id || slips?.[0]?.memberId || payments?.[0]?.memberId;
+    if (!idToUse) {
+      toast(t('dairyActionFailed'), { error: true });
+      return;
+    }
+    setDownloadingPdf(true);
+    try {
+      const blob = await downloadMemberStatementPdf(idToUse);
+      triggerBlobDownload(blob, `statement-${idToUse}.pdf`);
+    } catch {
+      toast(t('dairyActionFailed'), { error: true });
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [memberId, analytics, slips, payments, t]);
+
+  const currentCycle = useMemo(() => {
+    const latestPayment = payments && payments.length > 0 ? payments[0] : null;
+    const latestMonth = analytics?.monthly && analytics.monthly.length > 0 ? analytics.monthly[analytics.monthly.length - 1] : null;
+    const rawLiters = latestPayment?.liters !== undefined ? latestPayment.liters : latestMonth?.liters;
+    const liters = typeof rawLiters === 'number' ? rawLiters : (Number(rawLiters) || 0);
+    const rawGross = latestPayment?.amount !== undefined ? latestPayment.amount : latestMonth?.amount;
+    const gross = typeof rawGross === 'number' ? rawGross : (Number(rawGross) || 0);
+    const deduction = typeof latestPayment?.deduction === 'number' ? latestPayment.deduction : (Number(latestPayment?.deduction) || 0);
+    const net = latestPayment?.netAmount !== undefined ? latestPayment.netAmount : (gross - deduction);
+    const monthPaid = typeof latestMonth?.paid === 'number' ? latestMonth.paid : (Number(latestMonth?.paid) || 0);
+    const isPaid = latestPayment?.status === 'paid' || monthPaid > 0;
+    const status = latestPayment?.status ? latestPayment.status : (isPaid ? 'paid' : 'pending');
+    return {
+      liters,
+      gross,
+      deduction,
+      net,
+      status,
+      isPaid,
+    };
+  }, [payments, analytics]);
 
   useEffect(() => {
     let stale = false;
@@ -162,6 +218,48 @@ export default function MyDairyPage() {
     <ToolShell toolId="livestockDairy">
       <div className="dairy-wrap">
         {rateCard}
+
+        {/* Ledger Summary Card (Task 1.24) with Statement Download (Task 1.23) */}
+        <div className="dairy-section" id="dairy-ledger-card">
+          <div className="dairy-card-row">
+            <div>
+              <span className="dairy-section-title">💰 {t('dairyLedgerTitle')}</span>
+              <p className="dairy-hint" style={{ marginTop: 2 }}>{t('dairyLedgerCurrentCycle')}</p>
+            </div>
+            <button
+              type="button"
+              className="av-btn av-btn-ghost"
+              onClick={() => void downloadStatement()}
+              disabled={downloadingPdf}
+              style={{ fontSize: 13 }}
+            >
+              📄 {downloadingPdf ? t('dairyPdfDownloading') : t('dairyPdfDownload')}
+            </button>
+          </div>
+          <div className="dairy-stats-grid" style={{ marginTop: 8 }}>
+            <DairyStatCard
+              label={t('dairyLedgerLiters')}
+              value={fmtL(currentCycle.liters)}
+              unit={t('dairyLiters')}
+            />
+            <DairyStatCard
+              label={t('dairyLedgerGross')}
+              value={fmtINR(currentCycle.gross)}
+            />
+            <DairyStatCard
+              label={t('dairyLedgerDeduction')}
+              value={fmtINR(currentCycle.deduction)}
+            />
+            <DairyStatCard
+              label={t('dairyLedgerNet')}
+              value={fmtINR(currentCycle.net)}
+            />
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="dairy-card-sub">{t('dairyLedgerStatus')}:</span>
+            <StatusChip status={currentCycle.status === 'paid' ? 'paid' : 'pending'} />
+          </div>
+        </div>
 
         {analytics?.member ? (
           <div className="dairy-section">

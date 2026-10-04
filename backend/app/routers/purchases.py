@@ -113,11 +113,47 @@ def _append_event(purchase: dict, status: str, note: str = ""):
     events.append({"status": status, "at": _now(), "note": note})
 
 
-def _issue_invoice(purchase: dict):
+def _issue_invoice(purchase: dict, demand: dict | None = None):
     ym = datetime.now(timezone.utc).strftime("%y%m")
+    trade_amount = purchase.get("finalAmount") or purchase.get("totalAmount") or 0
+    lines = [
+        {
+            "description": f"{purchase.get('crop', 'Item')} trade",
+            "amount": trade_amount,
+        }
+    ]
+    source = purchase.get("source") or {}
+    if isinstance(source, dict) and source.get("type") == "dairy":
+        cat = (
+            purchase.get("category")
+            or (demand.get("category") if demand else None)
+            or source.get("category")
+            or ("milk" if (purchase.get("crop") or "").lower() == "milk" else "milk")
+        ).lower()
+        if "produce" in cat:
+            pct = 5
+        elif "livestock" in cat:
+            pct = 2
+        else:
+            pct = 3  # milk
+        commission_paisa = (trade_amount * pct) // 100
+        comm_line = {
+            "type": "commission",
+            "description": f"Marketplace commission ({cat} {pct}%)",
+            "category": cat,
+            "ratePercent": pct,
+            "amount": commission_paisa,
+            "commissionPaisa": commission_paisa,
+        }
+        lines.append(comm_line)
+        purchase["commissionLine"] = comm_line
+        purchase["commissionAmount"] = commission_paisa
+
     purchase["invoice"] = {
         "number": f"INV-{purchase['id'][-8:].upper()}-{ym}",
         "issuedAt": _now(),
+        "lines": lines,
+        "totalAmount": trade_amount,
     }
 
 

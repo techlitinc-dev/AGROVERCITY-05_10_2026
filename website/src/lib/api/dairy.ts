@@ -109,6 +109,34 @@ export async function getMemberStatement(
   return data;
 }
 
+export async function downloadMemberStatementPdf(
+  memberId: string,
+  dateFrom?: string,
+  dateTo?: string
+): Promise<Blob> {
+  const { data } = await api.get<Blob>(`/livestock/dairy/members/${memberId}/statement`, {
+    params: {
+      format: 'pdf',
+      ...(dateFrom ? { date_from: dateFrom } : {}),
+      ...(dateTo ? { date_to: dateTo } : {}),
+    },
+    headers: { Accept: 'application/pdf' },
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 // ---- Rate charts ----
 
 export interface RateChart {
@@ -329,7 +357,7 @@ export async function getFarmerPayments(params: { page?: number; pageSize?: numb
   return data;
 }
 
-export type FarmerSlips = Paged<MilkCollection> & { memberCode: string };
+export type FarmerSlips = Paged<MilkCollection> & { memberCode: string; memberId?: string };
 
 export async function getFarmerSlips(dateFrom?: string, dateTo?: string): Promise<FarmerSlips> {
   const { data } = await api.get<FarmerSlips>('/livestock/dairy/farmer/slips', {

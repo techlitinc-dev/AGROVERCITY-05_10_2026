@@ -219,3 +219,20 @@ export async function fetchMilkSlips(): Promise<MilkSlip[]> {
   const res = await api.get<{ data: MilkSlip[] }>('/dairy-manager/milk-slips');
   return res.data.data;
 }
+
+export async function listOpenDemands(): Promise<DairyDemand[]> {
+  const res = await api.get<{ data: DairyDemand[] }>('/dairy-manager/demands');
+  return res.data.data;
+}
+
+export async function listBids(demandId?: string): Promise<DairyBid[]> {
+  const query = demandId ? `?demandId=${encodeURIComponent(demandId)}` : '';
+  const res = await api.get<{ data: DairyBid[] }>(`/dairy-manager/bids${query}`);
+  return res.data.data;
+}
+
+export async function acceptBid(bidId: string): Promise<{ bid: DairyBid; demand: DairyDemand; purchase: { id: string } & Record<string, unknown> }> {
+  const res = await api.post<{ bid: DairyBid; demand: DairyDemand; purchase: { id: string } & Record<string, unknown> }>(`/dairy-manager/bids/${bidId}/accept`);
+  return res.data;
+}
+

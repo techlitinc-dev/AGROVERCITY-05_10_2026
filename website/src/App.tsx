@@ -68,6 +68,7 @@ import {
   StockPage,
 } from './views/dairy';
 import { AnalyticsPage } from './views/dairy';
+import { FarmerRfqsPage, BidComparePage } from './views/dairyMarket';
 import {
   AdoptionsPage,
   ByproductsPage,
@@ -331,6 +332,15 @@ export default function App() {
         <Route
           path="/dashboard/p/myContracts/:contractId"
           element={loggedIn ? <FarmerContractDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Dairy marketplace RFQs & Bid Compare */}
+        <Route
+          path="/dairy-market/rfqs"
+          element={loggedIn ? <FarmerRfqsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dairy-market/bids/compare/:demandId"
+          element={loggedIn ? <BidComparePage /> : <Navigate to="/auth" replace />}
         />
         {/* Dairy deep routes (plan/dairy_plan.md §4.2) */}
         <Route

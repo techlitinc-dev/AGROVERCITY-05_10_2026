@@ -15,12 +15,12 @@ import {
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string,
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || 'AIzaSyDj2XFY_cFr623pLTpqroxvc2noeQJNo_k',
+  appId: (import.meta.env.VITE_FIREBASE_APP_ID as string) || '1:71490924274:web:450a310fbc7d75b3a46a6b',
+  messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) || '71490924274',
+  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || 'agrovercity-bafec',
+  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || 'agrovercity-bafec.firebaseapp.com',
+  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) || 'agrovercity-bafec.firebasestorage.app',
 };
 
 export const firebaseApp = initializeApp(firebaseConfig);
