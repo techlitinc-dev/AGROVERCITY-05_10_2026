@@ -92,6 +92,9 @@ async def test_owner_forbidden_for_farmer(client):
 async def test_fleet_summary(client, user_store):
     owner_token = await _owner_token(client)
     user_store["equipment/eq-own"] = dict(OWNER_MACHINE)
+    from tests.test_equipment_approve import _verify_equipment_kyc
+
+    _verify_equipment_kyc(user_store)
     farmer_token = second_farmer_token(user_store)
     resp = await client.get("/v1/equipment/eq-own/slots", headers=_auth(farmer_token))
     slot = resp.json()["data"][0]
@@ -151,3 +154,128 @@ async def test_fleet_includes_doc_status(client, user_store):
     resp = await client.get("/v1/equipment/owner/fleet", headers=_auth(owner_token))
     row = next(r for r in resp.json()["data"] if r["equipmentId"] == machine["id"])
     assert row["docStatus"] == "verified"
+
+
+async def test_owner_dashboard_summary_fields(client, user_store):
+    from tests.test_equipment_approve import _verify_equipment_kyc
+
+    token = await _owner_token(client)
+    user_store["equipment/eq-own"] = dict(OWNER_MACHINE)
+    _verify_equipment_kyc(user_store)
+    farmer_token = second_farmer_token(user_store)
+
+    # one booking today -> pending approval; one completed earlier this week
+    resp = await client.get("/v1/equipment/eq-own/slots", headers=_auth(farmer_token))
+    slot = resp.json()["data"][0]
+    resp = await client.post(
+        f"/v1/equipment/slots/{slot['id']}/book",
+        json={"farmerName": "Suresh Jadhav"},
+        headers=_auth(farmer_token),
+    )
+    assert resp.status_code == 200
+    week_day = _tomorrow()
+    user_store["equipment_bookings/eqb-done"] = {
+        "id": "eqb-done",
+        "equipmentId": "eq-own",
+        "status": "completed",
+        "priceRupees": 800,
+        "date": week_day,
+    }
+    user_store["equipment_damage_claims/claim-1"] = {
+        "id": "claim-1",
+        "ownerId": "uid-1",
+        "status": "open",
+    }
+    user_store["equipment/eq-own"]["serviceSchedule"] = {"nextServiceDate": "2026-11-01"}
+
+    resp = await client.get("/v1/equipment/owner/dashboard", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in (
+        "machines",
+        "pendingApprovals",
+        "machinesOutNow",
+        "damageClaimsOpen",
+        "nextServiceDue",
+        "weeklyIncomePaisa",
+        "nextPayout",
+    ):
+        assert key in body
+
+    assert body["machines"]["count"] == 1
+    assert body["pendingApprovals"] == 1
+    assert body["damageClaimsOpen"] == 1
+    assert body["nextServiceDue"] == "2026-11-01"
+    assert isinstance(body["weeklyIncomePaisa"], int)
+
+    # a pending settlement surfaces as the next payout in integer paisa
+    user_store["settlements/stl_eq"] = {
+        "id": "stl_eq",
+        "role": "equipmentRental",
+        "entityId": "uid-1",
+        "periodStart": "2026-09-29",
+        "periodEnd": "2026-10-05",
+        "netRupees": 8800,
+        "status": "pending",
+    }
+    resp = await client.get("/v1/equipment/owner/dashboard", headers=_auth(token))
+    assert resp.json()["nextPayout"] == {
+        "periodStart": "2026-09-29",
+        "periodEnd": "2026-10-05",
+        "netPaisa": 880000,
+    }
+
+
+async def test_owner_dashboard_summary_fields(client, user_store):
+    token = await _owner_token(client)
+    user_store["equipment/eq-own"] = {
+        **OWNER_MACHINE,
+        "serviceSchedule": {"nextServiceDate": "2026-11-01"},
+    }
+    from tests.test_equipment_approve import _verify_equipment_kyc
+
+    _verify_equipment_kyc(user_store)
+    farmer = second_farmer_token(user_store)
+
+    # one pending approval + one completed job this week
+    resp = await client.get(f"/v1/equipment/eq-own/slots", headers=_auth(farmer))
+    slot = resp.json()["data"][0]
+    await client.post(
+        f"/v1/equipment/slots/{slot['id']}/book",
+        json={"farmerName": "Suresh Jadhav"},
+        headers=_auth(farmer),
+    )
+    user_store["equipment_bookings/eqb-done"] = {
+        "id": "eqb-done",
+        "equipmentId": "eq-own",
+        "status": "completed",
+        "priceRupees": 1200,
+        "date": _tomorrow() if False else __import__("datetime").date.today().isoformat(),
+    }
+    user_store["equipment_damage_claims/claim-1"] = {
+        "id": "claim-1",
+        "ownerId": "uid-1",
+        "status": "open",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+
+    resp = await client.get("/v1/equipment/owner/dashboard", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in (
+        "machines",
+        "pendingApprovals",
+        "machinesOutNow",
+        "damageClaimsOpen",
+        "nextServiceDue",
+        "weeklyIncomePaisa",
+        "nextPayout",
+    ):
+        assert key in body
+
+    assert body["machines"]["count"] == 1
+    assert body["pendingApprovals"] == 1
+    assert body["damageClaimsOpen"] == 1
+    assert body["nextServiceDue"] == "2026-11-01"
+    assert body["weeklyIncomePaisa"] == 120000
+    assert body["nextPayout"] is None

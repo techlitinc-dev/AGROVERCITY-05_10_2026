@@ -39,6 +39,16 @@ import {
   Vault712PageRoute,
 } from './views/landlord';
 import {
+  BookingQueuePageRoute,
+  DamageClaimsPageRoute,
+  DispatchPageRoute,
+  EquipmentSlotsPageRoute,
+  FleetPageRoute,
+  MaintenancePageRoute,
+  OwnerOverviewPageRoute,
+  RoiAnalyticsPageRoute,
+} from './views/equipment';
+import {
   BatchDetailPage,
   CollectionEntryPage,
   CollectionsPage,
@@ -183,6 +193,39 @@ export default function App() {
         <Route
           path="/dashboard/p/landlord/vault"
           element={loggedIn ? <Vault712PageRoute /> : <Navigate to="/auth" replace />}
+        />
+        {/* Equipment owner deep routes (phase-02 WS-04) */}
+        <Route
+          path="/dashboard/p/equipment/overview"
+          element={loggedIn ? <OwnerOverviewPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/fleet"
+          element={loggedIn ? <FleetPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/bookings"
+          element={loggedIn ? <BookingQueuePageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/dispatch"
+          element={loggedIn ? <DispatchPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/claims"
+          element={loggedIn ? <DamageClaimsPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/maintenance"
+          element={loggedIn ? <MaintenancePageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/analytics"
+          element={loggedIn ? <RoiAnalyticsPageRoute /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/equipment/:equipmentId/slots"
+          element={loggedIn ? <EquipmentSlotsPageRoute /> : <Navigate to="/auth" replace />}
         />
         <Route
           path="/dashboard/p/:toolId"

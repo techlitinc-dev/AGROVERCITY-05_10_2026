@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.models.equipment import BookSlotRequest, EquipmentOut, SlotOut
+from app.models.equipment import BookSlotRequest, EquipmentOut, EquipmentQuoteIn, SlotOut
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
+from app.services import kyc as kyc_service
 from app.services.users import get_user
 from app.services.tasks import emit_task, module_deep_link
 
@@ -101,7 +102,40 @@ async def get_or_generate_slots(equipment: dict, date: str) -> list[dict]:
     return slots
 
 
+async def _assert_equipment_bookable(equipment: dict):
+    """E1: an owned machine needs the owner's equipment KYC case verified
+    (equipment_rc + equipment_insurance through the phase-00 pipeline) and a
+    live insurance expiry. Expired insurance blocks NEW bookings only —
+    in-flight bookings finish the season unimpeded."""
+    owner_id = equipment.get("ownerId")
+    if not owner_id:
+        return  # demo/fleet machines without an owning account stay bookable
+    case = await kyc_service.get_case(kyc_service.case_id_for(owner_id, "equipmentRental"))
+    verified_types = {
+        doc.get("type")
+        for doc in (case or {}).get("docs") or []
+        if doc.get("status") == "verified"
+    }
+    if not {"equipment_rc", "equipment_insurance"} <= verified_types:
+        _error(422, "EQUIPMENT_NOT_VERIFIED", "machine documents are not verified")
+    raw_expiry = equipment.get("insuranceExpiry")
+    if raw_expiry:
+        try:
+            expires = datetime.fromisoformat(str(raw_expiry))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+        except ValueError:
+            expires = None
+        if expires is not None and expires <= datetime.now(timezone.utc):
+            _error(
+                422,
+                "INSURANCE_EXPIRED",
+                "machine insurance has expired — renew to accept new bookings",
+            )
+
+
 async def create_booking_for_slot(equipment: dict, slot: dict, uid: str, farmer_name: str) -> dict:
+    await _assert_equipment_bookable(equipment)
     # FPO machines auto-confirm; private machines wait for owner approval
     status = "booked" if equipment.get("ownerType") == "fpo" else "pending"
     booking = {
@@ -149,6 +183,22 @@ async def list_equipment(
         d for d in docs
         if d.get("active", True) and d.get("docStatus") == "verified" and (type is None or d.get("type") == type)
     ]
+    # WS-04 step 10: priority listing — Pro/Enterprise owners rank first.
+    # Per-doc plan lookups happen once per owner, not per machine.
+    from app.services.billing import effective_plan
+
+    priority_by_owner: dict[str, int] = {}
+
+    async def _priority(doc: dict) -> int:
+        owner = doc.get("ownerId") or ""
+        if owner not in priority_by_owner:
+            plan = await effective_plan(owner, "equipmentRental")
+            priority_by_owner[owner] = 0 if "priorityListing" in (plan.get("features") or []) else 1
+        return priority_by_owner[owner]
+
+    ranked = [(await _priority(d), d) for d in docs]
+    ranked.sort(key=lambda pd: pd[0])
+    docs = [d for _, d in ranked]
     out = []
     for d in docs:
         d.update(await provider_rating_fields(d["id"]))
@@ -163,6 +213,58 @@ async def get_slots(equipment_id: str, date: str | None = None, uid: str = Depen
         _error(404, "EQUIPMENT_NOT_FOUND", "equipment not found")
     slots = await get_or_generate_slots(equipment, date or today_ist())
     return {"data": [SlotOut(**s).model_dump() for s in slots]}
+
+
+@router.post("/{equipment_id}/quote")
+async def quote_equipment(equipment_id: str, body: EquipmentQuoteIn, uid: str = Depends(_viewer)):
+    """WS-04 step 6: pricing-engine quote in integer paisa. The machine doc's
+    `pricing` block ({hourly?, perAcre?, package?}) takes precedence over the
+    legacy flat rates."""
+    equipment = await get_doc("equipment", equipment_id)
+    if equipment is None or not equipment.get("active", True):
+        _error(404, "EQUIPMENT_NOT_FOUND", "equipment not found")
+    pricing = equipment.get("pricing") or {}
+    hourly = float(pricing.get("hourly") or equipment.get("hourlyRate") or 0)
+    per_acre = float(pricing.get("perAcre") or equipment.get("perAcreRate") or 0)
+
+    if body.mode == "hourly":
+        if body.hours <= 0:
+            _error(422, "VALIDATION_ERROR", "hours must be positive", {"hours": "must be > 0"})
+        unit = hourly
+        total = round(unit * body.hours, 2)
+        unit_label = "hour"
+        qty = body.hours
+    elif body.mode == "perAcre":
+        if body.acres <= 0:
+            _error(422, "VALIDATION_ERROR", "acres must be positive", {"acres": "must be > 0"})
+        if per_acre <= 0:
+            _error(422, "UNSUPPORTED_MODE", "this machine has no per-acre rate")
+        unit = per_acre
+        total = round(unit * body.acres, 2)
+        unit_label = "acre"
+        qty = body.acres
+    elif body.mode == "package":
+        packages = pricing.get("package") or {}
+        name = body.packageName or next(iter(packages), None)
+        if name is None or name not in packages:
+            _error(422, "PACKAGE_NOT_FOUND", "package not available for this machine", {"packageName": "unknown package"})
+        unit = float(packages[name])
+        total = unit
+        unit_label = f"package:{name}"
+        qty = 1
+    else:
+        _error(422, "INVALID_MODE", "mode must be hourly, perAcre or package", {"mode": "hourly|perAcre|package"})
+
+    return {
+        "equipmentId": equipment_id,
+        "mode": body.mode,
+        "quantity": qty,
+        "unitPriceRupees": unit,
+        "unitLabel": unit_label,
+        "totalRupees": total,
+        "totalPaisa": int(round(total * 100)),
+        "currency": "INR",
+    }
 
 
 @router.post("/slots/{slot_id}/book")

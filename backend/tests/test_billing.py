@@ -24,16 +24,16 @@ async def test_free_tier_blocks_over_limit_and_upgrade_unlocks(client, user_stor
     token = seed_user(user_store, uid="uid-eq", active_profile="equipmentRental")
     headers = auth(token)
 
-    for _ in range(3):
-        resp = await client.post("/v1/equipment", json=MACHINE_BODY, headers=headers)
-        assert resp.status_code == 201
+    # WS-04 step 10: Free = 1 machine
+    resp = await client.post("/v1/equipment", json=MACHINE_BODY, headers=headers)
+    assert resp.status_code == 201
 
     blocked = await client.post("/v1/equipment", json=MACHINE_BODY, headers=headers)
     assert blocked.status_code == 402
     error = blocked.json()["error"]
     assert error["code"] == "ENTITLEMENT_EXCEEDED"
-    assert error["limit"] == 3
-    assert error["used"] == 3
+    assert error["limit"] == 1
+    assert error["used"] == 1
     assert error["planId"] == "equipmentRental_free"
 
     subscribed = await client.post(
@@ -44,8 +44,14 @@ async def test_free_tier_blocks_over_limit_and_upgrade_unlocks(client, user_stor
     assert subscribed.status_code == 201
     assert subscribed.json()["status"] == "active"
 
-    unlocked = await client.post("/v1/equipment", json=MACHINE_BODY, headers=headers)
-    assert unlocked.status_code == 201
+    # Pro = fleet of 5
+    for _ in range(4):
+        resp = await client.post("/v1/equipment", json=MACHINE_BODY, headers=headers)
+        assert resp.status_code == 201
+
+    blocked = await client.post("/v1/equipment", json=MACHINE_BODY, headers=headers)
+    assert blocked.status_code == 402
+    assert blocked.json()["error"]["limit"] == 5
 
 
 async def test_transport_vehicle_limit_enforced(client, user_store):

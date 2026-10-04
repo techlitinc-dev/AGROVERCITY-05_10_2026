@@ -19,7 +19,16 @@ EQUIPMENT_DATA = {
 
 
 async def test_equipment_owner_analytics_and_claims(client, user_store):
+    from app.services.billing import seed_plans
+
+    await seed_plans()
     owner_token = seed_user(user_store, uid="eq-owner-1", active_profile="equipmentRental")
+    subscribed = await client.post(
+        "/v1/billing/subscribe",
+        json={"planId": "equipmentRental_pro"},
+        headers=auth(owner_token),
+    )
+    assert subscribed.status_code == 201
 
     # Add equipment
     resp = await client.post("/v1/equipment", json=EQUIPMENT_DATA, headers=auth(owner_token))
@@ -46,7 +55,7 @@ async def test_equipment_owner_analytics_and_claims(client, user_store):
     resp = await client.post("/v1/equipment/owner/damage-claims", json=claim_payload, headers=auth(owner_token))
     assert resp.status_code == 201
     claim = resp.json()
-    assert claim["status"] == "under_review"
+    assert claim["status"] == "open"  # E5: open → resolved
     assert claim["estimatedRepairCostRupees"] == 6500
 
     # List damage claims

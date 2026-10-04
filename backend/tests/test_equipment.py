@@ -47,6 +47,17 @@ EQ_2 = {
 def seed_equipment(user_store):
     user_store["equipment/eq-1"] = dict(EQ_1)
     user_store["equipment/eq-2"] = dict(EQ_2)
+    # E1: the private machine's owner has a verified equipment KYC case
+    user_store["kyc_cases/kyc_owner-de_equipmentRental"] = {
+        "caseId": "kyc_owner-de_equipmentRental",
+        "userId": "owner-demo",
+        "persona": "equipmentRental",
+        "status": "verified",
+        "docs": [
+            {"docId": "kyc_owner-de_equipmentRental:equipment_rc", "type": "equipment_rc", "status": "verified"},
+            {"docId": "kyc_owner-de_equipmentRental:equipment_insurance", "type": "equipment_insurance", "status": "verified"},
+        ],
+    }
 
 
 def second_farmer_token(user_store, uid="uid-2", name="Suresh Jadhav"):

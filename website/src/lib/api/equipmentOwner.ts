@@ -1,26 +1,68 @@
 import { api } from './client';
 
+/** Owner fleet row from GET /equipment/owner/fleet. */
 export interface EquipmentItem {
+  equipmentId: string;
+  name: string;
+  bookedHoursThisWeek: number;
+  weeklyIncome: number;
+  status: string;
+  docStatus?: string;
+  rejectionReason?: string | null;
+  insuranceExpiry?: string;
+  rcExpiry?: string;
+}
+
+/** Farmer-facing machine card from GET /equipment (verified machines only). */
+export interface EquipmentListItem {
   id: string;
   name: string;
   type: string;
   ownerType: string;
-  ownerId?: string;
   hourlyRate: number;
-  perAcreRate?: number;
-  distanceKm?: number;
-  active?: boolean;
-  docStatus?: string;
-  rcDocUrl?: string;
-  insuranceDocUrl?: string;
-  slotTemplate?: Array<{ slotName: string; duration: string; priceRupees: number; recommendedTask: string }>;
-  ratingAvg?: number;
+  perAcreRate?: number | null;
+  distanceKm: number;
+  ratingAvg?: number | null;
   ratingCount?: number;
-  createdAt?: string;
+  docStatus?: string;
+}
+
+export interface EquipmentSlot {
+  id: string;
+  equipmentId: string;
+  date: string;
+  slotName: string;
+  duration: string;
+  status: string;
+  bookedByName?: string | null;
+  priceRupees: number;
+  recommendedTask: string;
+}
+
+export interface EquipmentQuote {
+  equipmentId: string;
+  mode: string;
+  quantity: number;
+  unitPriceRupees: number;
+  unitLabel: string;
+  totalRupees: number;
+  totalPaisa: number;
+  currency: string;
+}
+
+export interface CheckInPin {
+  lat: number;
+  lng: number;
+  label: string;
+  event: string;
+  at: string;
+  by: string;
 }
 
 export interface EquipmentBooking {
-  id: string;
+  id?: string;
+  /** Pending-inbox rows key the booking id as `bookingId`. */
+  bookingId?: string;
   equipmentId: string;
   equipmentName?: string;
   farmerName?: string;
@@ -28,7 +70,8 @@ export interface EquipmentBooking {
   date?: string;
   slotName?: string;
   priceRupees?: number;
-  status: 'pending' | 'booked' | 'in_progress' | 'completed' | 'rejected' | 'countered';
+  status?: string;
+  ownerType?: string;
   counterRateRupees?: number;
   counterRateType?: string;
   counterReason?: string;
@@ -52,6 +95,7 @@ export interface JobExecution {
   hoursLogged: number;
   acresCovered: number;
   evidencePhotoUrl?: string;
+  checkInPins?: CheckInPin[];
 }
 
 export interface DamageClaim {
@@ -88,7 +132,7 @@ export async function fetchOwnerAnalytics(): Promise<EquipmentOwnerAnalytics> {
 }
 
 export async function fetchMyEquipment(): Promise<EquipmentItem[]> {
-  const res = await api.get<{ data: EquipmentItem[] }>('/equipment/my');
+  const res = await api.get<{ data: EquipmentItem[] }>('/equipment/owner/fleet');
   return res.data.data;
 }
 
@@ -162,4 +206,64 @@ export async function createDamageClaim(data: {
 }): Promise<DamageClaim> {
   const res = await api.post<DamageClaim>('/equipment/owner/damage-claims', data);
   return res.data;
+}
+
+// ---- Farmer face (backend/app/routers/equipment.py) ----
+
+export async function fetchEquipmentList(type?: string): Promise<EquipmentListItem[]> {
+  const res = await api.get<{ data: EquipmentListItem[] }>('/equipment', { params: type ? { type } : {} });
+  return res.data.data;
+}
+
+export async function fetchEquipmentSlots(equipmentId: string, date?: string): Promise<EquipmentSlot[]> {
+  const res = await api.get<{ data: EquipmentSlot[] }>(`/equipment/${equipmentId}/slots`, {
+    params: date ? { date } : {},
+  });
+  return res.data.data;
+}
+
+export async function quoteEquipment(
+  equipmentId: string,
+  data: { mode: 'hourly' | 'perAcre' | 'package'; hours?: number; acres?: number; packageName?: string }
+): Promise<EquipmentQuote> {
+  const res = await api.post<EquipmentQuote>(`/equipment/${equipmentId}/quote`, data);
+  return res.data;
+}
+
+export async function bookEquipmentSlot(
+  slotId: string,
+  farmerName: string
+): Promise<{ booking: EquipmentBooking; status: string; agriCoinsEarned: number }> {
+  const res = await api.post<{ booking: EquipmentBooking; status: string; agriCoinsEarned: number }>(
+    `/equipment/slots/${slotId}/book`,
+    { farmerName }
+  );
+  return res.data;
+}
+
+export async function joinEquipmentWaitlist(slotId: string): Promise<{ ok: boolean }> {
+  const res = await api.post<{ ok: boolean }>(`/equipment/slots/${slotId}/waitlist`);
+  return res.data;
+}
+
+export async function cancelEquipmentBooking(bookingId: string): Promise<{ ok: boolean }> {
+  const res = await api.delete<{ ok: boolean }>(`/equipment/bookings/${bookingId}`);
+  return res.data;
+}
+
+// ---- Dispatch check-in pins (E4-lite) ----
+
+export async function postCheckInPin(
+  bookingId: string,
+  data: { lat: number; lng: number; label?: string; event: string }
+): Promise<CheckInPin> {
+  const res = await api.post<CheckInPin>(`/equipment/bookings/${bookingId}/check-in`, data);
+  return res.data;
+}
+
+export async function fetchCheckInPins(bookingId: string): Promise<CheckInPin[]> {
+  const res = await api.get<{ bookingId: string; data: CheckInPin[] }>(
+    `/equipment/bookings/${bookingId}/check-in`
+  );
+  return res.data.data;
 }

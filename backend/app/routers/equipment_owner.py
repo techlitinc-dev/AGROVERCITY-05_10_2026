@@ -2,26 +2,34 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.core.db import get_doc, query, set_doc
-from app.core.deps import current_user_id
+from app.core.deps import admin_action, current_user_id
 from app.models.equipment import (
+    CheckInPinIn,
     DamageClaimIn,
     EquipmentCounterQuoteIn,
     EquipmentUpsertRequest,
     JobExecutionUpdateIn,
+    MaintenanceLogIn,
     RejectEquipmentBookingRequest,
 )
 from app.routers.equipment import IST, promote_waitlist_head
 from app.routers.users import require_role
 from app.services.billing import entitlement_guard, record_usage
 from app.services.notifications import send_fcm_to_user
+from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
 
 router = APIRouter(prefix="/equipment", tags=["equipment-owner"])
 
 SLOT_TEMPLATE_KEYS = {"slotName", "duration", "priceRupees", "recommendedTask"}
-UPDATABLE_FIELDS = ("name", "type", "hourlyRate", "perAcreRate", "slotTemplate", "rcDocUrl", "insuranceDocUrl")
+UPDATABLE_FIELDS = (
+    "name", "type", "hourlyRate", "perAcreRate", "slotTemplate",
+    "rcDocUrl", "insuranceDocUrl", "serviceSchedule", "insuranceExpiry", "rcExpiry",
+    "pricing",
+)
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -46,6 +54,27 @@ async def _own_equipment(equipment_id: str, uid: str) -> dict:
     if equipment.get("ownerId") != uid:
         _error(403, "NOT_EQUIPMENT_OWNER", "equipment belongs to another owner")
     return equipment
+
+
+async def _plan_feature_guard(uid: str, feature: str) -> dict:
+    """402 ENTITLEMENT_EXCEEDED when the owner's plan lacks a named SaaS
+    feature (WS-04 step 10: analytics / maintenance suite / priority listing
+    are Pro+; operator management + API are Enterprise)."""
+    from app.services.billing import effective_plan
+
+    plan = await effective_plan(uid, "equipmentRental")
+    if feature not in (plan.get("features") or []):
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "ENTITLEMENT_EXCEEDED",
+                "message": f"{feature} is not available on the {plan.get('tier')} plan — upgrade to Pro",
+                "fieldErrors": {},
+                "planId": plan.get("planId"),
+                "feature": feature,
+            },
+        )
+    return plan
 
 
 def _validate_slot_template(template: list[dict]):
@@ -102,6 +131,10 @@ async def create_equipment(
         "slotTemplate": body.slotTemplate,
         "rcDocUrl": body.rcDocUrl,
         "insuranceDocUrl": body.insuranceDocUrl,
+        "serviceSchedule": body.serviceSchedule,
+        "insuranceExpiry": body.insuranceExpiry,
+        "rcExpiry": body.rcExpiry,
+        "pricing": body.pricing,
         "distanceKm": 0,
         "active": True,
         "docStatus": "pending",
@@ -130,6 +163,7 @@ async def owner_fleet(uid: str = Depends(_owner)):
     machines = await query("equipment", [("ownerId", "==", uid)], limit=1000)
     machines = [m for m in machines if m.get("active", True)]
     week_dates = _current_week_dates()
+    today = datetime.now(timezone.utc).date()
     data = []
     for machine in machines:
         slots = await query("equipment_slots", [("equipmentId", "==", machine["id"])], limit=1000)
@@ -142,7 +176,32 @@ async def owner_fleet(uid: str = Depends(_owner)):
             "status": "active",
             "docStatus": machine.get("docStatus"),
             "rejectionReason": machine.get("rejectionReason"),
+            "insuranceExpiry": machine.get("insuranceExpiry"),
+            "rcExpiry": machine.get("rcExpiry"),
         })
+        # E1: insurance expiry reminders 30/7/1 days out (dedupe-safe)
+        raw_expiry = machine.get("insuranceExpiry")
+        if raw_expiry:
+            try:
+                expiry_day = datetime.fromisoformat(str(raw_expiry)).date()
+            except ValueError:
+                expiry_day = None
+            if expiry_day is not None:
+                days_left = (expiry_day - today).days
+                if 0 <= days_left in (30, 7, 1):
+                    await emit_task(
+                        uid,
+                        persona="equipmentRental",
+                        module="equipment",
+                        kind="insurance_expiry",
+                        title_en=f"Insurance expiring: {machine.get('name', 'Machine')}",
+                        title_hi=f"बीमा समाप्ति: {machine.get('name', 'मशीन')}",
+                        subtitle=f"{days_left} day(s) left — renew before {expiry_day.isoformat()}",
+                        priority="high" if days_left <= 7 else "medium",
+                        deep_link=module_deep_link("equipment", machine["id"]),
+                        source_id=f"{machine['id']}:insurance_expiry",
+                        due_at=expiry_day.isoformat(),
+                    )
     return {"data": data}
 
 
@@ -165,6 +224,7 @@ async def pending_bookings(uid: str = Depends(_owner)):
             "date": slot.get("date", booking.get("date")),
             "slotName": slot.get("slotName", booking.get("slotName")),
             "priceRupees": slot.get("priceRupees", booking.get("priceRupees")),
+            "ownerType": booking.get("ownerType", "private"),
             "createdAt": booking.get("createdAt"),
         })
     data.sort(key=lambda d: d.get("createdAt") or "")
@@ -221,6 +281,7 @@ async def reject_booking(booking_id: str, body: RejectEquipmentBookingRequest, u
 
 @router.get("/owner/analytics")
 async def get_equipment_owner_analytics(uid: str = Depends(_owner)):
+    await _plan_feature_guard(uid, "analytics")
     equipment_list = await query("equipment", [("ownerId", "==", uid)], limit=500)
     bookings = await query("equipment_bookings", [], limit=1000)
 
@@ -367,6 +428,7 @@ async def list_damage_claims(uid: str = Depends(_owner)):
 @router.post("/owner/damage-claims", status_code=201)
 async def create_damage_claim(body: DamageClaimIn, uid: str = Depends(_owner)):
     equipment = await _own_equipment(body.equipmentId, uid)
+    claim_paisa = body.claimPaisa or int(round(body.estimatedRepairCostRupees * 100))
     claim_id = f"claim_{uuid.uuid4().hex[:10]}"
     doc = {
         "id": claim_id,
@@ -377,9 +439,263 @@ async def create_damage_claim(body: DamageClaimIn, uid: str = Depends(_owner)):
         "incidentDate": body.incidentDate,
         "description": body.description,
         "estimatedRepairCostRupees": body.estimatedRepairCostRupees,
+        "claimPaisa": claim_paisa,
         "photoEvidenceUrls": body.photoEvidenceUrls,
-        "status": "under_review",
+        "beforePhotoUrls": body.beforePhotoUrls,
+        "afterPhotoUrls": body.afterPhotoUrls,
+        # E5: owner-filed → admin-arbitrable (open → resolved).
+        "status": "open",
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
     await set_doc("equipment_damage_claims", claim_id, doc)
     return doc
+
+
+class EquipmentClaimResolveIn(BaseModel):
+    resolution: str | None = None
+
+
+@router.post("/owner/damage-claims/{claim_id}/resolve")
+async def resolve_damage_claim(
+    claim_id: str,
+    body: EquipmentClaimResolveIn,
+    claims: dict = Depends(admin_action("RESOLVE_EQUIPMENT_CLAIM")),
+):
+    """Admin-consumable arbitration lane (E5); the phase-07 console drives this."""
+    claim = await get_doc("equipment_damage_claims", claim_id)
+    if claim is None:
+        _error(404, "CLAIM_NOT_FOUND", "damage claim not found")
+    if claim.get("status") != "open":
+        _error(409, "CLAIM_NOT_OPEN", f"claim is {claim.get('status')}")
+    claim["status"] = "resolved"
+    claim["resolution"] = body.resolution
+    claim["resolvedBy"] = claims["uid"]
+    claim["resolvedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("equipment_damage_claims", claim_id, claim)
+    return claim
+
+
+# ==========================================
+# MAINTENANCE LOG & SERVICE-DUE REMINDERS (E3)
+# ==========================================
+
+@router.post("/{equipment_id}/maintenance", status_code=201)
+async def append_maintenance_log(
+    equipment_id: str,
+    body: MaintenanceLogIn,
+    uid: str = Depends(_owner),
+):
+    equipment = await _own_equipment(equipment_id, uid)
+    await _plan_feature_guard(uid, "maintenanceSuite")
+    entry = {
+        "id": f"mnt_{uuid.uuid4().hex[:10]}",
+        "equipmentId": equipment_id,
+        "date": body.date,
+        "hoursAtService": body.hoursAtService,
+        "costRupees": body.costRupees,
+        "partsReplaced": body.partsReplaced,
+        "notes": body.notes,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("equipment_maintenance", entry["id"], entry)
+    # the service resets the hours clock; reschedule the next service window
+    schedule = equipment.get("serviceSchedule") or {}
+    if schedule.get("everyHours"):
+        schedule["nextServiceHours"] = round(body.hoursAtService + float(schedule["everyHours"]), 1)
+        equipment["serviceSchedule"] = schedule
+        await set_doc("equipment", equipment_id, equipment)
+    return entry
+
+
+async def _hours_since_service(equipment_id: str, last_service_hours: float) -> float:
+    """Hours logged on this machine's completed/in-progress jobs since the
+    last service entry (maintenance resets the clock)."""
+    bookings = await query("equipment_bookings", [("equipmentId", "==", equipment_id)], limit=1000)
+    total = 0.0
+    for booking in bookings:
+        if booking.get("status") in ("completed", "in_progress", "booked"):
+            logged_at = float(booking.get("hoursLogged", 0) or 0)
+            if logged_at >= last_service_hours:
+                total += logged_at
+    return total
+
+
+@router.get("/owner/maintenance")
+async def maintenance_overview(uid: str = Depends(_owner)):
+    await _plan_feature_guard(uid, "maintenanceSuite")
+    """E3: per-machine service status. Emits a dashboard task for every
+    machine whose hours-based or date-based schedule is due (dedupe-safe)."""
+    machines = await query("equipment", [("ownerId", "==", uid)], limit=1000)
+    today = datetime.now(timezone.utc).date().isoformat()
+    rows = []
+    for machine in machines:
+        if not machine.get("active", True):
+            continue
+        schedule = machine.get("serviceSchedule") or {}
+        log = await query("equipment_maintenance", [("equipmentId", "==", machine["id"])], limit=1)
+        last = log[0] if log else None
+        hours_since = await _hours_since_service(
+            machine["id"], float(last["hoursAtService"]) if last else 0.0
+        )
+        due_hours = schedule.get("everyHours")
+        due_date = schedule.get("nextServiceDate")
+        hours_due = bool(due_hours) and hours_since >= float(due_hours)
+        date_due = bool(due_date) and due_date <= today
+        due = hours_due or date_due
+        if due:
+            reason = (
+                f"{hours_since:.0f}h logged (every {due_hours}h)"
+                if hours_due
+                else f"service date {due_date} reached"
+            )
+            await emit_task(
+                uid,
+                persona="equipmentRental",
+                module="equipment",
+                kind="service_due",
+                title_en=f"Service due: {machine.get('name', 'Machine')}",
+                title_hi=f"सर्विस देय: {machine.get('name', 'मशीन')}",
+                subtitle=reason,
+                priority="high",
+                deep_link=module_deep_link("equipment", machine["id"]),
+                source_id=f"{machine['id']}:service_due",
+                due_at=today,
+            )
+        rows.append({
+            "equipmentId": machine["id"],
+            "name": machine.get("name"),
+            "lastServiceDate": last["date"] if last else None,
+            "hoursSinceService": round(hours_since, 1),
+            "schedule": schedule or None,
+            "due": due,
+        })
+    return {"data": rows, "dueCount": sum(1 for r in rows if r["due"]), "total": len(rows)}
+
+
+# ==========================================
+# DISPATCH CHECK-IN PINS (E4-lite)
+# ==========================================
+
+@router.post("/bookings/{booking_id}/check-in", status_code=201)
+async def check_in_pin(booking_id: str, body: CheckInPinIn, uid: str = Depends(_owner)):
+    """E4-lite: manual/event location pins at dispatch and return — no GPS
+    tracker for v1. Pins render on the dispatch timeline."""
+    await get_booking_execution(booking_id, uid)  # 404s on unknown bookings
+    exec_doc = await get_doc("equipment_executions", booking_id)
+    pin = {
+        "lat": body.lat,
+        "lng": body.lng,
+        "label": body.label or body.event,
+        "event": body.event,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "by": uid,
+    }
+    pins = exec_doc.get("checkInPins") or []
+    pins.append(pin)
+    exec_doc["checkInPins"] = pins
+    await set_doc("equipment_executions", booking_id, exec_doc)
+    return pin
+
+
+@router.get("/bookings/{booking_id}/check-in")
+async def list_check_in_pins(booking_id: str, uid: str = Depends(current_user_id)):
+    booking = await get_doc("equipment_bookings", booking_id)
+    if booking is None:
+        _error(404, "BOOKING_NOT_FOUND", "booking not found")
+    if uid not in (booking.get("userId"), (await get_doc("equipment", booking["equipmentId"]) or {}).get("ownerId")):
+        _error(403, "FORBIDDEN", "only the farmer or the owner can view check-in pins")
+    exec_doc = await get_doc("equipment_executions", booking_id) or {}
+    return {"bookingId": booking_id, "data": exec_doc.get("checkInPins") or []}
+
+
+# ==========================================
+# OWNER DASHBOARD SUMMARY (instructions.md WS-04 step 9)
+# ==========================================
+
+@router.get("/owner/dashboard")
+async def owner_dashboard(uid: str = Depends(_owner)):
+    """Home-screen summary: machines + today's utilization, pending approvals,
+    machines out now + return ETA, open damage claims, next service due,
+    weekly income + next payout (integer paisa)."""
+    today_ist = datetime.now(IST).date().isoformat()
+    machines = await query("equipment", [("ownerId", "==", uid)], limit=1000)
+    machines = [m for m in machines if m.get("active", True)]
+    machine_ids = {m["id"] for m in machines}
+
+    bookings = await query("equipment_bookings", [], limit=1000)
+    mine = [b for b in bookings if b.get("equipmentId") in machine_ids]
+    today_slots = await query("equipment_slots", [], limit=2000)
+    today_booked = [
+        s for s in today_slots
+        if s.get("equipmentId") in machine_ids and s.get("date") == today_ist
+        and s.get("status") in ("booked", "pending")
+    ]
+    utilization = (
+        round(len(today_booked) / max(1, 4 * len(machines)) * 100, 1) if machines else 0.0
+    )
+
+    pending_approvals = sum(1 for b in mine if b.get("status") == "pending")
+    out_now = [
+        b for b in mine
+        if b.get("status") == "in_progress" or (b.get("status") == "booked" and b.get("date") == today_ist)
+    ]
+    machines_out = [
+        {
+            "bookingId": b["id"],
+            "equipmentId": b["equipmentId"],
+            "date": b.get("date"),
+            "slotName": b.get("slotName"),
+            "returnEta": f"{b.get('date', today_ist)} · {b.get('slotName', '')}".strip(" ·"),
+        }
+        for b in out_now
+    ]
+
+    claims = await query("equipment_damage_claims", [("ownerId", "==", uid)], limit=200)
+    open_claims = sum(1 for c in claims if c.get("status") == "open")
+
+    maintenance = await query("equipment_maintenance", [], limit=500)
+    my_maintenance = [m for m in maintenance if m.get("equipmentId") in machine_ids]
+    next_service_due = None
+    for machine in machines:
+        schedule = machine.get("serviceSchedule") or {}
+        due = schedule.get("nextServiceDate")
+        if due and (next_service_due is None or due < next_service_due):
+            next_service_due = due
+
+    week_dates = _current_week_dates()
+    weekly_income_paisa = sum(
+        int(round(float(b.get("priceRupees", 0) or 0) * 100))
+        for b in mine
+        if b.get("status") == "completed" and str(b.get("date", "")) in week_dates
+    )
+
+    settlements = await query(
+        "settlements", [("role", "==", "equipmentRental"), ("entityId", "==", uid)], limit=100
+    )
+    pending_settlements = sorted(
+        (s for s in settlements if s.get("status") == "pending"),
+        key=lambda s: s.get("periodStart", ""),
+    )
+    next_payout = (
+        {
+            "periodStart": pending_settlements[0].get("periodStart"),
+            "periodEnd": pending_settlements[0].get("periodEnd"),
+            "netPaisa": int(round(float(pending_settlements[0].get("netRupees", 0) or 0) * 100)),
+        }
+        if pending_settlements
+        else None
+    )
+
+    return {
+        "machines": {
+            "count": len(machines),
+            "todayUtilizationPct": utilization,
+        },
+        "pendingApprovals": pending_approvals,
+        "machinesOutNow": {"count": len(machines_out), "data": machines_out},
+        "damageClaimsOpen": open_claims,
+        "nextServiceDue": next_service_due,
+        "weeklyIncomePaisa": weekly_income_paisa,
+        "nextPayout": next_payout,
+        "maintenanceEntries": len(my_maintenance),
+    }

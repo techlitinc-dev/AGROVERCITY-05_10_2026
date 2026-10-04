@@ -66,6 +66,11 @@ const TOOL_LIST: Tool[] = [
   { id: 'brokerOffers', icon: '🤝', color: '#14B8A6' },
   { id: 'machineManage', icon: '⚙️', color: '#F59E0B' },
   { id: 'slotCalendarManage', icon: '📅', color: '#F59E0B' },
+  { id: 'bookingQueue', icon: '📥', color: '#F59E0B' },
+  { id: 'dispatch', icon: '📋', color: '#F59E0B' },
+  { id: 'damageClaims', icon: '🛡️', color: '#F59E0B' },
+  { id: 'maintenance', icon: '🔧', color: '#F59E0B' },
+  { id: 'roiAnalytics', icon: '📊', color: '#F59E0B' },
   { id: 'courses', icon: '🎥', color: '#7C3AED' },
   { id: 'myLibrary', icon: '📚', color: '#7C3AED' },
   { id: 'dairyConsole', icon: '🥛', color: '#0D9488' },
@@ -156,8 +161,9 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
     'farmDiary', ...COMMON,
   ],
   equipmentRental: [
-    'equipmentOwnerHome', 'machineManage', 'slotCalendarManage', 'equipment', 'settlements',
-    'profitLoss', 'liveChannels', ...COMMON,
+    'equipmentOwnerHome', 'machineManage', 'slotCalendarManage', 'bookingQueue', 'dispatch',
+    'damageClaims', 'maintenance', 'roiAnalytics', 'equipment', 'settlements', 'profitLoss',
+    'liveChannels', ...COMMON,
   ],
   broker: [
     'brokerHome', 'deals', 'mandi', 'buyers', 'commissions', 'brokerProfile',
