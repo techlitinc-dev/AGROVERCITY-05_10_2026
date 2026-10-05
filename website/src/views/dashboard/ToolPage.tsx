@@ -25,6 +25,9 @@ import { EQUIPMENT_PAGES } from '../equipment';
 import { CUSTOMER_PAGES } from '../customer';
 import { INSTRUCTOR_PAGES } from '../instructor';
 import { DAIRY_MARKET_PAGES } from '../dairyMarket';
+import { BANK_PAGES } from '../bank';
+import { INSURANCE_PAGES } from '../insurance';
+import { COLD_STORAGE_PAGES } from '../coldstorage';
 import '../../theme/dashboard.css';
 
 /**
@@ -61,10 +64,13 @@ export default function ToolPage() {
   const CustomerPage = CUSTOMER_PAGES[toolId];
   const InstructorPage = INSTRUCTOR_PAGES[toolId];
   const DairyMarketPage = DAIRY_MARKET_PAGES[toolId];
+  const BankPage = BANK_PAGES[toolId];
+  const InsurancePage = INSURANCE_PAGES[toolId];
+  const ColdStoragePage = COLD_STORAGE_PAGES[toolId];
   const RealPage =
     TradePage ?? TransportPage ?? DiaryPage ?? DairyPage ?? GaushalaPage ?? VetPage ?? AnimalPage
     ?? PnlPage ?? BrokerPage ?? DirectBuyerPage ?? FarmerPage ?? LandlordPage ?? EquipmentPage
-    ?? CustomerPage ?? InstructorPage ?? DairyMarketPage;
+    ?? CustomerPage ?? InstructorPage ?? DairyMarketPage ?? BankPage ?? InsurancePage ?? ColdStoragePage;
 
   // Trade/transport pages render their own chrome via ToolShell (also used by deep routes).
   if (RealPage) {

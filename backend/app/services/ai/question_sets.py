@@ -298,6 +298,288 @@ register(
 )
 
 
+# The documents a complete loan file carries. Used by the M14 deterministic
+# fallback (required docs minus uploaded docs) — never by the credit decision.
+LOAN_REQUIRED_DOC_TYPES = ("aadhaar", "land_record", "bank_passbook", "income_proof")
+
+_DOC_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "aadhaar": ("aadhaar", "आधार"),
+    "land_record": ("7/12", "7-12", "land record", "land_record", "खसरा", "भूमि"),
+    "bank_passbook": ("passbook", "bank", "पासबुक", "बैंक"),
+    "income_proof": ("income", "आय"),
+}
+
+
+def _doc_matches(doc: str, uploaded: str) -> bool:
+    """Loose match of a required doc type against an uploaded doc token/name."""
+    if not uploaded:
+        return False
+    if doc in uploaded or uploaded in doc:
+        return True
+    return any(keyword.lower() in uploaded for keyword in _DOC_KEYWORDS.get(doc, (doc,)))
+
+
+def _loan_prescreen_fallback(state: dict) -> dict:
+    """Deterministic rule-based prescreen fallback (M14, SDR step 5).
+
+    riskBand from a rule over credit score + repayment history + land size;
+    missingDocs from required documents minus uploaded ones. No AI involved.
+    """
+    repayment = state.get("repayment") or {}
+    overdue = int(repayment.get("overdue") or 0)
+    defaults = int(repayment.get("defaults") or 0)
+    try:
+        score = int(state.get("credit_score") or 0)
+    except (TypeError, ValueError):
+        score = 0
+    try:
+        land = float(state.get("land_holding_acres") or 0.0)
+    except (TypeError, ValueError):
+        land = 0.0
+
+    if defaults > 0 or overdue >= 2 or score < 550:
+        band = "high"
+    elif overdue >= 1 or score < 650 or land < 1.0:
+        band = "medium"
+    else:
+        band = "low"
+
+    required = list(state.get("required_doc_types") or LOAN_REQUIRED_DOC_TYPES)
+    uploaded = [str(token).lower() for token in (state.get("uploaded_doc_types") or [])]
+    missing = [doc for doc in required if not any(_doc_matches(doc, token) for token in uploaded)]
+    return {"riskBand": band, "missingDocs": missing, "confidence": 0.0}
+
+
+# Brief M14 — CreditDesk loan prescreen. Annotates the queue (risk band +
+# missing docs) and never mutates the application status; stays at `suggest`.
+register(
+    QuestionSet(
+        id="loans.prescreen.v1",
+        version="v1",
+        schema={"riskBand": "medium", "missingDocs": [], "confidence": 0.0},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_loan_prescreen_fallback,
+    )
+)
+
+
+# Photos a strong claim file carries (wide, close-up, GPS-anchored evidence).
+REQUIRED_CLAIM_PHOTOS = 4
+
+_TRIAGE_RETAKE_GUIDANCE = {
+    "en": "Please retake photos now: one wide shot of the whole field plus close-ups of the "
+    "damaged crop, with GPS switched on.",
+    "hi": "कृपया अभी दोबारा फोटो लें: GPS चालू रखते हुए पूरे खेत की एक चौड़ी फोटो और "
+    "नुकसान वाले पौधों की नज़दीक की फोटो लें।",
+}
+
+
+def _claim_triage_fallback(state: dict) -> dict:
+    """Deterministic claim-triage fallback (M15, SDR step 5).
+
+    completeness from the required-photo-count ratio; guidance from the static
+    en/hi checklist; fraudSignal defaults to 0.0 (never auto-rejects)."""
+    required = int(state.get("required_photo_count") or REQUIRED_CLAIM_PHOTOS) or REQUIRED_CLAIM_PHOTOS
+    count = int(state.get("photo_count") or 0)
+    completeness = round(min(1.0, count / required), 2)
+    try:
+        fraud = float(state.get("fraud_signal") or 0.0)
+    except (TypeError, ValueError):
+        fraud = 0.0
+    poor = completeness < 1.0
+
+    reasons: list[str] = []
+    if poor:
+        reasons.append(f"only {count} of {required} recommended photos attached")
+    if state.get("gps_present") is False:
+        reasons.append("missing GPS capture coordinates")
+
+    return {
+        "photoQuality": "poor" if poor else "ok",
+        "completeness": completeness,
+        "retakeGuidance": dict(_TRIAGE_RETAKE_GUIDANCE) if poor else {"en": "", "hi": ""},
+        "fraudSignal": fraud,
+        "triageReasons": reasons,
+        "suggestedSurveyor": None,
+    }
+
+
+# Brief M15 — ClaimsDesk triage. Gives same-day retake guidance and provider
+# console badges; `fraudSignal > 0.8` flags but NEVER auto-rejects. `suggest`.
+register(
+    QuestionSet(
+        id="insurance.triage.v1",
+        version="v1",
+        schema={
+            "photoQuality": "ok",
+            "completeness": 1.0,
+            "retakeGuidance": {"en": "", "hi": ""},
+            "fraudSignal": 0.0,
+            "triageReasons": [],
+            "suggestedSurveyor": None,
+        },
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_claim_triage_fallback,
+    )
+)
+
+
+def _as_float(value, default: float = 0.0) -> float:
+    """Best-effort float coercion shared by the deterministic fallbacks."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _series_mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _series_stddev(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = _series_mean(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return variance ** 0.5
+
+
+# A member's own FAT/SNF history needs at least this many prior readings before
+# an anomaly can be called; fewer -> anomaly false, confidence 0.
+MIN_ADULTERATION_BASELINE_READINGS = 3
+ADULTERATION_WINDOW_DAYS = 30
+
+
+def _adulteration_fallback(state: dict) -> dict:
+    """Deterministic dairy-adulteration fallback (M17, SDR step 5).
+
+    anomaly = |today − 30-day mean| > 2 × stddev over the member's OWN history;
+    insufficient history -> anomaly false, confidence 0. No AI involved, and the
+    flag never blocks a collection (that guarantee lives in the router)."""
+    history = state.get("history") or {}
+    fat_series = [_as_float(value) for value in (history.get("fat") or [])]
+    snf_series = [_as_float(value) for value in (history.get("snf") or [])]
+    today = state.get("today") or {}
+    today_fat = _as_float(today.get("fat"))
+    today_snf = _as_float(today.get("snf"))
+    window_days = int(state.get("window_days") or ADULTERATION_WINDOW_DAYS)
+
+    count = min(len(fat_series), len(snf_series))
+    fat_avg = round(_series_mean(fat_series), 2)
+    snf_avg = round(_series_mean(snf_series), 2)
+    baseline = {"fatAvg": fat_avg, "snfAvg": snf_avg, "windowDays": window_days}
+
+    if count < MIN_ADULTERATION_BASELINE_READINGS:
+        return {"anomaly": False, "confidence": 0.0, "baseline": baseline}
+
+    fat_mean = _series_mean(fat_series)
+    snf_mean = _series_mean(snf_series)
+    fat_sd = _series_stddev(fat_series)
+    snf_sd = _series_stddev(snf_series)
+
+    def _z(today_value: float, mean: float, sd: float) -> float:
+        delta = abs(today_value - mean)
+        if sd > 0:
+            return delta / sd
+        # A perfectly flat baseline: any deviation is a strong signal.
+        return 0.0 if delta == 0 else MIN_ADULTERATION_BASELINE_READINGS + 1.0
+
+    z = max(_z(today_fat, fat_mean, fat_sd), _z(today_snf, snf_mean, snf_sd))
+    anomaly = z > 2.0
+    confidence = round(min(0.95, z / 4.0), 2) if anomaly else round(min(0.4, z / 4.0), 2)
+    return {"anomaly": anomaly, "confidence": confidence, "baseline": baseline}
+
+
+# Brief M17 — DairyOS milk adulteration. Flags anomalous FAT/SNF readings versus a
+# member's own 30-day baseline. Annotates only; collections ALWAYS save. `suggest`.
+register(
+    QuestionSet(
+        id="dairy.adulteration.v1",
+        version="v1",
+        schema={
+            "anomaly": False,
+            "confidence": 0.0,
+            "baseline": {"fatAvg": 0.0, "snfAvg": 0.0, "windowDays": ADULTERATION_WINDOW_DAYS},
+        },
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_adulteration_fallback,
+    )
+)
+
+
+def _contract_attractiveness_fallback(state: dict) -> dict:
+    """Deterministic contract-attractiveness fallback (M18, SDR step 5).
+
+    incomeVsMandi = % difference between the effective contract price (formula
+    pricing: fixed base rate, or mandi-linked modal + premium) and the 12-week
+    mandi average the backend already holds; explanation from a static template
+    that is honest when the contract is WORSE than the mandi. No AI involved."""
+    benchmark = state.get("mandi_benchmark") or {}
+    mandi_avg = _as_float(benchmark.get("avg") or benchmark.get("modal"))
+    price_type = str(state.get("price_type") or "fixed")
+    base_rate = _as_float(state.get("base_rate"))
+    premium = _as_float(state.get("premium_per_quintal"))
+    if price_type == "mandiLinked" and mandi_avg > 0:
+        contract_price = round(mandi_avg + premium, 2)
+    else:
+        contract_price = base_rate
+
+    risk_flags: list[str] = []
+    if mandi_avg <= 0:
+        income = 0.0
+        risk_flags.append("no mandi benchmark available for this crop")
+    elif contract_price <= 0:
+        income = 0.0
+        risk_flags.append("contract price terms are incomplete")
+    else:
+        income = round((contract_price - mandi_avg) / mandi_avg * 100, 2)
+        if income < 0:
+            risk_flags.append(f"priced {abs(income):.0f}% below the 12-week mandi average")
+        elif income < 3:
+            risk_flags.append("thin premium over the mandi benchmark")
+        if price_type == "fixed" and income >= 0:
+            risk_flags.append("fixed price — you do not gain if the mandi price rises")
+
+    if mandi_avg > 0 and contract_price > 0:
+        if income >= 0:
+            explanation = (
+                f"At ₹{contract_price:,.0f}/quintal this contract is about {income:.0f}% above the "
+                f"12-week mandi average of ₹{mandi_avg:,.0f}/quintal. The locked rate reduces price risk, "
+                "but you give up the upside if mandi rates climb."
+            )
+        else:
+            explanation = (
+                f"At ₹{contract_price:,.0f}/quintal this contract is about {abs(income):.0f}% below the "
+                f"12-week mandi average of ₹{mandi_avg:,.0f}/quintal. Selling at the mandi could fetch more, "
+                "so weigh the buyer's guaranteed pickup and payment terms against the lower price."
+            )
+    else:
+        explanation = (
+            "There is not enough mandi price history for this crop to compare the contract fairly. "
+            "Check the local mandi modal rate for the past 12 weeks before you sign."
+        )
+
+    return {"incomeVsMandi": income, "riskFlags": risk_flags, "explanation": explanation}
+
+
+# Brief M18 — ProcurePro contract attractiveness. Scores the contract's expected
+# income vs the 12-week mandi trend + agronomy risk flags; `suggest` (annotates
+# the farmer grow-for-us card, never touches the e-sign flow).
+register(
+    QuestionSet(
+        id="contracts.attractiveness.v1",
+        version="v1",
+        schema={"incomeVsMandi": 0.0, "riskFlags": [], "explanation": ""},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_contract_attractiveness_fallback,
+    )
+)
+
+
 
 
 

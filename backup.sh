@@ -9,11 +9,12 @@
 #   ssh user@server 'unzip ~/AGROVERCITY_*.zip && cd AGROVERCITY && ./install.sh --server'
 # (install.sh auto-detects secrets and generates a JWT secret; see its --help)
 #
-# Backups are COMPLETE: source, docs, config, .git history, local uploads and
-# secrets (backend/.env, backend/secrets/, *firebase-adminsdk*.json) are all
-# included, so the archive can restore a fully working project. Only
-# regenerable dependency/build caches (node_modules, .venv, dist, ...) and
-# the backups/ output itself are skipped.
+# Backups are COMPLETE: every project file is included — source, docs, config,
+# .git history, local uploads and secrets (backend/.env, backend/secrets/,
+# *firebase-adminsdk*.json, *.pem, *.key, ...). Only regenerable dependencies
+# and build output (node_modules, .venv, dist/, build/, __pycache__, ...) plus
+# throwaway local state (logs, OS/editor junk, the backups/ output itself) are
+# skipped, so the archive can restore a fully working project.
 #
 # Usage:
 #   ./backup.sh [output-dir] [--keep N] [--no-secrets]
@@ -38,7 +39,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --keep)        KEEP="${2:---keep requires a number}"; shift 2 ;;
     --no-secrets)  NO_SECRETS=1; shift ;;
-    -h|--help)     sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '2,27p' "$0"; exit 0 ;;
     *)             OUTPUT_DIR="$1"; shift ;;
   esac
 done
@@ -67,45 +68,80 @@ fi
 # yields a clean project directory).
 PARENT_DIR="$(dirname "$PROJECT_ROOT")"
 
-# Complete backup: only regenerable caches, machine-local tooling state, the
-# backups output itself and OS junk are excluded — everything else (including
-# .git, secrets and local uploads) goes into the archive.
+# Complete backup: everything goes in (including .git, secrets and local
+# uploads) except regenerable dependencies/build output and throwaway local
+# state. zip's '*' matches across '/' here, so each pattern covers any depth.
 EXCLUDES=(
+  # Backup output — never nest old backups inside a new one
   "$PROJECT_NAME/backups/*"
-  "$PROJECT_NAME/*.zip"
-  `# Dependencies and build artifacts (regenerate via install.sh / package managers)`
+  "$PROJECT_NAME/${PROJECT_NAME}_*.zip"
+
+  # Dependencies (regenerate with install.sh / package managers)
   "$PROJECT_NAME/*/node_modules/*"
-  "$PROJECT_NAME/*/dist/*"
-  "$PROJECT_NAME/*/build/*"
   "$PROJECT_NAME/*/.venv/*"
   "$PROJECT_NAME/*/venv/*"
   "$PROJECT_NAME/*/.dart_tool/*"
-  "$PROJECT_NAME/*/.pytest_cache/*"
-  "$PROJECT_NAME/*/__pycache__/*"
-  "$PROJECT_NAME/*/.idea/*"
+  "$PROJECT_NAME/*/.pub-cache/*"
   "$PROJECT_NAME/*/.gradle/*"
-  "$PROJECT_NAME/flutter-prototype/.flutter-plugins*"
-  `# Machine-local tooling state`
-  "$PROJECT_NAME/.commandcode/*"
-  "$PROJECT_NAME/.kilo/*"
-  `# Logs and OS junk`
-  "$PROJECT_NAME/*.log"
+  "$PROJECT_NAME/*/Pods/*"
+  "$PROJECT_NAME/*/*.egg-info/*"
+  "$PROJECT_NAME/*/.eggs/*"
+  "$PROJECT_NAME/*/.tox/*"
+  "$PROJECT_NAME/*/target/*"
+
+  # Build output and caches
+  "$PROJECT_NAME/*/dist/*"
+  "$PROJECT_NAME/*/build/*"
+  "$PROJECT_NAME/*/out/*"
+  "$PROJECT_NAME/*/.next/*"
+  "$PROJECT_NAME/*/.nuxt/*"
+  "$PROJECT_NAME/*/.output/*"
+  "$PROJECT_NAME/*/.svelte-kit/*"
+  "$PROJECT_NAME/*/coverage/*"
+  "$PROJECT_NAME/*/.nyc_output/*"
+  "$PROJECT_NAME/*/.turbo/*"
+  "$PROJECT_NAME/*/.parcel-cache/*"
+  "$PROJECT_NAME/*/.cache/*"
+  "$PROJECT_NAME/*/.sass-cache/*"
+  "$PROJECT_NAME/*/.firebase/*"
+  "$PROJECT_NAME/*/.terraform/*"
+  "$PROJECT_NAME/*/__pycache__/*"
+  "$PROJECT_NAME/*/.pytest_cache/*"
+  "$PROJECT_NAME/*/.mypy_cache/*"
+  "$PROJECT_NAME/*/.ruff_cache/*"
+  "$PROJECT_NAME/*/*.pyc"
+  "$PROJECT_NAME/*/*.pyo"
+  "$PROJECT_NAME/*/*.tsbuildinfo"
+  "$PROJECT_NAME/*/.eslintcache"
+  "$PROJECT_NAME/*/.stylelintcache"
+  "$PROJECT_NAME/*/.flutter-plugins*"
+
+  # Local state, logs and OS/editor junk
   "$PROJECT_NAME/.run-logs/*"
-  "$PROJECT_NAME/*.pyc"
-  "$PROJECT_NAME/*.iml"
-  "$PROJECT_NAME/*.tsbuildinfo"
+  "$PROJECT_NAME/*.log"
   "$PROJECT_NAME/.DS_Store"
+  "$PROJECT_NAME/*/.DS_Store"
+  "$PROJECT_NAME/*/.idea/*"
 )
 
 if [ "$NO_SECRETS" = 1 ]; then
   EXCLUDES+=(
-    `# Secrets and local config`
+    # Secrets and machine credentials
     "$PROJECT_NAME/.env"
+    "$PROJECT_NAME/.env.*"
     "$PROJECT_NAME/*/.env"
+    "$PROJECT_NAME/*/.env.*"
     "$PROJECT_NAME/*/secrets/*"
     "$PROJECT_NAME/*firebase-adminsdk*.json"
+    "$PROJECT_NAME/*service-account*.json"
     "$PROJECT_NAME/*/local.properties"
+    "$PROJECT_NAME/*.pem"
+    "$PROJECT_NAME/*.key"
+    "$PROJECT_NAME/*.p12"
+    "$PROJECT_NAME/*.jks"
+    "$PROJECT_NAME/*.keystore"
   )
+  echo "NOTE: safe backup — secrets, credentials and .env files are excluded." >&2
 else
   echo "NOTE: complete backup — archive includes secrets (backend/.env," >&2
   echo "      backend/secrets/, firebase service-account keys) and .git history." >&2

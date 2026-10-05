@@ -95,11 +95,15 @@ const TOOL_LIST: Tool[] = [
   { id: 'pos', icon: '🧾', color: '#0284C7' },
   { id: 'procurement', icon: '🚜', color: '#7C3AED' },
   { id: 'rates', icon: '🏷️', color: '#EA580C' },
+  { id: 'bankManagerHome', icon: '🏦', color: '#334155' },
   { id: 'loanDashboard', icon: '🏦', color: '#334155' },
   { id: 'loanReview', icon: '🖋️', color: '#334155' },
   { id: 'loanTracking', icon: '🧮', color: '#8B5CF6' },
+  { id: 'insuranceProviderHome', icon: '🛡️', color: '#0F766E' },
   { id: 'insurancePolicyReview', icon: '📋', color: '#0F766E' },
   { id: 'insuranceClaimReview', icon: '⚖️', color: '#0F766E' },
+  { id: 'coldStorageHome', icon: '❄️', color: '#0E7490' },
+  { id: 'buyerTeam', icon: '👥', color: '#4F46E5' },
   { id: 'bankAccounts', icon: '🏧', color: '#64748B' },
   { id: 'notifications', icon: '🔔', color: '#64748B' },
   { id: 'settings', icon: '⚙️', color: '#64748B' },
@@ -191,7 +195,7 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
   directBuyer: [
     'directBuyerHome', 'demands', 'demandDetail', 'purchases', 'purchaseDetail', 'savedFarmers',
     'myOffers', 'browseLots', 'profitLoss', 'marketplace', 'orderTracking', 'myBookings',
-    'contracts', 'mandi', ...COMMON,
+    'contracts', 'buyerTeam', 'mandi', ...COMMON,
   ],
 };
 

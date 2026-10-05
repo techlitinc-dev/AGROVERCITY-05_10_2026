@@ -258,7 +258,7 @@ Conventions used below:
 - RUN: `grep -n "counter\|pending\|expiresAt" backend/app/routers/offers.py | head -10 && grep -n "QcIn\|PickupIn\|qcDisputed\|delivered" backend/app/routers/purchase_settlement.py backend/app/models/direct.py backend/app/models/contracts.py 2>/dev/null | head -15`
 - EXPECT: both greps print lines (counter loop exists in offers.py; QcIn/PickupIn located — note which file defines them for tasks 2.9/2.14).
 - IF FAIL: repo contradicts instructions.md §WS-02 — STOP (playbook §5) with output.
-- [ ]
+- [x]
 
 ### Task 2.2 — Add 3-round counter cap backend
 - DO: in `backend/app/models/direct.py` add `rounds: int = 0` to the offer document model. In `backend/app/routers/offers.py` counter handler: enforce alternating counters — from `pending` only `toId` may counter, from `countered` only `fromId` may counter (verify against the existing status flow in the file and keep it); increment `rounds` on each counter; reset `expiresAt` each round (same duration the existing create-offer path uses); when `rounds >= 3` and another counter is attempted → 400 envelope code `NEGOTIATION_CLOSED`. Accept/reject/withdraw remain allowed past the cap.
@@ -279,126 +279,126 @@ Conventions used below:
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.5 — Add crop spec template model
 - DO: create `backend/app/models/specs.py` (new): `crop_specs` document shape `{id, crop, name, params: [{name, unit, min: float|None, max: float|None, testMethod, adjustmentPerUnit: int}], createdBy}` — `adjustmentPerUnit` is ₹/unit premium(+)/deduction(−) in integer paisa. Follow the pydantic/model style of the neighboring `backend/app/models/direct.py`.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/models/specs.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.6 — Add specs router
 - DO: create `backend/app/routers/specs.py` (new): `APIRouter(prefix="/specs")` with `GET /specs?crop=` (list templates, optional crop filter) and `POST /specs` (authenticated buyer creates a custom template into `crop_specs`). Standard error envelope; `Idempotency-Key` on POST. Register the router in `backend/app/main.py` with the `/v1` prefix exactly like neighboring routers.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/routers/specs.py app/main.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax/import errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.7 — Seed the four crop spec templates
 - DO: create `backend/scripts/seed_specs.py` (new, follow an existing script's structure in `backend/scripts/`): upserts four `crop_specs` templates with `createdBy: "system"` — Tomato (BRIX % min 4.5; firmness; size 55–70mm; defect % max 5), Sugarcane (sucrose %/pol; trash %; weight), Wheat (moisture %; foreign matter %; hectolitre weight), Onion (size mm; rot %; moisture). Every param has `testMethod` and integer-paisa `adjustmentPerUnit`.
 - RUN: `cd backend && .venv/bin/python -m py_compile scripts/seed_specs.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.8 — Test specs endpoints
 - DO: create `backend/tests/test_specs.py` (new, follow `conftest.py` fixtures): seed/insert templates → `GET /v1/specs?crop=Tomato` returns the Tomato template with 4 params; `POST /v1/specs` creates a custom template visible in a subsequent GET; unauthenticated POST is rejected per the app's standard auth behavior.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_specs.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.9 — Extend QcIn with measurements and photos
 - DO: in the file defining `QcIn` (found in task 2.1 — `backend/app/models/direct.py` or the purchases/settlement models file): add `measurements: list[{name: str, value: float}] = []` and `photos: list[str] = []` to `QcIn`. Keep every existing field and default unchanged.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py tests/test_contracts.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.10 — Add QC photo upload endpoint
 - DO: in `backend/app/routers/purchase_settlement.py` (or `purchases.py` if that is where QC endpoints live — verify by grep) add `POST /purchases/{id}/qc/photos`: multipart upload via `backend/app/services/storage.py` with prefix `"purchases"`, max 5 photos per purchase, allowed only while purchase status is `delivered` or `qcDisputed` (otherwise 409 envelope); append returned keys to the purchase's QC `photos`. `Idempotency-Key` accepted.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.11 — Implement sliding per-parameter QC settlement
 - DO: in the QC submit handler in `backend/app/routers/purchase_settlement.py`: if the purchase carries a `specSnapshot` (copied from the contract — if contracts don't attach it yet, add `specSnapshot` to the purchase doc at purchase creation from the contract's spec), compute `qualityAdjustment = Σ adjustmentPerUnit × deviation` over `QcIn.measurements` vs the snapshot params (deviation only outside min/max bounds), then `finalRate = agreedPricePerUnit + qualityAdjustment / qty`, all integer paisa; else keep the existing grade path untouched. Store `qualityAdjustment` and `finalRate` on the purchase. No floats for money.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py tests/test_contracts.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.12 — Create settlement test file with sliding-QC tests
 - DO: create `backend/tests/test_purchase_settlement.py` (new, follow `conftest.py`): tests for QC full acceptance, QC partial/dispute, and the sliding adjustment to the rupee — a purchase with a specSnapshot where QA submits BRIX 5.1 (+₹75/q per fixture spec) and moisture 13% (−₹20/q) yields a `finalAmount` equal to the hand-computed integer-paisa value; no-specSnapshot purchase still uses the grade path.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_purchase_settlement.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.13 — Render per-parameter adjustment table on purchase views
 - DO: in `website/src/views/trade/PurchaseDetailPage.tsx` (this serves both parties — verify both buyer and farmer reach this page) render, when the purchase has `measurements`/`qualityAdjustment`, a parameter table: one row per measured parameter with name, value, spec bound, and per-line ₹ adjustment, plus the computed `finalRate`/`finalAmount` (₹ from integer paisa). Also render QC photos read-only. Strings via `t()` en+hi (E18 transparency). Extend the wrapper in `website/src/lib/api/purchases.ts` only if new fields need types.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.14 — Add pickup mode and slot to PickupIn
 - DO: in the file defining `PickupIn` (from task 2.1): add `mode: Literal["farmerDelivers", "buyerPicksup"] = "buyerPicksup"` and `slot: str = ""`; persist both on the purchase's `pickup` sub-object in the pickup-schedule handler.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py tests/test_purchase_settlement.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.15 — Show pickup mode/slot on term sheet
 - DO: in `website/src/views/trade/PurchaseDetailPage.tsx` term-sheet section render `pickup.mode` and `pickup.slot` with `t()` labels en+hi; in the pickup scheduling form add mode selector (farmerDelivers/buyerPicksup, default buyerPicksup) and slot input, sent via the existing pickup wrapper in `website/src/lib/api/purchases.ts`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.16 — Add buyer org router (team sub-accounts)
 - DO: create `backend/app/routers/buyer_org.py` (new): `buyer_orgs` collection doc `{adminUid, companyName, members: [{uid, role: "admin"|"procurement"|"qa"|"finance", addedAt}]}`. Endpoints: `POST /buyer-org/invite {phone, role}` (invitee must already be a registered user — look up by phone via the same user-lookup pattern other routers use; 404 envelope if unregistered), `GET /buyer-org` (caller must be admin member), `DELETE /buyer-org/members/{uid}` (admin only). Standard envelope; `Idempotency-Key` on writes. Register in `backend/app/main.py` under `/v1`.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/routers/buyer_org.py app/main.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax/import errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.17 — Enforce org role gates (403 ORG_ROLE_REQUIRED)
 - DO: add a shared role-check helper in `backend/app/routers/buyer_org.py` (e.g. `require_org_role(uid, *roles)`) and apply it: escrow fund action in `backend/app/routers/purchase_settlement.py` → roles finance/admin; QC submit → qa/admin; contract create/update in `backend/app/routers/contracts.py` → procurement/admin. Users with no org membership keep current behavior only where they ARE the org admin (solo buyer = implicit admin of their own org — create the `buyer_orgs` doc lazily on first gated call with `adminUid` = caller). Violations → 403 envelope code `ORG_ROLE_REQUIRED`.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py tests/test_contracts.py tests/test_purchase_settlement.py -q`
 - EXPECT: exit 0 (existing solo-buyer tests keep passing via lazy admin org).
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.18 — Test buyer org endpoints and gates
 - DO: create `backend/tests/test_buyer_org.py` (new): invite registered user → appears in `GET /buyer-org`; invite unregistered phone → 404; remove member works; finance member can fund escrow while procurement member gets 403 `ORG_ROLE_REQUIRED`; qa member submits QC while finance member gets 403; procurement member creates contract while qa member gets 403.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_buyer_org.py -q`
 - EXPECT: exit 0, all new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.19 — Add buyer-org API wrapper
 - DO: create `website/src/lib/api/buyerOrg.ts` (new, style of `website/src/lib/api/offers.ts`): typed wrappers `getOrg()`, `inviteMember(phone, role)`, `removeMember(uid)` via `client.ts`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.20 — Build TeamPage with disabled-reason role gating
 - DO: create `website/src/views/directbuyer/TeamPage.tsx` (new): org member list with roles + invite form (phone, role select admin/procurement/qa/finance) + remove action, using the task 2.19 wrapper. Then in the escrow-fund, QC-submit, and contract create/update UI (`website/src/views/trade/PurchaseDetailPage.tsx`, `website/src/views/directbuyer/ContractFormPage.tsx`): when an API call returns 403 `ORG_ROLE_REQUIRED` (or the org data already shows the user's role lacks permission), render the button DISABLED with an inline reason ("Ask your admin") + a deep link to TeamPage — never hide the button. Strings via `t()` en+hi. Register TeamPage route in `App.tsx` and export in `website/src/views/directbuyer/index.tsx`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.21 — Build DemandDetailPage with BidTable
 - DO: create `website/src/views/directbuyer/DemandDetailPage.tsx` (new): loads `GET /demands/{id}` and `GET /offers/mine?filter=received&targetType=demand` (typed wrappers — extend `website/src/lib/api/offers.ts` and the demands wrapper `website/src/lib/api/demands.ts` as needed); renders a BidTable (one row per offer: rate, qty, date, actions) and embeds the existing `CounterOfferForm` (P2 loop with round n/3 from task 2.4). Register the route in `website/src/App.tsx`; export in `website/src/views/directbuyer/index.tsx`. Strings via `t()` en+hi.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.22 — Add corporate-buyer KYC submission + contract gate
 - PRECONDITION: `test -f backend/app/routers/kyc.py` — if fails, STOP the phase (playbook §5).
@@ -406,42 +406,42 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_contracts.py tests/test_contracts_direct.py -q && cd ../website && pnpm exec tsc --noEmit`
 - EXPECT: both exit 0 (update test fixtures minimally to grant KYC approval where existing tests create contracts).
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.23 — Test contract creation KYC gate
 - DO: in `backend/tests/test_contracts_direct.py` add test: buyer without approved KYC docs → 403 `KYC_REQUIRED` on contract create; with approved docs → success.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_contracts_direct.py -q -k kyc`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.24 — Dated note: admin corporate verification queue deferred
 - DO: append to `execution-plan/phase-03/notes.md` (create with `# phase-03 — Dated notes` if absent) exactly: `2026-10-03 — WS-02: Admin corporate-buyer verification queue UI deferred to phase-07 (superadmin module 07). This phase ships the submission side + KYC_REQUIRED gates only (instructions.md WS-02 step 7).`
 - RUN: `grep -c "2026-10-03 — WS-02" execution-plan/phase-03/notes.md`
 - EXPECT: prints `1`.
 - IF FAIL: fix the note text to match exactly, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.25 — Polish grow-for-us decision card
 - DO: in `website/src/views/farmer/FarmerContractDetailPage.tsx` (and summary on `FarmerContractsPage.tsx` if it renders the card) add two sections to the decision card: expected income vs mandi benchmark (12-week band) and agronomy risk notes, rendered from the contract's `attractiveness` field when present; when absent (AI flag off), render the static fallback text via `t()` keys. Do NOT touch the MPIN e-sign flow (`/contracts/{id}/accept`, `signatureData`, `consentTimestamp`). Strings en+hi.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.26 — Extend direct-buyer tests for RBAC + tier cap
 - DO: in `backend/tests/test_direct_buyer.py` add tests: contract create/update as org procurement member succeeds, as qa member → 403 `ORG_ROLE_REQUIRED`; second active contract on Free tier → 402/403 entitlement envelope (after task 2.28 lands the tier config — if not yet present, write the test against the planned feature key `"contracts_active"` and let task 2.28 make it pass).
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py -q`
 - EXPECT: exit 0 after task 2.28; if run before it, only the tier test may fail — complete task 2.28 then re-run.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.27 — Complete settlement test coverage
 - DO: extend `backend/tests/test_purchase_settlement.py` with the remaining P5 cases: escrow fund success, OTP wrong/expired/attempts-exceeded, resolve dispute, pay caps, invoice contents (amounts integer paisa, parties, lines).
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_purchase_settlement.py -q`
 - EXPECT: exit 0, all tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.28 — Enforce directBuyer tiers server-side
 - PRECONDITION: `grep -q "def require_entitlement" backend/app/services/billing.py` — if fails, STOP the phase (playbook §5).
@@ -449,28 +449,28 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_direct_buyer.py tests/test_buyer_org.py tests/test_contracts_direct.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.29 — Add 1–2% settlement commission line
 - DO: in the invoice builder in `backend/app/routers/purchase_settlement.py` add a platform commission line of 1–2% (use the rate from the phase-00 platform config location used by other commission lines — find via `grep -rn "commission" backend/app/routers/settlements.py backend/app/services/settlements.py | head`), integer paisa, on every direct-buyer settlement invoice; add a test asserting the line amount equals the configured percentage of the trade amount.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_purchase_settlement.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.30 — Sweep ProcurePro guardrails on new/changed UI
 - DO: verify on all free-text inputs added/changed in WS-02 (TeamPage invite, DemandDetailPage, CounterOfferForm changes, spec/QC displays): `MaskedPhoneText` wraps any phone rendering and `D4TextGuard` (or the equivalent guard component these views already import — check existing usage with `grep -rn "MaskedPhoneText\|D4TextGuard" website/src/views/directbuyer website/src/components/trade | head`) wraps free text; no map/GPS added; no COD option added; handover remains OTP-only.
 - RUN: `grep -rn "alert(\|confirm(\|prompt(" website/src/views/directbuyer/TeamPage.tsx website/src/views/directbuyer/DemandDetailPage.tsx website/src/components/trade/CounterOfferForm.tsx; grep -rn "MaskedPhoneText\|D4TextGuard" website/src/views/directbuyer | head -5`
 - EXPECT: first grep prints nothing; second grep prints ≥1 usage line (guards in use in the domain).
 - IF FAIL: add the guard components / remove violations, re-run affected checks — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.31 — Add ProcurePro i18n keys en+hi
 - DO: add every `t()` key introduced in WS-02 to the relevant section locale pair (the pair each edited view already registers; new keys for contract/scheduling/QC terms go in the same files), en + hi identical sets, including: अनुबंध (contract), आपूर्ति शेड्यूल (supply schedule), गुणवत्ता मानक (quality standard), नेट-30 (net-30).
 - RUN: `cd website && pnpm exec tsc --noEmit && for f in trade dairy; do diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.$f.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.$f.ts | sort); done`
 - EXPECT: tsc exit 0; both diffs print nothing.
 - IF FAIL: add missing keys, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 2.32 — HUMAN CHECK: ProcurePro full manual flow
 - DO: HUMAN CHECK. Dev server + website running (commands at top of file). Execute plan/direct_buyer_plan.md §10 checklist: contract (mandiLinked, weekly ×8) → farmer MPIN e-sign → slot PO (idempotent replay returns same purchase) → escrow by finance member → OTP (1 wrong attempt) → sliding QC with photos → release → invoice with commission + TDS note → 8/8 slots → fulfilled → renew clones. Also: QA member submits BRIX 5.1 (+₹75/q) and moisture 13% (−₹20/q) and confirm `finalAmount` matches hand computation on BOTH buyer and farmer screens; 4th counter round → 400 `NEGOTIATION_CLOSED` with last-offer banner; procurement member sees disabled escrow button with "Ask your admin" reason.
@@ -494,70 +494,70 @@ Conventions used below:
 - RUN: `grep -n "underReview\|infoRequested\|LN-" backend/app/routers/loans.py | head -8 && grep -n "@router" backend/app/routers/loans.py && grep -n "bankManagerHome\|loanDashboard\|loanReview\|loanTracking" website/src/lib/dashboard.ts`
 - EXPECT: all three greps print matching lines.
 - IF FAIL: repo contradicts instructions.md §WS-03 ground truth — STOP (playbook §5) with output.
-- [ ]
+- [x]
 
 ### Task 3.2 — Add loans API wrapper
 - DO: create `website/src/lib/api/loans.ts` (new, style of `website/src/lib/api/bank.ts`, all calls via `client.ts` which attaches `Idempotency-Key` on writes): typed wrappers for every endpoint verified in task 3.1 — `getQueue(params)`, `getStats()`, `getLoan(id)`, `reviewLoan(id)`, `approveLoan(id, {reason})`, `rejectLoan(id, {reason})`, `requestInfo(id, {note})`, `respondLoan(id, body)`, `cancelLoan(id)`, `disburseLoan(id, body)`, `getSchedule(id)`, `uploadLoanDocument(id, ...)`. Standard `{"error":{code,...}}` envelope surfaced, not swallowed.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.3 — Build BankHomeBoard
 - DO: create `website/src/views/bank/BankHomeBoard.tsx` (new directory): stat cards from `GET /loans/stats` — queue depth by SLA, approvals today, disbursals this week, at-risk accounts, portfolio totals (₹ from integer paisa). Strings via `t()`; no hardcoded strings; no `alert()`/`confirm()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.4 — Build LoanQueuePage with filters + cursor pagination
 - DO: create `website/src/views/bank/LoanQueuePage.tsx` (new): filter controls for status / amount range / district mapped to `GET /loans/queue` query params (read the handler's accepted params first and use exactly those names); real cursor pagination using the response's cursor field (same pattern an existing paginated page uses — find via `grep -rln "cursor" website/src/views | head`). Rows link to `LoanDetailPage`. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.5 — Build LoanDetailPage farmer-360
 - DO: create `website/src/views/bank/LoanDetailPage.tsx` (new): for `GET /loans/{applicationId}` render farmer-360 sections — profile, KCC (`GET /finance/kcc` via existing `website/src/lib/api/bank.ts`), credit score (`GET /finance/credit-score`), land/crop data, repayment history (`GET /finance/loans`), and an uploaded-documents viewer (documents from the loan doc + `POST /loans/{id}/documents` uploads). Strings via `t()`; ₹ from integer paisa.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.6 — Build PortfolioPage
 - DO: create `website/src/views/bank/PortfolioPage.tsx` (new): NPA watch list + EMI collection rate from `GET /loans/stats` (use the exact field names the handler returns — read it first). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.7 — Ensure audit_logs on every loan action
 - DO: backend, in `backend/app/routers/loans.py`: verify each of review / approve / reject / info-request / disburse writes an `audit_logs` row containing actor uid, action, and the reason/note from the request body. If any is missing, add the write following the file's (or `backend/app/routers/admin.py`'s) existing audit pattern. Reject already stores `body.reason` — do not change that; the UI surfacing comes in task 3.8. Do not weaken any status transition.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_finance.py -q && grep -c "audit" app/routers/loans.py`
 - EXPECT: pytest exit 0; grep count ≥ 5 (one audit write per action).
 - IF FAIL: add the missing audit writes, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.8 — Add action bar with reason + disbursal + EMI schedule view
 - DO: in `website/src/views/bank/LoanDetailPage.tsx` add an action bar: Approve / Reject / Request-info — each opens an inline form REQUIRING a typed reason/note before submit (calls task 3.2 wrappers); rejected loans render the stored `reason`. Add a Disburse button visible only in `approved` status calling `disburseLoan`, and an EMI schedule section rendering `GET /loans/{id}/schedule` as a table (installment no, due date, amount ₹ from integer paisa, status). Strings via `t()`; no `confirm()` — use an inline confirm step pattern already present in the codebase if one exists, otherwise a two-click inline confirm.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.9 — Add partnerBankId + origination fee ledger
 - DO: backend: add optional `partnerBankId: str | None` to the loan application model (`backend/app/models/loans.py`) and accept it in the apply path (`POST /finance/loans/apply` in `backend/app/routers/finance.py`); on `POST /loans/{id}/disburse` write a referral/origination-fee entry to the settlements ledger (`backend/app/services/settlements.py` — follow its existing ledger-entry pattern), integer paisa, plus an `audit_logs` row. Underwriting stays on-platform — no external calls.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_finance.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.10 — Build farmer LoanTrackingPage
 - DO: create `website/src/views/farmer/LoanTrackingPage.tsx` (new): the farmer's loan applications with `LN-YYYY-####` status chip and a stage timeline (submitted → underReview → infoRequested → approved → disbursed, with rejected/cancelled side states) from the farmer-visible loan endpoints (`GET /finance/loans` + `GET /loans/{id}` as the participant — verify access pattern in `loans.py`). Export from `website/src/views/farmer/index.tsx`; strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.11 — Emit task-engine tasks for document requests
 - PRECONDITION: `test -f backend/app/services/tasks.py && grep -q "def emit_task" backend/app/services/tasks.py` — if fails, phase-01 task engine is missing: STOP the phase (playbook §5).
@@ -565,21 +565,21 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_finance.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.12 — Add EMI reminders via notify service
 - DO: in `backend/app/routers/loans.py` disburse handler (or the schedule-creation point in `backend/app/services/loans.py` — put it where the EMI schedule is persisted): schedule an EMI reminder notification per installment via the existing notify service (`backend/app/services/notify.py`, same call pattern other modules use). No new reminder infra.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_finance.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.13 — Wire CreditDesk routes and tool registry
 - DO: in `website/src/views/dashboard/ToolPage.tsx` add a bank pages registry (e.g. `BANK_PAGES`) following the existing `*_PAGES` map pattern, mapping toolIds `bankManagerHome`→BankHomeBoard, `loanDashboard`→PortfolioPage, `loanReview`→LoanQueuePage, `loanTracking`→LoanTrackingPage; add any missing routes in `website/src/App.tsx` for LoanDetailPage/LoanQueuePage following existing route patterns. ToolIds already exist in `website/src/lib/dashboard.ts` — do not duplicate them.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix registry/import errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.14 — Enforce partner-institution seat licensing
 - PRECONDITION: `grep -q "def require_entitlement" backend/app/services/billing.py` — if fails, STOP the phase (playbook §5).
@@ -587,35 +587,35 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_finance.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.15 — Create CreditDesk web tests: queue + audit
 - DO: create `backend/tests/test_credit_desk_web.py` (new, follow `conftest.py`): queue filters (status / amount range / district return only matching rows; cursor pagination returns next page); each of review/approve/reject/info-request writes an `audit_logs` row containing actor, action, reason.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.16 — Extend CreditDesk tests: disburse, schedule, farmer mirror
 - DO: extend `backend/tests/test_credit_desk_web.py`: approve → disburse transitions status and `GET /loans/{id}/schedule` returns the full EMI schedule; farmer (participant) sees each status change via his endpoints; info-request emits a task-engine task to the farmer and `respond` resolves it.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.17 — Add AI annotation badge seam to queue and detail
 - DO: in `website/src/views/bank/LoanQueuePage.tsx` and `LoanDetailPage.tsx`: when a loan object carries an `ai` field (risk band, missing docs — arrives with WS-07 M14), render badges; when absent, render exactly as before (no placeholder, no empty badge). No status mutation of any kind from the badge. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.18 — Add bank i18n section en+hi
 - DO: create `website/src/lib/i18n/locales/en.bank.ts` and `hi.bank.ts` (new, modeled exactly on `en.dairy.ts`: import `registerLocale`, export dict, call `registerLocale('en'|'hi', dict)`); move/add every `t()` key used by the bank views there, identical key sets, including bank terms: वितरण (disbursal), किस्त (EMI), अनुमोदन (approval). Import the section files from `website/src/views/bank/BankHomeBoard.tsx` (and farmer LoanTrackingPage) so registration happens.
 - RUN: `cd website && pnpm exec tsc --noEmit && diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.bank.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.bank.ts | sort)`
 - EXPECT: tsc exit 0; diff prints nothing.
 - IF FAIL: add missing keys, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 3.19 — HUMAN CHECK: clear the queue + farmer mirror
 - DO: HUMAN CHECK. Dev server + website running. As bankManager persona: process a seeded queue of ≥10 applications entirely in-app (review → approve/reject/info-request, each with a typed reason); open PortfolioPage (NPA watch + collection rate render); disburse one approved loan and open its EMI schedule. As farmer persona: see each status change on LoanTrackingPage within one refresh; receive a dashboard task for the info-request and respond via the task deep link (upload document); confirm an EMI reminder notification fires. Toggle en⇄hi on all bank screens.
@@ -639,140 +639,140 @@ Conventions used below:
 - RUN: `grep -n "surveyorAssigned\|fieldAssessed\|dbtApproved" backend/app/routers/insurance.py backend/app/routers/insurance_claims.py backend/app/services/claims.py | head -8 && grep -n "@router" backend/app/routers/insurance.py | head -20 && grep -n "insuranceProviderHome\|insurancePolicyReview\|insuranceClaimReview\|cropInsurance" website/src/lib/dashboard.ts`
 - EXPECT: all greps print matching lines.
 - IF FAIL: repo contradicts instructions.md §WS-04 — STOP (playbook §5) with output.
-- [ ]
+- [x]
 
 ### Task 4.2 — Add insurance API wrapper
 - DO: create `website/src/lib/api/insurance.ts` (new, via `client.ts`): typed wrappers for the provider endpoints (`getProviderPolicies`, `getProviderPolicy(id)`, `reviewPolicy(id, body)`, `getProviderClaims`, `getProviderClaim(id)`, `scheduleSurvey(id, {surveyorName, surveyorPhone, surveyorVisitDate})`, `submitSurveyReport(id, {assessedLossPercent, ...})`, `reviewClaim(id, body)`, `disburseClaim(id, body)`, `getProviderStats()`, `updateRates(body)`) and farmer endpoints (`fileClaim(multipart)`, `getMyClaims()`, `getMyClaim(id)`, `appealClaim(id, body)`). Standard error envelope surfaced.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.3 — Build ClaimsDeskHome
 - DO: create `website/src/views/insurance/ClaimsDeskHome.tsx` (new directory): from `GET /insurance/provider/stats` render — new intimations with a live 72-h SLA clock per claim (countdown from intimation timestamp), surveys pending assignment, claims by stage, DBT pending, rejection/appeal stats. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.4 — Build ClaimsQueuePage
 - DO: create `website/src/views/insurance/ClaimsQueuePage.tsx` (new): stage filter (intimated/surveyorAssigned/fieldAssessed/dbtApproved/disbursed/rejected) + SLA sort (oldest intimation first) over `GET /insurance/provider/claims`; rows link to ClaimDetailPage. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.5 — Build ClaimDetailPage with geo-photo viewer
 - DO: create `website/src/views/insurance/ClaimDetailPage.tsx` (new): claim timeline (stage transitions with timestamps), farm map + crop cycle context (reuse the existing farm-map/boundary display component the farmer views already use — find via `grep -rln "boundary\|FarmMap" website/src/views | head`; no new map dependency), and a geo-tagged photo evidence viewer showing each claim photo with a capture-coordinates chip (lat/long from the photo metadata fields on the claim doc). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.6 — Build SurveyorsPage roster + assignment
 - DO: backend first if the roster doesn't exist: check `grep -n "surveyor" backend/app/routers/insurance.py | head` — if there is no provider-managed surveyor roster collection, add one in `backend/app/routers/insurance.py`: `surveyors` docs `{name, phone, districts: []}` with provider-scoped CRUD (`GET/POST/DELETE /insurance/provider/surveyors`). Then create `website/src/views/insurance/SurveyorsPage.tsx` (new): roster list + add/remove + an assign action per pending claim calling `schedule_survey` with `{surveyorName, surveyorPhone, surveyorVisitDate}`. Hard constraint: surveyor phone is rendered only inside this provider console (it stays server-side otherwise; the farmer notification is backend-sent already). Strings via `t()`.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_insurance_provider.py tests/test_insurance_claims.py -q && cd ../website && pnpm exec tsc --noEmit`
 - EXPECT: both exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.7 — Build DisbursePage
 - DO: create `website/src/views/insurance/DisbursePage.tsx` (new): DBT execution list (claims in `dbtApproved`) with a disburse action calling `disburseClaim`, plus disbursement stats from `GET /insurance/provider/stats`. Every disburse requires a typed reason/note field if the endpoint accepts one (read the handler). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.8 — Build farmer 72-h intimation form with guidelines overlay
 - DO: create the farmer intimation view in the farmer views (e.g. `website/src/views/farmer/FarmerClaimIntimatePage.tsx` (new)): multipart form posting geo-tagged photos to `POST /insurance/claims` via the task 4.2 wrapper; a guidelines overlay shown before submit listing what to photograph + a deadline countdown (72 h from loss-event date input). No paywall/entitlement UI anywhere on this page (global rule 5). Strings via `t()` en+hi. Export from `website/src/views/farmer/index.tsx`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.9 — Build farmer courier-style claim tracker
 - DO: create `website/src/views/farmer/FarmerClaimTrackerPage.tsx` (new): per claim, a multi-stage courier-style timeline intimated → surveyorAssigned → fieldAssessed → dbtApproved → disbursed (rejected shown as side state) with timestamps from `GET /insurance/claims/{claim_id}`. Strings via `t()` en+hi; export from farmer index.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.10 — Build farmer appeal form
 - DO: in `website/src/views/farmer/FarmerClaimTrackerPage.tsx` add, only when claim status is `rejected`, an appeal/resubmit form calling `POST /insurance/claims/{claim_id}/appeal` (read the handler's expected body first). On success the tracker shows the claim re-entering the queue. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.11 — Dated note: crop-insurance policy polish deferred
 - DO: append to `execution-plan/phase-03/notes.md` exactly: `2026-10-03 — WS-04: Crop-insurance module polish beyond the claims mirror (robust.md §7.9, policy purchase flow) deferred to phase-05 module sweep. Farmer intimation/tracker/appeal pages landed in this phase.`
 - RUN: `grep -c "2026-10-03 — WS-04" execution-plan/phase-03/notes.md`
 - EXPECT: prints `1`.
 - IF FAIL: fix the note text, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.12 — Build policy review queue page
 - DO: create `website/src/views/insurance/PolicyReviewPage.tsx` (new): list of provider policies pending review (`GET /insurance/provider/policies`) with a review action per policy calling `POST /insurance/provider/policies/{id}/review` (read handler body shape; require a typed note if accepted). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.13 — Build provider rates page
 - DO: create `website/src/views/insurance/RatesPage.tsx` (new): provider self-service rate-table editor on `POST /insurance/provider/rates`, honoring the endpoint's effective-dating fields (read the handler first; render existing rates if a GET exists). Money inputs integer paisa → ₹ display. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.14 — Dated note: admin rate approval editor deferred
 - DO: append to `execution-plan/phase-03/notes.md` exactly: `2026-10-03 — WS-04: Admin rate-table approval editor deferred to phase-07 (superadmin module 15). Provider self-service rates page shipped in this phase.`
 - RUN: `grep -c "2026-10-03 — WS-04: Admin rate-table" execution-plan/phase-03/notes.md`
 - EXPECT: prints `1`.
 - IF FAIL: fix the note text, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.15 — Ledger per-claim fee + audit on review/disburse
 - DO: backend, in `backend/app/routers/insurance.py`: on `disburse` write a per-claim processing-fee entry to the settlements ledger (`backend/app/services/settlements.py` existing pattern), integer paisa; verify review and disburse each write `audit_logs` with actor, action, reason — add if missing (same pattern as task 3.7). Do not change any farmer-facing endpoint behavior.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_insurance_provider.py tests/test_insurance_claims.py tests/test_insurance_policies.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.16 — Wire ClaimsDesk routes and tool registry
 - DO: in `website/src/views/dashboard/ToolPage.tsx` add an insurance pages registry mapping toolIds `insuranceProviderHome`→ClaimsDeskHome, `insuranceClaimReview`→ClaimsQueuePage, `insurancePolicyReview`→PolicyReviewPage, `cropInsurance`→the farmer claim tracker/intimation entry; add routes in `website/src/App.tsx` for the new insurance + farmer claim pages following existing patterns.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix registry/import errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.17 — Verify no paywall on farmer claim filing
 - DO: read-only check that no entitlement gate touches farmer claim endpoints.
 - RUN: `grep -n "require_entitlement\|ENTITLEMENT" backend/app/routers/insurance_claims.py`
 - EXPECT: grep prints nothing (global rule 5: no paywall on the farmer's core loop).
 - IF FAIL: remove the gate from the farmer router (it may only exist on provider endpoints), re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.18 — Create ClaimsDesk web tests
 - DO: create `backend/tests/test_claims_desk_web.py` (new): full lifecycle — farmer intimates with photos inside 72 h → provider schedules survey (`schedule_survey`) → survey report with `assessedLossPercent` → review/approve → disburse → each stage visible with timestamps on the farmer claim GET; cycle time derivable from `GET /insurance/provider/stats`; rejected claim → appeal → claim re-enters queue; `audit_logs` rows exist for review + disburse.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_claims_desk_web.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.19 — Test SLA clock data for stale claims
 - DO: extend `backend/tests/test_claims_desk_web.py`: a claim whose intimation timestamp is set >48 h ago appears in the provider claims list/stats with the fields the SLA clock needs (intimation timestamp present and sortable); stats reflect it in the pending bucket.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_claims_desk_web.py -q -k sla`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.20 — Add insurance i18n section en+hi
 - DO: create `website/src/lib/i18n/locales/en.insurance.ts` and `hi.insurance.ts` (modeled on `en.dairy.ts` exactly as task 3.18 did for bank); include every `t()` key used by the insurance + farmer claim views, identical key sets, including: सूचना (intimation), सर्वेयर (surveyor), क्षतिपूर्ति (compensation). Import the section files from `ClaimsDeskHome.tsx` and the farmer claim pages.
 - RUN: `cd website && pnpm exec tsc --noEmit && diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.insurance.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.insurance.ts | sort)`
 - EXPECT: tsc exit 0; diff prints nothing.
 - IF FAIL: add missing keys, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 4.21 — HUMAN CHECK: claim lifecycle + appeal
 - DO: HUMAN CHECK. Dev server + website running. Two accounts: farmer intimates a claim with geo-tagged photos inside the 72-h window (guidelines overlay shown, countdown visible) → provider assigns a surveyor from SurveyorsPage → submits survey report (`assessedLossPercent`) → approves → DBT disburses from DisbursePage → farmer tracker shows every stage with timestamps. Reject a second claim → farmer appeals → claim re-enters the provider queue. Verify the SLA clock renders for a claim created >48 h ago (seed one). Toggle en⇄hi on the tracker and guidelines overlay.
@@ -796,84 +796,84 @@ Conventions used below:
 - RUN: `grep -n "@router" backend/app/routers/post_harvest.py && grep -n "coldStorageHome\|postHarvest\|myBookings" website/src/lib/dashboard.ts`
 - EXPECT: first grep lists the endpoints above; second prints the three toolIds.
 - IF FAIL: repo contradicts instructions.md §WS-05 — STOP (playbook §5) with output.
-- [ ]
+- [x]
 
 ### Task 5.2 — Add cold-storage API wrapper
 - DO: create `website/src/lib/api/coldStorage.ts` (new, via `client.ts`): typed wrappers for every endpoint verified in task 5.1 (directory/booking farmer side + provider console side). Standard error envelope surfaced.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.3 — Build StoreHouseHome
 - DO: create `website/src/views/coldstorage/StoreHouseHome.tsx` (new directory): from `GET /post-harvest/provider/stats` render — chamber utilization %, bookings pending approval, lots inward today, releases due, revenue this month (₹ from integer paisa). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.4 — Build FacilitiesPage
 - DO: create `website/src/views/coldstorage/FacilitiesPage.tsx` (new): facility list (`GET /post-harvest/provider/facilities`) + create form (`POST /post-harvest/provider/facilities`) + edit (`PUT /post-harvest/provider/facilities/{id}`) using the task 5.2 wrapper; fields per the router's accepted body (read it first). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.5 — Build ChambersPage
 - DO: create `website/src/views/coldstorage/ChambersPage.tsx` (new): per-facility chamber management (`POST /post-harvest/provider/facilities/{id}/chambers`): capacity, ₹/q/month pricing (integer paisa input rendered as ₹), active/inactive toggle (use the exact chamber fields the router accepts). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.6 — Build BookingsQueuePage
 - DO: create `website/src/views/coldstorage/BookingsQueuePage.tsx` (new): pending bookings list (`GET /post-harvest/provider/bookings`) with approve/reject actions calling `POST /post-harvest/provider/bookings/{id}/review` — reject REQUIRES a typed reason (read handler body). Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.7 — Build InwardRegisterPage
 - DO: create `website/src/views/coldstorage/InwardRegisterPage.tsx` (new): digital inward register — record inward per approved booking via `POST /post-harvest/provider/bookings/{id}/inward` with lot, grade, and photo (multipart per the handler's accepted fields); render the register rows (lot/grade/photo/timestamp) for the facility. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.8 — Build ReleasePage
 - DO: create `website/src/views/coldstorage/ReleasePage.tsx` (new): list bookings with farmer `request-release` pending and execute release via `POST /post-harvest/provider/bookings/{id}/release`; show released lots with timestamps. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.9 — Build UtilizationPage
 - DO: create `website/src/views/coldstorage/UtilizationPage.tsx` (new): per-chamber utilization analytics from `GET /post-harvest/provider/stats` (and facility detail endpoints as needed) — capacity vs occupied per chamber, trend list. Strings via `t()`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.10 — Build farmer directory + booking form
 - DO: create `website/src/views/farmer/ColdStorageDirectoryPage.tsx` (new): cold-storage directory from `GET /post-harvest/cold-storage` showing LIVE remaining capacity per facility (field from the response — read the handler), a booking form per facility calling `POST /post-harvest/cold-storage/{id}/book` (surface remaining capacity next to the form; decrement is server-side — never compute it client-side), and an apply option (`POST /cold-storage/{id}/apply`) if the router distinguishes it. Strings via `t()` en+hi; export from `website/src/views/farmer/index.tsx`.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.11 — Build farmer my-bookings list
 - DO: create `website/src/views/farmer/MyStorageBookingsPage.tsx` (new): the farmer's bookings with status (`GET /post-harvest/bookings/{booking_id}` per booking, or the list endpoint if one exists — verify in the router) and a request-release action (`POST /post-harvest/bookings/{booking_id}/request-release`) on active bookings. Strings via `t()`; export from farmer index.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.12 — Build warehouse-receipt vault
 - DO: create `website/src/views/farmer/WarehouseReceiptPage.tsx` (new): verifiable receipt page rendering `GET /post-harvest/receipts/{receipt_number}` (all receipt fields the handler returns, ₹ from integer paisa); plus list the farmer's receipts inside the farmer's existing documents vault view (find it via `grep -rln "vault" website/src/views | head` and add a receipts section there using the receipt numbers from the farmer's bookings). Strings via `t()`; export from farmer index.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.13 — Add "attach warehouse receipt" to CreditDesk documents
 - PRECONDITION: `test -f website/src/views/bank/LoanDetailPage.tsx` — if fails, WS-03 task 3.5 has not landed; complete it first (do NOT stub around).
@@ -888,7 +888,7 @@ Conventions used below:
 - RUN: `grep -c "2026-10-03 — WS-05" execution-plan/phase-03/notes.md`
 - EXPECT: prints `1`.
 - IF FAIL: fix the note text, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.15 — Enforce cold-storage tiers + per-booking fee
 - PRECONDITION: `grep -q "def require_entitlement" backend/app/services/billing.py` — if fails, STOP the phase (playbook §5).
@@ -896,28 +896,28 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_cold_storage.py tests/test_cold_storage_provider.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.16 — Test receipt endpoint is owner-only
 - DO: in `backend/tests/test_cold_storage.py` add test: `GET /post-harvest/receipts/{receipt_number}` returns the receipt for the owning farmer and the facility provider, and 403/404 (per the router's existing semantics — assert the actual code) for an unrelated authenticated farmer (no auth leak).
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_cold_storage.py -q -k receipt`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: fix the router access check until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.17 — Create StoreHouse web tests
 - DO: create `backend/tests/test_storehouse_web.py` (new): provider onboards a facility + 2 chambers → farmer books (capacity decrements server-side) → provider approves → inward recorded with lot/grade/photo → farmer requests release → provider releases → `GET /provider/stats` reflects updated utilization % and revenue; per-booking fee ledgered; Free-tier provider blocked from console writes with the entitlement envelope.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_storehouse_web.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.18 — Add cold-storage i18n section en+hi
 - DO: create `website/src/lib/i18n/locales/en.coldstorage.ts` and `hi.coldstorage.ts` (modeled on `en.dairy.ts` as in task 3.18); include every `t()` key used by the coldstorage + farmer storage views, identical key sets, including: गोदाम (warehouse), कक्ष (chamber), रसीद (receipt). Import the section files from `StoreHouseHome.tsx` and the farmer storage pages.
 - RUN: `cd website && pnpm exec tsc --noEmit && diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.coldstorage.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.coldstorage.ts | sort)`
 - EXPECT: tsc exit 0; diff prints nothing.
 - IF FAIL: add missing keys, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.19 — HUMAN CHECK: provider + farmer cold-storage flow
 - DO: HUMAN CHECK. Dev server + website running. Provider: onboard facility + 2 chambers (₹/q/month pricing) → approve a booking with reason → record inward (lot/grade/photo) → execute release; confirm utilization % and revenue update on StoreHouseHome. Farmer: book from the directory (capacity visibly decrements), retrieve the warehouse receipt by number, attach it to a loan application and confirm it appears in the bank manager's document list (LoanDetailPage). Verify a Free-tier provider is blocked from console writes with an upgrade prompt, and the receipt page does not render for a different farmer's account. Toggle en⇄hi.
@@ -941,35 +941,35 @@ Conventions used below:
 - RUN: `grep -n "@router\|mark-vaccinated" backend/app/routers/livestock_vets.py | head -25 && grep -n "receipts\|analytics" backend/app/routers/livestock_gaushala.py | head -10`
 - EXPECT: both greps print the endpoints named above.
 - IF FAIL: repo contradicts instructions.md §WS-06 — STOP (playbook §5) with output.
-- [ ]
+- [x]
 
 ### Task 6.2 — Add credentialStatus to managed vets
 - DO: in `backend/app/routers/livestock_vets.py` (and its model file if vet models live elsewhere — check `grep -rn "managed" backend/app/models | head`): add `credentialStatus: "pending"|"verified"|"rejected"` (default `"pending"`) + `credentialDocs: list[str] = []` (doc refs) on managed-vet records; accept them on `POST /livestock/vets/managed` and `PUT /livestock/vets/managed/{id}`. Existing records behave as `"pending"`.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py tests/test_gaushala_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.3 — Gate campaigns on verified credentials + add verification endpoints
 - DO: in `backend/app/routers/livestock_vets.py`: (1) campaign-create (`POST /livestock/vet/campaigns*` — verify exact path in the file) returns 403 envelope `VET_NOT_VERIFIED` when the vet's `credentialStatus != "verified"` (unverified vets keep appointments + prescriptions); (2) add `GET /livestock/vets/managed?credentialStatus=` (filtered list for the future admin queue); (3) add `POST /livestock/vets/managed/{id}/credential {status, reason}` (admin-gated per the file's existing admin pattern) mutating `credentialStatus` and writing `audit_logs` with actor + reason.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py tests/test_gaushala_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.4 — Show "verification pending" badge in vet directory
 - DO: in the vet directory view under `website/src/views/vetnet/` (find the directory/list view via `ls website/src/views/vetnet/`): when a vet's `credentialStatus` is `"pending"`, render a "verification pending" badge via `t()` en+hi (add keys to `en.vetnet.ts`/`hi.vetnet.ts`). No other behavior change — appointments stay bookable.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.5 — Dated note: vet verification queue UI deferred
 - DO: append to `execution-plan/phase-03/notes.md` exactly: `2026-10-03 — WS-06: Vet credential verification queue UI deferred to phase-07 (superadmin module 19). Backend flag, filtered list endpoint, and status-mutation endpoint with audit_logs shipped in this phase.`
 - RUN: `grep -c "2026-10-03 — WS-06: Vet credential" execution-plan/phase-03/notes.md`
 - EXPECT: prints `1`.
 - IF FAIL: fix the note text, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.6 — Gate vet Pro features behind ₹299 entitlement
 - PRECONDITION: `grep -q "def require_entitlement" backend/app/services/billing.py` — if fails, STOP the phase (playbook §5).
@@ -977,56 +977,56 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py tests/test_gaushala_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.7 — Create vet gating tests
 - DO: create `backend/tests/test_vet_gating.py` (new): Free-tier vet hits the entitlement wall on campaign creation with the upgrade envelope; Pro-entitled vet creates a campaign; unverified (but Pro) vet gets 403 `VET_NOT_VERIFIED` on campaign creation; Free vet keeps appointment + basic prescription access; credential status-mutation writes an `audit_logs` row with reason.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_vet_gating.py -q`
 - EXPECT: exit 0, new tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.8 — Automate 80G receipt PDF on donation approval
 - DO: in `backend/app/routers/livestock_gaushala.py` donation-approval handler (find it via `grep -n "approve\|donation" backend/app/routers/livestock_gaushala.py | head`): on approval, auto-generate the 80G receipt PDF via `backend/app/services/reports.py` (existing PDF pattern), attach the PDF ref to the donation record, and assign a receipt number that is SEQUENTIAL per gaushala per financial year (counter doc per gaushala+FY, incremented transactionally following the codebase's existing counter/id-generation pattern — check `grep -rn "counter\|nextNumber\|sequential" backend/app/services | head`). `GET /livestock/gaushala/receipts` keeps working.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py tests/test_gaushala_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.9 — Surface 80G receipt download on ReceiptsPage + donor confirmation
 - DO: in the gaushala ReceiptsPage (find via `ls website/src/views/gaushala/`): add a download button per receipt fetching the PDF ref from the donation record (extend `website/src/lib/api/gaushala.ts` with a typed wrapper if needed); surface the same download in the donor confirmation UI (the view shown after donation approval — locate it in the same directory). Strings via `t()` en+hi (add keys to `en.gaushala.ts`/`hi.gaushala.ts`).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.10 — Test sequential 80G numbering
 - DO: in `backend/tests/test_dairy_gaushala_analytics.py` add test: two donations approved for the same gaushala in the same FY get sequential receipt numbers (n, n+1); a different gaushala's sequence starts independently; the generated PDF ref is attached to each donation record.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py -q -k 80g -i`
 - EXPECT: exit 0 (if `-k 80g -i` matches nothing, re-run with the exact test name you used instead — but the file must contain and pass the new test; do not rename existing tests).
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.11 — Add public transparency backend aggregate
 - DO: in `backend/app/routers/livestock_gaushala.py` add a NO-AUTH endpoint `GET /livestock/gaushala/{id}/transparency` returning: aggregated donations ledger (donor name optional/anonymized — include name only when the donation record marks the donor as public, otherwise `"anonymous"`; NEVER phone/email/address), amounts, 80G receipt count, expense-by-category summary, cattle census by status — sourced from `GET /livestock/gaushala/analytics` data + receipts aggregates. Register it explicitly outside any auth dependency (follow how the router handles public endpoints elsewhere in the codebase — `grep -rn "no.auth\|public" backend/app/routers | head`).
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py tests/test_gaushala_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.12 — Build public transparency page
 - DO: create `website/src/views/gaushala/GaushalaTransparencyPage.tsx` (new) rendering the task 6.11 endpoint; add a PUBLIC (no-auth) route `/gaushala/{id}/transparent` in `website/src/App.tsx` outside the auth-guarded route group (follow how existing public routes like auth pages are declared). ₹ from integer paisa; strings via `t()` en+hi.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.13 — Test transparency payload has zero PII
 - DO: in `backend/tests/test_dairy_gaushala_analytics.py` add test: call `GET /livestock/gaushala/{id}/transparency` without auth → 200; response JSON (serialized) contains no donor phone/email field names and no raw phone number patterns from seeded fixtures; donations include amounts + 80G count; census-by-status present.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py -q -k transparency`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: strip the leaking fields from the endpoint until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.14 — Emit herd-health tasks via phase-01 task engine
 - PRECONDITION: `test -f backend/app/services/tasks.py && grep -q "def emit_task" backend/app/services/tasks.py` — if fails, STOP the phase (playbook §5).
@@ -1034,14 +1034,14 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_gaushala_analytics.py tests/test_gaushala_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.15 — Test vaccination task lifecycle
 - DO: in `backend/tests/test_vet_gating.py` add test: creating a vaccination record with a due date emits a farmer task with the deep link; campaign enrollment emits a task; `mark-vaccinated` resolves the vaccination task (status done per the task engine API).
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_vet_gating.py -q -k task`
 - EXPECT: exit 0, new test passes.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 6.16 — HUMAN CHECK: vet + gaushala flows
 - DO: HUMAN CHECK. Dev server + website running. (1) Farmer sees a vaccination-due task on his dashboard, deep-links to the animal, and the task auto-resolves on mark-vaccinated. (2) An unverified vet shows the "verification pending" badge and is blocked from campaign creation (403). (3) Free-tier vet hits the ₹299 upgrade wall on campaign tools; after upgrade (test entitlement grant), campaign creation unlocks. (4) Approve a donation → downloadable, sequentially numbered 80G PDF on ReceiptsPage + donor confirmation. (5) Open `/gaushala/{id}/transparent` in a logged-out/incognito window → renders with zero PII. Toggle en⇄hi on new surfaces.
@@ -1073,28 +1073,28 @@ Conventions used below:
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -c "from app.services.ai import gateway, question_sets, privacy; print('ai foundation ok')"`
 - EXPECT: exit 0, prints `ai foundation ok`.
 - IF FAIL: report the import error and STOP the phase (playbook §5) — the dependency is broken, not this WS.
-- [ ]
+- [x]
 
 ### Task 7.2 — Register M14 question set loans.prescreen.v1
 - DO: in `backend/app/services/ai/question_sets.py` register `loans.prescreen.v1` following the exact pattern of an existing registered set: output schema `{riskBand: "low"|"medium"|"high", missingDocs: list[str], confidence: float}`, score threshold field per the file's convention, a DETERMINISTIC fallback (e.g. riskBand from a rule over land size + repayment history fields, missingDocs from required-docs minus uploaded-docs — rule-based, no AI), and automation level `"suggest"`.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.3 — Add M14 privacy state builder
 - DO: in `backend/app/services/ai/privacy.py` add builder `build_loan_prescreen_state(application: dict) -> dict` following the file's existing builder pattern: pseudonymized ids, only loan-relevant fields (amount, purpose, land/crop aggregates, repayment history summary, uploaded doc types), ≤1,500 tokens, and assert-strip Aadhaar/phone/email fields the same way existing builders do (rule 11).
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.4 — Wire M14 into loan submit + queue read
 - DO: in `backend/app/routers/loans.py`: on application submit (apply path, shared with `finance.py` if that is where submit lives — put the call in `backend/app/services/loans.py` if both routers share it) and on `GET /loans/queue`, compute prescreen via `result = await gateway.decide(state, "loans.prescreen.v1", ctx)` using the task 7.3 builder; store/return the annotation as `ai: {riskBand, missingDocs}` on the application/queue rows; sort the queue by risk band per the gateway result. HARD CONSTRAINTS: AI never mutates application status (sorting + annotation only); on exception/timeout/low budget use the registered fallback and log with `fallbackUsed`; every call logged to `ai_decisions` with cost + confidence (use the gateway's built-in logging — do not hand-roll).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_credit_desk_web.py tests/test_finance.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.5 — Emit farmer tasks for AI-flagged missing docs
 - PRECONDITION: `test -f backend/app/services/tasks.py && grep -q "def emit_task" backend/app/services/tasks.py` — if fails, STOP the phase (playbook §5).
@@ -1102,168 +1102,168 @@ Conventions used below:
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.6 — Register M14 outcome hook
 - DO: in the AI outcomes module from phase-00 (`backend/app/services/ai/` — the outcomes/decision_log file present there): register an outcome hook for `loans.prescreen.v1` recording outcomes `approved|rejected|defaulted`, and call it from the approve/reject handlers in `backend/app/routers/loans.py` (and a defaulted marker wherever default is recorded, if such a transition exists — if none exists, register the hook and note the defaulted source as absent; do not invent a status).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.7 — Wire M14 badges in CreditDesk UI
 - DO: in `website/src/views/bank/LoanQueuePage.tsx` and `LoanDetailPage.tsx` render the `ai` annotation (risk band badge + missing-docs badge) using the seam from task 3.17; absent `ai` → screens unchanged. Strings via `t()` en+hi (add keys to the bank section files).
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.8 — Test M14: golden, fallback, flag-off
 - DO: create `backend/tests/test_ai_loans_prescreen.py` (new): (1) golden fixture set of applications with manager labels — with `AI_PROVIDER=shim`, ranking correlation ≥ 0.7 vs the labels (Spearman or pairwise-accuracy per the AI plan's convention — use the same assertion style any existing AI test in `backend/tests/` uses; if none exists, use pairwise accuracy ≥ 0.7); (2) gateway raising → deterministic fallback used and response logged with `fallbackUsed`; (3) AI flag off → `GET /loans/queue` returns submitted-order with no `ai` field and zero status mutations.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_loans_prescreen.py -q`
 - EXPECT: exit 0, all three tests pass.
 - IF FAIL: fix code until green — never weaken the correlation assertion — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.9 — Register M15 question set insurance.triage.v1
 - DO: in `backend/app/services/ai/question_sets.py` register `insurance.triage.v1`: output schema `{photoQuality: "ok"|"poor", completeness: float, retakeGuidance: {en: str, hi: str}, fraudSignal: float, triageReasons: list[str], suggestedSurveyor: str|None}`, threshold per convention, deterministic fallback (completeness from required-photo-count ratio, fraudSignal 0.0, guidance from static checklist strings en+hi), automation level `"suggest"`.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.10 — Add M15 privacy state builder
 - DO: in `backend/app/services/ai/privacy.py` add `build_claim_triage_state(claim: dict) -> dict`: pseudonymized claim id, crop/loss-type/photo-count/photo-metadata aggregates only, ≤1,500 tokens, no Aadhaar/phone/email (rule 11) — same strip pattern as task 7.3.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.11 — Wire M15 instant feedback at intimation
 - DO: in `backend/app/routers/insurance_claims.py` `POST /insurance/claims` handler: after saving the claim, compute triage via `gateway.decide(state, "insurance.triage.v1", ctx)` (task 7.10 state) and include in the response an annotation `{photoQuality, completeness, retakeGuidance:{en,hi}}` so the farmer gets same-day retake guidance; store the full triage result on the claim doc for the provider console. HARD CONSTRAINTS: filing is never blocked by the annotation; fallback + `fallbackUsed` on any gateway failure; `ai_decisions` logging via the gateway.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_insurance_claims.py tests/test_claims_desk_web.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.12 — Wire M15 provider badges + fraud flag (never auto-reject)
 - DO: in `backend/app/routers/insurance.py` provider claims endpoints: include the stored triage annotation (reasons + suggestedSurveyor) on claim list/detail responses; when `fraudSignal > 0.8` set a `fraudFlag: true` annotation field only. HARD CONSTRAINT: no auto-reject — the human decision path (review/approve/reject handlers) stays byte-identical with AI on or off; verify no triage value is read in any status-transition handler.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_insurance_provider.py tests/test_claims_desk_web.py -q && grep -n "fraudSignal\|fraudFlag\|triage" app/routers/insurance.py | grep -i "reject" || true`
 - EXPECT: pytest exit 0; the grep pipeline prints nothing (no fraud/triage reference inside reject logic).
 - IF FAIL: remove the coupling, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.13 — Register M15 outcome hook + UI feedback surfaces
 - DO: (1) register an outcome hook for `insurance.triage.v1` in the phase-00 outcomes module (outcome = final claim decision + whether retake guidance was followed). (2) Website: in the farmer intimation result (`website/src/views/farmer/FarmerClaimIntimatePage.tsx`) render the instant photo-quality/completeness feedback + retake guidance (en/hi from the response); in `website/src/views/insurance/ClaimsQueuePage.tsx`/`ClaimDetailPage.tsx` render triage badges with reasons, suggested surveyor, and a fraud flag chip when `fraudFlag` is true. All via `t()`; absent annotation → screens unchanged.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_claims_desk_web.py -q && cd ../website && pnpm exec tsc --noEmit`
 - EXPECT: both exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.14 — Test M15: golden, fallback, flag-off, zero auto-reject
 - DO: create `backend/tests/test_ai_insurance_triage.py` (new): (1) golden fixture: incomplete claims (missing photos) get `completeness < 1` + non-empty retake guidance in the intimation response on shim; (2) gateway raising → fallback annotation + `fallbackUsed` logged; (3) flag off → intimation response has no triage annotation and filing still succeeds; (4) a claim fixture engineered with `fraudSignal > 0.8` (shim returns it) is flagged but its status is unchanged and it can still be approved by a human — assert zero auto-rejections across the whole test module.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_insurance_triage.py -q`
 - EXPECT: exit 0, all four tests pass.
 - IF FAIL: fix code until green — never delete the zero-auto-reject assertion — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.15 — Register M17 question set dairy.adulteration.v1
 - DO: in `backend/app/services/ai/question_sets.py` register `dairy.adulteration.v1`: output schema `{anomaly: bool, confidence: float, baseline: {fatAvg: float, snfAvg: float, windowDays: 30}}`, threshold per convention, deterministic fallback (anomaly = |today − 30-day mean| > 2× stddev over the member's own history; insufficient history → anomaly false, confidence 0), automation level `"suggest"`.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.16 — Add M17 privacy state builder
 - DO: in `backend/app/services/ai/privacy.py` add `build_adulteration_state(member_history: list[dict], today: dict) -> dict`: pseudonymized member ref, FAT/SNF series + today's reading only, ≤1,500 tokens, no names/phones (rule 11).
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.17 — Wire M17 per collection entry (flag, never block)
 - DO: in `backend/app/routers/livestock_dairy.py` collection-recording path (`POST /livestock/procurement/collections`, shared with collection-check if that is where FAT/SNF lands): load the member's 30-day FAT/SNF baseline, call `gateway.decide(state, "dairy.adulteration.v1", ctx)`, and store `{anomaly, confidence}` as an annotation on the collection doc. HARD CONSTRAINTS: the collection ALWAYS saves (flagged, not blocked) — gateway failure → fallback + `fallbackUsed`, still saves; `ai_decisions` logging via gateway.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_dairy_mgmt.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.18 — Add M17 weekly route-level batch job
 - DO: in `backend/app/routers/jobs.py` add a weekly job (follow the file's existing job registration pattern) that aggregates the last 7 days of collection annotations per route and writes a route-level anomaly summary doc (route id, flagged count, total, top members by flag rate) for the dairy console; the job reads stored annotations — it makes no new gateway calls per collection.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/routers/jobs.py && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0 both.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.19 — Register M17 outcome hook + UI flag surfaces
 - DO: (1) register an outcome hook for `dairy.adulteration.v1` (outcome = manager confirms/dismisses the flag; add a manager confirm/dismiss endpoint in `backend/app/routers/dairy_manager.py` — `POST /dairy-manager/collections/{id}/flag-review {action: "confirm"|"dismiss"}` writing the outcome + audit_logs row). (2) Website: show the anomaly flag on the console collections ledger (`website/src/views/dairy/collections/CollectionsPage.tsx`) with a confirm/dismiss action, and a note line on the member statement view (`MemberStatementPage.tsx`) when the cycle contains flagged collections — strings en+hi (`en.dairy.ts`/`hi.dairy.ts`).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q && cd ../website && pnpm exec tsc --noEmit`
 - EXPECT: both exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.20 — Test M17: detection rate, zero false-blocks, fallback
 - DO: create `backend/tests/test_ai_dairy_adulteration.py` (new): (1) a seeded adulteration pattern (member history at stable FAT/SNF, then a diluted reading) is flagged on shim — assert seeded anomalous entries flagged ≥85% across the fixture set; (2) zero false-blocks — every collection POST in the module returns success regardless of flag; (3) gateway raising → fallback annotation + collection still saves; (4) flag-off → collections save with no annotation; (5) statement data for a cycle with a flagged collection carries the note field the UI renders.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_dairy_adulteration.py -q`
 - EXPECT: exit 0, all five tests pass.
 - IF FAIL: fix code until green — never weaken the ≥85% assertion — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.21 — Register M18 question set contracts.attractiveness.v1
 - DO: in `backend/app/services/ai/question_sets.py` register `contracts.attractiveness.v1`: output schema `{incomeVsMandi: float, riskFlags: list[str], explanation: str}`, threshold per convention, deterministic fallback (incomeVsMandi from formula-pricing terms vs the 12-week mandi average the backend already has via mandi data; explanation from a static template), automation level `"suggest"`.
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/question_sets.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.22 — Add M18 privacy state builder
 - DO: in `backend/app/services/ai/privacy.py` add `build_contract_attractiveness_state(contract: dict, mandiTrend: list, farmerCropHistory: list) -> dict`: contract terms (formula pricing), crop mandi trend series, aggregated farmer crop history — pseudonymized, ≤1,500 tokens, no PII (rule 11).
 - RUN: `cd backend && .venv/bin/python -m py_compile app/services/ai/privacy.py`
 - EXPECT: exit 0.
 - IF FAIL: fix syntax, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.23 — Wire M18 score onto contracts with cached explanation
 - DO: in `backend/app/routers/contracts.py` (create/update path, and a `GET` enrichment if the farmer card reads the contract doc): compute `gateway.decide(state, "contracts.attractiveness.v1", ctx)` (task 7.22 state; mandi trend + farmer crop history from the existing mandi/crop data sources) and store `attractiveness: {incomeVsMandi, riskFlags, explanation, decisionId}` on the contract doc. HARD CONSTRAINTS: the Gemini/SGR explanation is CACHED per `decision_id` — a second read of the same contract makes NO new gateway call and writes no new `ai_decisions` row; fallback + `fallbackUsed` on failure; e-sign flow untouched.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_contracts.py tests/test_contracts_direct.py tests/test_direct_buyer.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.24 — Register M18 outcome hook
 - DO: register an outcome hook for `contracts.attractiveness.v1` in the phase-00 outcomes module (outcome = farmer accepted / declined the contract) and call it from the contract accept/decline handlers in `backend/app/routers/contracts.py` — hook call only, no change to the e-sign logic.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_contracts.py tests/test_contracts_direct.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.25 — Render M18 score on grow-for-us card
 - DO: in `website/src/views/farmer/FarmerContractDetailPage.tsx` (the card sections from task 2.25): when the contract carries `attractiveness`, render the income-vs-mandi score, risk flags, and an explanation sheet (expand/collapse pattern the view already uses or a simple details section) showing the cached explanation — including when the score shows the contract is WORSE than mandi (no hiding negative results); when absent (flag off), the static fallback from task 2.25 renders and everything else works. Strings via `t()` en+hi.
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.26 — Test M18: golden ranking, cache, flag-off
 - DO: create `backend/tests/test_ai_contracts_attractiveness.py` (new): (1) golden contract fixtures rank sensibly on shim (better-than-mandi contract scores higher than a worse-than-mandi one); (2) reading the same contract twice → exactly one `ai_decisions` row for that `decision_id` (cache honored); (3) gateway raising → fallback stored with `fallbackUsed`; (4) flag off → contract has no `attractiveness` field and accept/e-sign flow is byte-identical.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_contracts_attractiveness.py -q`
 - EXPECT: exit 0, all four tests pass.
 - IF FAIL: fix code until green — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.27 — Verify automation levels pinned at suggest
 - DO: read-only verification that the four new sets are configured at `suggest` and that no credit/insurance path exceeds `require_confirm` (rule 12).
 - RUN: `grep -n "prescreen\|triage\|adulteration\|attractiveness" backend/app/services/ai/question_sets.py | head -12 && grep -rn "require_confirm\|\"auto\"\|'auto'" backend/app/routers/loans.py backend/app/routers/insurance.py backend/app/routers/insurance_claims.py`
 - EXPECT: first grep shows the four registrations (each with its level field per the file's convention); second grep prints nothing (no confirm/auto escalation in credit/insurance routers).
 - IF FAIL: set the level to `suggest` / remove the escalation, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.28 — Run full AI suite on shim
 - DO: run the whole backend suite with the shim provider.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
 - EXPECT: exit 0, fully green including the four new `test_ai_*.py` modules; CI never calls paid APIs.
 - IF FAIL: fix the failing module, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 7.29 — HUMAN CHECK: AI annotations visible, flags-off unchanged
 - DO: HUMAN CHECK. Dev server + website running with `AI_PROVIDER=shim`: (1) bank queue shows sorted order with risk-band/missing-doc badges; switch the AI flag off → queue returns to submitted order, screens otherwise unchanged. (2) File an incomplete insurance claim → same-day retake guidance shows en/hi; provider queue shows triage reasons; no claim is ever auto-rejected. (3) Dairy collections ledger shows an anomaly flag on a seeded collection; member statement shows the note line en/hi. (4) Grow-for-us card shows score + explanation; reload the page → confirm no new `ai_decisions` row (check via backend logs/test), and a worse-than-mandi contract honestly says so.
@@ -1286,84 +1286,84 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_credit_desk_web.py -q`
 - EXPECT: exit 0 (audit-row assertions from tasks 3.15–3.16 pass).
 - IF FAIL: return to the failing assertion's task and fix — else STOP.
-- [ ]
+- [x]
 
 ### Task F.2 — Gate item: insurance claim courier-trackable + cycle time measurable
 - DO: verify claim stage tracking end-to-end and stats cycle-time data.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_claims_desk_web.py -q`
 - EXPECT: exit 0 (stage timeline + `/provider/stats` assertions pass).
 - IF FAIL: fix the failing assertion's code — else STOP.
-- [ ]
+- [x]
 
 ### Task F.3 — Gate item: warehouse receipt verifiable + attachable as collateral
 - DO: verify receipt retrieval by number and attachment to a CreditDesk application.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_storehouse_web.py tests/test_cold_storage.py -q -k "receipt or storehouse"`
 - EXPECT: exit 0.
 - IF FAIL: fix the failing code — else STOP.
-- [ ]
+- [x]
 
 ### Task F.4 — Gate item: dairy farmer ledger + real payout rail
 - DO: verify farmer milk-money ledger data and batch mark-paid payout execution + 409 retry.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py -q`
 - EXPECT: exit 0 (ledger/payout/statement assertions pass).
 - IF FAIL: fix the failing code — else STOP.
-- [ ]
+- [x]
 
 ### Task F.5 — Gate item: sliding QC computes to the rupee on both screens
 - DO: verify sliding settlement math server-side; both-screen rendering was human-checked in task 2.32 — re-confirm if any QC code changed since.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_purchase_settlement.py -q`
 - EXPECT: exit 0 (to-the-rupee assertions pass).
 - IF FAIL: fix the failing code — else STOP.
-- [ ]
+- [x]
 
 ### Task F.6 — Gate item: 3-round cap + org role 403s
 - DO: verify `NEGOTIATION_CLOSED` past 3 rounds and `ORG_ROLE_REQUIRED` gates.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_demands_offers.py tests/test_buyer_org.py -q`
 - EXPECT: exit 0.
 - IF FAIL: fix the failing code — else STOP.
-- [ ]
+- [x]
 
 ### Task F.7 — Gate item: AI never auto-approves credit/insurance
 - DO: verify `loans.prescreen.v1` / `insurance.triage.v1` annotate only, `fraud_signal > 0.8` flags but never rejects, `require_confirm` cap respected.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest tests/test_ai_loans_prescreen.py tests/test_ai_insurance_triage.py tests/test_ai_dairy_adulteration.py tests/test_ai_contracts_attractiveness.py -q`
 - EXPECT: exit 0 (zero-auto-reject and no-status-mutation assertions pass).
 - IF FAIL: fix the failing code — else STOP.
-- [ ]
+- [x]
 
 ### Task F.8 — Gate item: no tier gate bypassed
 - DO: verify server-side enforcement of: dairy 25-member Free cap, directBuyer 1-contract Free cap, vet ₹299 Pro, cold-storage ₹1,999 Pro per facility.
 - RUN: `cd backend && .venv/bin/python -m pytest tests/test_dairy_web_flows.py tests/test_direct_buyer.py tests/test_vet_gating.py tests/test_storehouse_web.py -q -k "entitlement or tier or cap or gate"`
 - EXPECT: exit 0 with tier-gate tests selected and passing (if `-k` selects nothing in one file, run that file in full and confirm the tier tests from tasks 1.30/2.26/6.7/5.17 pass).
 - IF FAIL: fix the failing gate — else STOP.
-- [ ]
+- [x]
 
 ### Task F.9 — Global gate: backend suite fully green
 - DO: run the full backend test suite.
 - RUN: `cd backend && .venv/bin/python -m pytest -q`
 - EXPECT: exit 0 — fully green including all pre-existing dairy/gaushala/contracts suites.
 - IF FAIL: if the failure is in this phase's code, fix it; if unrelated to your workstreams, STOP the phase (playbook §5).
-- [ ]
+- [x]
 
 ### Task F.10 — Global gate: website typecheck + build clean
 - DO: run website typecheck and production build.
 - RUN: `cd website && pnpm exec tsc --noEmit && pnpm build`
 - EXPECT: exit 0, build completes with no errors.
 - IF FAIL: fix the reported errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task F.11 — Global gate: full suite green with AI_PROVIDER=shim
 - DO: run the backend suite explicitly on the shim provider.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q`
 - EXPECT: exit 0.
 - IF FAIL: fix the failing module, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task F.12 — Global gate: locale parity spot-check
 - DO: verify en/hi key parity for every locale section touched in this phase.
 - RUN: `cd website && for f in dairy trade bank insurance coldstorage gaushala vetnet; do echo "== $f"; diff <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/en.$f.ts | sort) <(grep -oE "^  [a-zA-Z0-9_.]+:" src/lib/i18n/locales/hi.$f.ts | sort); done`
 - EXPECT: every diff prints nothing.
 - IF FAIL: add the missing keys to the lagging locale file, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task F.13 — HUMAN CHECK flow 1: dairy end-to-end
 - DO: HUMAN CHECK. Dev server + website running. RFQ → bid compare → accept → OTP collection with grade/qty/photo → payout batch via the real rail (409 on retry) → farmer ledger (slips + payments + NET) + PDF statement matching the ledger to the paisa. No "coming soon" reachable from any screen touched.

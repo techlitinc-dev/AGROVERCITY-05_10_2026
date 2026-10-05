@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.db import get_doc, query, set_doc
-from app.core.deps import current_user_id
+from app.core.deps import admin_user, current_user_id
 from app.models.livestock_mgmt import (
     AppointmentIn,
     AppointmentStatusIn,
@@ -12,15 +12,23 @@ from app.models.livestock_mgmt import (
     CampaignIn,
     CampaignVaccinatedIn,
     PrescriptionIn,
+    VetCredentialIn,
     VetManagedIn,
     VetSchedulePutIn,
 )
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
+from app.services import tasks as tasks_service
+from app.services.billing import check_entitlement, require_entitlement
 from app.services.notifications import send_fcm_to_user
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(tags=["livestock"])
+
+# WS-06: vet Pro tier feature keys (plan config entry: persona "vet", ₹299/mo).
+VET_FEATURE_CAMPAIGNS = "vetCampaigns"
+VET_FEATURE_SCHEDULE = "vetScheduleEditor"
 
 _VET_TRANSITIONS = {
     "requested": {"confirmed", "cancelled"},
@@ -105,12 +113,55 @@ def _default_schedule(vet_id: str) -> dict:
     }
 
 
+async def _campaign_creator(uid: str = Depends(_manager_or_vet)) -> str:
+    """Campaign tools are a vet Pro feature (WS-06 §6.6) and require a verified
+    vet credential (§6.3). Managers are unaffected — they carry no vet profile.
+    """
+    vet = await _find_claimed_vet(uid)
+    if vet is not None:
+        await check_entitlement(uid, "vet", VET_FEATURE_CAMPAIGNS)
+        if vet.get("credentialStatus", "pending") != "verified":
+            _error(403, "VET_NOT_VERIFIED", "vet credentials are not verified yet")
+    return uid
+
+
+# Herd-health task kinds (WS-06 §6.14) — emitted by the vaccination scheduler and
+# campaign enrollment, resolved by mark-vaccinated. Single task-engine store, no
+# parallel reminder system.
+HERD_HEALTH_TASK_KINDS = ("vaccination_due", "campaign_vaccination_due")
+
+
+async def _resolve_animal_tasks(user_id: str, animal_id: str) -> None:
+    """Mark the owning farmer's open herd-health tasks for an animal as done.
+
+    The task engine exposes no resolve helper (only emit_task + the /tasks router),
+    so this mirrors the completion path in app/routers/tasks.py: status -> "done".
+    """
+    if not user_id or not animal_id:
+        return
+    rows = await query(
+        tasks_service.COLLECTION,
+        [("userId", "==", user_id), ("status", "==", "open")],
+        limit=500,
+    )
+    for doc in rows:
+        if doc.get("kind") not in HERD_HEALTH_TASK_KINDS:
+            continue
+        source_id = doc.get("sourceId") or ""
+        if source_id == animal_id or source_id.endswith(f":{animal_id}"):
+            doc["status"] = "done"
+            doc["resolvedBy"] = "mark-vaccinated"
+            doc["updatedAt"] = _now()
+            await set_doc(tasks_service.COLLECTION, doc["taskId"], doc)
+
+
 # =========================================================================
 # Managed vet directory (manager)
 # =========================================================================
 
 @router.get("/livestock/vets/managed")
 async def list_managed_vets(
+    credentialStatus: str | None = None,
     page: int = 1,
     pageSize: int = 50,
     uid: str = Depends(_manager),
@@ -119,7 +170,12 @@ async def list_managed_vets(
     docs.sort(key=lambda d: d.get("name", ""))
     for doc in docs:
         doc["claimed"] = bool(doc.get("claimedByUid"))
+        # WS-06: records predating credential verification behave as "pending".
+        doc["credentialStatus"] = doc.get("credentialStatus", "pending")
+        doc["credentialDocs"] = doc.get("credentialDocs", [])
         doc.update(await provider_rating_fields(doc["id"]))
+    if credentialStatus:
+        docs = [d for d in docs if d["credentialStatus"] == credentialStatus]
     return _envelope(docs, page, pageSize)
 
 
@@ -144,6 +200,8 @@ async def create_managed_vet(body: VetManagedIn, uid: str = Depends(_manager)):
         "vetCouncilRegNo": body.vetCouncilRegNo,
         "emergencyAvailable": body.emergencyAvailable,
         "availableForFarmVisit": body.availableForFarmVisit,
+        "credentialStatus": body.credentialStatus,
+        "credentialDocs": body.credentialDocs,
         "distanceKm": 0.0,
         "rating": 0.0,
         "nextAvailableSlot": "",
@@ -178,6 +236,8 @@ async def update_managed_vet(vet_id: str, body: VetManagedIn, uid: str = Depends
         "vetCouncilRegNo": body.vetCouncilRegNo,
         "emergencyAvailable": body.emergencyAvailable,
         "availableForFarmVisit": body.availableForFarmVisit,
+        "credentialStatus": body.credentialStatus,
+        "credentialDocs": body.credentialDocs,
         "updatedAt": _now(),
     })
     await set_doc("vets", vet_id, doc)
@@ -192,6 +252,38 @@ async def deactivate_managed_vet(vet_id: str, uid: str = Depends(_manager)):
     doc["status"] = "inactive"
     doc["updatedAt"] = _now()
     await set_doc("vets", vet_id, doc)
+    return doc
+
+
+@router.post("/livestock/vets/managed/{vet_id}/credential")
+async def update_vet_credential(
+    vet_id: str,
+    body: VetCredentialIn,
+    claims: dict = Depends(admin_user),
+):
+    """Admin credential-verification decision (WS-06).
+
+    The admin console signs in with a Firebase ID token (see core/deps.admin_user);
+    every decision writes an audit_logs row with actor + reason (rule 8).
+    """
+    doc = await get_doc("vets", vet_id)
+    if not doc:
+        _error(404, "VET_NOT_FOUND", "vet not found")
+    doc["credentialStatus"] = body.status
+    doc["credentialUpdatedAt"] = _now()
+    await set_doc("vets", vet_id, doc)
+    await set_doc(
+        "audit_logs",
+        f"aud_vetcred_{vet_id}_{uuid.uuid4().hex[:10]}",
+        {
+            "action": "VET_CREDENTIAL_UPDATE",
+            "actorId": claims.get("uid", ""),
+            "targetId": vet_id,
+            "status": body.status,
+            "reason": body.reason,
+            "at": _now(),
+        },
+    )
     return doc
 
 
@@ -243,7 +335,11 @@ async def get_my_schedule(vet: dict = Depends(_vet_owner)):
 
 
 @router.put("/livestock/vets/me/schedule")
-async def update_my_schedule(body: VetSchedulePutIn, vet: dict = Depends(_vet_owner)):
+async def update_my_schedule(
+    body: VetSchedulePutIn,
+    vet: dict = Depends(_vet_owner),
+    _ent: dict = Depends(require_entitlement("vet", VET_FEATURE_SCHEDULE)),
+):
     doc = await get_doc("vet_schedules", vet["id"]) or _default_schedule(vet["id"])
     if body.weeklySlots is not None:
         doc["weeklySlots"] = [s.model_dump() for s in body.weeklySlots]
@@ -509,7 +605,7 @@ async def list_campaigns(
 
 
 @router.post("/livestock/vet/campaigns", status_code=201)
-async def create_campaign(body: CampaignIn, uid: str = Depends(_manager)):
+async def create_campaign(body: CampaignIn, uid: str = Depends(_campaign_creator)):
     campaign_id = f"cmp_{uuid.uuid4().hex[:12]}"
     doc = {
         "id": campaign_id,
@@ -572,6 +668,22 @@ async def enroll_campaign(campaign_id: str, body: CampaignEnrollIn, uid: str = D
         f"{campaign['title']}: {campaign['fromDate']} ते {campaign['toDate']} दरम्यान लसीकरण करा.",
         {"kind": "campaign_enrolled", "campaignId": campaign_id, "enrollmentId": enrollment_id},
     )
+    # WS-06 §6.14: herd-health task to the owning farmer (deep-links to the campaign).
+    due = campaign.get("fromDate") or campaign.get("toDate") or ""
+    animal_label = animal.get("name") or animal.get("tagId") or body.animalId
+    await emit_task(
+        uid,
+        persona="farmer",
+        module="vet",
+        kind="campaign_vaccination_due",
+        title_en=f"vaccination due: {animal_label}, {due}",
+        title_hi=f"लसीकरण बाकी: {animal_label}, {due}",
+        subtitle=campaign.get("title", ""),
+        priority="upcoming",
+        deep_link=f"/vetnet/campaigns/{campaign_id}",
+        source_id=f"{campaign_id}:{body.animalId}",
+        due_at=due or None,
+    )
     return doc
 
 
@@ -597,4 +709,6 @@ async def mark_vaccinated(campaign_id: str, body: CampaignVaccinatedIn, uid: str
         f"{campaign['title']} — आपके पशु का लसीकरण पूरा हुआ।",
         {"kind": "campaign_vaccinated", "campaignId": campaign_id, "animalId": body.animalId},
     )
+    # WS-06 §6.14: mark-vaccinated resolves the farmer's open herd-health task(s).
+    await _resolve_animal_tasks(enrollment.get("farmerUid", ""), body.animalId)
     return enrollment

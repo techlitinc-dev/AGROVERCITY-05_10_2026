@@ -41,6 +41,7 @@ const hiVetnet: Record<string, string> = {
   vetnetEmergencyBadge: 'एमर्जन्सी',
   vetnetClaimed: 'दावा किया हुआ',
   vetnetUnclaimed: 'बिना दावा',
+  vetnetVerificationPending: 'सत्यापन बाकी',
   vetnetRatingLine: '★ {rating} ({count})',
   vetnetNoRating: 'अभी रेटिंग नहीं',
   vetnetDeactivateVet: 'पशुवैद्य निष्क्रिय करें',

@@ -297,6 +297,17 @@ const hiDairy: Record<string, string> = {
   dairyLedgerStatus: 'स्थिति',
   dairyLedgerPaid: 'भुगतान किया गया',
   dairyLedgerPending: 'लंबित',
+
+  // ---- Adulteration flags (WS-07 M17) ----
+  dairyAdulterationFlag: 'संभावित मिलावट',
+  dairyAdulterationFlagNote:
+    'FAT/SNF इस सदस्य के 30-दिन के आधार से काफी अलग है — भुगतान से पहले रीडिंग जाँचें।',
+  dairyFlagConfirm: 'फ़्लैग पुष्टि करें',
+  dairyFlagDismiss: 'फ़्लैग खारिज करें',
+  dairyFlagConfirmed: 'फ़्लैग की पुष्टि हुई',
+  dairyFlagDismissed: 'फ़्लैग खारिज किया गया',
+  dairyStatementFlagNote:
+    'इस अवधि की {count} पर्ची(याँ) संभावित FAT/SNF असामान्यता के लिए चिह्नित हैं — रीडिंग जाँचें।',
 };
 
 registerLocale('hi', hiDairy);

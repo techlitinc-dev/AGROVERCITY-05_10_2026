@@ -26,8 +26,39 @@ import {
 } from './views/trade';
 import { LoadDetailPage, LoadForm, TripPage, VehicleForm } from './views/transport';
 import { DealDetailPage, DealFormPage } from './views/broker';
-import { ContractDetailPage, ContractFormPage } from './views/directbuyer';
-import { FarmerContractDetailPage, FarmerDealDetailPage } from './views/farmer';
+import {
+  ContractDetailPage,
+  ContractFormPage,
+  DemandDetailPage,
+  TeamPage,
+} from './views/directbuyer';
+import {
+  ColdStorageDirectoryPage,
+  FarmerClaimIntimatePage,
+  FarmerClaimTrackerPage,
+  FarmerContractDetailPage,
+  FarmerDealDetailPage,
+  LoanTrackingPage,
+  MyStorageBookingsPage,
+  WarehouseReceiptPage,
+} from './views/farmer';
+import { LoanDetailPage } from './views/bank';
+import {
+  ClaimDetailPage,
+  ClaimsQueuePage,
+  DisbursePage,
+  PolicyReviewPage,
+  RatesPage as InsuranceRatesPage,
+  SurveyorsPage,
+} from './views/insurance';
+import {
+  BookingsQueuePage,
+  ChambersPage,
+  FacilitiesPage,
+  InwardRegisterPage,
+  ReleasePage,
+  UtilizationPage,
+} from './views/coldstorage';
 // Deep-routes routed alongside registries (LANDLORD_PAGES, EQUIPMENT_PAGES)
 import {
   LandAnalyticsPageRoute,
@@ -79,6 +110,7 @@ import {
   ExpensesPage,
   GaushalaAnalyticsPage,
   GaushalaConsoleHome,
+  GaushalaTransparencyPage,
   ReceiptsPage,
 } from './views/gaushala';
 import {
@@ -333,6 +365,97 @@ export default function App() {
           path="/dashboard/p/myContracts/:contractId"
           element={loggedIn ? <FarmerContractDetailPage /> : <Navigate to="/auth" replace />}
         />
+        {/* ProcurePro team + demand detail (phase-03 WS-02) */}
+        <Route
+          path="/dashboard/p/contracts/team"
+          element={loggedIn ? <TeamPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/demands/:demandId"
+          element={loggedIn ? <DemandDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* CreditDesk loan detail (phase-03 WS-03) */}
+        <Route
+          path="/dashboard/p/loanReview/:applicationId"
+          element={loggedIn ? <LoanDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* ClaimsDesk provider console (phase-03 WS-04) */}
+        <Route
+          path="/insurance/console/claims"
+          element={loggedIn ? <ClaimsQueuePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/console/claims/:claimId"
+          element={loggedIn ? <ClaimDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/console/surveyors"
+          element={loggedIn ? <SurveyorsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/console/disburse"
+          element={loggedIn ? <DisbursePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/console/policies"
+          element={loggedIn ? <PolicyReviewPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/console/rates"
+          element={loggedIn ? <InsuranceRatesPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Farmer claim mirror (phase-03 WS-04) */}
+        <Route
+          path="/insurance/claims/new"
+          element={loggedIn ? <FarmerClaimIntimatePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/my-claims"
+          element={loggedIn ? <FarmerClaimTrackerPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/insurance/my-claims/:claimId"
+          element={loggedIn ? <FarmerClaimTrackerPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* StoreHouse provider console + farmer storage (phase-03 WS-05) */}
+        <Route
+          path="/storage/console/facilities"
+          element={loggedIn ? <FacilitiesPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/console/chambers"
+          element={loggedIn ? <ChambersPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/console/bookings"
+          element={loggedIn ? <BookingsQueuePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/console/inward"
+          element={loggedIn ? <InwardRegisterPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/console/release"
+          element={loggedIn ? <ReleasePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/console/utilization"
+          element={loggedIn ? <UtilizationPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/directory"
+          element={loggedIn ? <ColdStorageDirectoryPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/my-bookings"
+          element={loggedIn ? <MyStorageBookingsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/storage/receipts/:receiptNumber"
+          element={loggedIn ? <WarehouseReceiptPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Public gaushala transparency page (phase-03 WS-06 — no auth guard) */}
+        <Route path="/gaushala/:id/transparent" element={<GaushalaTransparencyPage />} />
         {/* Dairy marketplace RFQs & Bid Compare */}
         <Route
           path="/dairy-market/rfqs"

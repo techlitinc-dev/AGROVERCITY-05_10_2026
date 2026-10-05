@@ -19,7 +19,7 @@ PERSONA_DOC_MATRIX: dict[str, tuple[str, ...]] = {
     "broker": ("arhtiya_licence",),
     "equipmentRental": ("equipment_rc", "equipment_insurance", "operator_licence"),
     "dairyManager": ("fssai",),
-    "directBuyer": ("iec", "apeda"),
+    "directBuyer": ("fssai", "iec", "apeda", "gst"),
     "instructor": ("instructor_credential",),
     "bankManager": ("bank_authorisation",),
     "insuranceProvider": ("irdai_licence",),

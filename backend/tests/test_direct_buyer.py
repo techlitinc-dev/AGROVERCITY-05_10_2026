@@ -330,3 +330,92 @@ async def test_feed_empty_without_signals(client):
     assert resp.status_code == 200
     assert resp.json()["data"] == []
     assert resp.json()["total"] == 0
+
+
+# ---- P12 team RBAC + directBuyer tier cap ----
+
+
+def _seed_kyc(user_store, uid):
+    """Corporate-buyer KYC doc (gst verified) so contract creation passes the
+    WS-02 step-7 KYC gate."""
+    user_store[f"kyc_cases/kyc_{uid}_directBuyer"] = {
+        "caseId": f"kyc_{uid}_directBuyer",
+        "userId": uid,
+        "persona": "directBuyer",
+        "docs": [{"docId": f"kyc_{uid}_directBuyer:gst", "type": "gst", "status": "verified"}],
+        "status": "verified",
+    }
+
+
+CONTRACT_BODY = {
+    "farmerId": "uid-farm",
+    "crop": "Wheat",
+    "quantityTotal": 50.0,
+    "priceType": "fixed",
+    "baseRate": 2200,
+    "schedule": {
+        "startDate": "2026-11-01",
+        "endDate": "2026-11-30",
+        "frequency": "weekly",
+        "qtyPerDelivery": 12.5,
+    },
+}
+
+
+async def test_contract_org_rbac_and_free_tier_cap(client, user_store):
+    _seed_user(
+        user_store, "uid-admin", "Admin", active="directBuyer",
+        linkedProfiles=["directBuyer"], primaryProfile="directBuyer",
+    )
+    proc = _seed_user(
+        user_store, "uid-proc", "Proc", active="directBuyer",
+        linkedProfiles=["directBuyer"], primaryProfile="directBuyer",
+    )
+    qa = _seed_user(
+        user_store, "uid-qa", "QA", active="directBuyer",
+        linkedProfiles=["directBuyer"], primaryProfile="directBuyer",
+    )
+    _seed_user(user_store, "uid-farm", "Farmer")
+    for uid in ("uid-admin", "uid-proc", "uid-qa"):
+        _seed_kyc(user_store, uid)
+
+    user_store["buyer_orgs/uid-admin"] = {
+        "id": "uid-admin",
+        "adminUid": "uid-admin",
+        "companyName": "Agro Corp",
+        "members": [
+            {"uid": "uid-admin", "name": "Admin", "phone": "+9198", "role": "admin", "addedAt": ""},
+            {"uid": "uid-proc", "name": "Proc", "phone": "+9197", "role": "procurement", "addedAt": ""},
+            {"uid": "uid-qa", "name": "QA", "phone": "+9196", "role": "qa", "addedAt": ""},
+        ],
+    }
+
+    # QA member cannot create a contract (role gate) → 403 ORG_ROLE_REQUIRED
+    resp = await client.post("/v1/contracts", json=CONTRACT_BODY, headers=_auth(qa))
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "ORG_ROLE_REQUIRED"
+
+    # Procurement member creates the first contract → 201
+    resp = await client.post("/v1/contracts", json=CONTRACT_BODY, headers=_auth(proc))
+    assert resp.status_code == 201
+    contract_id = resp.json()["id"]
+
+    # QA member cannot edit an existing contract → 403 ORG_ROLE_REQUIRED
+    resp = await client.put(
+        f"/v1/contracts/{contract_id}", json={"baseRate": 2300}, headers=_auth(qa)
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "ORG_ROLE_REQUIRED"
+
+    # Procurement member can edit it → 200
+    resp = await client.put(
+        f"/v1/contracts/{contract_id}", json={"baseRate": 2300}, headers=_auth(proc)
+    )
+    assert resp.status_code == 200
+    assert resp.json()["baseRate"] == 2300
+
+    # Free tier (1 active contract) → a second create is blocked with the
+    # phase-00 entitlement envelope.
+    resp = await client.post("/v1/contracts", json=CONTRACT_BODY, headers=_auth(proc))
+    assert resp.status_code in (402, 403)
+    assert resp.json()["error"]["code"] == "ENTITLEMENT_EXCEEDED"

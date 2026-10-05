@@ -8,12 +8,13 @@ from app.core.deps import current_user_id
 from app.models.finance import (
     CreditScoreOut,
     KccOut,
-    LoanApplyIn,
     LoanApplyOut,
     LoanCalcIn,
     LoanCalcOut,
 )
-from app.models.loans import LoanApplicationOut
+# WS-03 task 3.9/3.4 — LoanApplyIn lives in models/loans.py (extends the base
+# payload with partnerBankId + district) so the apply path snapshots both.
+from app.models.loans import LoanApplicationOut, LoanApplyIn
 from app.routers.users import require_role
 from app.services import loans as loans_service
 from app.services.users import get_user
@@ -132,6 +133,11 @@ async def apply_loan(body: LoanApplyIn, uid: str = Depends(_farmer)):
     }
     if bank_account_id:
         loan["bankAccountId"] = bank_account_id
+    # WS-07 M14 — prescreen the application on submit (annotation only, never a
+    # status change; the deterministic fallback applies on any provider failure).
+    # No task is emitted here — the missing-doc nudge fires when a banker reads
+    # the queue.
+    await loans_service.prescreen_application(loan)
     await set_doc("loan_applications", application_id, loan)
     return LoanApplyOut(applicationId=application_id, status="submitted")
 

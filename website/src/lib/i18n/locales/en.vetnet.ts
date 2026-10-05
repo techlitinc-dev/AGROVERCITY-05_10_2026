@@ -42,6 +42,7 @@ const enVetnet: Record<string, string> = {
   vetnetEmergencyBadge: 'Emergency',
   vetnetClaimed: 'Claimed',
   vetnetUnclaimed: 'Unclaimed',
+  vetnetVerificationPending: 'Verification pending',
   vetnetRatingLine: '★ {rating} ({count})',
   vetnetNoRating: 'No ratings yet',
   vetnetDeactivateVet: 'Deactivate vet',

@@ -60,3 +60,60 @@ async def test_booking_in_my_bookings(client, user_store):
     assert cold_storage[0]["kind"] == "coldStorage"
     assert cold_storage[0]["facilityId"] == "cs-1"
     assert cold_storage[0]["quantityQuintals"] == 20
+
+
+async def test_receipt_endpoint_is_owner_only(client, user_store):
+    """WS-05 task 5.16 — the e-NWR is visible to the depositor and the facility
+    provider only; an unrelated authenticated farmer gets a 404 (no auth leak)."""
+    from tests.test_cold_storage_provider import _make_coldstorage_pro, seed_provider_user
+
+    farmer_token = seed_user(user_store)
+    provider_token = seed_provider_user(user_store)
+    _make_coldstorage_pro(user_store)
+    other_token = seed_user(user_store, uid="uid-other-farmer")
+
+    # Farmer applies at cs-1 (owned by dev-user-coldstorage-1).
+    resp = await client.post(
+        "/v1/post-harvest/cold-storage/cs-1/apply",
+        json={"cropName": "Onion", "quantityQuintals": 10.0, "fromDate": FUTURE_DATE, "months": 2},
+        headers=auth(farmer_token),
+    )
+    assert resp.status_code == 201
+    booking_id = resp.json()["id"]
+
+    resp = await client.post(
+        f"/v1/post-harvest/provider/bookings/{booking_id}/review",
+        json={"action": "approve", "allocatedChamberId": "ch-101"},
+        headers=auth(provider_token),
+    )
+    assert resp.status_code == 200
+
+    resp = await client.post(
+        f"/v1/post-harvest/provider/bookings/{booking_id}/inward",
+        json={
+            "chamberId": "ch-101",
+            "grossWeightKg": 1080.0,
+            "tareWeightKg": 80.0,
+            "netQuintals": 10.0,
+            "actualBags": 20,
+            "qcGrade": "Grade A",
+        },
+        headers=auth(provider_token),
+    )
+    assert resp.status_code == 200
+    receipt_no = resp.json()["receipt"]["receiptNumber"]
+
+    # Owning farmer can read it.
+    owner = await client.get(f"/v1/post-harvest/receipts/{receipt_no}", headers=auth(farmer_token))
+    assert owner.status_code == 200
+    assert owner.json()["receiptNumber"] == receipt_no
+
+    # The receipt's facility provider can read it.
+    prov = await client.get(f"/v1/post-harvest/receipts/{receipt_no}", headers=auth(provider_token))
+    assert prov.status_code == 200
+    assert prov.json()["receiptNumber"] == receipt_no
+
+    # An unrelated authenticated farmer gets a 404 — no existence disclosure.
+    other = await client.get(f"/v1/post-harvest/receipts/{receipt_no}", headers=auth(other_token))
+    assert other.status_code == 404
+    assert other.json()["error"]["code"] == "RECEIPT_NOT_FOUND"

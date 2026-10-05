@@ -20,6 +20,7 @@ from app.models.cold_storage import (
 )
 from app.routers.users import require_role
 from app.services import storage
+from app.services.billing import check_entitlement
 from app.services.fcm import send_fcm_to_user
 from app.services.grading_model import get_grading_adapter
 from app.services.users import get_user
@@ -61,6 +62,64 @@ def _require_storage_provider():
         _error(403, "FORBIDDEN_COLD_STORAGE", "केवल कोल्ड स्टोरेज/गोदाम संचालक ही यह कार्रवाई कर सकते हैं")
 
     return dep
+
+
+# ==============================================================================
+# Tiers — cold-storage provider console (WS-05 task 5.15)
+# ==============================================================================
+# Pro = ₹1,999/mo per facility; Free = one facility, read-only (all console
+# WRITE endpoints return the 402 ENTITLEMENT_EXCEEDED envelope). Farmer booking
+# and receipt endpoints carry NO entitlement check. Per-booking platform fee is
+# ledgered on release (integer paisa).
+CONSOLE_WRITE_FEATURE = "providerConsoleWrites"
+COLD_STORAGE_BOOKING_FEE_PAISA = 5000  # ₹50 per released booking
+
+_COLD_STORAGE_PLAN_ROWS = [
+    {
+        "planId": "coldStorageProvider_free",
+        "persona": "coldStorageProvider",
+        "tier": "free",
+        "priceMonthlyPaisa": 0,
+        "limits": {CONSOLE_WRITE_FEATURE: 0},
+        "commission": "per-booking platform fee",
+        "features": [],
+    },
+    {
+        "planId": "coldStorageProvider_pro",
+        "persona": "coldStorageProvider",
+        "tier": "pro",
+        "priceMonthlyPaisa": 199900,
+        "limits": {CONSOLE_WRITE_FEATURE: 999, "facilities": 50},
+        "commission": "per-booking platform fee",
+        "features": ["multiFacility", "chamberManagement", "utilizationAnalytics"],
+    },
+]
+
+
+async def _ensure_cold_storage_plans() -> None:
+    """Idempotently register the cold-storage provider plans (Free/Pro)."""
+    for row in _COLD_STORAGE_PLAN_ROWS:
+        if await get_doc("plans", row["planId"]) is None:
+            await set_doc("plans", row["planId"], dict(row))
+
+
+async def _require_console_write(uid: str = Depends(current_user_id)) -> dict:
+    """Pro-tier gate for console writes; Free providers get 402 + upgrade payload.
+
+    NOTE (report): the billing.py plan rows this needs are owned by services/
+    billing.py, which WS-05 must not edit. `_ensure_cold_storage_plans` seeds the
+    two rows so `check_entitlement` can enforce the wall now; once billing.py
+    carries `coldStorageProvider_free`/`_pro` this can become
+    `require_entitlement("coldStorageProvider", CONSOLE_WRITE_FEATURE)`.
+    """
+    await _ensure_cold_storage_plans()
+    return await check_entitlement(uid, "coldStorageProvider", CONSOLE_WRITE_FEATURE)
+
+
+class GateInwardPhotoIn(GateInwardIn):
+    """Gate inward body + an optional photo (data-URL string; JSON handler)."""
+
+    photo: str | None = None
 
 
 def _shape_facility(doc: dict) -> dict:
@@ -289,6 +348,15 @@ async def get_warehouse_receipt(
     receipt = await get_doc("warehouse_receipts", receipt_number)
     if receipt is None:
         _error(404, "RECEIPT_NOT_FOUND", "गोदाम रसीद (e-NWR) नहीं मिली")
+    # Owner-only: the depositor (booking.farmerUid) and the receipt's facility
+    # provider (facility.ownerUid). Anyone else gets the same 404 so the
+    # endpoint never leaks that a receipt number exists (WS-05 task 5.16).
+    booking = await get_doc("cold_storage_bookings", receipt.get("bookingId") or "")
+    facility = await get_doc("cold_storage", receipt.get("facilityId") or "")
+    owner_uid = (booking or {}).get("farmerUid")
+    provider_uid = (facility or {}).get("ownerUid")
+    if user["id"] != owner_uid and user["id"] != provider_uid:
+        _error(404, "RECEIPT_NOT_FOUND", "गोदाम रसीद (e-NWR) नहीं मिली")
     return receipt
 
 
@@ -381,6 +449,7 @@ async def provider_review_booking(
     booking_id: str,
     body: BookingReviewIn,
     provider: dict = Depends(_require_storage_provider()),
+    _entitlement: dict = Depends(_require_console_write),
 ):
     booking = await get_doc("cold_storage_bookings", booking_id)
     if booking is None:
@@ -451,14 +520,32 @@ async def provider_review_booking(
     await set_doc("cold_storage_bookings", booking_id, booking)
     if farmer_uid:
         await set_doc(f"users/{farmer_uid}/cold_storage_bookings", booking_id, booking)
+
+    # Rule 3/8: every provider decision writes audit_logs with actor + reason.
+    audit_id = f"aud_coldstorage_review_{booking_id}_{now_iso}"
+    await set_doc(
+        "audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "actor": provider["id"],
+            "action": "COLD_STORAGE_BOOKING_REVIEW",
+            "bookingId": booking_id,
+            "facilityId": facility_id,
+            "decision": body.action,
+            "reason": body.rejectionReason if body.action == "reject" else body.notes,
+            "timestamp": now_iso,
+        },
+    )
     return booking
 
 
 @router.post("/provider/bookings/{booking_id}/inward")
 async def provider_gate_inward(
     booking_id: str,
-    body: GateInwardIn,
+    body: GateInwardPhotoIn,
     provider: dict = Depends(_require_storage_provider()),
+    _entitlement: dict = Depends(_require_console_write),
 ):
     booking = await get_doc("cold_storage_bookings", booking_id)
     if booking is None:
@@ -487,6 +574,7 @@ async def provider_gate_inward(
     booking["inwardDate"] = now_iso
     booking["moisturePercent"] = body.moisturePercent
     booking["qcGrade"] = body.qcGrade
+    booking["inwardPhoto"] = body.photo
     booking["receiptNumber"] = receipt_number
     booking["valuationRupees"] = valuation
     booking["outwardReleasedQuintals"] = 0.0
@@ -549,6 +637,7 @@ async def provider_gate_release(
     booking_id: str,
     body: GateReleaseIn,
     provider: dict = Depends(_require_storage_provider()),
+    _entitlement: dict = Depends(_require_console_write),
 ):
     booking = await get_doc("cold_storage_bookings", booking_id)
     if booking is None:
@@ -603,6 +692,47 @@ async def provider_gate_release(
         except Exception:
             pass
 
+    # R2/R3: per-booking platform fee ledgered on release (integer paisa), plus
+    # an audit_logs row with actor + reason (rule 3/8).
+    fee_id = f"csfee_{booking_id}"
+    existing_fee = await get_doc("platform_fees", fee_id)
+    if existing_fee is None:
+        await set_doc(
+            "platform_fees",
+            fee_id,
+            {
+                "id": fee_id,
+                "kind": "coldStorageBookingFee",
+                "role": "coldStorageProvider",
+                "entityId": provider["id"],
+                "facilityId": facility_id,
+                "bookingId": booking_id,
+                "gatePassNumber": gate_pass_no,
+                "feePaisa": COLD_STORAGE_BOOKING_FEE_PAISA,
+                "amountPaisa": COLD_STORAGE_BOOKING_FEE_PAISA,
+                "status": "pending",
+                "createdAt": now_iso,
+            },
+        )
+    audit_id = f"aud_coldstorage_release_{booking_id}_{now_iso}"
+    await set_doc(
+        "audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "actor": provider["id"],
+            "action": "COLD_STORAGE_BOOKING_RELEASE",
+            "bookingId": booking_id,
+            "facilityId": facility_id,
+            "releaseQuintals": body.releaseQuintals,
+            "remainingQuintals": remaining,
+            "gatePassNumber": gate_pass_no,
+            "feePaisa": COLD_STORAGE_BOOKING_FEE_PAISA,
+            "reason": body.gatePassRemarks,
+            "timestamp": now_iso,
+        },
+    )
+
     return {
         "booking": booking,
         "gatePassNumber": gate_pass_no,
@@ -641,6 +771,7 @@ async def provider_get_facilities(
 async def provider_create_facility(
     body: CreateFacilityIn,
     provider: dict = Depends(_require_storage_provider()),
+    _entitlement: dict = Depends(_require_console_write),
 ):
     facility_id = f"cs-{uuid4().hex[:8]}"
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -733,6 +864,7 @@ async def provider_add_chamber(
     facility_id: str,
     body: CreateChamberIn,
     provider: dict = Depends(_require_storage_provider()),
+    _entitlement: dict = Depends(_require_console_write),
 ):
     facility = await get_doc("cold_storage", facility_id)
     if facility is None:
@@ -768,6 +900,7 @@ async def provider_update_facility(
     facility_id: str,
     data: dict,
     provider: dict = Depends(_require_storage_provider()),
+    _entitlement: dict = Depends(_require_console_write),
 ):
     facility = await get_doc("cold_storage", facility_id)
     if facility is None:

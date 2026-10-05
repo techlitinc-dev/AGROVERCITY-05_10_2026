@@ -230,6 +230,7 @@ const enGaushala: Record<string, string> = {
   gaushalaReceiptPerson: 'Issued to',
   gaushalaReceiptAmount: 'Amount',
   gaushalaReceiptIssued: 'Issued',
+  gaushalaReceiptDownload: 'Download 80G PDF',
   gaushalaReceiptClose: 'Done',
 
   // ---- Analytics ----
@@ -248,6 +249,20 @@ const enGaushala: Record<string, string> = {
   gaushalaAnByCategory: 'Expenses by category',
   gaushalaAnByStatus: 'Cattle by status',
   gaushalaAnZero: 'No activity in this period yet — zeros are normal for a new gaushala.',
+
+  // ---- Public transparency page (no-auth) ----
+  gaushalaTransparencyTitle: 'Public transparency',
+  gaushalaTransparencyIntro:
+    'How every rupee received and spent is used at this gaushala — updated from the shelter register.',
+  gaushalaTransparencyPrivacy: 'No donor contact details are ever published.',
+  gaushalaTransparencyDonations: 'Donations received',
+  gaushalaTransparencyCount: '{count} donations',
+  gaushalaTransparency80g: '{count} 80G receipts issued',
+  gaushalaTransparencyLedger: 'Donations ledger',
+  gaushalaTransparencyAnonymous: 'anonymous donor',
+  gaushalaTransparencyExpenses: 'Expenses by category',
+  gaushalaTransparencyCattle: 'Cattle census by status',
+  gaushalaTransparencyEmpty: 'No activity recorded yet.',
 };
 
 registerLocale('en', enGaushala);

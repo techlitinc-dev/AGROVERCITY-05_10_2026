@@ -4,7 +4,8 @@
 - Refers to and follows documented project conventions (e.g., docs/conventions) when implementing tasks. Confidence: 0.7
 - Prefers full-stack changes — when a feature spans the backend and the website, both are updated in the same task rather than leaving one side out. Confidence: 0.7
 - Prefers comprehensive reference data auto-populated into dropdowns (e.g., all Indian states/UTs) instead of a hardcoded subset. Confidence: 0.75
-- Communicates in terse, informal shorthand and expects the assistant to expand the request into full requirements. Confidence: 0.6
+- Communicates in terse, informal shorthand and expects the assistant to expand the request into full requirements. Confidence: 0.65
+- Prefers backups to be complete by default: include every project file (source, docs, .git history, local uploads) and secrets (.env, service-account/firebase admin keys), excluding only regenerable dependencies and build output. Confidence: 0.55
 - Prefers language selection to be applied globally and persisted, so every page renders in the user's chosen language and the choice survives across sessions/devices. Confidence: 0.8
 - Prefers deferred/progressive onboarding — allow users to skip persona/profile setup during registration and complete it later. Confidence: 0.75
 - Prefers extensive Indian regional language coverage — all major scheduled languages (plus additional regional languages) rather than just Hindi and English. Confidence: 0.8

@@ -32,9 +32,14 @@ from app.models.livestock import (
     VetRecord,
     VetRecordIn,
 )
-from app.routers.livestock_dairy import dairy_agent_record, send_unlinked_slip_if_eligible
+from app.routers.livestock_dairy import (
+    annotate_collection_adulteration,
+    dairy_agent_record,
+    send_unlinked_slip_if_eligible,
+)
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(tags=["livestock"])
@@ -449,6 +454,12 @@ async def record_milk_collection(body: MilkCollectionIn, uid: str = Depends(_any
         doc["quality"] = body.quality
     if rate_chart_id:
         doc["rateChartId"] = rate_chart_id
+    # WS-07 M17 — annotate (never block) with the member's 30-day FAT/SNF anomaly
+    # flag. A gateway failure degrades to the deterministic fallback; the slip
+    # ALWAYS saves.
+    annotation = await annotate_collection_adulteration(doc)
+    if annotation is not None:
+        doc["adulteration"] = annotation
     await set_doc("milk_collections", col_id, doc)
     await send_unlinked_slip_if_eligible(uid, body.memberId, body.farmerCode, doc)
     return doc
@@ -652,6 +663,29 @@ async def schedule_vaccination(body: VaccinationScheduleIn, uid: str = Depends(_
         "createdAt": _now(),
     }
     await set_doc("vaccination_schedules", vac_id, doc)
+    # WS-06 §6.14: herd-health task to the owning farmer (deep-links to the animal).
+    # mark-vaccinated resolves it through the task engine — no parallel reminders.
+    if next_due:
+        animal = await get_doc("livestock_animals", body.animalTagId)
+        if animal is None:
+            matches = await query("livestock_animals", [("tagId", "==", body.animalTagId)], limit=1)
+            animal = matches[0] if matches else None
+        animal_ref = (animal or {}).get("id") or body.animalTagId
+        owner_uid = (animal or {}).get("ownerId") or uid
+        label = doc["animalName"] or (animal or {}).get("name") or body.animalTagId
+        await emit_task(
+            owner_uid,
+            persona="farmer",
+            module="vet",
+            kind="vaccination_due",
+            title_en=f"vaccination due: {label}, {next_due}",
+            title_hi=f"लसीकरण बाकी: {label}, {next_due}",
+            subtitle=body.disease,
+            priority="upcoming",
+            deep_link=f"/livestock/animals/{animal_ref}" if animal else "/livestock/animals",
+            source_id=animal_ref,
+            due_at=next_due,
+        )
     return doc
 
 

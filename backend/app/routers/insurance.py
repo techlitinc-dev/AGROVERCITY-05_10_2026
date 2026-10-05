@@ -2,9 +2,10 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
-from app.core.db import get_doc, query, set_doc
+from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.data.insurance_seed import SCHEMES
 from app.models.claims import InsuranceClaimRecord
@@ -22,6 +23,7 @@ from app.models.insurance import (
 )
 from app.services import claims as claims_service
 from app.services import reports
+from app.services.ai.outcomes import record_triage_outcome
 from app.services.notifications import send_fcm_to_user
 from app.services.users import get_user
 
@@ -118,6 +120,47 @@ def _season_window(season: str, year: int) -> tuple[str, str]:
     start_md, end_md = SEASON_WINDOWS.get(season, ("01-01", "12-31"))
     end_year = year + 1 if season == "Rabi" else year
     return f"{year}-{start_md}", f"{end_year}-{end_md}"
+
+
+# Per-claim platform processing fee (integer paisa), ledgered on disburse.
+CLAIM_PROCESSING_FEE_PCT = 1.0
+
+
+def _paisa(rupees: float | None) -> int:
+    return int(round(float(rupees or 0) * 100))
+
+
+async def _ledger_claim_fee(claim: dict, provider: dict) -> None:
+    """Write a per-claim processing-fee entry to the settlements ledger.
+
+    Integer paisa; idempotent on the claim id; follows the settlements.py
+    ledger pattern (role / entityId / status). Farmer-facing behavior is
+    untouched — this is a provider-side platform fee.
+    """
+    claim_id = claim["id"]
+    fee_id = f"fee_claim_{claim_id}"
+    if await get_doc("settlements", fee_id) is not None:
+        return
+    approved_paisa = _paisa(claim.get("approvedAmount"))
+    entry = {
+        "id": fee_id,
+        "role": "insuranceProvider",
+        "kind": "CLAIM_PROCESSING_FEE",
+        "entityId": provider.get("id"),
+        "claimId": claim_id,
+        "claimNumber": claim.get("claimNumber"),
+        "grossPaisa": approved_paisa,
+        "feePaisa": int(round(approved_paisa * CLAIM_PROCESSING_FEE_PCT / 100)),
+        "feePercent": CLAIM_PROCESSING_FEE_PCT,
+        "status": "pending",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("settlements", fee_id, entry)
+
+
+async def _write_audit(doc_id: str, payload: dict) -> None:
+    """Rule 3: every financial/decision mutation writes an audit_logs row."""
+    await set_doc("audit_logs", doc_id, {"id": doc_id, **payload})
 
 
 # ==============================================================================
@@ -362,6 +405,19 @@ async def provider_review_policy(
             except Exception:
                 pass
 
+    await _write_audit(
+        f"aud_policy_review_{policy_id}_{body.action}",
+        {
+            "actor": provider["id"],
+            "action": "POLICY_REVIEW",
+            "decision": body.action,
+            "policyId": policy_id,
+            "policyNumber": policy.get("policyNumber"),
+            "reason": body.rejectionReason if body.action == "reject" else (body.underwriterNotes or ""),
+            "at": now,
+        },
+    )
+
     await set_doc("insurance_policies", policy_id, policy)
     if farmer_uid:
         await set_doc(f"users/{farmer_uid}/insurance_policies", policy_id, policy)
@@ -372,6 +428,24 @@ async def provider_review_policy(
 # ==============================================================================
 # Insurance Provider Claims Review & Settlement Endpoints
 # ==============================================================================
+
+
+# WS-07 M15 — read-only provider overlay of the stored claim triage. It flags
+# (`fraudFlag`) but only ever annotates a response; no status anywhere depends
+# on these values, so the human decision path is byte-identical AI on or off.
+CLAIM_FRAUD_FLAG_THRESHOLD = 0.8
+
+
+def _with_triage(doc: dict, payload: dict) -> dict:
+    triage = doc.get("triage")
+    if triage:
+        try:
+            signal = float(triage.get("fraudSignal") or 0.0)
+        except (TypeError, ValueError):
+            signal = 0.0
+        payload["triage"] = triage
+        payload["fraudFlag"] = bool(doc.get("fraudFlag") or signal > CLAIM_FRAUD_FLAG_THRESHOLD)
+    return payload
 
 
 @router.get("/provider/claims")
@@ -403,7 +477,10 @@ async def provider_list_claims(
             or needle in (d.get("village") or "").lower()
         ]
     start = (page - 1) * pageSize
-    items = [InsuranceClaimRecord(**d).model_dump() for d in docs[start : start + pageSize]]
+    items = [
+        _with_triage(d, InsuranceClaimRecord(**d).model_dump())
+        for d in docs[start : start + pageSize]
+    ]
     return {"data": items, "page": page, "pageSize": pageSize, "total": len(docs)}
 
 
@@ -415,7 +492,7 @@ async def provider_get_claim(
     claim = await get_doc("insurance_claims", claim_id)
     if claim is None:
         _error(404, "CLAIM_NOT_FOUND", "दावा नहीं मिला")
-    return InsuranceClaimRecord(**claim).model_dump()
+    return _with_triage(claim, InsuranceClaimRecord(**claim).model_dump())
 
 
 @router.post("/provider/claims/{claim_id}/schedule_survey")
@@ -554,9 +631,30 @@ async def provider_review_claim(
             except Exception:
                 pass
 
+    now = datetime.now(timezone.utc).isoformat()
+    # Rule 3: audit every decision with actor + action + reason.
+    await _write_audit(
+        f"aud_claim_review_{claim_id}_{body.action}",
+        {
+            "actor": provider["id"],
+            "action": "CLAIM_REVIEW",
+            "decision": body.action,
+            "claimId": claim_id,
+            "claimNumber": claim.get("claimNumber"),
+            "reason": body.rejectionReason if body.action == "reject" else (body.notes or ""),
+            "amountPaisa": _paisa(claim.get("approvedAmount")),
+            "at": now,
+        },
+    )
+
     await set_doc("insurance_claims", claim_id, claim)
     if farmer_uid:
         await set_doc(f"users/{farmer_uid}/insurance_claims", claim_id, claim)
+
+    # WS-07 task 7.13 — M15 outcome hook: the final human decision plus whether
+    # the retake guidance was followed. Bookkeeping only; the decision logic
+    # above is unchanged.
+    await record_triage_outcome(claim_id, body.action, claim=claim)
 
     return InsuranceClaimRecord(**claim).model_dump()
 
@@ -583,6 +681,22 @@ async def provider_disburse_claim(
     )
     claim["dbtTransactionId"] = dbt_ref
     claim["disbursedAt"] = now
+
+    # Per-claim processing fee → settlements ledger (integer paisa) + audit.
+    await _ledger_claim_fee(claim, provider)
+    await _write_audit(
+        f"aud_claim_disburse_{claim_id}",
+        {
+            "actor": provider["id"],
+            "action": "CLAIM_DISBURSE",
+            "claimId": claim_id,
+            "claimNumber": claim.get("claimNumber"),
+            "reason": body.notes or f"DBT द्वारा प्रेषित — ref {dbt_ref}",
+            "dbtRef": dbt_ref,
+            "amountPaisa": _paisa(claim.get("approvedAmount")),
+            "at": now,
+        },
+    )
 
     farmer_uid = claim.get("userId")
     await set_doc("insurance_claims", claim_id, claim)
@@ -645,6 +759,22 @@ async def provider_stats(provider: dict = Depends(_require_insurance_provider)):
 
     loss_ratio = round((total_disbursed / total_farmer_premium * 100), 1) if total_farmer_premium > 0 else 0.0
 
+    # Cycle time (intimation → disbursal) so the console SLA/velocity is
+    # derivable directly from /provider/stats.
+    cycle_hours: list[float] = []
+    for c in claims:
+        if c.get("status") != "disbursed":
+            continue
+        start, end = c.get("submittedAt"), c.get("disbursedAt")
+        if not start or not end:
+            continue
+        try:
+            delta = datetime.fromisoformat(end) - datetime.fromisoformat(start)
+            cycle_hours.append(delta.total_seconds() / 3600)
+        except ValueError:
+            continue
+    avg_cycle_hours = round(sum(cycle_hours) / len(cycle_hours), 2) if cycle_hours else 0.0
+
     return {
         "totalPolicies": len(policies),
         "pendingPolicies": by_status_policies.get("pending_approval", 0),
@@ -663,6 +793,7 @@ async def provider_stats(provider: dict = Depends(_require_insurance_provider)):
         "totalClaimApproved": round(total_approved, 2),
         "totalClaimDisbursed": round(total_disbursed, 2),
         "lossRatioPercent": loss_ratio,
+        "avgCycleTimeHours": avg_cycle_hours,
         "byPolicyStatus": by_status_policies,
         "byClaimStatus": by_status_claims,
         "byCrop": by_crop,
@@ -688,3 +819,51 @@ async def provider_create_rate(
     }
     await set_doc("insurance_rates", rate_id, rate)
     return CropPremiumRate(**rate).model_dump()
+
+
+# ==============================================================================
+# Provider surveyor roster (task 4.6 "A2")
+# ==============================================================================
+
+
+class SurveyorIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    phone: str = Field(min_length=6, max_length=20)
+    districts: list[str] = []
+
+
+@router.get("/provider/surveyors")
+async def provider_list_surveyors(provider: dict = Depends(_require_insurance_provider)):
+    """Provider-scoped surveyor roster. Phones live only in this console —
+    the farmer notification is server-sent (schedule_survey) already."""
+    docs = await query("surveyors", [("providerId", "==", provider["id"])], limit=200)
+    docs.sort(key=lambda d: d.get("name", ""))
+    return {"data": docs, "total": len(docs)}
+
+
+@router.post("/provider/surveyors", status_code=201)
+async def provider_add_surveyor(
+    body: SurveyorIn, provider: dict = Depends(_require_insurance_provider)
+):
+    surveyor_id = uuid.uuid4().hex
+    doc = {
+        "id": surveyor_id,
+        "providerId": provider["id"],
+        "name": body.name,
+        "phone": body.phone,
+        "districts": body.districts,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("surveyors", surveyor_id, doc)
+    return doc
+
+
+@router.delete("/provider/surveyors/{surveyor_id}", status_code=204)
+async def provider_remove_surveyor(
+    surveyor_id: str, provider: dict = Depends(_require_insurance_provider)
+):
+    doc = await get_doc("surveyors", surveyor_id)
+    if doc is None or doc.get("providerId") != provider["id"]:
+        _error(404, "SURVEYOR_NOT_FOUND", "सर्वेयर नहीं मिला")
+    await delete_doc("surveyors", surveyor_id)
+    return None

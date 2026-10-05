@@ -3,6 +3,8 @@ import BuyerHomeBoard from './BuyerHomeBoard';
 import ContractDetailPage from './ContractDetailPage';
 import ContractFormPage from './ContractFormPage';
 import ContractsPage from './ContractsPage';
+import DemandDetailPage from './DemandDetailPage';
+import TeamPage from './TeamPage';
 
 /**
  * Direct-buyer pages registry — maps dashboard tool ids to real
@@ -11,6 +13,14 @@ import ContractsPage from './ContractsPage';
 export const DIRECT_BUYER_PAGES: Record<string, ComponentType> = {
   directBuyerHome: BuyerHomeBoard,
   contracts: ContractsPage,
+  buyerTeam: TeamPage,
 };
 
-export { BuyerHomeBoard, ContractDetailPage, ContractFormPage, ContractsPage };
+export {
+  BuyerHomeBoard,
+  ContractDetailPage,
+  ContractFormPage,
+  ContractsPage,
+  DemandDetailPage,
+  TeamPage,
+};

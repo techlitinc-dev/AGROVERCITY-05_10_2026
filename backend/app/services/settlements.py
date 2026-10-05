@@ -11,6 +11,9 @@ DEFAULT_CONFIG = {
     # admin edits go through maker-checker, the services only consume).
     "sellerPct": 2,
     "sellerMinRupees": 50,
+    # WS-02 step 10: direct-buyer settlement commission 1–2% (effective-dated,
+    # versioned — admin edits go through maker-checker, the services consume).
+    "directBuyerPct": 2,
     "version": 1,
     "effectiveFrom": "2026-10-01T00:00:00+00:00",
 }

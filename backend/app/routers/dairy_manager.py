@@ -11,6 +11,7 @@ from app.routers.livestock_dairy import _manager_or_agent, assert_fssai_kyc
 from app.routers.purchases import _new_purchase
 from app.routers.users import require_role
 from app.services import idempotency
+from app.services.ai import outcomes as ai_outcomes
 from app.services.users import get_user
 
 router = APIRouter(prefix="/dairy-manager", tags=["dairy-manager"])
@@ -96,6 +97,10 @@ class RateChartUpdateIn(BaseModel):
     baseBuffaloRate: float = Field(gt=0)
     fatStepRupees: float = Field(gt=0)
     snfStepRupees: float = Field(gt=0)
+
+
+class CollectionFlagReviewIn(BaseModel):
+    action: Literal["confirm", "dismiss"]
 
 
 @router.get("/analytics")
@@ -389,6 +394,59 @@ async def record_collection_check(body: CollectionCheckIn, uid: str = Depends(_m
         "collectedAt": datetime.now(timezone.utc).isoformat(),
     }
     await set_doc("dairy_collections", cid, doc)
+    return doc
+
+
+@router.post("/collections/{collection_id}/flag-review")
+async def review_collection_flag(
+    collection_id: str,
+    body: CollectionFlagReviewIn,
+    user: dict = Depends(_manager),
+):
+    """WS-07 M17 — manager confirms/dismisses an AI adulteration flag.
+
+    Annotates the collection with the review decision, records the outcome hook
+    for `dairy.adulteration.v1` and writes an `audit_logs` row. The flag is
+    advisory only — this never changes the slip's amounts or status.
+    """
+    uid = user["id"]
+    doc = await get_doc("milk_collections", collection_id)
+    if doc is None or doc.get("dairyId") != uid:
+        _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    annotation = doc.get("adulteration") or {}
+    if not annotation.get("anomaly"):
+        _error(409, "NO_FLAG", "this collection has no adulteration flag to review")
+
+    outcome = "confirmed" if body.action == "confirm" else "dismissed"
+    now = datetime.now(timezone.utc).isoformat()
+    doc["flagReview"] = {"action": body.action, "outcome": outcome, "by": uid, "at": now}
+    await set_doc("milk_collections", collection_id, doc)
+
+    try:
+        await ai_outcomes.record_adulteration_outcome(
+            collection_id,
+            outcome,
+            decision_id=annotation.get("decisionId"),
+            details={"memberId": doc.get("memberId"), "reviewedBy": uid},
+        )
+    except Exception:  # noqa: BLE001 — bookkeeping must not block the review
+        pass
+
+    audit_id = f"aud_collection_flag_{collection_id}"
+    await set_doc(
+        "audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "actor": uid,
+            "action": "DAIRY_COLLECTION_FLAG_REVIEW",
+            "collectionId": collection_id,
+            "decision": body.action,
+            "outcome": outcome,
+            "memberId": doc.get("memberId"),
+            "at": now,
+        },
+    )
     return doc
 
 

@@ -55,12 +55,25 @@ export interface PurchasePayment {
   at: string;
 }
 
+export interface QcMeasurement {
+  name: string;
+  value: number;
+  unit?: string;
+  specBound?: string;
+  adjustmentPerUnit?: number;
+  deviation?: number;
+  adjustment?: number;
+}
+
 export interface PurchaseQc {
-  grade: 'A' | 'B' | 'C';
+  grade?: 'A' | 'B' | 'C' | string;
   acceptedQty: number;
   rejectedQty: number;
   note?: string;
+  notes?: string;
   at: string;
+  measurements?: QcMeasurement[];
+  photos?: string[];
 }
 
 export interface PurchaseRating {
@@ -84,10 +97,16 @@ export interface Purchase {
   totalAmount: number;
   advancePaid?: number;
   status: PurchaseStatus;
-  pickup?: { date: string; vehicleType: string; address: string; notes?: string };
+  pickup?: { date: string; vehicleType: string; address: string; notes?: string; mode?: string; slot?: string };
   payments: PurchasePayment[];
   qc?: PurchaseQc;
   finalAmount?: number;
+  finalAmountPaisa?: number;
+  finalRate?: number;
+  qualityAdjustment?: number;
+  qualityAdjustmentPerUnit?: number;
+  measurements?: QcMeasurement[];
+  specSnapshot?: Record<string, unknown>;
   invoice?: { number: string; issuedAt: string };
   events: PurchaseEvent[];
   rating?: { buyerToFarmer?: PurchaseRating | null; farmerToBuyer?: PurchaseRating | null };
@@ -134,7 +153,14 @@ export async function payAdvance(
 
 export async function schedulePickup(
   purchaseId: string,
-  payload: { date: string; vehicleType?: string; address: string; notes?: string }
+  payload: {
+    date: string;
+    vehicleType?: string;
+    address: string;
+    notes?: string;
+    mode?: 'farmerDelivers' | 'buyerPicksup';
+    slot?: string;
+  }
 ): Promise<Purchase> {
   const { data } = await api.post<Purchase>(`/purchases/${purchaseId}/pickup`, payload);
   return data;

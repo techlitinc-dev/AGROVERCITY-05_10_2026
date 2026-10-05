@@ -38,7 +38,27 @@ ACCEPT_BODY = {
 
 
 def _seed_buyer(user_store):
-    return seed_user(user_store, uid="uid-b1", active_profile="directBuyer")
+    token = seed_user(user_store, uid="uid-b1", active_profile="directBuyer")
+    # WS-02 step 7: corporate-buyer KYC gate — grant an approved GST doc so the
+    # existing create-contract tests satisfy the gate (fixture only).
+    user_store["kyc_cases/kyc_uid-b1_directBuyer"] = {
+        "caseId": "kyc_uid-b1_directBuyer",
+        "userId": "uid-b1",
+        "persona": "directBuyer",
+        "docs": [
+            {"docId": "kyc_uid-b1_directBuyer:gst", "type": "gst", "status": "verified"},
+        ],
+        "status": "verified",
+    }
+    # WS-02 step 10: raise the buyer above the Free (1 active contract) cap so
+    # multi-contract tests are not entitlement-limited (fixture only).
+    user_store["subscriptions/sub_pro_uid-b1"] = {
+        "userId": "uid-b1",
+        "planId": "directBuyer_pro",
+        "status": "active",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+    return token
 
 
 def _seed_farmer(user_store, uid="uid-f1", with_mpin=True):
@@ -124,6 +144,33 @@ async def test_farmer_cannot_create_contract(client, user_store):
     resp = await _create_contract(client, farmer)
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"
+
+
+async def test_contract_create_kyc_gate(client, user_store):
+    # WS-02 step 7: corporate-buyer KYC gate on contract creation.
+    buyer = _seed_buyer(user_store)
+    _seed_farmer(user_store)
+
+    # No approved KYC doc → 403 KYC_REQUIRED with a deep link.
+    user_store.pop("kyc_cases/kyc_uid-b1_directBuyer", None)
+    resp = await _create_contract(client, buyer)
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "KYC_REQUIRED"
+    assert resp.json()["error"]["deepLink"].startswith("/dashboard/profile")
+
+    # Grant an approved GST doc → creation succeeds.
+    user_store["kyc_cases/kyc_uid-b1_directBuyer"] = {
+        "caseId": "kyc_uid-b1_directBuyer",
+        "userId": "uid-b1",
+        "persona": "directBuyer",
+        "docs": [
+            {"docId": "kyc_uid-b1_directBuyer:gst", "type": "gst", "status": "verified"},
+        ],
+        "status": "verified",
+    }
+    resp = await _create_contract(client, buyer)
+    assert resp.status_code == 201
+    assert resp.json()["crop"] == "Tomato"
 
 
 # ---- /mine with currentPrice ----

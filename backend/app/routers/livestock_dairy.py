@@ -1,5 +1,6 @@
+import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
@@ -19,6 +20,8 @@ from app.models.livestock_mgmt import (
 )
 from app.routers.users import require_role
 from app.services import idempotency
+from app.services.ai import config_store, decision_log, gateway, question_sets
+from app.services.ai.privacy import build_adulteration_state
 from app.services.billing import entitlement_guard, record_usage, require_entitlement
 from app.services.notifications import send_fcm_to_user
 from app.services.settlements import create_razorpayx_payout
@@ -26,7 +29,18 @@ from app.services.tasks import DEEP_LINKS, emit_task
 from app.services import kyc as kyc_service
 from app.services.users import get_user
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(tags=["livestock"])
+
+# --- WS-07 M17 — Dairy milk adulteration -----------------------------------
+# A per-collection FAT/SNF anomaly flag computed against the member's own
+# 30-day baseline. Collections ALWAYS save: the flag only annotates the ledger
+# and the member statement; automation stays at `suggest` (the manager
+# confirms/dismisses via the flag-review endpoint, which is the outcome hook).
+DAIRY_ADULTERATION_MODULE = "dairy_adulteration"
+DAIRY_ADULTERATION_QUESTION_SET = "dairy.adulteration.v1"
+DAIRY_ADULTERATION_WINDOW_DAYS = 30
 
 _ORDER_NEXT = {"scheduled": "delivered", "delivered": "billed", "billed": "paid"}
 
@@ -133,6 +147,101 @@ async def send_unlinked_slip_if_eligible(
         "phone": member.get("phone", ""),
     }
     await _notify(recipient_id, title, body_msg, data)
+
+
+def _window_start(date_str: str) -> str:
+    try:
+        day = datetime.fromisoformat(date_str).date()
+    except (TypeError, ValueError):
+        day = datetime.now(timezone.utc).date()
+    return (day - timedelta(days=DAIRY_ADULTERATION_WINDOW_DAYS)).isoformat()
+
+
+async def _member_milk_baseline(collection: dict) -> list[dict]:
+    """Prior FAT/SNF readings for the same member inside the 30-day window."""
+    member_id = collection.get("memberId")
+    farmer_code = collection.get("farmerCode")
+    if not member_id and not farmer_code:
+        return []
+    target_date = str(collection.get("date") or "")
+    window_start = _window_start(target_date)
+    docs = await query("milk_collections", [], limit=2000)
+    history: list[dict] = []
+    for doc in docs:
+        if doc.get("id") == collection.get("id"):
+            continue
+        if member_id:
+            if doc.get("memberId") != member_id:
+                continue
+        elif doc.get("farmerCode") != farmer_code:
+            continue
+        day = str(doc.get("date") or "")
+        if day and window_start <= day <= (target_date or day):
+            history.append(doc)
+    history.sort(key=lambda d: d.get("date") or "")
+    return history
+
+
+async def annotate_collection_adulteration(collection: dict) -> dict | None:
+    """M17 — annotate one collection with an adulteration flag.
+
+    Returns `{anomaly, confidence, baseline, sampleCount, decisionId}` or None
+    when the `dairy_adulteration` flag is off (the collection saves unchanged).
+    The write is NEVER blocked: provider failures degrade to the deterministic
+    fallback and are logged with `fallbackUsed` via the gateway/decision log.
+    """
+    if not await config_store.module_enabled(DAIRY_ADULTERATION_MODULE):
+        return None
+
+    history = await _member_milk_baseline(collection)
+    today = {
+        "memberId": collection.get("memberId"),
+        "fatPercent": collection.get("fatPercent"),
+        "snfPercent": collection.get("snfPercent"),
+        "date": collection.get("date"),
+        "windowDays": DAIRY_ADULTERATION_WINDOW_DAYS,
+    }
+    state = build_adulteration_state(history, today)
+    try:
+        decision = await gateway.decide(
+            state,
+            DAIRY_ADULTERATION_QUESTION_SET,
+            ctx=collection.get("memberId"),
+            module=DAIRY_ADULTERATION_MODULE,
+        )
+        answers = dict(decision.answers or {})
+        confidence = float(decision.confidence or 0.0)
+        decision_id = decision.decision_id
+    except Exception as exc:  # noqa: BLE001 — degrade, never block the collection
+        log.warning("dairy adulteration decide failed (%s) — degrading to fallback", exc)
+        answers = question_sets.fallback_answers(DAIRY_ADULTERATION_QUESTION_SET, state)
+        confidence = 0.0
+        decision_id = await decision_log.log_decision(
+            module=DAIRY_ADULTERATION_MODULE,
+            question_set_id=DAIRY_ADULTERATION_QUESTION_SET,
+            version="v1",
+            state=state,
+            answers=answers,
+            confidence=0.0,
+            latency_ms=0,
+            cost_usd=0.0,
+            model="none",
+            source="fallback",
+            fallback_used=True,
+        )
+
+    baseline = answers.get("baseline") or {}
+    return {
+        "anomaly": bool(answers.get("anomaly")),
+        "confidence": round(confidence, 3),
+        "baseline": {
+            "fatAvg": baseline.get("fatAvg"),
+            "snfAvg": baseline.get("snfAvg"),
+            "windowDays": baseline.get("windowDays") or DAIRY_ADULTERATION_WINDOW_DAYS,
+        },
+        "sampleCount": len(history),
+        "decisionId": decision_id,
+    }
 
 
 async def _manager(uid: str = Depends(current_user_id)) -> str:
@@ -305,6 +414,21 @@ async def member_statement(
             headers={"Content-Disposition": f'attachment; filename="statement-{member_id}.pdf"'},
         )
 
+    flagged = [c for c in collections if (c.get("adulteration") or {}).get("anomaly")]
+    flag_note = None
+    if flagged:
+        count = len(flagged)
+        flag_note = {
+            "en": (
+                f"{count} collection(s) in this period were flagged for a possible "
+                "FAT/SNF anomaly against this member's 30-day baseline — please verify the readings."
+            ),
+            "hi": (
+                f"इस अवधि की {count} पर्ची(याँ) सदस्य के 30-दिन के आधार की तुलना में संभावित "
+                "FAT/SNF असामान्यता के लिए चिह्नित हैं — कृपया रीडिंग जाँचें।"
+            ),
+        }
+
     return {
         "member": member,
         "collections": collections,
@@ -314,6 +438,8 @@ async def member_statement(
             "amount": round(sum(c.get("totalAmount", 0.0) for c in collections), 2),
             "paid": round(sum(p.get("netAmount", 0.0) for p in payments if p.get("status") == "paid"), 2),
         },
+        "flaggedCount": len(flagged),
+        "flagNote": flag_note,
     }
 
 

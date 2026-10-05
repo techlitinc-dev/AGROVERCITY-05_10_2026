@@ -1,12 +1,13 @@
 import { ZERO } from '../../lib/numDefaults';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import LabeledTextField from '../../components/LabeledTextField';
 import SegmentedControl from '../../components/SegmentedControl';
 import ToolShell from '../../components/trade/ToolShell';
 import { useEnsureProfile } from '../../components/trade/useEnsureProfile';
 import { toast } from '../../components/toast';
 import { isApiError } from '../../lib/api/client';
+import { getOrg, type BuyerOrg, type BuyerOrgRole } from '../../lib/api/buyerOrg';
 import { listSavedFarmers, type SavedFarmer } from '../../lib/api/discovery';
 import {
   createContract,
@@ -17,6 +18,7 @@ import {
 } from '../../lib/api/intelligence';
 import { mandiPrices } from '../../lib/api/mandi';
 import { useT } from '../../lib/i18n';
+import { useSessionStore } from '../../stores/session';
 import '../../theme/trade.css';
 import '../../theme/contracts.css';
 
@@ -80,6 +82,23 @@ export default function ContractFormPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingContract, setLoadingContract] = useState(editing);
   const [busy, setBusy] = useState(false);
+
+  // Buyer-org RBAC (P12): contract create/update requires procurement/admin.
+  // Resolve the caller's role so the submit button renders DISABLED with a
+  // reason + TeamPage deep link instead of being hidden.
+  const uid = useSessionStore((s) => s.user?.id ?? s.user?.uid);
+  const [org, setOrg] = useState<BuyerOrg | null>(null);
+  const [roleError, setRoleError] = useState(false);
+  useEffect(() => {
+    if (!uid) return;
+    getOrg()
+      .then(setOrg)
+      .catch(() => setOrg(null));
+  }, [uid]);
+  const myRole: BuyerOrgRole | null = org
+    ? (org.members.find((m) => m.uid === uid)?.role ?? (org.adminUid === uid ? 'admin' : null))
+    : null;
+  const canContract = !org || myRole === 'admin' || myRole === 'procurement';
 
   // Saved farmers + crop datalist from the live mandi price feed.
   useEffect(() => {
@@ -222,7 +241,10 @@ export default function ContractFormPage() {
       toast(editing ? t('ctUpdatedToast') : t('ctCreatedToast'));
       navigate(`/dashboard/p/contracts/${saved.id}`);
     } catch (e) {
-      if (isApiError(e) && e.fieldErrors) {
+      if (isApiError(e) && e.code === 'ORG_ROLE_REQUIRED') {
+        setRoleError(true);
+        toast(t('orgRoleContract'), { error: true });
+      } else if (isApiError(e) && e.fieldErrors) {
         setErrors(e.fieldErrors);
         toast(t('ctInvalid'), { error: true });
       } else {
@@ -454,11 +476,19 @@ export default function ContractFormPage() {
               type="button"
               className="av-btn av-btn-primary"
               onClick={() => void submit()}
-              disabled={busy}
+              disabled={busy || !canContract}
             >
               {busy ? <span className="av-spinner" aria-hidden /> : editing ? t('ctUpdate') : t('ctSubmit')}
             </button>
           </div>
+          {!canContract || roleError ? (
+            <p className="trade-hint">
+              {t('orgRoleContract')}{' '}
+              <Link className="av-link" to="/dashboard/p/contracts/team">
+                {t('orgTeamLink')}
+              </Link>
+            </p>
+          ) : null}
         </>
       ) : null}
     </ToolShell>

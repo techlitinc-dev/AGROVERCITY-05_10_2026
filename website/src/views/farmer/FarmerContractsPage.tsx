@@ -24,6 +24,19 @@ import '../../theme/contracts.css';
 const ACTIVE_STATUSES = ['active', 'accepted', 'open', 'fulfilled'];
 const PAST_STATUSES = ['declined', 'cancelled'];
 
+/** contracts.attractiveness.v1 annotation (WS-07 M18) — optional on the doc. */
+interface ContractAttractiveness {
+  incomeVsMandi?: number;
+  riskFlags?: string[];
+  explanation?: string;
+  decisionId?: string;
+}
+
+const attractScore = (c: Contract): number | null => {
+  const a = (c as Contract & { attractiveness?: ContractAttractiveness }).attractiveness;
+  return a && typeof a.incomeVsMandi === 'number' ? Math.round(a.incomeVsMandi) : null;
+};
+
 /**
  * Farmer contract inbox (myContracts tool) — incoming offers as decision
  * cards (accept via MPIN e-sign, or decline with a reason), the active
@@ -128,7 +141,9 @@ export default function FarmerContractsPage() {
         <>
           <p className="trade-section-title">{t('ctOffersTitle')}</p>
           <div className="trade-list" style={{ marginTop: 0 }}>
-            {offered.map((c) => (
+            {offered.map((c) => {
+              const score = attractScore(c);
+              return (
               <div key={c.id} className="trade-card" style={{ cursor: 'default' }}>
                 <div className="trade-card-row">
                   <span className="trade-card-title">
@@ -154,6 +169,11 @@ export default function FarmerContractsPage() {
                 {c.paymentTermsDays !== undefined ? (
                   <p className="trade-card-sub">{t('ctNetDays', { days: c.paymentTermsDays })}</p>
                 ) : null}
+                {score !== null ? (
+                  <p className="trade-card-sub">{t('ctAttractScore', { pct: score })}</p>
+                ) : (
+                  <p className="trade-card-sub">{t('ctAttractSummaryFallback')}</p>
+                )}
                 <div className="ct-decision-actions">
                   <button
                     type="button"
@@ -175,7 +195,8 @@ export default function FarmerContractsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : null}

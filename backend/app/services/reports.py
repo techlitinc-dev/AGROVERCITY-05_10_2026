@@ -354,6 +354,57 @@ def build_policy_certificate_pdf(policy: dict) -> str:
     return path
 
 
+def build_80g_receipt_pdf(gaushala: dict, receipt: dict) -> str:
+    """80G donation/adoption receipt PDF (WS-06 §6.8).
+
+    Sequential numbering per gaushala per financial year is assigned by the
+    caller; this builder only renders the receipt record.
+    """
+    path = f"/tmp/80g_receipt_{receipt.get('id', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    heading = "80G Receipt / 80G रसीद"
+    story = [
+        Paragraph(heading, styles["Title"]),
+        Paragraph(
+            gaushala.get("trustName", "") or gaushala.get("name", "") or receipt.get("gaushalaName", ""),
+            styles["Heading2"],
+        ),
+        Paragraph(f"Issued on: {(receipt.get('issuedAt') or '')[:10]}", styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    rows = [
+        ["Receipt Number", receipt.get("certificateNumber", "")],
+        ["Gaushala", receipt.get("gaushalaName", "") or gaushala.get("name", "")],
+        ["Donor / Devotee", receipt.get("personName", "")],
+        ["Purpose", receipt.get("kind", "")],
+        ["Reference", receipt.get("refId", "")],
+        ["Amount", f"Rs {receipt.get('amount', 0)}"],
+        ["80G Eligible", "Yes" if receipt.get("eightyGEligible") else "No"],
+        ["Issued By", receipt.get("issuedBy", "")],
+    ]
+    table = Table(rows, colWidths=[150, 290])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    story.append(Spacer(1, 12))
+    story.append(
+        Paragraph(
+            "Donation eligible for deduction under Section 80G of the Income Tax Act, 1961.",
+            styles["Normal"],
+        )
+    )
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
 def upload_to_storage(local_path: str, dest_path: str) -> str:
     if settings.env == "dev":
         logger.warning("dev mode: skipping Firebase Storage upload for %s", dest_path)

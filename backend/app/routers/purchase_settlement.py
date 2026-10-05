@@ -2,7 +2,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Header, UploadFile
 from pydantic import BaseModel, Field
 
 from app.core.db import get_doc, set_doc
@@ -24,6 +24,8 @@ from app.routers.purchases import (
     probation_gate_escrow,
 )
 from app.routers.users import require_role
+from app.services import idempotency, storage
+from app.services.billing import check_entitlement
 from app.services.notify import notify_user
 from app.services.users import get_user
 
@@ -47,8 +49,8 @@ async def fund_escrow(purchase_id: str, body: EscrowFundIn, uid: str = Depends(c
     advancePaid (PAYMENT_HELD in the spec state machine) and unlocks the
     handover OTP for the farmer."""
     purchase = await _participant(purchase_id, uid)
-    if uid != purchase.get("buyerId"):
-        _error(403, "FORBIDDEN", "only the buyer can fund escrow")
+    from app.services.buyer_org import require_org_role
+    await require_org_role(uid, "finance", "admin", org_owner_uid=purchase.get("buyerId"))
     escrow = purchase.setdefault("escrow", {})
     if escrow.get("status") == "held":
         _error(409, "ESCROW_ALREADY_HELD", "escrow is already funded")
@@ -184,11 +186,43 @@ async def _apply_invoice(purchase: dict):
             if demand and demand.get("category"):
                 purchase["category"] = demand["category"]
     _issue_invoice(purchase, demand=demand)
+    if isinstance(source, dict) and source.get("type") == "contract":
+        # WS-02 step 10: 1–2% platform commission on every direct-buyer
+        # (ProcurePro) settlement invoice, integer paisa.
+        await _append_commission_line(purchase)
+
+
+async def _append_commission_line(purchase: dict):
+    from app.services import settlements as settlements_service
+
+    invoice = purchase.get("invoice")
+    if invoice is None:
+        return
+    config = await settlements_service._config()
+    pct = int(config.get("directBuyerPct", 2))
+    pct = min(2, max(1, pct))  # the direct-buyer band is 1–2%
+    trade_amount = int(purchase.get("finalAmount") or purchase.get("totalAmount") or 0)
+    commission_paisa = (trade_amount * pct) // 100
+    line = {
+        "type": "commission",
+        "description": f"Platform commission (direct buyer {pct}%)",
+        "ratePercent": pct,
+        "amount": commission_paisa,
+        "commissionPaisa": commission_paisa,
+    }
+    invoice.setdefault("lines", []).append(line)
+    purchase["commissionLine"] = line
+    purchase["commissionAmount"] = commission_paisa
 
 
 @router.post("/{purchase_id}/qc")
 async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_user_id)):
     purchase = await _participant(purchase_id, uid)
+    from app.services.buyer_org import require_org_role
+    await require_org_role(uid, "qa", "admin", org_owner_uid=purchase.get("buyerId"))
+    if (purchase.get("source") or {}).get("type") == "contract":
+        # WS-02 step 10: the ProcurePro QC suite is a Pro+ feature.
+        await check_entitlement(purchase.get("buyerId"), "directBuyer", "qcSubmits")
     if purchase.get("status") != "delivered":
         _error(400, "INVALID_STATUS_TRANSITION", f"cannot record QC from {purchase.get('status')}")
     escrow = purchase.get("escrow") or {}
@@ -201,21 +235,115 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
             "accepted and rejected quantities must sum to the purchase quantity",
             {"acceptedQty": "acceptedQty + rejectedQty must equal quantity"},
         )
-    purchase["qc"] = {**body.model_dump(), "at": _now()}
-    if body.rejectedQty <= 0:
-        purchase["finalAmount"] = purchase["totalAmount"]
-        purchase["status"] = "completed"
-        _append_event(purchase, "qc", f"grade {body.grade}")
-        await _release_escrow(purchase)
-        _append_event(purchase, "completed")
-        await _apply_invoice(purchase)
+    spec_snapshot = purchase.get("specSnapshot")
+    if not spec_snapshot and purchase.get("source", {}).get("type") == "contract":
+        contract_id = purchase.get("source", {}).get("refId") or purchase.get("contractId")
+        if contract_id:
+            contract = await get_doc("contracts", contract_id)
+            if contract and contract.get("specSnapshot"):
+                spec_snapshot = contract["specSnapshot"]
+                purchase["specSnapshot"] = spec_snapshot
+
+    if spec_snapshot:
+        params = spec_snapshot.get("params") or []
+        param_map = {p.get("name", "").strip().lower(): p for p in params if "name" in p}
+        qty = float(purchase.get("quantity") or 1)
+        accepted_qty = float(body.acceptedQty)
+
+        per_unit_adj_sum = 0
+        measured_details = []
+
+        for m in body.measurements:
+            p = param_map.get(m.name.strip().lower())
+            if not p:
+                measured_details.append({"name": m.name, "value": m.value, "specBound": "-", "adjustment": 0})
+                continue
+            p_min = p.get("min")
+            p_max = p.get("max")
+            adj_rate = int(p.get("adjustmentPerUnit") or 0)
+            val = float(m.value)
+
+            dev = 0.0
+            if p_min is not None and p_max is not None:
+                if val < p_min:
+                    dev = val - p_min
+                elif val > p_max:
+                    dev = val - p_max
+            elif p_min is not None and p_max is None:
+                if adj_rate > 0:
+                    dev = val - p_min
+                else:
+                    dev = p_min - val if val < p_min else 0.0
+            elif p_min is None and p_max is not None:
+                if val > p_max:
+                    dev = val - p_max
+
+            line_adj_per_unit = int(round(adj_rate * dev))
+            per_unit_adj_sum += line_adj_per_unit
+
+            if p_min is not None and p_max is not None:
+                bound_str = f"{p_min} – {p_max} {p.get('unit', '')}".strip()
+            elif p_min is not None:
+                bound_str = f"≥ {p_min} {p.get('unit', '')}".strip()
+            elif p_max is not None:
+                bound_str = f"≤ {p_max} {p.get('unit', '')}".strip()
+            else:
+                bound_str = "Standard"
+
+            measured_details.append({
+                "name": m.name,
+                "value": m.value,
+                "unit": p.get("unit", ""),
+                "specBound": bound_str,
+                "adjustmentPerUnit": adj_rate,
+                "deviation": dev,
+                "adjustment": line_adj_per_unit,
+            })
+
+        total_quality_adj = int(round(per_unit_adj_sum * qty))
+        base_rate_paisa = int(round(float(purchase.get("agreedPricePerUnit") or 0) * 100))
+        final_rate_paisa = base_rate_paisa + (total_quality_adj // int(qty or 1))
+        final_amount_paisa = int(round(final_rate_paisa * accepted_qty))
+        final_amount = int(round(final_amount_paisa / 100))
+
+        purchase["qualityAdjustment"] = total_quality_adj
+        purchase["qualityAdjustmentPerUnit"] = per_unit_adj_sum
+        purchase["finalRate"] = final_rate_paisa
+        purchase["finalAmount"] = final_amount
+        purchase["finalAmountPaisa"] = final_amount_paisa
+        purchase["qc"] = {
+            **body.model_dump(),
+            "measurements": measured_details,
+            "at": _now(),
+        }
+
+        if body.rejectedQty <= 0:
+            purchase["status"] = "completed"
+            _append_event(purchase, "qc", f"sliding QC (rate ₹{final_rate_paisa / 100:.2f})")
+            await _release_escrow(purchase)
+            _append_event(purchase, "completed")
+            await _apply_invoice(purchase)
+        else:
+            purchase["status"] = "qcDisputed"
+            escrow = purchase.setdefault("escrow", {})
+            escrow["disputeOpenedAt"] = _now()
+            _append_event(purchase, "qcDisputed", f"sliding QC: {body.rejectedQty} rejected")
     else:
-        purchase["finalAmount"] = round(purchase["agreedPricePerUnit"] * body.acceptedQty)
-        purchase["status"] = "qcDisputed"
-        # WS-03: a dispute opened inside the window pauses escrow release.
-        escrow = purchase.setdefault("escrow", {})
-        escrow["disputeOpenedAt"] = _now()
-        _append_event(purchase, "qcDisputed", f"grade {body.grade}")
+        purchase["qc"] = {**body.model_dump(), "at": _now()}
+        if body.rejectedQty <= 0:
+            purchase["finalAmount"] = purchase["totalAmount"]
+            purchase["status"] = "completed"
+            _append_event(purchase, "qc", f"grade {body.grade}")
+            await _release_escrow(purchase)
+            _append_event(purchase, "completed")
+            await _apply_invoice(purchase)
+        else:
+            purchase["finalAmount"] = round(purchase["agreedPricePerUnit"] * body.acceptedQty)
+            purchase["status"] = "qcDisputed"
+            # WS-03: a dispute opened inside the window pauses escrow release.
+            escrow = purchase.setdefault("escrow", {})
+            escrow["disputeOpenedAt"] = _now()
+            _append_event(purchase, "qcDisputed", f"grade {body.grade}")
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
     if purchase["status"] == "completed":
@@ -238,6 +366,45 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
             path=f"/dashboard/p/purchases/{purchase_id}",
         )
     return _redact(purchase, uid)
+
+
+@router.post("/{purchase_id}/qc/photos", status_code=201)
+async def upload_qc_photo(
+    purchase_id: str,
+    file: UploadFile = File(...),
+    uid: str = Depends(current_user_id),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    stored = await idempotency.replay("purchase.qc.photo", idempotency_key)
+    if stored is not None:
+        return stored
+
+    purchase = await _participant(purchase_id, uid)
+    if purchase.get("status") not in ("delivered", "qcDisputed"):
+        _error(
+            409,
+            "INVALID_PURCHASE_STATUS",
+            f"QC photos can only be uploaded when status is delivered or qcDisputed, current: {purchase.get('status')}",
+        )
+
+    qc = purchase.setdefault("qc", {})
+    photos = qc.setdefault("photos", [])
+    if len(photos) >= 5:
+        _error(409, "MAX_PHOTOS_EXCEEDED", "maximum 5 photos per purchase allowed")
+
+    data = await storage.validate_upload(file)
+    filename = file.filename or "photo.jpg"
+    content_type = file.content_type or "image/jpeg"
+    blob_path, _ = storage.upload_user_file(uid, data, filename, content_type, prefix="purchases")
+    download_url = storage.signed_download_url(blob_path)
+    photos.append(blob_path)
+    purchase["updatedAt"] = _now()
+    await set_doc("purchases", purchase_id, purchase)
+
+    res = {"photoKey": blob_path, "url": download_url, "photos": photos}
+    if idempotency_key:
+        await idempotency.store("purchase.qc.photo", idempotency_key, res)
+    return res
 
 
 @router.post("/{purchase_id}/resolve")

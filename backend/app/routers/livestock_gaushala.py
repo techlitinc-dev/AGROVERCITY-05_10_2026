@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -14,7 +15,10 @@ from app.models.livestock_mgmt import (
 )
 from app.routers.users import require_role
 from app.services.notifications import send_fcm_to_user
+from app.services.reports import build_80g_receipt_pdf
 from app.services.users import get_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["livestock"])
 
@@ -69,9 +73,30 @@ async def _require_gaushala(uid: str) -> dict:
     return gaushala
 
 
+def _financial_year() -> str:
+    """Indian FY label for the current UTC date, e.g. "2026-27" (Apr–Mar)."""
+    now = datetime.now(timezone.utc)
+    start = now.year if now.month >= 4 else now.year - 1
+    return f"{start}-{str(start + 1)[-2:]}"
+
+
+async def _next_80g_number(gaushala_id: str, kind: str) -> str:
+    """Sequential 80G receipt number per gaushala per financial year (WS-06 §6.8).
+
+    Read-modify-write through the shared `counters` collection (same pattern as
+    services/claims.py:next_claim_number) so the tests' in-memory store works.
+    """
+    fy = _financial_year()
+    doc_id = f"gosh80g_{gaushala_id or 'unknown'}_{fy}"
+    counter = await get_doc("counters", doc_id) or {"id": doc_id, "value": 0}
+    counter["value"] += 1
+    await set_doc("counters", doc_id, counter)
+    return f"GOSH-80G-{fy}-{kind.upper()[:3]}-{counter['value']:04d}"
+
+
 async def _create_receipt(kind: str, ref_id: str, person_name: str, amount, gaushala, issued_by: str) -> dict:
     receipt_id = f"crt_{uuid.uuid4().hex[:12]}"
-    cert_no = f"GOSH-{datetime.now(timezone.utc).year}-{kind.upper()}-{uuid.uuid4().hex[:6].upper()}"
+    cert_no = await _next_80g_number(gaushala.get("id", ""), kind)
     doc = {
         "id": receipt_id,
         "kind": kind,
@@ -87,6 +112,12 @@ async def _create_receipt(kind: str, ref_id: str, person_name: str, amount, gaus
         "gaushalaName": gaushala.get("name", ""),
         "issuedAt": _now(),
     }
+    await set_doc("receipts", receipt_id, doc)
+    # WS-06 §6.8: auto-generate the 80G receipt PDF and attach its ref.
+    try:
+        doc["certificateUrl"] = build_80g_receipt_pdf(gaushala, doc)
+    except Exception:  # pragma: no cover - PDF backend failures must not block approval
+        logger.warning("80G receipt PDF generation failed for %s", receipt_id, exc_info=True)
     await set_doc("receipts", receipt_id, doc)
     return doc
 
@@ -235,6 +266,11 @@ async def update_donation_status(donation_id: str, body: DonationStatusIn, uid: 
             "donation", donation_id, donation.get("donorName", ""),
             donation.get("amountInr"), gaushala, uid,
         )
+        # WS-06 §6.8: attach the receipt + generated 80G PDF ref to the donation.
+        donation["receiptId"] = receipt["id"]
+        donation["receiptNumber"] = receipt["certificateNumber"]
+        donation["receiptPdfRef"] = receipt.get("certificateUrl", "")
+        await set_doc("fodder_donations", donation_id, donation)
         await _notify(
             donation.get("donorId", ""),
             "दान रसीद जारी (Donation Receipt)",
@@ -441,3 +477,60 @@ async def list_receipts(
     docs = await query("receipts", [("gaushalaId", "==", gaushala["id"])], limit=500)
     docs.sort(key=lambda d: d.get("issuedAt", ""), reverse=True)
     return _envelope(docs, page, pageSize)
+
+
+@router.get("/livestock/gaushala/{gaushala_id}/transparency")
+async def gaushala_transparency(gaushala_id: str):
+    """PUBLIC (no-auth) transparency aggregate (WS-06 §6.11).
+
+    ZERO PII by construction: donor names appear only when the donation record
+    explicitly marks the donor public (`donorPublic`), otherwise "anonymous";
+    donorPhone / email / address are never included. Money is integer paisa.
+    """
+    gaushala = await get_doc("gaushalas", gaushala_id)
+    if not gaushala:
+        _error(404, "GAUSHALA_NOT_FOUND", "gaushala not found")
+
+    donations = await query("fodder_donations", [("gaushalaId", "==", gaushala_id)], limit=2000)
+    expenses = await query("gaushala_expenses", [("gaushalaId", "==", gaushala_id)], limit=2000)
+    cattle = await query("livestock_animals", [("gaushalaId", "==", gaushala_id)], limit=2000)
+    receipts = await query("receipts", [("gaushalaId", "==", gaushala_id)], limit=2000)
+
+    ledger: list[dict] = []
+    total_paisa = 0
+    for donation in sorted(donations, key=lambda d: d.get("createdAt", ""), reverse=True):
+        amount_paisa = int(round(float(donation.get("amountInr") or 0) * 100))
+        total_paisa += amount_paisa
+        ledger.append(
+            {
+                "donor": donation.get("donorName", "") if donation.get("donorPublic") else "anonymous",
+                "amountPaisa": amount_paisa,
+                "date": donation.get("createdAt", ""),
+                "receiptNumber": donation.get("receiptNumber", ""),
+            }
+        )
+
+    expenses_by_category: dict[str, int] = {}
+    for expense in expenses:
+        category = expense.get("category", "other")
+        amount_paisa = int(round(float(expense.get("amount") or 0) * 100))
+        expenses_by_category[category] = expenses_by_category.get(category, 0) + amount_paisa
+
+    cattle_by_status: dict[str, int] = {}
+    for animal in cattle:
+        status = animal.get("cattleStatus", "in-shelter")
+        cattle_by_status[status] = cattle_by_status.get(status, 0) + 1
+
+    return {
+        "gaushalaId": gaushala_id,
+        "name": gaushala.get("name", ""),
+        "district": gaushala.get("district", ""),
+        "donations": {
+            "count": len(donations),
+            "totalPaisa": total_paisa,
+            "eightyGReceiptCount": len([r for r in receipts if r.get("kind") == "donation"]),
+            "ledger": ledger,
+        },
+        "expensesByCategory": expenses_by_category,
+        "cattleByStatus": cattle_by_status,
+    }

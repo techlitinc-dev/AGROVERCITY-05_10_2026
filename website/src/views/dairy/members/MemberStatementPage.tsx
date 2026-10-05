@@ -50,6 +50,9 @@ export default function MemberStatementPage() {
   useEffect(load, [load]);
 
   const member = statement?.member;
+  // WS-07 M17 — flagged collections in this cycle (dairy.adulteration.v1).
+  const flaggedCount =
+    (statement as (MemberStatement & { flaggedCount?: number }) | null)?.flaggedCount ?? 0;
 
   /** P11 — one combined sheet: collection rows + payment rows, sorted by date. */
   const exportCsv = useCallback(() => {
@@ -205,6 +208,12 @@ export default function MemberStatementPage() {
                 <div className="dairy-totals-value">{fmtINR(statement.totals.paid)}</div>
               </div>
             </div>
+
+            {flaggedCount > 0 ? (
+              <p className="dairy-flag-note" style={{ marginTop: 8 }}>
+                ⚠ {t('dairyStatementFlagNote', { count: flaggedCount })}
+              </p>
+            ) : null}
 
             <div className="dairy-section">
               <span className="dairy-section-title">🧾 {t('dairyStmtCollections')}</span>

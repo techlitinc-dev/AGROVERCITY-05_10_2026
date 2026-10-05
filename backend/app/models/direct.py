@@ -60,6 +60,13 @@ class PickupIn(BaseModel):
     vehicleType: str = ""
     address: str = ""
     notes: str = ""
+    mode: Literal["farmerDelivers", "buyerPicksup"] = "buyerPicksup"
+    slot: str = ""
+
+
+class QcMeasurement(BaseModel):
+    name: str
+    value: float
 
 
 class QcIn(BaseModel):
@@ -67,6 +74,8 @@ class QcIn(BaseModel):
     acceptedQty: float = Field(ge=0)
     rejectedQty: float = Field(ge=0)
     note: str = ""
+    measurements: list[QcMeasurement] = Field(default_factory=list)
+    photos: list[str] = Field(default_factory=list)
 
 
 class ResolveIn(BaseModel):

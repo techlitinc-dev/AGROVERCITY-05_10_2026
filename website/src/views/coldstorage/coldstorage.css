@@ -1,0 +1,173 @@
+.cs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cs-section {
+  background: #fff;
+  border: 1px solid var(--av-border, #e5e7eb);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.cs-section-title {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.cs-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.cs-stat {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.cs-stat-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.cs-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.cs-stat-sub {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.cs-progress {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.cs-progress-fill {
+  height: 100%;
+  background: #0e7490;
+}
+
+.cs-qa-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
+}
+
+.cs-qa {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  font-size: 12px;
+}
+
+.cs-qa-icon {
+  font-size: 20px;
+}
+
+.cs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cs-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cs-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.cs-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.cs-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cs-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 20px;
+}
+
+.cs-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.cs-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.cs-pill-ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.cs-pill-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.cs-pill-bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.cs-table th,
+.cs-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef2f7;
+  vertical-align: top;
+}
+
+.cs-img {
+  max-width: 120px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}

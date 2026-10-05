@@ -1,0 +1,4 @@
+{"questionSetId": "insurance.triage.v1.golden", "id": "claim-golden-1", "photoCount": 1, "expected": {"completeness": 0.25, "guidancePresent": true}}
+{"questionSetId": "insurance.triage.v1.golden", "id": "claim-golden-2", "photoCount": 2, "expected": {"completeness": 0.5, "guidancePresent": true}}
+{"questionSetId": "insurance.triage.v1.golden", "id": "claim-golden-3", "photoCount": 3, "expected": {"completeness": 0.75, "guidancePresent": true}}
+{"questionSetId": "insurance.triage.v1.golden", "id": "claim-golden-4", "photoCount": 4, "expected": {"completeness": 1.0, "guidancePresent": false}}

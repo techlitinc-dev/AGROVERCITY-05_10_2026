@@ -17,6 +17,10 @@ DEFAULT_AI_CONFIG = {
         "broker_lead_score": True,
         "equipment_booking_rec": True,
         "land_listing_quality": True,
+        "loans_prescreen": True,
+        "insurance_triage": True,
+        "dairy_adulteration": True,
+        "contracts_attractiveness": True,
     },
     "thresholds": {
         "seller.rate_check.v1": 0.75,
@@ -24,6 +28,10 @@ DEFAULT_AI_CONFIG = {
         "broker.lead_score.v1": 0.75,
         "equipment.booking_rec.v1": 0.75,
         "land.listing_quality.v1": 0.75,
+        "loans.prescreen.v1": 0.75,
+        "insurance.triage.v1": 0.75,
+        "dairy.adulteration.v1": 0.75,
+        "contracts.attractiveness.v1": 0.75,
     },
     "automation": {
         "seller.rate_check.v1": "suggest",
@@ -31,6 +39,10 @@ DEFAULT_AI_CONFIG = {
         "broker.lead_score.v1": "suggest",
         "equipment.booking_rec.v1": "suggest",
         "land.listing_quality.v1": "suggest",
+        "loans.prescreen.v1": "suggest",
+        "insurance.triage.v1": "suggest",
+        "dairy.adulteration.v1": "suggest",
+        "contracts.attractiveness.v1": "suggest",
     },
 }
 CACHE_TTL_SECONDS = 60.0

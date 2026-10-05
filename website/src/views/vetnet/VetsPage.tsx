@@ -136,6 +136,11 @@ export default function VetsPage() {
                   {t(`vetnetStatus_${v.status}`)}
                 </span>
               </div>
+              {v.credentialStatus === 'pending' ? (
+                <div className="vetnet-card-row">
+                  <span className="vetnet-pill vetnet-pill-warn">⚠ {t('vetnetVerificationPending')}</span>
+                </div>
+              ) : null}
               <div className="vetnet-card-row">
                 <span className="vetnet-card-sub">
                   {[v.qualification, v.experienceYears > 0 ? t('vetnetExpYears', { years: v.experienceYears }) : '']

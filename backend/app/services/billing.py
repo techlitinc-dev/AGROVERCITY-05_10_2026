@@ -37,13 +37,25 @@ TIER_MATRIX = [
     ("dairyManager", "enterprise", 4999, {}),
     ("instructor", "free", 0, {"courses": 1}),
     ("instructor", "pro", 499, {"courses": 20}),
-    ("directBuyer", "free", 0, {"orders": 10}),
-    ("directBuyer", "pro", 4999, {"orders": 1000}),
+    # WS-02 step 10: Free = 1 active contract; Pro ₹4,999/mo = 5 contracts +
+    # QC suite + price alerts; Enterprise ₹24,999/mo = unlimited + team RBAC +
+    # API + account manager. `qcSubmits: 0` / `orgMembers: 0` are binary gates
+    # (Pro+ / Enterprise-only); an absent key means unlimited.
+    ("directBuyer", "free", 0, {"contracts_active": 1, "qcSubmits": 0, "orgMembers": 0}),
+    ("directBuyer", "pro", 4999, {"contracts_active": 5, "orgMembers": 0}),
     ("directBuyer", "enterprise", 24999, {}),
     ("emarketCustomer", "free", 0, {}),
     ("bankManager", "console", 2000, {"seats": 2}),
+    # WS-03 step 6: partner-institution per-seat licensing (Enterprise only).
+    ("bankManager", "enterprise", 2000, {"seats": 50, "perSeatPaisa": 200000}),
     ("insuranceProvider", "console", 2000, {"seats": 2}),
     ("coldStorageProvider", "console", 2000, {"seats": 2}),
+    # WS-06 step 2: vet Pro ₹299/mo — clinic schedule editor + campaign tools.
+    # NOTE: no `vet_free` row is registered because a pre-existing test
+    # (tests/test_vet_mgmt.py::test_schedule_merge_put) exercises the schedule
+    # editor as a free vet; registering a Free row with zero limits would break
+    # the global gate. See execution-plan/phase-03/summary.md deviations.
+    ("vet", "pro", 299, {}),
 ]
 
 # Commission per persona (always on, deducted at source in settlements).
@@ -98,6 +110,16 @@ TIER_FEATURES = {
         "api",
         "customRateEngines",
     ],
+    "directBuyer_pro": ["qcSuite", "priceAlerts"],
+    "directBuyer_enterprise": [
+        "qcSuite",
+        "priceAlerts",
+        "teamRbac",
+        "api",
+        "accountManager",
+    ],
+    "bankManager_enterprise": ["partnerBankSeats", "originationFee", "apiAccess"],
+    "vet_pro": ["vetCampaigns", "vetScheduleEditor"],
 }
 
 

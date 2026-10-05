@@ -144,6 +144,17 @@ class VetManagedIn(BaseModel):
     vetCouncilRegNo: str = ""
     emergencyAvailable: bool = False
     availableForFarmVisit: bool = True
+    # WS-06: credential verification. Records created before this field exists
+    # behave as "pending" (the router defaults them on read).
+    credentialStatus: Literal["pending", "verified", "rejected"] = "pending"
+    credentialDocs: list[str] = Field(default_factory=list)
+
+
+class VetCredentialIn(BaseModel):
+    """Admin credential-verification decision (WS-06); reason is audit-logged."""
+
+    status: Literal["pending", "verified", "rejected"]
+    reason: str = Field(min_length=1, max_length=300)
 
 
 class AppointmentIn(BaseModel):

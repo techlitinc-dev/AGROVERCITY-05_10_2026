@@ -10,6 +10,7 @@ import ExpensesPage from './ExpensesPage';
 import ByproductsPage from './ByproductsPage';
 import ReceiptsPage from './ReceiptsPage';
 import GaushalaAnalyticsPage from './GaushalaAnalyticsPage';
+import GaushalaTransparencyPage from './GaushalaTransparencyPage';
 
 /** Gaushala pages registry — `gaushalaConsole` tool id → hub page (plan/dairy_plan.md §14 P8). */
 export const GAUSHALA_PAGES: Record<string, ComponentType> = {
@@ -27,4 +28,5 @@ export {
   ByproductsPage,
   ReceiptsPage,
   GaushalaAnalyticsPage,
+  GaushalaTransparencyPage,
 };

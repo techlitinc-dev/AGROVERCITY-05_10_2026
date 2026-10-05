@@ -284,11 +284,17 @@ export interface GaushalaReceipt {
   panNumber: string;
   eightyGEligible: boolean;
   certificateNumber: string;
+  /** WS-06 §6.8/6.9: the generated 80G PDF ref (empty until the PDF is built). */
   certificateUrl: string;
   issuedBy: string;
   gaushalaId: string;
   gaushalaName: string;
   issuedAt: string;
+}
+
+/** WS-06 §6.9: download URL for a receipt's 80G PDF, or '' when none was generated. */
+export function receiptPdfUrl(receipt: GaushalaReceipt): string {
+  return receipt.certificateUrl || '';
 }
 
 export interface AdoptionStatusResponse {
@@ -509,4 +515,44 @@ export async function listGaushalaReceipts(params: { page?: number; pageSize?: n
     },
   });
   return data;
+}
+
+// ---- Public transparency (WS-06 §6.11/6.12) ----
+
+export interface GaushalaTransparencyLedgerRow {
+  donor: string;
+  /** Integer paisa. */
+  amountPaisa: number;
+  date: string;
+  receiptNumber: string;
+}
+
+export interface GaushalaTransparency {
+  gaushalaId: string;
+  name: string;
+  district: string;
+  donations: {
+    count: number;
+    totalPaisa: number;
+    eightyGReceiptCount: number;
+    ledger: GaushalaTransparencyLedgerRow[];
+  };
+  expensesByCategory: Record<string, number>;
+  cattleByStatus: Record<string, number>;
+}
+
+/**
+ * PUBLIC, no-auth aggregate for a gaushala's transparency page — ZERO PII
+ * (donor names appear only when the donor opted in, otherwise "anonymous").
+ */
+export async function getGaushalaTransparency(gaushalaId: string): Promise<GaushalaTransparency> {
+  const { data } = await api.get<GaushalaTransparency>(
+    `/livestock/gaushala/${gaushalaId}/transparency`
+  );
+  return data;
+}
+
+/** ₹ from integer paisa (2 decimals). */
+export function fmtPaisa(paisa: number): string {
+  return `₹${(paisa / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

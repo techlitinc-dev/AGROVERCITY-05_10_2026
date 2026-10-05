@@ -41,6 +41,8 @@ class ContractOut(BaseModel):
     declineReason: str | None = None
     acceptedAt: str | None = None
     currentPrice: float | None = None
+    specId: str | None = None
+    specSnapshot: dict | None = None
 
 
 class ContractCreate(BaseModel):
@@ -55,6 +57,8 @@ class ContractCreate(BaseModel):
     deliveryLocation: str = ""
     paymentTermsDays: int = 0
     termsText: str = ""
+    specId: str | None = None
+    specSnapshot: dict | None = None
 
 
 class ContractUpdate(BaseModel):

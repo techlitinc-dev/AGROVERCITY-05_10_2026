@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ToolShell from '../../components/trade/ToolShell';
 import { useEnsureProfile } from '../../components/trade/useEnsureProfile';
-import { fmtINR, listGaushalaReceipts, type GaushalaReceipt } from '../../lib/api/gaushala';
+import { fmtINR, listGaushalaReceipts, receiptPdfUrl, type GaushalaReceipt } from '../../lib/api/gaushala';
 import { useT } from '../../lib/i18n';
 import '../../lib/i18n/locales/en.gaushala';
 import '../../lib/i18n/locales/hi.gaushala';
@@ -113,6 +113,19 @@ export default function ReceiptsPage() {
                   {fmtDate(r.issuedAt)}
                   {r.gaushalaName ? ` · ${r.gaushalaName}` : ''}
                 </span>
+                {receiptPdfUrl(r) ? (
+                  <div className="gaushala-card-row">
+                    <a
+                      className="av-btn av-btn-ghost"
+                      href={receiptPdfUrl(r)}
+                      target="_blank"
+                      rel="noreferrer"
+                      download
+                    >
+                      ⬇ {t('gaushalaReceiptDownload')}
+                    </a>
+                  </div>
+                ) : null}
               </div>
             );
           })}

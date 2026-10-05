@@ -298,6 +298,17 @@ const enDairy: Record<string, string> = {
   dairyLedgerStatus: 'Status',
   dairyLedgerPaid: 'Paid',
   dairyLedgerPending: 'Pending',
+
+  // ---- Adulteration flags (WS-07 M17) ----
+  dairyAdulterationFlag: 'Possible adulteration',
+  dairyAdulterationFlagNote:
+    "FAT/SNF is well outside this member's 30-day baseline — verify the reading before paying.",
+  dairyFlagConfirm: 'Confirm flag',
+  dairyFlagDismiss: 'Dismiss flag',
+  dairyFlagConfirmed: 'Flag confirmed',
+  dairyFlagDismissed: 'Flag dismissed',
+  dairyStatementFlagNote:
+    '{count} collection(s) flagged for a possible FAT/SNF anomaly this period — verify the readings.',
 };
 
 registerLocale('en', enDairy);

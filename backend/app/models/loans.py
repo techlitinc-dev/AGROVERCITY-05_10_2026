@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.models.finance import LoanApplyIn as LoanApplyInBase
+
 LoanStatus = Literal[
     "submitted",
     "underReview",
@@ -55,6 +57,21 @@ class LoanApplicationOut(BaseModel):
     timeline: list[LoanTimelineEntry] = []
     note: str | None = None
     updatedAt: str | None = None
+    # WS-03 task 3.9 — optional partner-bank scope for the referral/origination fee.
+    partnerBankId: str | None = None
+    # WS-03 task 3.4 — district filter field carried on the application.
+    district: str | None = None
+    # WS-03 task 3.17 — optional AI prescreen annotation (WS-07 M14).
+    ai: dict | None = None
+
+
+class LoanApplyIn(LoanApplyInBase):
+    """Apply payload (`POST /finance/loans/apply`) extended with the WS-03
+    optional fields. The base model lives in models/finance.py and is imported
+    unchanged; `model_dump()` therefore carries these onto the loan doc."""
+
+    district: str | None = None
+    partnerBankId: str | None = None
 
 
 class ApproveIn(BaseModel):

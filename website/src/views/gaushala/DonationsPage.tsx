@@ -11,6 +11,7 @@ import {
   fmtINR,
   getMyGaushala,
   listGaushalaDonations,
+  receiptPdfUrl,
   updateDonationStatus,
   type DonationType,
   type FodderDonation,
@@ -340,6 +341,17 @@ export default function DonationsPage() {
               <span>{fmtDate(receipt.issuedAt)}</span>
             </div>
             <div className="gaushala-actions">
+              {receiptPdfUrl(receipt) ? (
+                <a
+                  className="av-btn av-btn-ghost"
+                  href={receiptPdfUrl(receipt)}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                >
+                  ⬇ {t('gaushalaReceiptDownload')}
+                </a>
+              ) : null}
               <button type="button" className="av-btn av-btn-primary" onClick={() => setReceipt(null)}>
                 {t('gaushalaReceiptClose')}
               </button>

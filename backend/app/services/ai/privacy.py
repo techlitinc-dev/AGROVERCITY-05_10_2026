@@ -217,6 +217,93 @@ def build_equipment_booking_rec_state(
     return sanitize_state(state)
 
 
+def build_loan_prescreen_state(application: dict) -> dict:
+    """M14 state builder: loan-relevant aggregates only — amount, purpose,
+    land/crop summary, repayment-history summary and uploaded doc types.
+    Pseudonymized, ≤1500 tokens, no Aadhaar / phone / email (rule 11)."""
+    # Local import keeps privacy.py free of AI-module import cycles at call time.
+    from app.services.ai.question_sets import LOAN_REQUIRED_DOC_TYPES
+
+    app = dict(application or {})
+    applicant = app.get("userId") or app.get("farmerId") or ""
+
+    repayment_raw = app.get("repaymentHistory") or {}
+    if isinstance(repayment_raw, list):
+        total = len(repayment_raw)
+        on_time = sum(
+            1 for r in repayment_raw if isinstance(r, dict) and r.get("status") in ("disbursed", "closed")
+        )
+        overdue = sum(1 for r in repayment_raw if isinstance(r, dict) and r.get("overdue"))
+        defaults = sum(1 for r in repayment_raw if isinstance(r, dict) and r.get("defaulted"))
+    else:
+        total = int(repayment_raw.get("total") or 0)
+        on_time = int(repayment_raw.get("onTime") or 0)
+        overdue = int(repayment_raw.get("overdue") or 0)
+        defaults = int(repayment_raw.get("defaults") or 0)
+
+    uploaded: list[str] = []
+    for doc in app.get("documents") or []:
+        if isinstance(doc, dict):
+            uploaded.append(str(doc.get("type") or doc.get("documentType") or doc.get("name") or ""))
+        elif isinstance(doc, str):
+            uploaded.append(doc)
+    uploaded.extend(str(t) for t in (app.get("documentTypes") or []))
+
+    crops = app.get("primaryCrops") or app.get("crops") or []
+    try:
+        credit_score = int(app.get("farmerCreditScore") or app.get("creditScore") or 0)
+    except (TypeError, ValueError):
+        credit_score = 0
+
+    state = {
+        "applicant_pseudo_id": hash_user_id(str(applicant)),
+        "amount": float(app.get("amount") or 0),
+        "purpose": sanitize_text(str(app.get("purpose") or "")),
+        "land_holding_acres": float(app.get("landHoldingAcres") or app.get("land_holding_acres") or 0.0),
+        "primary_crops": [sanitize_text(str(crop)) for crop in crops][:10],
+        "credit_score": credit_score,
+        "repayment": {"total": total, "on_time": on_time, "overdue": overdue, "defaults": defaults},
+        "uploaded_doc_types": [sanitize_text(str(token)) for token in uploaded if token][:20],
+        "required_doc_types": list(app.get("requiredDocTypes") or LOAN_REQUIRED_DOC_TYPES),
+        "district": sanitize_text(str(app.get("district") or "")),
+    }
+    return sanitize_state(state)
+
+
+def build_claim_triage_state(claim: dict) -> dict:
+    """M15 state builder: crop / loss-type / photo-metadata aggregates only.
+    Pseudonymized claim id, ≤1500 tokens, no Aadhaar / phone / email (rule 11)."""
+    # Local import keeps privacy.py free of AI-module import cycles at call time.
+    from app.services.ai.question_sets import REQUIRED_CLAIM_PHOTOS
+
+    c = dict(claim or {})
+    photos = c.get("damagePhotos") or []
+    photo_count = len(photos) if isinstance(photos, (list, tuple)) else int(c.get("photoCount") or 0)
+
+    try:
+        loss_percent = float(c.get("estimatedLossPercent") or 0.0)
+    except (TypeError, ValueError):
+        loss_percent = 0.0
+
+    state = {
+        "claim_pseudo_id": hash_user_id(str(c.get("id") or c.get("claimId") or "")),
+        "crop": sanitize_text(str(c.get("cropName") or "")),
+        "calamity_type": sanitize_text(str(c.get("calamityType") or "")),
+        "crop_stage": sanitize_text(str(c.get("cropStage") or "")),
+        "estimated_loss_percent": loss_percent,
+        "photo_count": photo_count,
+        "required_photo_count": int(c.get("requiredPhotoCount") or REQUIRED_CLAIM_PHOTOS),
+        "gps_present": bool(c.get("gpsCoordinates")),
+        "district": sanitize_text(str(c.get("farmerDistrict") or c.get("district") or "")),
+    }
+    if c.get("fraudSignal") is not None:
+        try:
+            state["fraud_signal"] = float(c.get("fraudSignal") or 0.0)
+        except (TypeError, ValueError):
+            state["fraud_signal"] = 0.0
+    return sanitize_state(state)
+
+
 def build_land_listing_quality_state(
     listing: dict,
     plot: dict | None = None,
@@ -261,6 +348,115 @@ def build_land_listing_quality_state(
         "band_max": band_max,
         "band_source": band_source,
         "village_data_available": has_village,
+    }
+    return sanitize_state(state)
+
+
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def build_adulteration_state(member_history: list[dict], today: dict) -> dict:
+    """M17 state builder: pseudonymized member ref + the member's FAT/SNF series
+    plus today's reading only (≤1500 tokens, no names/phones, rule 11)."""
+    history = member_history or []
+    fat_series: list[float] = []
+    snf_series: list[float] = []
+    pseudo_id = "anonymous"
+    for row in history:
+        if not isinstance(row, dict):
+            continue
+        clean_row = dict(row)
+        for pii_key in ("name", "farmerName", "phone", "email", "aadhaar"):  # strip / remove PII
+            clean_row.pop(pii_key, None)
+        uid = clean_row.get("memberId") or clean_row.get("farmerUid") or clean_row.get("farmerId")
+        if uid and pseudo_id == "anonymous":
+            pseudo_id = hash_user_id(str(uid))
+        fat_series.append(round(_to_float(clean_row.get("fatPercent") or clean_row.get("fat")), 3))
+        snf_series.append(round(_to_float(clean_row.get("snfPercent") or clean_row.get("snf")), 3))
+
+    t = today or {}
+    member_uid = t.get("memberId") or t.get("farmerUid") or t.get("farmerId")
+    if member_uid:
+        pseudo_id = hash_user_id(str(member_uid))
+
+    state = {
+        "member_pseudo_id": pseudo_id,
+        "window_days": int(t.get("windowDays") or 30),
+        "history": {"fat": fat_series[-30:], "snf": snf_series[-30:]},
+        "today": {
+            "fat": round(_to_float(t.get("fatPercent") or t.get("fat")), 3),
+            "snf": round(_to_float(t.get("snfPercent") or t.get("snf")), 3),
+        },
+    }
+    return sanitize_state(state)
+
+
+def build_contract_attractiveness_state(
+    contract: dict, mandiTrend: list, farmerCropHistory: list
+) -> dict:
+    """M18 state builder: contract formula-pricing terms, crop mandi trend series
+    and aggregated farmer crop history (≤1500 tokens, pseudonymized, no PII,
+    rule 11). The contract's money fields are passed as numeric rates, never as
+    free text, and buyer/farmer identifiers are HMAC-hashed."""
+    c = dict(contract or {})
+    for pii_key in (
+        "farmerName",
+        "buyerCompany",
+        "name",
+        "phone",
+        "farmerPhone",
+        "buyerPhone",
+        "email",
+        "aadhaar",
+        "termsText",
+    ):  # strip / remove PII
+        c.pop(pii_key, None)
+
+    trend: list[dict] = []
+    for point in (mandiTrend or [])[-12:]:
+        if isinstance(point, dict):
+            trend.append(
+                {
+                    "date": sanitize_text(str(point.get("date") or point.get("week") or "")),
+                    "modal": round(_to_float(point.get("modalPrice") or point.get("modal")), 2),
+                }
+            )
+        else:
+            trend.append({"date": "", "modal": round(_to_float(point), 2)})
+    modals = [point["modal"] for point in trend if point["modal"] > 0]
+    avg = round(sum(modals) / len(modals), 2) if modals else 0.0
+
+    crop_counts: dict[str, int] = {}
+    for row in farmerCropHistory or []:
+        if not isinstance(row, dict):
+            continue
+        crop = str(row.get("crop") or "").strip()
+        if crop:
+            crop_counts[crop] = crop_counts.get(crop, 0) + 1
+
+    schedule = c.get("schedule") or {}
+    state = {
+        "contract_pseudo_id": hash_user_id(str(c.get("id") or "")),
+        "farmer_pseudo_id": hash_user_id(str(c.get("farmerId") or "")),
+        "crop": sanitize_text(str(c.get("crop") or "")),
+        "price_type": str(c.get("priceType") or "fixed"),
+        "base_rate": round(_to_float(c.get("baseRate")), 2),
+        "premium_per_quintal": round(_to_float(c.get("premiumPerQuintal")), 2),
+        "quantity_total": round(_to_float(c.get("quantityTotal")), 2),
+        "payment_terms_days": int(_to_float(c.get("paymentTermsDays"))),
+        "schedule": {
+            "frequency": str(schedule.get("frequency") or ""),
+            "qtyPerDelivery": round(_to_float(schedule.get("qtyPerDelivery")), 2),
+        },
+        "mandi_benchmark": {"avg": avg, "sample_count": len(modals), "series": trend},
+        "farmer_crop_history": {
+            "prior_count": len(farmerCropHistory or []),
+            "crop_counts": crop_counts,
+        },
     }
     return sanitize_state(state)
 

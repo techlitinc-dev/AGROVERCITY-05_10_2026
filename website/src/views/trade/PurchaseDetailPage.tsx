@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import ChipSelect from '../../components/ChipSelect';
 import LabeledTextField from '../../components/LabeledTextField';
 import ModalSheet from '../../components/ModalSheet';
@@ -10,6 +10,7 @@ import ToolShell from '../../components/trade/ToolShell';
 import { toast } from '../../components/toast';
 import PhotoUploader from '../../components/trade/PhotoUploader';
 import { recordCollectionCheck } from '../../lib/api/dairyMarketplace';
+import { getOrg, type BuyerOrg, type BuyerOrgRole } from '../../lib/api/buyerOrg';
 import { isApiError } from '../../lib/api/client';
 import {
   amountDue,
@@ -28,6 +29,7 @@ import {
   schedulePickup,
   verifyHandover,
   type Purchase,
+  type QcMeasurement,
 } from '../../lib/api/purchases';
 import { inr } from '../../lib/api/trade';
 import { useT } from '../../lib/i18n';
@@ -109,6 +111,8 @@ export default function PurchaseDetailPage() {
   const [pkVehicle, setPkVehicle] = useState('');
   const [pkAddress, setPkAddress] = useState('');
   const [pkNotes, setPkNotes] = useState('');
+  const [pkMode, setPkMode] = useState<'farmerDelivers' | 'buyerPicksup'>('buyerPicksup');
+  const [pkSlot, setPkSlot] = useState('');
   // cancel sheet
   const [cnReason, setCnReason] = useState('');
   // qc sheet
@@ -142,6 +146,25 @@ export default function PurchaseDetailPage() {
   const [dairyQty, setDairyQty] = useState('');
   const [dairyPhotos, setDairyPhotos] = useState<string[]>([]);
   const [dairyCheckRecorded, setDairyCheckRecorded] = useState(false);
+
+  // Buyer-org RBAC (P12): the escrow/QC buttons are role-gated server-side.
+  // We resolve the caller's org role so the button can render DISABLED with a
+  // reason + TeamPage deep link instead of being hidden.
+  const [org, setOrg] = useState<BuyerOrg | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    getOrg()
+      .then(setOrg)
+      .catch(() => setOrg(null));
+  }, [uid]);
+  const myRole: BuyerOrgRole | null = org
+    ? (org.members.find((m) => m.uid === uid)?.role ?? (org.adminUid === uid ? 'admin' : null))
+    : null;
+  const isOrgMember = !!org && !!uid && org.members.some((m) => m.uid === uid);
+  // Unknown org (still loading / request failed) → optimistic; the server is
+  // the source of truth and any 403 surfaces the reason inline.
+  const canEscrow = !org || myRole === 'admin' || myRole === 'finance';
+  const canQc = !org || myRole === 'admin' || myRole === 'qa';
 
   const load = useCallback(() => {
     if (!purchaseId) return;
@@ -185,6 +208,10 @@ export default function PurchaseDetailPage() {
     } else if (isApiError(e) && e.code === 'HANDOVER_REQUIRED') {
       // QC before handover OTP verification — tell the buyer what is missing.
       toast(t('otpVerifyNote'), { error: true });
+    } else if (isApiError(e) && e.code === 'ORG_ROLE_REQUIRED') {
+      // Role gate (P12) — reason is rendered inline next to the disabled button;
+      // toast the "ask your admin" reason so the action never fails silently.
+      toast(t('orgRoleAskAdmin'), { error: true });
     } else {
       toast(t('actionFailed'), { error: true });
     }
@@ -394,6 +421,8 @@ export default function PurchaseDetailPage() {
           vehicleType: pkVehicle.trim() || undefined,
           address: pkAddress.trim(),
           notes: pkNotes.trim() || undefined,
+          mode: pkMode,
+          slot: pkSlot.trim() || undefined,
         }),
       'event_pickupScheduled'
     );
@@ -573,6 +602,22 @@ export default function PurchaseDetailPage() {
                     {purchase.pickup.vehicleType || t('commonNotAvailable')}
                   </div>
                 </div>
+                {purchase.pickup.mode ? (
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('purchasePickupMode')}</div>
+                    <div className="trade-detail-value">
+                      {purchase.pickup.mode === 'farmerDelivers'
+                        ? t('pickupModeFarmerDelivers')
+                        : t('pickupModeBuyerPicksup')}
+                    </div>
+                  </div>
+                ) : null}
+                {purchase.pickup.slot ? (
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('purchasePickupSlot')}</div>
+                    <div className="trade-detail-value">{purchase.pickup.slot}</div>
+                  </div>
+                ) : null}
                 <div className="trade-detail-item" style={{ gridColumn: '1 / -1' }}>
                   <div className="trade-detail-label">{t('purchasePickupAddress')}</div>
                   <div className="trade-detail-value">{purchase.pickup.address}</div>
@@ -593,10 +638,12 @@ export default function PurchaseDetailPage() {
             <>
               <p className="trade-section-title">{t('purchaseQcTitle')}</p>
               <div className="trade-detail-grid">
-                <div className="trade-detail-item">
-                  <div className="trade-detail-label">{t('purchaseQcGrade')}</div>
-                  <div className="trade-detail-value">{purchase.qc.grade}</div>
-                </div>
+                {purchase.qc.grade ? (
+                  <div className="trade-detail-item">
+                    <div className="trade-detail-label">{t('purchaseQcGrade')}</div>
+                    <div className="trade-detail-value">{purchase.qc.grade}</div>
+                  </div>
+                ) : null}
                 <div className="trade-detail-item">
                   <div className="trade-detail-label">{t('purchaseQcAccepted')}</div>
                   <div className="trade-detail-value">{purchase.qc.acceptedQty}</div>
@@ -614,6 +661,101 @@ export default function PurchaseDetailPage() {
                   </div>
                 ) : null}
               </div>
+
+              {((purchase.qc.measurements && purchase.qc.measurements.length > 0) || (purchase.measurements && purchase.measurements.length > 0)) ? (
+                <>
+                  <p className="trade-section-title" style={{ marginTop: 16 }}>{t('purchaseQcParamTable')}</p>
+                  <div
+                    style={{
+                      background: '#fff',
+                      border: '1.5px solid var(--av-border-grey-soft)',
+                      borderRadius: 'var(--av-radius-card)',
+                      overflowX: 'auto',
+                      marginTop: 8,
+                    }}
+                  >
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--av-border-grey-soft)' }}>
+                          <th style={{ padding: '8px 12px', fontWeight: 700 }}>{t('purchaseQcParamName')}</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 700 }}>{t('purchaseQcMeasuredValue')}</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 700 }}>{t('purchaseQcSpecBound')}</th>
+                          <th style={{ padding: '8px 12px', fontWeight: 700, textAlign: 'right' }}>{t('purchaseQcAdjustment')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(purchase.qc.measurements ?? purchase.measurements ?? []).map((m: QcMeasurement, idx: number) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: 600 }}>{m.name}</td>
+                            <td style={{ padding: '8px 12px' }}>{m.value} {m.unit ?? ''}</td>
+                            <td style={{ padding: '8px 12px', color: '#64748b' }}>{m.specBound ?? '-'}</td>
+                            <td
+                              style={{
+                                padding: '8px 12px',
+                                textAlign: 'right',
+                                fontWeight: 700,
+                                color: (m.adjustment ?? 0) >= 0 ? 'var(--av-green-dark, #15803d)' : '#dc2626',
+                              }}
+                            >
+                              {(m.adjustment ?? 0) >= 0 ? '+' : ''}
+                              {inr((m.adjustment ?? 0) / 100)} / {unitLabel(t, purchase.unit)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {(purchase.finalRate !== undefined || purchase.finalAmount !== undefined) ? (
+                    <div className="trade-detail-grid" style={{ marginTop: 12 }}>
+                      {purchase.finalRate !== undefined ? (
+                        <div className="trade-detail-item">
+                          <div className="trade-detail-label">{t('purchaseQcFinalRate')}</div>
+                          <div className="trade-detail-value" style={{ color: 'var(--av-green-dark, #15803d)' }}>
+                            {inr(purchase.finalRate / 100)} / {unitLabel(t, purchase.unit)}
+                          </div>
+                        </div>
+                      ) : null}
+                      {purchase.finalAmount !== undefined ? (
+                        <div className="trade-detail-item">
+                          <div className="trade-detail-label">{t('purchaseQcFinalAmount')}</div>
+                          <div className="trade-detail-value" style={{ fontWeight: 800 }}>
+                            {inr(purchase.finalAmount)}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+
+              {purchase.qc.photos && purchase.qc.photos.length > 0 ? (
+                <>
+                  <p className="trade-section-title" style={{ marginTop: 16 }}>{t('purchaseQcPhotos')}</p>
+                  <div className="trade-card-photos" style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {purchase.qc.photos.map((photo, pIdx) => {
+                      const src = photo.startsWith('http') || photo.startsWith('/')
+                        ? photo
+                        : `/v1/storage/${photo}`;
+                      return (
+                        <a key={pIdx} href={src} target="_blank" rel="noreferrer">
+                          <img
+                            src={src}
+                            alt={`QC ${pIdx + 1}`}
+                            style={{
+                              width: 80,
+                              height: 80,
+                              borderRadius: 8,
+                              objectFit: 'cover',
+                              border: '1px solid var(--av-border-grey-soft)',
+                            }}
+                          />
+                        </a>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -840,15 +982,27 @@ export default function PurchaseDetailPage() {
 
           {purchase.status !== 'cancelled' && purchase.status !== 'completed' ? (
             <div className="trade-actions">
-              {isBuyer && purchase.status === 'confirmed' && purchase.escrow?.status === 'unfunded' ? (
-                <button
-                  type="button"
-                  className="av-btn av-btn-primary"
-                  onClick={openEscrow}
-                  disabled={busy}
-                >
-                  {t('escrowFundCta')}
-                </button>
+              {(isBuyer || isOrgMember) &&
+              purchase.status === 'confirmed' &&
+              purchase.escrow?.status === 'unfunded' ? (
+                <>
+                  <button
+                    type="button"
+                    className="av-btn av-btn-primary"
+                    onClick={openEscrow}
+                    disabled={busy || !canEscrow}
+                  >
+                    {t('escrowFundCta')}
+                  </button>
+                  {!canEscrow ? (
+                    <p className="trade-hint" style={{ flexBasis: '100%' }}>
+                      {t('orgRoleEscrow')}{' '}
+                      <Link className="av-link" to="/dashboard/p/contracts/team">
+                        {t('orgTeamLink')}
+                      </Link>
+                    </p>
+                  ) : null}
+                </>
               ) : null}
 
               {isBuyer &&
@@ -915,15 +1069,25 @@ export default function PurchaseDetailPage() {
                 </button>
               ) : null}
 
-              {isBuyer && purchase.status === 'delivered' ? (
-                <button
-                  type="button"
-                  className="av-btn av-btn-primary"
-                  onClick={openQc}
-                  disabled={busy}
-                >
-                  {t('purchaseQcTitle')}
-                </button>
+              {(isBuyer || isOrgMember) && purchase.status === 'delivered' ? (
+                <>
+                  <button
+                    type="button"
+                    className="av-btn av-btn-primary"
+                    onClick={openQc}
+                    disabled={busy || !canQc}
+                  >
+                    {t('purchaseQcTitle')}
+                  </button>
+                  {!canQc ? (
+                    <p className="trade-hint" style={{ flexBasis: '100%' }}>
+                      {t('orgRoleQc')}{' '}
+                      <Link className="av-link" to="/dashboard/p/contracts/team">
+                        {t('orgTeamLink')}
+                      </Link>
+                    </p>
+                  ) : null}
+                </>
               ) : null}
 
               {purchase.status === 'qcDisputed' ? (
@@ -1135,6 +1299,31 @@ export default function PurchaseDetailPage() {
               onChange={setPkAddress}
               required
               error={errors.address}
+            />
+            <div style={{ marginBottom: 12 }}>
+              <div className="trade-detail-label" style={{ marginBottom: 6 }}>{t('purchasePickupMode')}</div>
+              <div className="av-chip-row">
+                <button
+                  type="button"
+                  className={`av-chip${pkMode === 'buyerPicksup' ? ' selected' : ''}`}
+                  onClick={() => setPkMode('buyerPicksup')}
+                >
+                  {t('pickupModeBuyerPicksup')}
+                </button>
+                <button
+                  type="button"
+                  className={`av-chip${pkMode === 'farmerDelivers' ? ' selected' : ''}`}
+                  onClick={() => setPkMode('farmerDelivers')}
+                >
+                  {t('pickupModeFarmerDelivers')}
+                </button>
+              </div>
+            </div>
+            <LabeledTextField
+              label={t('purchasePickupSlot')}
+              value={pkSlot}
+              onChange={setPkSlot}
+              placeholder={t('purchasePickupSlotPlaceholder')}
             />
             <LabeledTextField
               label={t('purchasePickupNotes')}

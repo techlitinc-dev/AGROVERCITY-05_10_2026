@@ -38,6 +38,8 @@ export interface Offer {
   message?: string;
   status: OfferStatus;
   counter?: OfferCounter;
+  /** Counter rounds elapsed (capped at 3). */
+  rounds?: number;
   /** ISO timestamp — offer auto-expires 24h after creation (or last counter). */
   expiresAt?: string;
   createdAt: string;

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ToolShell from '../../../components/trade/ToolShell';
 import { useEnsureProfile } from '../../../components/trade/useEnsureProfile';
+import { toast } from '../../../components/toast';
+import { api } from '../../../lib/api/client';
 import {
   fmtINR,
   fmtL,
@@ -27,6 +29,18 @@ const SHIFT_FILTERS: { value: CollectionShift | 'all'; labelKey: string }[] = [
   { value: 'evening', labelKey: 'dairyShift_evening' },
 ];
 
+/** dairy.adulteration.v1 + flag-review annotation (WS-07 M17) — optional on the doc. */
+interface AdulterationAnnotation {
+  anomaly?: boolean;
+  confidence?: number;
+  baseline?: { fatAvg?: number; snfAvg?: number; windowDays?: number };
+  decisionId?: string;
+}
+type FlaggedCollection = MilkCollection & {
+  adulteration?: AdulterationAnnotation;
+  flagReview?: { action?: 'confirm' | 'dismiss'; outcome?: string; at?: string };
+};
+
 /** Day ledger (P4) — date picker + AM/PM/All chips, day summary stats, slip cards. */
 export default function CollectionsPage() {
   const t = useT();
@@ -38,6 +52,7 @@ export default function CollectionsPage() {
   const [summary, setSummary] = useState<ProcurementSummary | null>(null);
   const [slips, setSlips] = useState<MilkCollection[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [reviewing, setReviewing] = useState<string | null>(null);
 
   const load = useCallback((day: string) => {
     setFailed(false);
@@ -50,6 +65,23 @@ export default function CollectionsPage() {
   }, []);
 
   useEffect(() => load(date), [load, date]);
+
+  /** WS-07 M17 — manager confirms/dismisses an AI adulteration flag (advisory only). */
+  const reviewFlag = useCallback(
+    async (collectionId: string, action: 'confirm' | 'dismiss') => {
+      setReviewing(collectionId);
+      try {
+        await api.post(`/dairy-manager/collections/${collectionId}/flag-review`, { action });
+        toast(t(action === 'confirm' ? 'dairyFlagConfirmed' : 'dairyFlagDismissed'));
+        load(date);
+      } catch {
+        toast(t('dairyActionFailed'), { error: true });
+      } finally {
+        setReviewing(null);
+      }
+    },
+    [date, load, t]
+  );
 
   const visible = useMemo(
     () => (slips ?? []).filter((s) => shift === 'all' || s.shift === shift),
@@ -148,9 +180,46 @@ export default function CollectionsPage() {
             />
           ) : (
             <div className="dairy-list">
-              {visible.map((slip) => (
-                <SlipCard key={slip.id} slip={slip} />
-              ))}
+              {visible.map((slip) => {
+                const flagged = slip as FlaggedCollection;
+                const isAnomaly = flagged.adulteration?.anomaly === true;
+                const reviewed = flagged.flagReview?.action;
+                return (
+                  <div key={slip.id} className="dairy-slip-wrap">
+                    {isAnomaly ? (
+                      <div className="dairy-flag" role="status">
+                        <span className="dairy-flag-badge">⚠ {t('dairyAdulterationFlag')}</span>
+                        <span className="dairy-flag-note">{t('dairyAdulterationFlagNote')}</span>
+                        {reviewed ? (
+                          <span className="dairy-flag-reviewed">
+                            {reviewed === 'confirm' ? t('dairyFlagConfirmed') : t('dairyFlagDismissed')}
+                          </span>
+                        ) : (
+                          <div className="dairy-actions-row">
+                            <button
+                              type="button"
+                              className="av-btn av-btn-ghost"
+                              disabled={reviewing === slip.id}
+                              onClick={() => void reviewFlag(slip.id, 'confirm')}
+                            >
+                              ✓ {t('dairyFlagConfirm')}
+                            </button>
+                            <button
+                              type="button"
+                              className="av-btn av-btn-ghost"
+                              disabled={reviewing === slip.id}
+                              onClick={() => void reviewFlag(slip.id, 'dismiss')}
+                            >
+                              ✕ {t('dairyFlagDismiss')}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    <SlipCard slip={slip} />
+                  </div>
+                );
+              })}
             </div>
           )
         ) : null}

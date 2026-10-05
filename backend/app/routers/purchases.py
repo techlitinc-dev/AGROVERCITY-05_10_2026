@@ -229,7 +229,10 @@ async def _participant(purchase_id: str, uid: str) -> dict:
     if doc is None:
         _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
     if uid not in (doc.get("buyerId"), doc.get("farmerId")):
-        _error(403, "FORBIDDEN", "not a purchase participant")
+        from app.services.buyer_org import is_org_member_of_buyer
+        buyer_id = doc.get("buyerId") or ""
+        if not await is_org_member_of_buyer(uid, buyer_id):
+            _error(403, "FORBIDDEN", "not a purchase participant")
     return doc
 
 

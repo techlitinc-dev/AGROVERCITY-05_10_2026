@@ -478,6 +478,7 @@ export default function ChatRoomPage() {
                 <CounterOfferForm
                   currentPrice={offer.counter?.pricePerUnit ?? offer.pricePerUnit}
                   unit={unitLabel(t, offer.unit)}
+                  rounds={offer.rounds ?? 0}
                   onSubmit={(price, note) => void submitCounter(price, note)}
                   onCancel={() => setCounterOpen(false)}
                   busy={busyAction === 'counter'}

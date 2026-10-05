@@ -81,6 +81,8 @@ from app.routers import (
     seller_products,
     settlements,
     soil_tests,
+    specs,
+    buyer_org,
     post_harvest,
     price_alerts,
     sync,
@@ -156,6 +158,8 @@ app.include_router(seller_products.router, prefix="/v1")
 app.include_router(user_products.router, prefix="/v1")
 app.include_router(addresses.router, prefix="/v1")
 app.include_router(contracts.router, prefix="/v1")
+app.include_router(specs.router, prefix="/v1")
+app.include_router(buyer_org.router, prefix="/v1")
 app.include_router(courses.router, prefix="/v1")
 app.include_router(teachers.router, prefix="/v1")
 app.include_router(ads.router, prefix="/v1")

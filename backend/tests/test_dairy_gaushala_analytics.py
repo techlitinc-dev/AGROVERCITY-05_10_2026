@@ -213,3 +213,103 @@ async def test_gaushala_analytics_requires_profile(client, user_store):
     assert resp.status_code == 404
     resp = await client.get("/v1/livestock/gaushala/receipts", headers=auth(token))
     assert resp.status_code == 404
+
+
+async def test_donation_80g_receipt_sequential_numbering(client, user_store):
+    token = seed_user(user_store, **MGR)
+    gaushala = await _post(client, "/v1/livestock/gaushala/profile", token, GAUSHALA)
+    user_store["gaushalas/gau-other"] = {
+        "id": "gau-other", "managerId": "mgr-2", "name": "Another Gaushala", "capacity": 10,
+    }
+    other_token = seed_user(user_store, uid="mgr-2", active_profile="dairyManager")
+
+    for don_id, gid in (("don-1", gaushala["id"]), ("don-2", gaushala["id"]), ("don-3", "gau-other")):
+        user_store[f"fodder_donations/{don_id}"] = {
+            "id": don_id, "gaushalaId": gid, "donorId": "farmer-1",
+            "donorName": "अशोकराव कदम", "amountInr": 1000,
+            "createdAt": "2026-10-01T10:00:00Z",
+        }
+
+    receipts = {}
+    for don_id, tok in (("don-1", token), ("don-2", token), ("don-3", other_token)):
+        resp = await client.put(
+            f"/v1/livestock/gaushala/donations/{don_id}/status",
+            json={"status": "acknowledged"},
+            headers=auth(tok),
+        )
+        assert resp.status_code == 200, resp.text
+        receipts[don_id] = resp.json()["receipt"]
+
+    first = receipts["don-1"]["certificateNumber"]
+    second = receipts["don-2"]["certificateNumber"]
+    assert first.startswith("GOSH-80G-")
+    assert int(second.rsplit("-", 1)[1]) == int(first.rsplit("-", 1)[1]) + 1
+
+    # a different gaushala's sequence starts independently at 1
+    other = receipts["don-3"]["certificateNumber"]
+    assert int(other.rsplit("-", 1)[1]) == 1
+
+    # the generated 80G PDF ref is attached to each donation record
+    for don_id in ("don-1", "don-2", "don-3"):
+        stored = user_store[f"fodder_donations/{don_id}"]
+        assert stored["status"] == "acknowledged"
+        assert stored["receiptId"] == receipts[don_id]["id"]
+        assert stored["receiptNumber"] == receipts[don_id]["certificateNumber"]
+        assert stored["receiptPdfRef"].endswith(".pdf")
+        assert user_store[f"receipts/{receipts[don_id]['id']}"]["certificateUrl"].endswith(".pdf")
+
+
+async def test_gaushala_transparency_public_payload_zero_pii(client, user_store):
+    token = seed_user(user_store, **MGR)
+    gaushala = await _post(client, "/v1/livestock/gaushala/profile", token, GAUSHALA)
+    user_store["fodder_donations/don-1"] = {
+        "id": "don-1", "gaushalaId": gaushala["id"], "donorId": "farmer-1",
+        "donorName": "Suresh Donor", "donorPhone": "+919811122233",
+        "amountInr": 2500, "receiptNumber": "GOSH-RCP-1",
+        "createdAt": "2026-10-01T10:00:00Z",
+    }
+    user_store["gaushala_expenses/exp-1"] = {
+        "id": "exp-1", "gaushalaId": gaushala["id"], "category": "fodder",
+        "amount": 1000.0, "expenseDate": "2026-10-02", "createdBy": "mgr-1",
+    }
+    user_store["livestock_animals/c-1"] = {
+        "id": "c-1", "gaushalaId": gaushala["id"], "cattleStatus": "in-shelter",
+    }
+    user_store["receipts/crt-1"] = {
+        "id": "crt-1", "gaushalaId": gaushala["id"], "kind": "donation", "amount": 2500,
+    }
+    user_store["receipts/crt-2"] = {
+        "id": "crt-2", "gaushalaId": gaushala["id"], "kind": "adoption", "amount": 1100,
+    }
+
+    # NO auth header at all — the transparency endpoint is public.
+    resp = await client.get(f"/v1/livestock/gaushala/{gaushala['id']}/transparency")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["donations"]["count"] == 1
+    assert body["donations"]["totalPaisa"] == 250000
+    assert body["donations"]["eightyGReceiptCount"] == 1
+    assert body["donations"]["ledger"][0]["amountPaisa"] == 250000
+    assert body["expensesByCategory"] == {"fodder": 100000}
+    assert body["cattleByStatus"] == {"in-shelter": 1}
+
+    # donor name is withheld unless the donation marks the donor public
+    assert body["donations"]["ledger"][0]["donor"] == "anonymous"
+    raw = resp.text
+    assert "donorPhone" not in raw
+    assert "+919811122233" not in raw
+    assert "9811122233" not in raw
+    assert "Suresh Donor" not in raw
+
+    # opted-in donors are credited by name — still no contact details
+    user_store["fodder_donations/don-1"]["donorPublic"] = True
+    resp = await client.get(f"/v1/livestock/gaushala/{gaushala['id']}/transparency")
+    body = resp.json()
+    assert body["donations"]["ledger"][0]["donor"] == "Suresh Donor"
+    assert "+919811122233" not in resp.text
+    assert "9811122233" not in resp.text
+
+    # unknown gaushala → 404 envelope, still no crash / no auth bypass
+    resp = await client.get("/v1/livestock/gaushala/gau-missing/transparency")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "GAUSHALA_NOT_FOUND"

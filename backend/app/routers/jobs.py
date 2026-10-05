@@ -182,3 +182,97 @@ async def expire_stale_broker_offers(x_cron_secret: str | None = Header(None, al
         )
         expired += 1
     return {"expired": expired}
+
+
+@router.post("/dairy/adulteration/route-summary")
+async def dairy_adulteration_route_summary_job(
+    x_cron_secret: str | None = Header(None, alias="X-Cron-Secret"),
+):
+    """WS-07 M17 — weekly route-level adulteration summary (DairyOS).
+
+    Aggregates the last 7 days of stored collection `adulteration` annotations
+    per procurement route (route id, flagged count, total, top members by flag
+    rate) into `dairy_route_anomaly_summaries` for the dairy console. Reads only
+    stored annotations — it makes NO new gateway calls per collection.
+    """
+    _check_cron_secret(x_cron_secret)
+    period_end = datetime.now(timezone.utc).date()
+    period_start = period_end - timedelta(days=6)
+    window_from = period_start.isoformat()
+    window_to = period_end.isoformat()
+
+    collections = await query("milk_collections", [], limit=5000)
+    routes = await query("dairy_routes", [], limit=2000)
+
+    route_by_farmer: dict[tuple[str, str], str] = {}
+    route_docs: dict[str, dict] = {}
+    for route in routes:
+        route_id = route.get("id")
+        if not route_id:
+            continue
+        route_docs[route_id] = route
+        for stop in route.get("stops") or []:
+            farmer_id = stop.get("farmerId")
+            if farmer_id:
+                route_by_farmer[(route.get("managerId"), farmer_id)] = route_id
+
+    buckets: dict[str, dict] = {}
+    for col in collections:
+        day = str(col.get("date") or "")
+        if not day or not (window_from <= day <= window_to):
+            continue
+        route_id = route_by_farmer.get((col.get("dairyId"), col.get("farmerId")))
+        if not route_id:
+            continue
+        bucket = buckets.setdefault(
+            route_id,
+            {"routeId": route_id, "managerId": col.get("dairyId"), "flagged": 0, "total": 0, "members": {}},
+        )
+        bucket["total"] += 1
+        member_key = col.get("memberId") or col.get("farmerCode") or col.get("farmerId") or "unknown"
+        member = bucket["members"].setdefault(
+            member_key, {"memberId": member_key, "flagged": 0, "total": 0}
+        )
+        member["total"] += 1
+        if bool((col.get("adulteration") or {}).get("anomaly")):
+            bucket["flagged"] += 1
+            member["flagged"] += 1
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    written: list[dict] = []
+    for route_id, bucket in buckets.items():
+        top_members = sorted(
+            bucket["members"].values(),
+            key=lambda m: (m["flagged"] / m["total"] if m["total"] else 0.0, m["flagged"]),
+            reverse=True,
+        )[:5]
+        summary = {
+            "id": f"dairy_route_anomaly_{route_id}_{window_to}",
+            "routeId": route_id,
+            "routeName": (route_docs.get(route_id) or {}).get("routeName", ""),
+            "managerId": bucket["managerId"],
+            "periodFrom": window_from,
+            "periodEnd": window_to,
+            "flagged": bucket["flagged"],
+            "total": bucket["total"],
+            "topMembers": [
+                {
+                    "memberId": m["memberId"],
+                    "flagged": m["flagged"],
+                    "total": m["total"],
+                    "flagRate": round(m["flagged"] / m["total"], 3) if m["total"] else 0.0,
+                }
+                for m in top_members
+            ],
+            "generatedAt": now_iso,
+        }
+        await set_doc("dairy_route_anomaly_summaries", summary["id"], summary)
+        written.append(summary)
+
+    return {
+        "routes": len(written),
+        "flagged": sum(s["flagged"] for s in written),
+        "collections": len(collections),
+        "periodStart": window_from,
+        "periodEnd": window_to,
+    }

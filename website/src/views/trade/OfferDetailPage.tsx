@@ -357,6 +357,15 @@ export default function OfferDetailPage() {
             <CounterOfferForm
               currentPrice={offer.counter?.pricePerUnit ?? offer.pricePerUnit}
               unit={unitLabel(t, offer.unit)}
+              rounds={offer.rounds ?? 0}
+              onAccept={() => {
+                setCounterOpen(false);
+                void doAccept();
+              }}
+              onReject={() => {
+                setCounterOpen(false);
+                setDeclineOpen(true);
+              }}
               onSubmit={(price, note) => void submitCounter(price, note)}
               onCancel={() => setCounterOpen(false)}
               busy={busyAction === 'counter'}

@@ -35,6 +35,9 @@ export interface ManagedVet {
   availableForFarmVisit: boolean;
   /** True when a real vet claimed this profile via phone (livestock_vets.py:121). */
   claimed: boolean;
+  /** WS-06: credential verification — "pending" for records predating the flag. */
+  credentialStatus: 'pending' | 'verified' | 'rejected';
+  credentialDocs: string[];
   ratingAvg: number | null;
   ratingCount: number;
   status: 'active' | 'inactive';

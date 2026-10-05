@@ -13,6 +13,42 @@ def seed_provider_user(user_store):
     )
 
 
+def _make_coldstorage_pro(user_store, uid="dev-user-coldstorage-1"):
+    """Grant the provider an active Pro subscription (WS-05 5.15 console writes
+    are Pro-gated; Free providers get 402 ENTITLEMENT_EXCEEDED)."""
+    user_store[f"subscriptions/sub_pro_coldstorage_{uid}"] = {
+        "subId": f"sub_pro_coldstorage_{uid}",
+        "userId": uid,
+        "planId": "coldStorageProvider_pro",
+        "status": "active",
+        "provider": "razorpay_sub",
+        "providerRef": "sub_test_coldstorage",
+        "currentPeriodEnd": "2027-01-01T00:00:00+00:00",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_provider_console_writes_blocked_on_free_tier(client, user_store):
+    """WS-05 5.15: a Free provider (no subscription) is read-only — console
+    writes return the 402 entitlement envelope with an upgrade payload."""
+    provider_token = seed_provider_user(user_store)
+
+    # Read endpoint stays open.
+    stats = await client.get("/v1/post-harvest/provider/stats", headers=auth(provider_token))
+    assert stats.status_code == 200
+
+    blocked = await client.post(
+        "/v1/post-harvest/provider/facilities",
+        json={"name": "Free Tier Godown", "facilityType": "dry_godown", "capacityMT": 30.0},
+        headers=auth(provider_token),
+    )
+    assert blocked.status_code == 402
+    error = blocked.json()["error"]
+    assert error["code"] == "ENTITLEMENT_EXCEEDED"
+    assert error["planId"] == "coldStorageProvider_free"
+
+
 @pytest.mark.asyncio
 async def test_apply_cold_storage_enriched(client, user_store):
     farmer_token = seed_user(user_store)
@@ -52,6 +88,7 @@ async def test_provider_role_guard(client, user_store):
 async def test_provider_review_approve_and_reject(client, user_store):
     farmer_token = seed_user(user_store)
     provider_token = seed_provider_user(user_store)
+    _make_coldstorage_pro(user_store)
 
     # 1. Farmer applies
     resp = await client.post(
@@ -116,6 +153,7 @@ async def test_provider_review_approve_and_reject(client, user_store):
 async def test_full_inward_enwr_and_outward_release_flow(client, user_store):
     farmer_token = seed_user(user_store)
     provider_token = seed_provider_user(user_store)
+    _make_coldstorage_pro(user_store)
 
     # 1. Farmer applies
     resp = await client.post(
@@ -224,6 +262,7 @@ async def test_provider_stats_and_facilities(client, user_store):
 async def test_provider_create_multiple_facilities_and_chambers(client, user_store):
     provider_token = seed_provider_user(user_store)
     farmer_token = seed_user(user_store)
+    _make_coldstorage_pro(user_store)
 
     # 1. Provider creates a new Godown with capacity
     create_resp = await client.post(

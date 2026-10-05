@@ -20,6 +20,14 @@ import '../../theme/contracts.css';
 const fmtDate = (iso: string): string =>
   new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
+/** contracts.attractiveness.v1 annotation (WS-07 M18) — optional on the doc. */
+interface ContractAttractiveness {
+  incomeVsMandi?: number;
+  riskFlags?: string[];
+  explanation?: string;
+  decisionId?: string;
+}
+
 /**
  * Farmer read-only contract detail — offer terms + the supply/delivery rows
  * generated so far. Resolves from /contracts/mine?role=farmer (no GET-single
@@ -80,6 +88,8 @@ export default function FarmerContractDetailPage() {
   }
 
   const fulfilment = deliveries?.fulfilment;
+  const attractiveness = (contract as Contract & { attractiveness?: ContractAttractiveness })
+    .attractiveness;
 
   return (
     <ToolShell toolId="myContracts" backTo="/dashboard/p/myContracts">
@@ -161,6 +171,43 @@ export default function FarmerContractDetailPage() {
         <p className="trade-hint">{contractScheduleSummary(t, contract.schedule)}</p>
       ) : null}
       {contract.termsText ? <p className="trade-hint">{contract.termsText}</p> : null}
+
+      {/* ---- Grow-for-us decision card: income vs mandi + agronomy risk notes.
+          Rendered from contracts.attractiveness.v1 when present (AI flag on);
+          the static fallback renders when the flag is off. ---- */}
+      <p className="trade-section-title">{t('ctAttractTitle')}</p>
+      {attractiveness && typeof attractiveness.incomeVsMandi === 'number' ? (
+        <div className="trade-detail-grid" style={{ marginTop: 0 }}>
+          <div className="trade-detail-item" style={{ gridColumn: '1 / -1' }}>
+            <p className="trade-detail-value" style={{ fontWeight: 700 }}>
+              {attractiveness.incomeVsMandi >= 0
+                ? t('ctAttractVsMandiBetter', { pct: Math.round(attractiveness.incomeVsMandi) })
+                : t('ctAttractVsMandiWorse', { pct: Math.round(Math.abs(attractiveness.incomeVsMandi)) })}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="trade-hint">{t('ctAttractFallback')}</p>
+      )}
+      {attractiveness?.explanation ? (
+        <details className="ct-past" style={{ marginTop: 8 }}>
+          <summary>{t('ctAttractExplain')}</summary>
+          <p className="trade-hint" style={{ marginTop: 8 }}>
+            {attractiveness.explanation}
+          </p>
+        </details>
+      ) : null}
+
+      <p className="trade-section-title">{t('ctAgronomyTitle')}</p>
+      {attractiveness?.riskFlags && attractiveness.riskFlags.length > 0 ? (
+        <ul className="trade-hint" style={{ marginTop: 0, paddingLeft: 18 }}>
+          {attractiveness.riskFlags.map((flag, idx) => (
+            <li key={idx}>{flag}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="trade-hint">{t('ctAgronomyRiskFallback')}</p>
+      )}
 
       <p className="trade-section-title">{t('ctDeliveriesTitle')}</p>
       {fulfilment ? (

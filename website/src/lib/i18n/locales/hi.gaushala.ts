@@ -228,6 +228,7 @@ const hiGaushala: Record<string, string> = {
   gaushalaReceiptPerson: 'जारी किया गया',
   gaushalaReceiptAmount: 'राशि',
   gaushalaReceiptIssued: 'जारी तिथि',
+  gaushalaReceiptDownload: '80G PDF डाउनलोड करें',
   gaushalaReceiptClose: 'हो गया',
 
   // ---- Analytics ----
@@ -246,6 +247,20 @@ const hiGaushala: Record<string, string> = {
   gaushalaAnByCategory: 'श्रेणी के अनुसार खर्च',
   gaushalaAnByStatus: 'स्थिति के अनुसार गौपशु',
   gaushalaAnZero: 'इस अवधि में अभी कोई गतिविधि नहीं — नई गौशाला के लिए शून्य सामान्य है।',
+
+  // ---- सार्वजनिक पारदर्शिता पृष्ठ (बिना लॉगिन) ----
+  gaushalaTransparencyTitle: 'सार्वजनिक पारदर्शिता',
+  gaushalaTransparencyIntro:
+    'इस गौशाला में मिला और खर्च हुआ हर रुपया कहां गया — शेल्टर रजिस्टर से अद्यतन।',
+  gaushalaTransparencyPrivacy: 'दानदाता के संपर्क विवरण कभी प्रकाशित नहीं किए जाते।',
+  gaushalaTransparencyDonations: 'प्राप्त दान',
+  gaushalaTransparencyCount: '{count} दान',
+  gaushalaTransparency80g: '{count} 80G रसीदें जारी',
+  gaushalaTransparencyLedger: 'दान बही',
+  gaushalaTransparencyAnonymous: 'अज्ञात दानदाता',
+  gaushalaTransparencyExpenses: 'श्रेणी के अनुसार खर्च',
+  gaushalaTransparencyCattle: 'स्थिति के अनुसार गौपशु गणना',
+  gaushalaTransparencyEmpty: 'अभी कोई गतिविधि दर्ज नहीं।',
 };
 
 registerLocale('hi', hiGaushala);

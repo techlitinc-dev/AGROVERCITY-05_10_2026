@@ -4,7 +4,10 @@ from datetime import datetime, timedelta, timezone
 from app.core.db import get_doc, set_doc
 
 CLAIM_TRANSITIONS = {
-    "intimated": ["surveyorAssigned"],
+    # Provider "fast-track" review may skip the surveyor step directly from an
+    # intimation (see insurance.py provider_review_claim); the standard flow is
+    # still intimated → surveyorAssigned → fieldAssessed → dbtApproved → disbursed.
+    "intimated": ["surveyorAssigned", "fieldAssessed"],
     "surveyorAssigned": ["fieldAssessed"],
     "fieldAssessed": ["dbtApproved", "rejected"],
     "dbtApproved": ["disbursed"],
