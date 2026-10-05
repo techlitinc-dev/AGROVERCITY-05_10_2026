@@ -8,7 +8,15 @@ from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.core.ratelimit import hit
 from app.routers.purchases import TERMINAL_STATUSES
-from app.services.chat import ensure_chat_room, ensure_direct_room, ensure_offer_room, first_name
+from app.services.chat import (
+    contains_banned_content,
+    ensure_batch_room,
+    ensure_chat_room,
+    ensure_direct_room,
+    ensure_offer_room,
+    first_name,
+    record_strike,
+)
 from app.services.notify import notify_user
 from app.services.users import get_user
 
@@ -37,17 +45,38 @@ async def _load_room(room_id: str, uid: str) -> tuple[dict, bool]:
     """
     room = await get_doc("chat_rooms", room_id)
     if room is None:
-        purchase = await get_doc("purchases", room_id)
-        if purchase is not None:
-            room = await ensure_chat_room(purchase)
+        batch = await get_doc("course_batches", room_id)
+        if batch is not None:
+            room = await ensure_batch_room(batch, [])
         else:
-            offer = await get_doc("offers", room_id)
-            if offer is None:
-                _error(404, "ROOM_NOT_FOUND", "chat room not found")
-            room = await ensure_offer_room(offer)
+            purchase = await get_doc("purchases", room_id)
+            if purchase is not None:
+                room = await ensure_chat_room(purchase)
+            else:
+                offer = await get_doc("offers", room_id)
+                if offer is None:
+                    _error(404, "ROOM_NOT_FOUND", "chat room not found")
+                room = await ensure_offer_room(offer)
+    kind = room.get("kind") or "purchase"
+    if kind == "batch":
+        # WS-02 task 2.35: batch group chat. The instructor is admin and confirmed
+        # (`paid`) enrollments are the members; `memberIds` is refreshed on every
+        # read so revoked enrollments lose access. A sealed room or a completed
+        # batch makes the thread read-only.
+        batch = await get_doc("course_batches", room.get("batchId") or room["id"]) or {}
+        purchases = await query(
+            "course_purchases", [("courseId", "==", batch.get("courseId"))], limit=2000
+        )
+        room["memberIds"] = [
+            p.get("userId") for p in purchases if p.get("status") == "paid" and p.get("userId")
+        ]
+        await set_doc("chat_rooms", room["id"], room)
+        if uid != room.get("instructorId") and uid not in room["memberIds"]:
+            _error(403, "CHAT_LOCKED_FOR_BOOKING", "chat unlocks for confirmed enrollments only")
+        terminal = bool(room.get("sealed")) or batch.get("status") == "completed"
+        return room, terminal
     if uid not in (room.get("farmerId"), room.get("buyerId")):
         _error(403, "CHAT_LOCKED_FOR_BOOKING", "chat unlocks between deal parties only")
-    kind = room.get("kind") or "purchase"
     if kind == "direct":
         terminal = False  # direct conversations never close
     elif kind == "offer":
@@ -101,6 +130,8 @@ async def get_room(room_id: str, uid: str = Depends(current_user_id)):
 class MessageIn(BaseModel):
     text: str = Field(default="", max_length=MAX_TEXT_LEN)
     imageUrl: str = ""
+    # WS-02 task 2.36(f): in-platform lesson cards (gated content module only).
+    lessonCardId: str = ""
 
 
 class DirectChatIn(BaseModel):
@@ -124,26 +155,30 @@ async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_i
             _error(404, "LOT_NOT_FOUND", "lot not found")
         if lot.get("farmerId") == uid:
             _error(400, "OWN_LISTING", "this is your own listing")
-        room = await ensure_direct_room(
-            lot["farmerId"],
-            (await get_user(lot["farmerId"]) or {}).get("name", ""),
-            uid,
-            user.get("name", ""),
-            lot.get("crop", ""),
-        )
+        counterparty_id = lot["farmerId"]
+        counterparty = await get_user(counterparty_id) or {}
+        crop = lot.get("crop", "")
     else:
         demand = await get_doc("demands", body.demandId)
         if demand is None:
             _error(404, "DEMAND_NOT_FOUND", "demand not found")
         if demand.get("buyerId") == uid:
             _error(400, "OWN_LISTING", "this is your own demand")
-        room = await ensure_direct_room(
-            demand["buyerId"],
-            demand.get("buyerName", ""),
-            uid,
-            user.get("name", ""),
-            demand.get("crop", ""),
-        )
+        counterparty_id = demand["buyerId"]
+        counterparty = await get_user(counterparty_id) or {}
+        crop = demand.get("crop", "")
+
+    # WS-02 task 2.37: farmers cannot DM each other (instructions §WS-02 step 7).
+    if user.get("activeProfile") == "farmer" and counterparty.get("activeProfile") == "farmer":
+        _error(403, "FARMER_DM_BLOCKED", "farmers cannot message each other directly")
+
+    room = await ensure_direct_room(
+        counterparty_id,
+        counterparty.get("name", ""),
+        uid,
+        user.get("name", ""),
+        crop,
+    )
     return _room_view(room, uid)
 
 
@@ -162,10 +197,83 @@ async def list_messages(
     return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
 
 
+async def _post_batch_message(room: dict, body: "MessageIn", uid: str) -> dict:
+    """WS-02 task 2.36: batch group chat posting rules (server-enforced).
+
+    instructor broadcast-only; text + in-platform lesson cards only; blocked by
+    a sealed room, the strike-ladder mute, or banned content (phone/UPI/URL)."""
+    # (a) a dispute seals the room (frozen evidence snapshot).
+    if room.get("sealed"):
+        _error(409, "ROOM_SEALED", "this room is sealed for a dispute")
+    # (b) broadcast-only: only the instructor (admin) may post.
+    if uid != room.get("instructorId"):
+        _error(403, "BATCH_BROADCAST_ONLY", "only the instructor can post in batch chat")
+    # (c) no voice notes / files — text + lesson cards only.
+    if body.imageUrl:
+        _error(422, "ATTACHMENT_NOT_ALLOWED", "batch chat accepts text and lesson cards only")
+    text = (body.text or "").strip()
+    if not text and not body.lessonCardId:
+        _error(422, "VALIDATION_ERROR", "message needs text or a lesson card")
+    # (d) moderation regex + strike ladder (global rule 4).
+    banned = contains_banned_content(text)
+    if banned:
+        await record_strike(uid, "batch_chat", banned)
+        _error(422, "MODERATION_BLOCKED", "no phone numbers, UPI IDs or links in chat")
+    # (e) strike-ladder mute.
+    sender = await get_user(uid) or {}
+    muted_until = sender.get("chatMutedUntil")
+    if muted_until:
+        try:
+            if datetime.fromisoformat(muted_until) > datetime.now(timezone.utc):
+                _error(429, "CHAT_MUTED", "you are muted — try again later")
+        except ValueError:
+            pass
+    # (f) lesson cards must reference a real lesson in the batch's course.
+    lesson_card_id = body.lessonCardId or None
+    if lesson_card_id:
+        batch = await get_doc("course_batches", room.get("batchId") or room["id"]) or {}
+        course = await get_doc("courses", batch.get("courseId") or "") or {}
+        lesson_ids = {
+            lesson.get("id")
+            for module in course.get("modules", [])
+            for lesson in module.get("lessons", [])
+        }
+        if lesson_card_id not in lesson_ids:
+            _error(404, "LESSON_CARD_NOT_FOUND", "lesson card not found")
+    doc = {
+        "id": f"msg_{uuid.uuid4().hex[:12]}",
+        "fromId": uid,
+        "fromName": first_name(sender.get("name", "")),
+        "fromSide": "instructor",
+        "text": text,
+        "imageUrl": None,
+        "lessonCardId": lesson_card_id,
+        "createdAt": _now(),
+    }
+    await set_doc(f"chat_rooms/{room['id']}/messages", doc["id"], doc)
+    room["lastMessageAt"] = doc["createdAt"]
+    room["lastMessageText"] = text or "📎"
+    room["readByFarmer"] = False
+    room["readByBuyer"] = True
+    await set_doc("chat_rooms", room["id"], room)
+    for member_id in room.get("memberIds", []):
+        if member_id and member_id != uid:
+            await notify_user(
+                member_id,
+                type="chat_message",
+                title="Batch announcement / बैच घोषणा",
+                body=f"{doc['fromName']}: {(text or '📎')[:80]}",
+                path="/dashboard/p/batches",
+            )
+    return doc
+
+
 @router.post("/rooms/{room_id}/messages", status_code=201)
 async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current_user_id)):
     await hit("chat", uid, 60, 60)
     room, terminal = await _load_room(room_id, uid)
+    if (room.get("kind") or "purchase") == "batch":
+        return await _post_batch_message(room, body, uid)
     if terminal:
         _error(409, "CHAT_CLOSED", "this thread is closed — chat is read-only")
     text = (body.text or "").strip()

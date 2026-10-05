@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -17,9 +17,11 @@ from app.models.courses import (
     CourseUpdateIn,
     LessonProgressIn,
 )
+from app.services import idempotency
 from app.services.coins import InsufficientCoins, spend_coins
 from app.services.payments import create_razorpay_order, verify_razorpay_signature
-from app.services.tasks import emit_task, module_deep_link
+from app.services.academy_tasks import emit_learner_discovery_tasks
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(tags=["courses"])
@@ -113,6 +115,19 @@ async def _paid_purchase(user_id: str, course_id: str) -> dict | None:
 async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
     if not _is_instructor(user):
         _error(403, "NOT_INSTRUCTOR", "only instructors can publish courses")
+    # WS-02 task 2.27: KYC must be approved before publishing (browse stays open).
+    from app.services.kyc import instructor_publish_blocked_reason
+
+    if not user.get("isAdmin"):
+        blocked = await instructor_publish_blocked_reason(user["id"])
+        if blocked:
+            _error(403, "KYC_NOT_APPROVED", blocked)
+    # WS-02 step 5: Free tier = 1 course; further courses need `instructor_pro`.
+    existing = await query("courses", [("instructorId", "==", user["id"])], limit=500)
+    owned = [c for c in existing if c.get("status") in ("published", "pending_review", "pendingReview")]
+    from app.services.billing import require_unlimited_courses
+
+    await require_unlimited_courses(user["id"], len(owned))
     course_id = uuid.uuid4().hex[:16]
     now = _now()
     initial_status = "published" if body.autoPublish else "pendingReview"
@@ -147,6 +162,9 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
         "modules": modules_data,
         "tags": body.tags or [body.category],
         "status": initial_status,
+        # WS-02 task 2.24: phase-07 module 27 admin moderation queue consumes
+        # this; the learner `status` lifecycle is unchanged.
+        "moderationStatus": "pending_review",
         "rejectedReason": None,
         "isFeatured": False,
         "isBestseller": False,
@@ -292,7 +310,22 @@ async def my_library(user: dict = Depends(_user)):
 
 @router.get("/courses/my-learning")
 async def my_learning(user: dict = Depends(_user)):
-    return await my_library(user)
+    result = await my_library(user)
+    # WS-01 task 1.26: emit deterministic learner discovery tasks.
+    await emit_learner_discovery_tasks(user["id"])
+    return result
+
+
+# WS-06 task 6.4 — per-farmer course relevance (M20 `courses.recommend.v1`).
+# Declared BEFORE `/courses/{course_id}` so the static path is not captured by
+# the path param. All model calls go through the AI gateway; the ranked result
+# is Redis-cached 24h per farmer (never per page-view) and degrades to the
+# deterministic crop-category ordering with the identical response shape.
+@router.get("/courses/recommendations")
+async def course_recommendations(user: dict = Depends(_user)):
+    from app.services import academy_ai
+
+    return await academy_ai.recommend_courses(user["id"])
 
 
 @router.get("/courses/{course_id}")
@@ -313,11 +346,28 @@ async def get_course(course_id: str, user: dict = Depends(_user)):
     else:
         doc.pop("mediaUrl", None)
 
+    # WS-02 task 2.31: verified instructor credentials for the course-detail
+    # badge slots (WS-01 tasks 1.10/1.11). type + verifiedAt only — no PII.
+    from app.services.kyc import latest_instructor_case, verified_credential_types
+
+    doc["instructorCredentials"] = verified_credential_types(
+        await latest_instructor_case(course["instructorId"])
+    )
+
     return doc
 
 
 @router.post("/courses/{course_id}/purchase")
-async def purchase_course(course_id: str, user: dict = Depends(_user)):
+async def purchase_course(
+    course_id: str,
+    user: dict = Depends(_user),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    scope = f"courses.purchase.{user['id']}.{course_id}"
+    stored = await idempotency.replay(scope, idempotency_key)
+    if stored is not None:
+        return stored
+
     course = await _require_course(course_id)
     if course["status"] != "published":
         _error(404, "COURSE_NOT_FOUND", "course not found")
@@ -327,63 +377,77 @@ async def purchase_course(course_id: str, user: dict = Depends(_user)):
     pid = _purchase_id(user["id"], course_id)
     existing = await get_doc("course_purchases", pid)
     if existing is not None and existing.get("status") == "paid":
-        return {"purchased": True, "courseId": course_id}
+        response = {"purchased": True, "courseId": course_id}
+    else:
+        price = float(course.get("priceRupees") or 0)
+        if price == 0:
+            purchase = {
+                "id": pid,
+                "userId": user["id"],
+                "studentName": user.get("name") or "Student",
+                "studentPhone": user.get("phone") or "",
+                "courseId": course_id,
+                "courseTitle": course.get("title") or "",
+                "instructorId": course["instructorId"],
+                "amountRupees": 0,
+                "commissionPercent": 0.0,
+                "status": "paid",
+                "progressPercent": 0,
+                "completedLessonIds": [],
+                "isCompleted": False,
+                "certificateId": None,
+                "createdAt": _now(),
+                "paidAt": _now(),
+            }
+            await set_doc("course_purchases", pid, purchase)
+            course["salesCount"] = course.get("salesCount", 0) + 1
+            await set_doc("courses", course_id, course)
+            response = {"purchased": True, "courseId": course_id}
+        else:
+            order = create_razorpay_order(int(price * 100), f"course-{course_id}-{user['id'][:8]}")
+            purchase = {
+                "id": pid,
+                "userId": user["id"],
+                "studentName": user.get("name") or "Student",
+                "studentPhone": user.get("phone") or "",
+                "courseId": course_id,
+                "courseTitle": course.get("title") or "",
+                "instructorId": course["instructorId"],
+                "amountRupees": price,
+                "commissionPercent": DEFAULT_COMMISSION_PERCENT,
+                "status": "awaiting_payment",
+                "razorpayOrderId": order["id"],
+                "progressPercent": 0,
+                "completedLessonIds": [],
+                "isCompleted": False,
+                "certificateId": None,
+                "createdAt": _now(),
+            }
+            await set_doc("course_purchases", pid, purchase)
+            response = {
+                "purchased": False,
+                "paymentOrderId": order["id"],
+                "amountDue": price,
+                "courseId": course_id,
+            }
 
-    price = float(course.get("priceRupees") or 0)
-    if price == 0:
-        purchase = {
-            "id": pid,
-            "userId": user["id"],
-            "studentName": user.get("name") or "Student",
-            "studentPhone": user.get("phone") or "",
-            "courseId": course_id,
-            "courseTitle": course.get("title") or "",
-            "instructorId": course["instructorId"],
-            "amountRupees": 0,
-            "commissionPercent": 0.0,
-            "status": "paid",
-            "progressPercent": 0,
-            "completedLessonIds": [],
-            "isCompleted": False,
-            "certificateId": None,
-            "createdAt": _now(),
-            "paidAt": _now(),
-        }
-        await set_doc("course_purchases", pid, purchase)
-        course["salesCount"] = course.get("salesCount", 0) + 1
-        await set_doc("courses", course_id, course)
-        return {"purchased": True, "courseId": course_id}
-
-    order = create_razorpay_order(int(price * 100), f"course-{course_id}-{user['id'][:8]}")
-    purchase = {
-        "id": pid,
-        "userId": user["id"],
-        "studentName": user.get("name") or "Student",
-        "studentPhone": user.get("phone") or "",
-        "courseId": course_id,
-        "courseTitle": course.get("title") or "",
-        "instructorId": course["instructorId"],
-        "amountRupees": price,
-        "commissionPercent": DEFAULT_COMMISSION_PERCENT,
-        "status": "awaiting_payment",
-        "razorpayOrderId": order["id"],
-        "progressPercent": 0,
-        "completedLessonIds": [],
-        "isCompleted": False,
-        "certificateId": None,
-        "createdAt": _now(),
-    }
-    await set_doc("course_purchases", pid, purchase)
-    return {
-        "purchased": False,
-        "paymentOrderId": order["id"],
-        "amountDue": price,
-        "courseId": course_id,
-    }
+    if idempotency_key:
+        await idempotency.store(scope, idempotency_key, response)
+    return response
 
 
 @router.post("/courses/{course_id}/enroll")
-async def enroll_course(course_id: str, body: CourseEnrollIn, user: dict = Depends(_user)):
+async def enroll_course(
+    course_id: str,
+    body: CourseEnrollIn,
+    user: dict = Depends(_user),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    scope = f"courses.enroll.{user['id']}.{course_id}"
+    stored = await idempotency.replay(scope, idempotency_key)
+    if stored is not None:
+        return stored
+
     course = await _require_course(course_id)
     if course["status"] != "published":
         _error(404, "COURSE_NOT_FOUND", "course not found")
@@ -393,74 +457,84 @@ async def enroll_course(course_id: str, body: CourseEnrollIn, user: dict = Depen
     pid = _purchase_id(user["id"], course_id)
     existing = await get_doc("course_purchases", pid)
     if existing is not None and existing.get("status") == "paid":
-        return {"enrolled": True, "courseId": course_id, "alreadyEnrolled": True}
+        response = {"enrolled": True, "courseId": course_id, "alreadyEnrolled": True}
+    else:
+        fee = float(course.get("priceRupees") or 0)
+        coins_allowed = int(course.get("coinsDiscountAllowed") or 0)
+        coins_to_redeem = body.coinsToRedeem if body.useCoins else 0
 
-    fee = float(course.get("priceRupees") or 0)
-    coins_allowed = int(course.get("coinsDiscountAllowed") or 0)
-    coins_to_redeem = body.coinsToRedeem if body.useCoins else 0
+        if body.useCoins and coins_to_redeem > 0:
+            # X11: redemption is capped at min(instructor allowance, fee, % of order).
+            # The %-of-order ceiling (default 50) is config-driven.
+            cfg = await get_doc("platform_config", "gamification") or {}
+            pct = int(cfg.get("redemptionMaxPctOfOrder", 50))
+            pct_cap = int(fee) * pct // 100
+            max_redeemable = min(coins_allowed, int(fee), pct_cap)
+            if coins_to_redeem > max_redeemable:
+                _error(422, "INVALID_COIN_AMOUNT", f"maximum coin redemption is {max_redeemable}")
+            try:
+                await spend_coins(user["id"], coins_to_redeem, "course_enroll", course_id)
+            except InsufficientCoins:
+                _error(409, "INSUFFICIENT_COINS", "not enough AgriCoins")
 
-    if body.useCoins and coins_to_redeem > 0:
-        if coins_to_redeem > coins_allowed or coins_to_redeem > fee:
-            _error(422, "INVALID_COIN_AMOUNT", f"maximum coin redemption is {min(coins_allowed, int(fee))}")
-        try:
-            await spend_coins(user["id"], coins_to_redeem, "course_enroll", course_id)
-        except InsufficientCoins:
-            _error(409, "INSUFFICIENT_COINS", "not enough AgriCoins")
+        remaining_due = max(0.0, fee - coins_to_redeem)
 
-    remaining_due = max(0.0, fee - coins_to_redeem)
+        if remaining_due == 0:
+            purchase = {
+                "id": pid,
+                "userId": user["id"],
+                "studentName": user.get("name") or "Student",
+                "studentPhone": user.get("phone") or "",
+                "courseId": course_id,
+                "courseTitle": course.get("title") or "",
+                "instructorId": course["instructorId"],
+                "amountRupees": 0,
+                "coinsRedeemed": coins_to_redeem,
+                "commissionPercent": 0.0,
+                "status": "paid",
+                "progressPercent": 0,
+                "completedLessonIds": [],
+                "isCompleted": False,
+                "certificateId": None,
+                "createdAt": _now(),
+                "paidAt": _now(),
+            }
+            await set_doc("course_purchases", pid, purchase)
+            course["salesCount"] = course.get("salesCount", 0) + 1
+            await set_doc("courses", course_id, course)
+            response = {"enrolled": True, "courseId": course_id, "amountPaid": 0}
+        else:
+            order = create_razorpay_order(int(remaining_due * 100), f"course-{course_id}-{user['id'][:8]}")
+            purchase = {
+                "id": pid,
+                "userId": user["id"],
+                "studentName": user.get("name") or "Student",
+                "studentPhone": user.get("phone") or "",
+                "courseId": course_id,
+                "courseTitle": course.get("title") or "",
+                "instructorId": course["instructorId"],
+                "amountRupees": remaining_due,
+                "coinsRedeemed": coins_to_redeem,
+                "commissionPercent": DEFAULT_COMMISSION_PERCENT,
+                "status": "awaiting_payment",
+                "razorpayOrderId": order["id"],
+                "progressPercent": 0,
+                "completedLessonIds": [],
+                "isCompleted": False,
+                "certificateId": None,
+                "createdAt": _now(),
+            }
+            await set_doc("course_purchases", pid, purchase)
+            response = {
+                "enrolled": False,
+                "paymentOrderId": order["id"],
+                "amountDue": remaining_due,
+                "courseId": course_id,
+            }
 
-    if remaining_due == 0:
-        purchase = {
-            "id": pid,
-            "userId": user["id"],
-            "studentName": user.get("name") or "Student",
-            "studentPhone": user.get("phone") or "",
-            "courseId": course_id,
-            "courseTitle": course.get("title") or "",
-            "instructorId": course["instructorId"],
-            "amountRupees": 0,
-            "coinsRedeemed": coins_to_redeem,
-            "commissionPercent": 0.0,
-            "status": "paid",
-            "progressPercent": 0,
-            "completedLessonIds": [],
-            "isCompleted": False,
-            "certificateId": None,
-            "createdAt": _now(),
-            "paidAt": _now(),
-        }
-        await set_doc("course_purchases", pid, purchase)
-        course["salesCount"] = course.get("salesCount", 0) + 1
-        await set_doc("courses", course_id, course)
-        return {"enrolled": True, "courseId": course_id, "amountPaid": 0}
-
-    order = create_razorpay_order(int(remaining_due * 100), f"course-{course_id}-{user['id'][:8]}")
-    purchase = {
-        "id": pid,
-        "userId": user["id"],
-        "studentName": user.get("name") or "Student",
-        "studentPhone": user.get("phone") or "",
-        "courseId": course_id,
-        "courseTitle": course.get("title") or "",
-        "instructorId": course["instructorId"],
-        "amountRupees": remaining_due,
-        "coinsRedeemed": coins_to_redeem,
-        "commissionPercent": DEFAULT_COMMISSION_PERCENT,
-        "status": "awaiting_payment",
-        "razorpayOrderId": order["id"],
-        "progressPercent": 0,
-        "completedLessonIds": [],
-        "isCompleted": False,
-        "certificateId": None,
-        "createdAt": _now(),
-    }
-    await set_doc("course_purchases", pid, purchase)
-    return {
-        "enrolled": False,
-        "paymentOrderId": order["id"],
-        "amountDue": remaining_due,
-        "courseId": course_id,
-    }
+    if idempotency_key:
+        await idempotency.store(scope, idempotency_key, response)
+    return response
 
 
 @router.post("/courses/purchases/verify")
@@ -494,6 +568,11 @@ async def verify_purchase(body: CoursePurchaseVerifyIn, user: dict = Depends(_us
         course.get("instructorEarningsRupees", 0) + purchase["amountRupees"] - commission, 2
     )
     await set_doc("courses", course["id"], course)
+
+    # WS-06 task 6.13: outcome hook — was this purchase led by a recommendation?
+    from app.services import academy_ai
+
+    await academy_ai.record_purchase_outcome_if_recommended(user["id"], course["id"])
     return {"purchased": True, "courseId": course["id"]}
 
 
@@ -579,6 +658,13 @@ async def update_lesson_progress(
         certificate_id = f"CERT-GS-{course_id[:4].upper()}-{uuid.uuid4().hex[:6].upper()}"
         purchase["certificateIssuedAt"] = _now()
 
+    # WS-06 task 6.10 — learning-path suggestion the moment a learner certificate
+    # is issued (C20). Stored on the purchase doc; prefill/annotate only.
+    if is_completed and certificate_id and not is_owner and not purchase.get("learningPath"):
+        from app.services import academy_ai
+
+        await academy_ai.apply_learning_path(purchase)
+
     purchase["completedLessonIds"] = list(completed_ids)
     purchase["progressPercent"] = pct
     purchase["isCompleted"] = is_completed
@@ -588,18 +674,34 @@ async def update_lesson_progress(
         purchase["completedAt"] = _now()
 
     await set_doc("course_purchases", pid, purchase)
-    # WS-05 task emission (module: courses) — certificate ready for the student.
+    persona = user.get("activeProfile") or "farmer"
+    # WS-01 task engine: a progress nudge while the course is unfinished…
+    if pct < 100.0:
+        await emit_task(
+            user["id"],
+            persona=persona,
+            module="courses",
+            kind="course_progress",
+            title_en="Continue your course",
+            title_hi="अपना पाठ्यक्रम जारी रखें",
+            subtitle=course.get("title", ""),
+            priority="upcoming",
+            deep_link=f"/dashboard/p/courses/{course_id}/learn",
+            source_id=pid,
+        )
+    # …and a certificate task the moment the course is completed. Dedupe-safe
+    # on sourceId so re-completing the last lesson never doubles the task.
     if is_completed and certificate_id and not is_owner:
         await emit_task(
             user["id"],
-            persona=user.get("activeProfile") or "farmer",
+            persona=persona,
             module="courses",
-            kind="certificate_ready",
-            title_en="Certificate ready",
-            title_hi="प्रमाणपत्र तैयार",
+            kind="certificate_earned",
+            title_en="Certificate earned",
+            title_hi="प्रमाणपत्र प्राप्त हुआ",
             subtitle=course.get("title", ""),
             priority="today",
-            deep_link=module_deep_link("courses"),
+            deep_link=f"/dashboard/p/courses/{course_id}/certificate",
             source_id=pid,
         )
 
@@ -637,6 +739,8 @@ async def get_course_certificate(course_id: str, user: dict = Depends(_user)):
         "issuedAt": issued_at,
         "institution": "GyanSetu Digital Krishi Gurukul",
         "verificationUrl": f"https://agrovercity.com/verify/cert/{cert_id}",
+        # WS-06 task 6.10/6.12 — the next-course suggestion attached at issue.
+        "learningPath": purchase.get("learningPath") if purchase else None,
     }
 
 

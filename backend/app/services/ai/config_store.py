@@ -21,6 +21,11 @@ DEFAULT_AI_CONFIG = {
         "insurance_triage": True,
         "dairy_adulteration": True,
         "contracts_attractiveness": True,
+        # Brief M20 — course recommendations (suggest-level catalog annotation).
+        "courses_recommend": True,
+        # Brief M20 — objective auto-grading of assignment submissions. Prefill
+        # only: the instructor must confirm before a grade is published.
+        "courses_autograde": True,
     },
     "thresholds": {
         "seller.rate_check.v1": 0.75,
@@ -32,6 +37,8 @@ DEFAULT_AI_CONFIG = {
         "insurance.triage.v1": 0.75,
         "dairy.adulteration.v1": 0.75,
         "contracts.attractiveness.v1": 0.75,
+        "courses.recommend.v1": 0.75,
+        "courses.grade_suggest.v1": 0.75,
     },
     "automation": {
         "seller.rate_check.v1": "suggest",
@@ -43,6 +50,9 @@ DEFAULT_AI_CONFIG = {
         "insurance.triage.v1": "suggest",
         "dairy.adulteration.v1": "suggest",
         "contracts.attractiveness.v1": "suggest",
+        "courses.recommend.v1": "suggest",
+        # Auto-grading never publishes on its own — instructor confirm required.
+        "courses.grade_suggest.v1": "require_confirm",
     },
 }
 CACHE_TTL_SECONDS = 60.0

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -175,6 +175,12 @@ async def issue_student_certificate(
     if body.customNote:
         purchase["certificateNote"] = body.customNote
 
+    # WS-06 task 6.10 — learning-path suggestion on certificate issue (C20).
+    from app.services import academy_ai
+
+    if not purchase.get("learningPath"):
+        await academy_ai.apply_learning_path(purchase)
+
     await set_doc("course_purchases", pid, purchase)
     return {
         "success": True,
@@ -182,6 +188,7 @@ async def issue_student_certificate(
         "studentId": student_id,
         "courseId": course_id,
         "issuedAt": purchase["certificateIssuedAt"],
+        "learningPath": purchase.get("learningPath"),
     }
 
 
@@ -225,6 +232,18 @@ async def list_course_announcements(course_id: str):
 # ---------------------------------------------------------------------------
 @router.get("/analytics")
 async def get_teacher_analytics(user: dict = Depends(_user)):
+    # WS-02 task 2.23: the full analytics view is a Pro capability. Instructors
+    # without the `analytics_full` entitlement receive only the basic subset.
+    from app.services.billing import has_feature
+
+    if not await has_feature(user["id"], "instructor", "analytics_full"):
+        courses = await query("courses", [("instructorId", "==", user["id"])], limit=500)
+        purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+        return {
+            "coursesCount": len(courses),
+            "studentsCount": sum(1 for p in purchases if p.get("status") == "paid"),
+        }
+
     courses = await query("courses", [("instructorId", "==", user["id"])], limit=500)
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
     paid_purchases = [p for p in purchases if p.get("status") == "paid"]
@@ -255,42 +274,27 @@ async def get_teacher_analytics(user: dict = Depends(_user)):
 @router.get("/courses/mine")
 async def list_my_courses(user: dict = Depends(_user)):
     courses = await query("courses", [("instructorId", "==", user["id"])], limit=500)
-    if not courses:
-        # Seed an initial practical agri-course for instant visibility
-        cid = f"crs_{uuid.uuid4().hex[:8]}"
-        initial_course = {
-            "id": cid,
-            "title": "Precision Agri-Drone Spraying & Field Survey Certification",
-            "category": "Drone Ops",
-            "instructorId": user["id"],
-            "instructorName": user.get("name") or "GyanSetu Instructor",
-            "description": "Master DGCA-compliant agriculture drone operations, ULV spray calibration, battery cycle management, and multispectral crop health survey.",
-            "syllabus": [
-                "Module 1: DGCA Regulations & Flight Safety Protocols",
-                "Module 2: Drone Assembly & Battery Pre-Flight Checks",
-                "Module 3: Spraying Calibration (Nozzle Selection & Droplet Micron Size)",
-                "Module 4: Automated Field Flight Planning & Obstacle Mapping",
-                "Module 5: Hands-On On-Farm Flight Practice & Emergency Maneuvers",
-            ],
-            "sessionCount": 5,
-            "practicalHours": 15.0,
-            "mode": "on-farm",
-            "feeRupees": 6500.0,
-            "batchCapacity": 15,
-            "enrolledCount": 11,
-            "ratingAverage": 4.9,
-            "ratingCount": 18,
-            "status": "published",
-            "createdAt": _now(),
-        }
-        await set_doc("courses", cid, initial_course)
-        courses = [initial_course]
     courses.sort(key=lambda c: c.get("createdAt", ""), reverse=True)
     return {"data": courses, "total": len(courses)}
 
 
 @router.post("/courses/create", status_code=201)
 async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
+    if not _is_instructor(user):
+        _error(403, "NOT_INSTRUCTOR", "only instructors can publish courses")
+    # WS-02 task 2.27: KYC must be approved before publishing (browse stays open).
+    from app.services.kyc import instructor_publish_blocked_reason
+
+    if not user.get("isAdmin"):
+        blocked = await instructor_publish_blocked_reason(user["id"])
+        if blocked:
+            _error(403, "KYC_NOT_APPROVED", blocked)
+    # WS-02 step 5: Free tier = 1 course; further courses need `instructor_pro`.
+    existing = await query("courses", [("instructorId", "==", user["id"])], limit=500)
+    owned = [c for c in existing if c.get("status") in ("published", "pending_review", "pendingReview")]
+    from app.services.billing import require_unlimited_courses
+
+    await require_unlimited_courses(user["id"], len(owned))
     cid = f"crs_{uuid.uuid4().hex[:8]}"
     doc = {
         "id": cid,
@@ -310,6 +314,9 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
         "ratingAverage": 5.0,
         "ratingCount": 0,
         "status": "published",
+        # WS-02 task 2.24: phase-07 module 27 admin course-moderation queue
+        # consumes this. `status` lifecycle is unchanged for the learner flow.
+        "moderationStatus": "pending_review",
         "createdAt": _now(),
     }
     await set_doc("courses", cid, doc)
@@ -319,32 +326,18 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
 @router.get("/batches")
 async def list_teacher_batches(user: dict = Depends(_user)):
     batches = await query("course_batches", [("instructorId", "==", user["id"])], limit=200)
-    if not batches:
-        # Default active batch
-        bid = f"btc_{uuid.uuid4().hex[:8]}"
-        batches = [
-            {
-                "id": bid,
-                "instructorId": user["id"],
-                "courseId": "crs_sample",
-                "courseTitle": "Precision Drone Spraying Batch #12",
-                "batchName": "Kharif Intensive Drone Batch",
-                "startDate": "2026-10-15",
-                "endDate": "2026-10-25",
-                "locationPin": "Agro Hub Demo Plot, Niphad",
-                "maxSeats": 15,
-                "enrolledSeats": 11,
-                "scheduleDays": "Tue & Thu 09:00 AM",
-                "status": "upcoming",
-                "createdAt": _now(),
-            }
-        ]
-        await set_doc("course_batches", bid, batches[0])
     return {"data": batches, "total": len(batches)}
 
 
 @router.post("/batches", status_code=201)
 async def create_teacher_batch(body: BatchCreateIn, user: dict = Depends(_user)):
+    # WS-02 task 2.27: taking bookings (batches) also requires approved KYC.
+    from app.services.kyc import instructor_publish_blocked_reason
+
+    if not user.get("isAdmin"):
+        blocked = await instructor_publish_blocked_reason(user["id"])
+        if blocked:
+            _error(403, "KYC_NOT_APPROVED", blocked)
     bid = f"btc_{uuid.uuid4().hex[:8]}"
     doc = {
         "id": bid,
@@ -367,24 +360,6 @@ async def create_teacher_batch(body: BatchCreateIn, user: dict = Depends(_user))
 @router.get("/enquiries")
 async def list_teacher_enquiries(user: dict = Depends(_user)):
     enquiries = await query("course_enquiries", [("instructorId", "==", user["id"])], limit=200)
-    if not enquiries:
-        eid = f"enq_{uuid.uuid4().hex[:8]}"
-        enquiries = [
-            {
-                "id": eid,
-                "instructorId": user["id"],
-                "farmerId": "farmer_102",
-                "farmerName": "Suresh Gawande (Nashik)",
-                "courseId": "crs_sample",
-                "courseTitle": "Precision Drone Spraying",
-                "questionTemplate": "Is this course eligible for State Agriculture Dept Subsidy / PM-PRANAM?",
-                "details": "I farm 12 acres of vineyards and want to operate custom hire spraying for my FPO.",
-                "status": "pending",
-                "quotedFeeRupees": None,
-                "createdAt": _now(),
-            }
-        ]
-        await set_doc("course_enquiries", eid, enquiries[0])
     return {"data": enquiries, "total": len(enquiries)}
 
 
@@ -449,29 +424,20 @@ async def mark_session_attendance(session_id: str, body: AttendanceMarkIn, user:
 @router.get("/assignments")
 async def list_practical_assignments(user: dict = Depends(_user)):
     assignments = await query("course_assignments", [("instructorId", "==", user["id"])], limit=200)
-    if not assignments:
-        aid = f"asg_{uuid.uuid4().hex[:8]}"
-        assignments = [
-            {
-                "id": aid,
-                "instructorId": user["id"],
-                "courseTitle": "Precision Drone Spraying",
-                "studentName": "Kishor Mahajan",
-                "studentId": "std_1",
-                "title": "Field Spray Log & Nozzle Calibration Checklist",
-                "notes": "Completed 2-acre spray demo with TeeJet nozzles. GPS flight path recorded within +/- 5cm deviation.",
-                "evidencePhotoUrls": ["https://images.unsplash.com/photo-1586771107445-d3ca888129ff?w=600"],
-                "rubric": {
-                    "fieldTechnique": "Proficient",
-                    "safetyProtocol": "Exemplary",
-                    "documentation": "Verified",
-                },
-                "grade": "A",
-                "status": "graded",
-                "submittedAt": _now(),
-            }
-        ]
-        await set_doc("course_assignments", aid, assignments[0])
+    # WS-06 task 6.7: when the instructor views a submitted assignment, generate
+    # (once) the objective AI grade suggestion and store it as a PREFILL on the
+    # submission doc. `require_confirm` — the grade is never published here; the
+    # instructor still calls POST /assignments/{id}/grade explicitly.
+    from app.services import academy_ai
+
+    user_lang = str(user.get("preferredLanguage") or user.get("language") or "hi")
+    for assignment in assignments:
+        if assignment.get("status") != "submitted" or assignment.get("aiSuggestion"):
+            continue
+        suggestion = await academy_ai.suggest_assignment_grade(assignment, user_lang=user_lang)
+        if suggestion is not None:
+            assignment["aiSuggestion"] = suggestion
+            await set_doc("course_assignments", assignment["id"], assignment)
     return {"data": assignments, "total": len(assignments)}
 
 
@@ -487,48 +453,92 @@ async def grade_assignment(assignment_id: str, body: AssignmentGradeIn, user: di
     assignment["status"] = "graded"
     assignment["gradedAt"] = _now()
     await set_doc("course_assignments", assignment_id, assignment)
+
+    # WS-06 task 6.13: outcome hook — published grade vs the AI rubric suggestion.
+    from app.services.ai import outcomes
+
+    suggestion = assignment.get("aiSuggestion") or {}
+    if suggestion:
+        await outcomes.record_grade_delta_outcome(
+            assignment_id,
+            body.grade,
+            suggestion.get("suggestedScorePct"),
+            suggestion.get("decision_id"),
+        )
     return assignment
 
 
 @router.get("/certificates/verify/{certificate_id}")
 async def verify_certificate_public(certificate_id: str):
-    # Lookup certificate in registry
+    """Public certificate verification for employers / third parties.
+
+    Intentionally unauthenticated, but returns only the certificate's real
+    public fields (no demo fallback, no PII beyond the learner's name)."""
     purchases = await query("course_purchases", [("certificateId", "==", certificate_id)], limit=1)
-    if purchases:
-        p = purchases[0]
-        return {
-            "isValid": True,
-            "certificateId": certificate_id,
-            "recipientName": p.get("studentName", "Verified Trainee"),
-            "courseTitle": p.get("courseTitle", "Agro-Skill Certification"),
-            "issuedAt": p.get("certificateIssuedAt") or _now(),
-            "institution": "Agrovercity Gurukul Skills Registry",
-            "tamperProofHash": f"SHA256-{uuid.uuid4().hex[:16].upper()}",
-        }
+    if not purchases:
+        _error(404, "CERTIFICATE_NOT_FOUND", "certificate not found")
+    p = purchases[0]
     return {
         "isValid": True,
         "certificateId": certificate_id,
-        "recipientName": "Registered Agri Learner",
-        "courseTitle": "Agri-Tech Field Proficiency Certification",
-        "issuedAt": _now(),
-        "institution": "Agrovercity Skills Board",
-        "tamperProofHash": f"SHA256-{uuid.uuid4().hex[:16].upper()}",
+        "recipientName": p.get("studentName"),
+        "courseTitle": p.get("courseTitle"),
+        "issuedAt": p.get("certificateIssuedAt"),
+        "credential": p.get("credential"),
     }
 
 
 @router.get("/earnings")
 async def get_instructor_earnings(user: dict = Depends(_user)):
-    analytics = await get_teacher_analytics(user)
-    gross = float(analytics.get("totalEarningsRupees", 0))
-    commission = round(gross * 0.10, 2)
-    net_payout = round(gross - commission, 2)
+    """Instructor earnings ledger (WS-02 step 3 / task 2.19).
+
+    Rebuilt on the real config-driven commission: gross − commission = payout,
+    all integer paisa. `onHold` mirrors the phase-00 bank-verification rule used
+    by the settlement payout rails; `nextPayoutDate` is the next weekly run.
+    """
+    from app.services.settlements import _config, _has_verified_bank_account, course_gmv_pct
+
+    config = await _config()
+    purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+    paid_purchases = [p for p in purchases if p.get("status") == "paid"]
+
+    by_course: dict[str, dict] = {}
+    for purchase in paid_purchases:
+        amount_paisa = int(round(float(purchase.get("amountRupees") or 0) * 100))
+        course = await get_doc("courses", purchase.get("courseId") or "")
+        pct = course_gmv_pct(config, (course or {}).get("category"))
+        course_id = purchase.get("courseId") or ""
+        bucket = by_course.setdefault(
+            course_id,
+            {
+                "courseId": course_id,
+                "courseTitle": purchase.get("courseTitle") or "",
+                "grossPaisa": 0,
+                "commissionPaisa": 0,
+                "netPaisa": 0,
+            },
+        )
+        bucket["grossPaisa"] += amount_paisa
+        bucket["commissionPaisa"] += amount_paisa * pct // 100
+        bucket["netPaisa"] = bucket["grossPaisa"] - bucket["commissionPaisa"]
+
+    by_course_list = list(by_course.values())
+    gross_paisa = sum(bucket["grossPaisa"] for bucket in by_course_list)
+    commission_paisa = sum(bucket["commissionPaisa"] for bucket in by_course_list)
+
+    today = datetime.now(timezone.utc).date()
+    days_ahead = (7 - today.weekday()) % 7 or 7  # next Monday, always in the future
+    next_payout = today + timedelta(days=days_ahead)
+
     return {
-        "grossRevenueRupees": gross,
-        "platformCommissionRupees": commission,
-        "netPayoutRupees": net_payout,
-        "payoutSchedule": "T+3 Days to Verified Bank Account",
-        "settledBatchesCount": 4,
-        "pendingSettlementRupees": 8500.0,
+        "grossPaisa": gross_paisa,
+        "commissionPaisa": commission_paisa,
+        "netPaisa": gross_paisa - commission_paisa,
+        "currency": "INR",
+        "commissionPct": course_gmv_pct(config),
+        "byCourse": by_course_list,
+        "nextPayoutDate": next_payout.isoformat(),
+        "onHold": not await _has_verified_bank_account(user["id"]),
     }
 
 

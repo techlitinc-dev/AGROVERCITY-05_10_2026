@@ -122,6 +122,19 @@ import {
   VetsPage,
 } from './views/vetnet';
 import { AnimalDetailPage, AnimalFormPage, AnimalsHomePage } from './views/animals';
+// Phase-04 knowledge & consumer deep routes (WS-01…WS-05)
+import {
+  CertificatePage,
+  CourseDetailPage,
+  CoursePlayerPage,
+  PurchaseSheet,
+  SkillPassportPage,
+  VerifyCertificatePage,
+} from './views/academy';
+import { WorkshopsPage } from './views/gyan';
+import { NewsDetailPage } from './views/news';
+import { ChannelPlayerPage } from './views/channels';
+import { InspectionPage, StorefrontPage } from './views/customer';
 
 /** Re-hydrate the persisted session on first load (mirrors mobile loadPersistedState). */
 function useSessionHydration() {
@@ -185,6 +198,8 @@ export default function App() {
           element={hasToken ? <FarmMap /> : <Navigate to="/auth" replace />}
         />
         <Route path="/legal/:page" element={<LegalPage />} />
+        {/* Public certificate verification (task 1.16/1.17) — works logged out. */}
+        <Route path="/verify/cert/:certificateId" element={<VerifyCertificatePage />} />
         <Route
           path="/dashboard"
           element={loggedIn ? <DashboardHome /> : <Navigate to="/auth" replace />}
@@ -621,6 +636,47 @@ export default function App() {
           path="/livestock/animals/:animalId"
           element={loggedIn ? <AnimalDetailPage /> : <Navigate to="/auth" replace />}
         />
+        {/* Krishi Academy learner deep routes (phase-04 WS-01) */}
+        <Route
+          path="/dashboard/p/courses/:courseId"
+          element={loggedIn ? <CourseDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/courses/:courseId/purchase"
+          element={loggedIn ? <PurchaseSheet /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/courses/:courseId/learn"
+          element={loggedIn ? <CoursePlayerPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/courses/:courseId/certificate"
+          element={loggedIn ? <CertificatePage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Gyan Hub workshop detail (phase-04 WS-04) */}
+        <Route
+          path="/dashboard/p/gyanWorkshops/:workshopId"
+          element={loggedIn ? <WorkshopsPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Agri News article (phase-04 WS-05) */}
+        <Route
+          path="/dashboard/p/agriNews/:newsId"
+          element={loggedIn ? <NewsDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Live channel player (phase-04 WS-05) */}
+        <Route
+          path="/dashboard/p/liveChannels/:channelId"
+          element={loggedIn ? <ChannelPlayerPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* FarmGate farmer storefront + order inspection (phase-04 WS-03) */}
+        <Route
+          path="/dashboard/p/storefront/:farmerId"
+          element={loggedIn ? <StorefrontPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/orders/:orderId/inspect"
+          element={loggedIn ? <InspectionPage /> : <Navigate to="/auth" replace />}
+        />
         <Route
           path="/dashboard/profiles"
           element={loggedIn ? <ProfilesPage /> : <Navigate to="/auth" replace />}
@@ -637,13 +693,7 @@ export default function App() {
         />
         <Route
           path="/dashboard/profile"
-          element={
-            loggedIn ? (
-              <PlaceholderPage icon="👤" titleKey="dashProfile" subKey="dashProfileSub" />
-            ) : (
-              <Navigate to="/auth" replace />
-            )
-          }
+          element={loggedIn ? <SkillPassportPage /> : <Navigate to="/auth" replace />}
         />
         <Route path="/done" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

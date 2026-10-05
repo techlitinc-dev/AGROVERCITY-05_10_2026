@@ -11,6 +11,7 @@ import { PersonaBanner, PromoBanner, SectionTitle, ToolTile } from '../../compon
 import AiBadge from '../../components/ai/AiBadge';
 import ConfidenceGate from '../../components/ai/ConfidenceGate';
 import KisanMitraSheet from '../../components/chatbot/KisanMitraSheet';
+import BreakingBanner from '../../components/news/BreakingBanner';
 import InsightsPanel from '../../components/intelligence/InsightsPanel';
 import SellerHomeBoard from '../../components/dashboard/SellerHomeBoard';
 import { toast } from '../../components/toast';
@@ -29,8 +30,8 @@ import { BrokerHomeBoard } from '../broker';
 import { BuyerHomeBoard } from '../directbuyer';
 import LandlordHomeBoard from '../landlord/LandlordHomeBoard';
 import EquipmentOwnerHomeBoard from '../equipment/EquipmentOwnerHomeBoard';
-import CustomerHomeBoard from '../customer/CustomerHomeBoard';
-import InstructorHomeBoard from '../instructor/InstructorHomeBoard';
+import { EMarketHome } from '../customer';
+import InstructorHome from '../instructor/InstructorHome';
 import DairyManagerHomeBoard from '../dairyMarket/DairyManagerHomeBoard';
 import '../../theme/dashboard.css';
 
@@ -268,6 +269,9 @@ export default function DashboardHome() {
 
         <ProfileSwitcherBar onOpenSheet={() => setSwitchOpen(true)} />
 
+        {/* Breaking-news banner (phase-04 WS-05 task 5.5). */}
+        <BreakingBanner />
+
         {/* Persona switcher + aggregate mode (farmer defaults ON). */}
         <div className="dash-aggregate-row">
           <button
@@ -461,8 +465,8 @@ export default function DashboardHome() {
         {personaType === 'broker' ? <BrokerHomeBoard embedded /> : null}
         {personaType === 'farmLandlord' ? <LandlordHomeBoard /> : null}
         {personaType === 'equipmentRental' ? <EquipmentOwnerHomeBoard /> : null}
-        {personaType === 'customer' ? <CustomerHomeBoard /> : null}
-        {personaType === 'instructor' ? <InstructorHomeBoard /> : null}
+        {personaType === 'customer' ? <EMarketHome /> : null}
+        {personaType === 'instructor' ? <InstructorHome /> : null}
         {personaType === 'dairyManager' ? <DairyManagerHomeBoard /> : null}
 
         {personaType === 'farmer' || personaType === 'transport' ? <InsightsPanel /> : null}

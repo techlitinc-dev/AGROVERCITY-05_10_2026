@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app.data.content_seed import (
     CHANNELS,
     LIVE_POLLS,
@@ -192,4 +194,88 @@ async def test_channel_pin_and_gift(client, user_store):
     assert gift_resp.status_code == 201
     assert gift_resp.json()["coins"] == 50
     assert "ट्रॅक्टर सलामी" in gift_resp.json()["giftLabel"]
+
+
+async def test_channel_create_admin_only(client, user_store):
+    """WS-05 task 5.8 — POST /v1/channels is admin-gated (X16)."""
+    channel_body = {
+        "channelName": "Licensed Test Channel",
+        "broadcaster": "Agri Media Test",
+        "programTitle": "Live Advisory Test",
+        "streamUrl": "https://ddkisan.akamaized.net/hls/live/2007789/ddkisan/master.m3u8",
+    }
+    token = seed_user(user_store)
+    resp = await client.post("/v1/channels", json=channel_body, headers=auth(token))
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "FORBIDDEN_ADMIN"
+
+    admin_token = seed_user(user_store, uid="uid-admin", active_profile="admin", isAdmin=True)
+    admin_resp = await client.post("/v1/channels", json=channel_body, headers=auth(admin_token))
+    assert admin_resp.status_code == 201
+    assert admin_resp.json()["channelName"] == "Licensed Test Channel"
+
+
+async def test_channel_chat_moderation(client, user_store):
+    """WS-05 task 5.13 — phone/UPI messages are blocked and a strike written."""
+    seed_content_store(user_store)
+    token = seed_user(user_store)
+
+    phone_resp = await client.post(
+        "/v1/channels/ch-1/chat",
+        json={"text": "call me 9876543210"},
+        headers=auth(token),
+    )
+    assert phone_resp.status_code == 422
+    assert phone_resp.json()["error"]["code"] == "MODERATION_BLOCKED"
+    assert any(key.startswith("users/uid-1/strikes/") for key in user_store)
+
+    upi_resp = await client.post(
+        "/v1/channels/ch-1/chat",
+        json={"text": "send to ram@upi"},
+        headers=auth(token),
+    )
+    assert upi_resp.status_code == 422
+    assert upi_resp.json()["error"]["code"] == "MODERATION_BLOCKED"
+
+    # A clean message from a fresh user is accepted (the first user is now muted
+    # by the strike ladder after two strikes).
+    clean_token = seed_user(user_store, uid="uid-2")
+    ok_resp = await client.post(
+        "/v1/channels/ch-1/chat",
+        json={"text": "धन्यवाद, उपयुक्त माहिती!"},
+        headers=auth(clean_token),
+    )
+    assert ok_resp.status_code == 201
+
+
+async def test_breaking_and_live_now_task_emission_dedupe(client, user_store):
+    """WS-05 task 5.16 — dashboard task emission from the news/channel lists."""
+    seed_content_store(user_store)
+    # Fresh breaking item + a live channel.
+    fresh = dict(NEWS[0])
+    fresh["timestamp"] = datetime.now(timezone.utc).isoformat()
+    user_store[f"news/{fresh['id']}"] = fresh
+    token = seed_user(user_store)
+
+    resp = await client.get("/v1/news", headers=auth(token))
+    assert resp.status_code == 200
+    task_keys = [k for k in user_store if k.startswith("tasks/")]
+    assert any(user_store[k]["kind"] == "breaking_news" for k in task_keys), task_keys
+
+    resp2 = await client.get("/v1/channels", headers=auth(token))
+    assert resp2.status_code == 200
+    live_tasks = [
+        user_store[k]
+        for k in user_store
+        if k.startswith("tasks/") and user_store[k]["kind"] == "live_now"
+    ]
+    assert live_tasks, "no live_now task emitted"
+    # dedupe: second call does not duplicate the same sourceId
+    await client.get("/v1/channels", headers=auth(token))
+    live_tasks2 = [
+        user_store[k]
+        for k in user_store
+        if k.startswith("tasks/") and user_store[k]["kind"] == "live_now"
+    ]
+    assert len(live_tasks2) == len(live_tasks)
 

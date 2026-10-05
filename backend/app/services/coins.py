@@ -20,6 +20,25 @@ async def spend_coins(uid: str, amount: int, reason: str, ref_id: str | None = N
 
 async def _apply_delta(uid: str, delta: int, reason: str, ref_id: str | None) -> int:
     user = await get_doc("users", uid) or {"id": uid}
+    if delta > 0:
+        # X11 daily earn cap — config-driven (platform_config/gamification,
+        # default 200 coins/day). Coins can never be converted to currency; this
+        # only throttles positive awards. Negative deltas (spends) are untouched.
+        cfg = await get_doc("platform_config", "gamification") or {}
+        cap = int(cfg.get("dailyEarnCap", 200))
+        today = datetime.now(timezone.utc).date().isoformat()
+        entries = await query(f"users/{uid}/coin_ledger", [], limit=1000)
+        earned_today = sum(
+            e.get("amount", 0)
+            for e in entries
+            if e.get("amount", 0) > 0 and str(e.get("at", ""))[:10] == today
+        )
+        allowed = max(0, cap - earned_today)
+        delta = min(delta, allowed)
+        if delta == 0:
+            # Cap already reached today — return the balance unchanged and write
+            # no ledger docs (the award is dropped, not deferred).
+            return user.get("agriCoins", 0)
     balance = user.get("agriCoins", 0) + delta
     if balance < 0:
         raise InsufficientCoins(f"uid {uid} balance below zero")

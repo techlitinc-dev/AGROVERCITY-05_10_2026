@@ -1,5 +1,10 @@
 from app.core.db import query, set_doc
 
+# X16 (WS-05 task 5.9): v1 streams ONLY licensed embedded channels. DD Kisan
+# publishes a public licensed HLS endpoint; the remaining seeded channels keep
+# the neutral test placeholder until a licensed URL is referenced in the repo
+# (no invented stream URLs).
+DD_KISAN_HLS = "https://ddkisan.akamaized.net/hls/live/2007789/ddkisan/master.m3u8"
 HLS_PLACEHOLDER = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
 
 NEWS = [
@@ -94,7 +99,7 @@ CHANNELS = [
         "isLiveNow": True,
         "category": "Weather & Advisory",
         "streamThumbnail": "assets/ai.png",
-        "streamUrl": HLS_PLACEHOLDER,
+        "streamUrl": DD_KISAN_HLS,
         "scheduleTime": "Live Now (24x7)",
     },
     {

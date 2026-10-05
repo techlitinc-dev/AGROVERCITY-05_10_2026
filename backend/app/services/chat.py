@@ -5,9 +5,12 @@ Rooms are event-sourced: only a confirmed purchase creates a chat room
 offer `message` field remains the only structured pre-booking channel.
 """
 
-from datetime import datetime, timezone
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from app.core.db import get_doc, set_doc
+from app.core.db import get_doc, query, set_doc
+from app.services.payments import refund_razorpay_payment
 
 
 def first_name(name: str) -> str:
@@ -156,3 +159,133 @@ async def ensure_transport_room(booking: dict) -> dict:
     }
     await set_doc("chat_rooms", room["id"], room)
     return room
+
+
+async def ensure_batch_room(batch: dict, member_ids: list[str]) -> dict:
+    """Batch group chat room (WS-02 task 2.35). One room per batch, instructor
+    as admin (broadcast-only). Idempotent — refreshes `memberIds` on re-entry."""
+    existing = await get_doc("chat_rooms", batch["id"])
+    if existing is not None:
+        existing["memberIds"] = list(member_ids)
+        await set_doc("chat_rooms", existing["id"], existing)
+        return existing
+    now = datetime.now(timezone.utc).isoformat()
+    room = {
+        "id": batch["id"],
+        "kind": "batch",
+        "batchId": batch["id"],
+        "instructorId": batch["instructorId"],
+        "memberIds": list(member_ids),
+        "sealed": False,
+        "createdAt": now,
+        "lastMessageAt": None,
+        "lastMessageText": "",
+        "readByFarmer": True,
+        "readByBuyer": True,
+    }
+    await set_doc("chat_rooms", room["id"], room)
+    return room
+# Moderation (WS-02 task 2.34) — global rule 4: no phone numbers, UPI IDs or
+# external links in chat; violations follow the strike ladder.
+# ---------------------------------------------------------------------------
+PHONE_RE = re.compile(r"(\+91[\-\s]?)?[6-9]\d{9}")
+UPI_RE = re.compile(r"[\w.\-]{2,}@[a-zA-Z]{2,}")
+URL_RE = re.compile(r"(https?://|www\.)")
+
+MUTED_HOURS = 24
+
+
+def contains_banned_content(text: str) -> str | None:
+    """Return "phone"/"upi"/"url" for the first banned pattern match, else None."""
+    body = text or ""
+    if PHONE_RE.search(body):
+        return "phone"
+    if UPI_RE.search(body):
+        return "upi"
+    if URL_RE.search(body):
+        return "url"
+    return None
+
+
+async def record_strike(uid: str, surface: str, reason: str) -> dict:
+    """Append a strike and apply the ladder (warning → 24h mute → booking
+    restriction → suspension). Returns `{strikes, action}`."""
+    now = datetime.now(timezone.utc)
+    strike_id = f"str_{uuid.uuid4().hex[:12]}"
+    strike = {"id": strike_id, "surface": surface, "reason": reason, "at": now.isoformat()}
+    await set_doc(f"users/{uid}/strikes", strike_id, strike)
+
+    strikes = await query(f"users/{uid}/strikes", [], limit=1000)
+    count = len(strikes)
+
+    user = await get_doc("users", uid) or {}
+    if count <= 1:
+        action = "warning"
+        await set_doc("users", uid, user)
+    elif count == 2:
+        action = "mute"
+        user["chatMutedUntil"] = (now + timedelta(hours=MUTED_HOURS)).isoformat()
+        await set_doc("users", uid, user)
+    elif count == 3:
+        action = "booking_restriction"
+        user["bookingRestricted"] = True
+        await set_doc("users", uid, user)
+    else:
+        action = "suspension"
+        user["suspended"] = True
+        await set_doc("users", uid, user)
+    return {"strikes": count, "action": action}
+
+
+async def seal_room_for_dispute(room_id: str, dispute_id: str) -> dict:
+    """WS-02 task 2.39: freeze a room for a dispute (evidence snapshot).
+
+    Messages stay readable; posting is blocked (task 2.36 rejects sealed rooms)."""
+    room = await get_doc("chat_rooms", room_id)
+    if room is None:
+        raise ValueError("chat room not found")
+    room["sealed"] = True
+    room["sealedByDispute"] = dispute_id
+    room["sealedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("chat_rooms", room_id, room)
+    return room
+
+
+async def resolve_batch_dispute(
+    room_id: str, outcome: str, *, order_id: str | None = None
+) -> dict:
+    """WS-02 task 2.39: dispute outcomes. `instructor_no_show` refunds the full
+    order amount to source via the phase-00 rail, strikes the instructor and
+    writes an `audit_logs` entry. Unknown outcomes raise `ValueError`."""
+    if outcome != "instructor_no_show":
+        raise ValueError(f"unknown dispute outcome: {outcome}")
+
+    room = await get_doc("chat_rooms", room_id)
+    if room is None:
+        raise ValueError("chat room not found")
+
+    purchase = await get_doc("course_purchases", order_id) if order_id else None
+    amount_paisa = int(round(float((purchase or {}).get("amountRupees") or 0) * 100))
+    payment_id = (purchase or {}).get("razorpayPaymentId") or order_id or ""
+    await refund_razorpay_payment(payment_id, amount_paisa)
+
+    instructor_id = room.get("instructorId")
+    strike = await record_strike(instructor_id, "dispute", "instructor_no_show")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await set_doc(
+        "audit_logs",
+        f"aud_dispute_{room_id}_{now[:19]}",
+        {
+            "action": "DISPUTE_RESOLVED",
+            "roomId": room_id,
+            "orderId": order_id,
+            "outcome": outcome,
+            "instructorId": instructor_id,
+            "refundPaisa": amount_paisa,
+            "strike": strike,
+            "reason": "instructor_no_show",
+            "at": now,
+        },
+    )
+    return {"refunded": True}

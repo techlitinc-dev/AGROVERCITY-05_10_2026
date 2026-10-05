@@ -119,3 +119,47 @@ async def record_attractiveness_outcome(
     return await record_module_outcome(
         "contracts_attractiveness", "contracts.attractiveness.v1", contract_id, outcome, payload
     )
+
+
+async def record_recommendation_purchase_outcome(
+    uid: str,
+    course_id: str,
+    decision_id: str | None = None,
+    details: dict | None = None,
+) -> dict:
+    """M20 hook — a `courses.recommend.v1` recommendation was acted on: the
+    farmer purchased a course that was among the ranked recommendations (within
+    the 7-day measurement window). Keyed by (farmer, course) so re-recording the
+    same resolution is idempotent."""
+    payload = {"decisionId": decision_id, "courseId": course_id, **(details or {})}
+    return await record_module_outcome(
+        "courses_recommend",
+        "courses.recommend.v1",
+        f"{uid}:{course_id}",
+        "purchase_after_recommendation",
+        payload,
+    )
+
+
+async def record_grade_delta_outcome(
+    assignment_id: str,
+    published_grade: str,
+    suggested_score_pct: int | None = None,
+    decision_id: str | None = None,
+    details: dict | None = None,
+) -> dict:
+    """M20 hook — the instructor's published grade vs the AI rubric suggestion
+    (the delta feeds calibration; the AI never publishes — global rule 12)."""
+    payload = {
+        "decisionId": decision_id,
+        "publishedGrade": published_grade,
+        "suggestedScorePct": suggested_score_pct,
+        **(details or {}),
+    }
+    return await record_module_outcome(
+        "courses_autograde",
+        "courses.grade_suggest.v1",
+        assignment_id,
+        "grade_delta_vs_suggestion",
+        payload,
+    )

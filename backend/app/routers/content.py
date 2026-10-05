@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
@@ -17,6 +17,8 @@ from app.models.content import (
     PollVoteIn,
 )
 from app.services import blocks
+from app.services.chat import contains_banned_content, record_strike
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(tags=["content"])
@@ -42,6 +44,59 @@ def _envelope(docs: list[dict], page: int, page_size: int) -> dict:
     return {"data": docs[start:start + page_size], "page": page, "pageSize": page_size, "total": total}
 
 
+def _parse_ts(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _emit_breaking_news_task(docs: list[dict], user: dict) -> None:
+    """WS-05 task 5.16 — one urgent `breaking_news` task per fresh breaking item
+    (<24h). Dedupe-safe via `sourceId` (phase-01 task engine)."""
+    now = datetime.now(timezone.utc)
+    for doc in docs:
+        if not doc.get("isBreaking"):
+            continue
+        at = _parse_ts(doc.get("timestamp"))
+        if at is None or now - at > timedelta(hours=24):
+            continue
+        await emit_task(
+            user_id=user["id"],
+            persona=user.get("activeProfile") or "farmer",
+            module="news",
+            kind="breaking_news",
+            title_en=f"Breaking: {doc.get('title', '')}",
+            title_hi=f"ब्रेकिंग: {doc.get('vernacularTitle') or doc.get('title', '')}",
+            subtitle=doc.get("summary", ""),
+            priority="urgent",
+            deep_link="/dashboard/p/agriNews",
+            source_id=doc["id"],
+        )
+        return
+
+
+async def _emit_live_now_task(docs: list[dict], user: dict) -> None:
+    """WS-05 task 5.16 — a `live_now` task for the first live channel.
+    Dedupe-safe via `sourceId` (phase-01 task engine)."""
+    for doc in docs:
+        if not doc.get("isLiveNow"):
+            continue
+        await emit_task(
+            user_id=user["id"],
+            persona=user.get("activeProfile") or "farmer",
+            module="channels",
+            kind="live_now",
+            title_en=f"Live now: {doc.get('programTitle', '')}",
+            title_hi=f"अभी लाइव: {doc.get('programTitle', '')}",
+            subtitle=doc.get("channelName", ""),
+            priority="today",
+            deep_link="/dashboard/p/liveChannels",
+            source_id=doc["id"],
+        )
+        return
+
+
 @router.get("/news")
 async def list_news(
     category: str | None = None,
@@ -53,6 +108,7 @@ async def list_news(
     if category:
         docs = [d for d in docs if d.get("category") == category]
     docs.sort(key=lambda d: (d.get("isBreaking", False), d.get("timestamp", "")), reverse=True)
+    await _emit_breaking_news_task(docs, user)
     return _envelope(docs, page, pageSize)
 
 
@@ -68,11 +124,17 @@ async def list_channels(page: int = 1, pageSize: int = 20, user: dict = Depends(
             break  # redis down — keep the Firestore seed counts
         if viewers is not None:
             channel["liveViewersCount"] = int(viewers)
+    await _emit_live_now_task(docs, user)
     return _envelope(docs, page, pageSize)
 
 
 @router.post("/channels", status_code=201)
 async def create_channel(body: LiveChannelIn, user: dict = Depends(_user)):
+    # X16 (WS-05 task 5.7): v1 ships embedded licensed streams only — no
+    # user-originated streams. Admin gate mirrors routers/admin.py's admin
+    # predicate (isAdmin flag or activeProfile == "admin").
+    if not user.get("isAdmin") and user.get("activeProfile") != "admin":
+        _error(403, "FORBIDDEN_ADMIN", "only admins can create channels")
     channel_id = f"ch_{uuid.uuid4().hex[:8]}"
     channel_doc = {
         "id": channel_id,
@@ -171,6 +233,20 @@ async def post_chat(
     text = body.text.strip()
     if not text:
         _error(422, "VALIDATION_ERROR", "message text required", {"text": "must not be empty"})
+    # Global rule 4 (WS-05 task 5.12): no phone numbers, UPI IDs or external
+    # links in live chat. Reuse the WS-02 strike ladder. AI moderation
+    # (content.moderation.v1) is phase-06 — baseline regex only here.
+    banned = contains_banned_content(text)
+    if banned:
+        await record_strike(user["id"], "channel_chat", banned)
+        _error(422, "MODERATION_BLOCKED", "फोन नंबर, UPI आयडी किंवा लिंक पाठवण्यास मनाई आहे")
+    muted_until = user.get("chatMutedUntil")
+    if muted_until:
+        try:
+            if datetime.fromisoformat(str(muted_until).replace("Z", "+00:00")) > datetime.now(timezone.utc):
+                _error(429, "CHAT_MUTED", "चॅट तात्पुरती बंद आहे")
+        except ValueError:
+            pass
     try:
         allowed = await redis.set(f"ratelimit:chat:{user['id']}:{channel_id}", 1, ex=2, nx=True)
     except REDIS_ERRORS:

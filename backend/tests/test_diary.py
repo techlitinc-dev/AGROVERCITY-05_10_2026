@@ -26,6 +26,24 @@ def seed_user(user_store, uid="uid-1", active_profile="farmer", **overrides):
             "status": "verified",
             "docs": [{"docId": f"{case_id}:fssai", "type": "fssai", "status": "verified"}],
         }
+    # WS-02 task 2.27: instructors cannot publish courses / take bookings until
+    # their KYC case is approved. Mirror the dairyManager precedent so instructor
+    # fixtures start with an approved (verified) case; tests that need a pending
+    # or specialization-gated case overwrite this doc.
+    if "instructor" in profiles or active_profile == "instructor":
+        case_id = f"kyc_{uid[:8]}_instructor"
+        user_store[f"kyc_cases/{case_id}"] = {
+            "caseId": case_id,
+            "userId": uid,
+            "persona": "instructor",
+            "status": "verified",
+            "specialization": [],
+            "docs": [
+                {"docId": f"{case_id}:pan", "type": "pan", "status": "verified"},
+                {"docId": f"{case_id}:liveness_selfie", "type": "liveness_selfie", "status": "verified"},
+            ],
+            "submittedAt": "2026-09-16T00:00:00+00:00",
+        }
     return create_access_token(uid)
 
 

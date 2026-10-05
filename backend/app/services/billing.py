@@ -36,7 +36,9 @@ TIER_MATRIX = [
     ("dairyManager", "pro", 1499, {"animals": 200, "agentSeats": 5}),
     ("dairyManager", "enterprise", 4999, {}),
     ("instructor", "free", 0, {"courses": 1}),
-    ("instructor", "pro", 499, {"courses": 20}),
+    # WS-02 task 2.20: Instructor Pro ₹499/mo — unlimited courses, full
+    # analytics and featured placement eligibility (features below).
+    ("instructor", "pro", 499, {}),
     # WS-02 step 10: Free = 1 active contract; Pro ₹4,999/mo = 5 contracts +
     # QC suite + price alerts; Enterprise ₹24,999/mo = unlimited + team RBAC +
     # API + account manager. `qcSubmits: 0` / `orgMembers: 0` are binary gates
@@ -72,6 +74,7 @@ COMMISSIONS = {
 # Named SaaS capabilities per plan (robust.md §6 tier descriptions). Limits
 # cap quantities; features gate capabilities — commission never varies by tier.
 TIER_FEATURES = {
+    "instructor_pro": ["unlimited_courses", "analytics_full", "featured_placement"],
     "transport_pro": ["driverSubAccounts", "routeAnalytics", "priorityLoadBoard"],
     "transport_enterprise": [
         "driverSubAccounts",
@@ -275,3 +278,40 @@ def require_entitlement(persona_or_feature: str, feature: str | None = None):
         return await check_entitlement(uid, persona_or_feature, feature)
 
     return dep
+
+
+async def has_feature(user_id: str, persona: str | None, feature: str) -> bool:
+    """True when the caller's effective plan grants a named capability.
+
+    Features (unlike `limits`) gate capabilities: e.g. `unlimited_courses`,
+    `analytics_full`, `featured_placement` (WS-02 Instructor Pro).
+    """
+    plan = await effective_plan(user_id, persona)
+    return feature in (plan.get("features") or [])
+
+
+def raise_entitlement_required(feature: str, plan: dict | None = None):
+    """402 envelope for a missing named capability (WS-02 task 2.21)."""
+    raise HTTPException(
+        status_code=402,
+        detail={
+            "code": "ENTITLEMENT_REQUIRED",
+            "message": f"your plan does not include {feature} — upgrade to continue",
+            "fieldErrors": {},
+            "feature": feature,
+            "planId": (plan or {}).get("planId"),
+        },
+    )
+
+
+async def require_unlimited_courses(user_id: str, owned_courses: int) -> None:
+    """WS-02 step 5: Free = 1 published course; a 2nd needs `instructor_pro`.
+
+    Raises the 402 ENTITLEMENT_REQUIRED envelope when a non-entitled instructor
+    already owns one course (status published / pending review)."""
+    if owned_courses < 1:
+        return
+    plan = await effective_plan(user_id, "instructor")
+    if "unlimited_courses" in (plan.get("features") or []):
+        return
+    raise_entitlement_required("unlimited_courses", plan)

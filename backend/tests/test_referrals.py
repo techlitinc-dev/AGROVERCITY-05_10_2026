@@ -175,6 +175,9 @@ async def test_my_rank_computed_outside_top_ten(client, user_store):
 
 
 async def test_first_join_via_register_awards_join_and_milestone(client, user_store):
+    # X11 daily earn cap (WS-01 task 1.20): this flow legitimately awards
+    # >200 coins/day, so grant a higher daily budget for the test.
+    user_store["platform_config/gamification"] = {"dailyEarnCap": 100000}
     token = seed_user(user_store, uid="ref-1", name="Referrer One", village="Pimplas")
     resp = await client.post(
         "/v1/referrals/invite",
@@ -250,6 +253,9 @@ async def test_code_join_without_invite_synthesizes_referred_entry(client, user_
 
 
 async def test_milestones_flip_at_five_and_ten_joins(client, user_store):
+    # X11 daily earn cap (WS-01 task 1.20): this flow legitimately awards
+    # >200 coins/day, so grant a higher daily budget for the test.
+    user_store["platform_config/gamification"] = {"dailyEarnCap": 100000}
     seed_user(user_store, uid="ref-3", name="Power Referrer")
     profile = {
         "userId": "ref-3",

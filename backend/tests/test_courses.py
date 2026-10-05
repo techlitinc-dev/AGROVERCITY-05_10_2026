@@ -265,7 +265,7 @@ async def test_feature_and_report(client, user_store):
     assert report.json()["freeClaims"] == 1
 
 
-async def test_certificate_ready_emits_task(client, user_store, razorpay):
+async def test_certificate_earned_emits_task(client, user_store, razorpay):
     instructor = _instructor_token(user_store)
     farmer = seed_user(user_store, uid="uid-farmer")
     course = (await _create(client, instructor)).json()
@@ -297,4 +297,4 @@ async def test_certificate_ready_emits_task(client, user_store, razorpay):
     tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
     assert len(tasks) == 1
     assert tasks[0]["module"] == "courses"
-    assert tasks[0]["kind"] == "certificate_ready"
+    assert tasks[0]["kind"] == "certificate_earned"

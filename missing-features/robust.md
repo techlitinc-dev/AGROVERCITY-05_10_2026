@@ -476,6 +476,10 @@ Per-persona dashboard content is specced in each §6 section under
   featured placement eligibility) + paid workshops in Gyan Hub.
 - **Done when:** an instructor earns a living on-platform; a farmer earns a
   verifiable certificate that shows in his profile.
+- **Deferral (dated 2026-10-05, phase-04 / rule 10):** the admin course-moderation
+  queue (§6.8 build-instruction 5) is deferred to phase-07 module 27. This phase
+  stamps every newly created course with `moderationStatus: "pending_review"` so
+  that queue can consume it; no admin moderation UI ships here.
 
 ### 6.9 DIRECT BUYER (खरीदार) — "ProcurePro": the industrial procurement app
 - **Status:** partially landed per `plan/direct_buyer_plan.md` — contracts
@@ -743,12 +747,20 @@ Backend ✅ (cashbook, analytics, PDF) / Web ✅ (CashbookPage — has
 Backend ✅ (`content.py`) / Web ❌.
 - Build news feed (category filters, impact rating, audio readout, WhatsApp
   share), breaking banner. Admin CMS in admin console (module 20).
+- **Deferral (dated 2026-10-05, phase-04 / rule 10):** the admin news CMS is
+  deferred to phase-07 module 20; phase-04 ships the read-only consumer feed only
+  (category filter chips, impact-rating badge, audio readout, WhatsApp share,
+  breaking banner, detail page).
 
 ### 7.19 Live Channels (`liveChannels`)
 Backend 🟡 (seeded HLS placeholders) / Web ❌.
 - Build channel grid + player page + schedule + live chat (moderated).
   Streaming infra decision (X16): start with embedded licensed streams
   (DD Kisan etc.), platform-originated streams deferred.
+- **Deferral (dated 2026-10-05, phase-04 / rule 10):** platform-originated live
+  streaming infrastructure (X16) is deferred; v1 ships embedded licensed HLS
+  streams only (DD Kisan seed) and `POST /v1/channels` is admin-gated
+  (`FORBIDDEN_ADMIN`).
 
 ### 7.20 Livestock & Dairy (`livestockDairy`)
 Backend ✅ / Web ✅ (hub + consoles delivered).

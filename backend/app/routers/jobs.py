@@ -146,6 +146,73 @@ async def kyc_expiry_reminders_job(x_cron_secret: str | None = Header(None, alia
     return await expiry_reminders()
 
 
+async def reverify_expired_instructor_licences() -> dict:
+    """WS-02 task 2.29 — flip approved instructor KYC cases back to
+    needs-re-verification when a credential licence has passed its expiry.
+
+    Scans instructor cases whose status is approved; any credential doc (DGCA /
+    degree / NABARD empanelment) whose `licenceExpiry` date is before today marks
+    the case for re-verification and writes an `audit_logs` entry per case."""
+    from app.services.kyc import (
+        CASE_STATUS_APPROVED,
+        CASE_STATUS_NEEDS_REVERIFY,
+        CREDENTIAL_EXPIRY_FIELD,
+    )
+
+    today = datetime.now(timezone.utc).date()
+    now = datetime.now(timezone.utc).isoformat()
+    cases = await query("kyc_cases", [], limit=2000)
+    reverted = 0
+    for case in cases:
+        if case.get("persona") != "instructor" or case.get("status") != CASE_STATUS_APPROVED:
+            continue
+        expired_types: list[str] = []
+        for doc in case.get("docs") or []:
+            expiry_field = CREDENTIAL_EXPIRY_FIELD.get(doc.get("type"))
+            if not expiry_field:
+                continue
+            raw = doc.get(expiry_field)
+            if not raw:
+                continue
+            try:
+                expiry = datetime.fromisoformat(str(raw)).date()
+            except ValueError:
+                continue
+            if expiry < today:
+                doc["reverifyRequired"] = True
+                expired_types.append(doc.get("type"))
+        if not expired_types:
+            continue
+        case["status"] = CASE_STATUS_NEEDS_REVERIFY
+        case["reverifyReason"] = "licence_expired"
+        case["updatedAt"] = now
+        await set_doc("kyc_cases", case["caseId"], case)
+        await set_doc(
+            "audit_logs",
+            f"aud_kyc_reverify_{case['caseId']}_{today.isoformat()}",
+            {
+                "action": "KYC_LICENCE_REVERIFY",
+                "caseId": case["caseId"],
+                "userId": case.get("userId"),
+                "persona": "instructor",
+                "expiredDocs": expired_types,
+                "reason": "licence_expired",
+                "at": now,
+            },
+        )
+        reverted += 1
+    return {"reverted": reverted}
+
+
+@router.post("/kyc/reverify-expired-instructor-licences")
+async def reverify_expired_instructor_licences_job(
+    x_cron_secret: str | None = Header(None, alias="X-Cron-Secret"),
+):
+    """WS-02 task 2.29: recurring licence-expiry re-verification for instructors."""
+    _check_cron_secret(x_cron_secret)
+    return await reverify_expired_instructor_licences()
+
+
 @router.post("/broker/offers/expire")
 async def expire_stale_broker_offers(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
     """WS-05 step 1: auto-expire negotiating deals whose offer TTL lapsed."""

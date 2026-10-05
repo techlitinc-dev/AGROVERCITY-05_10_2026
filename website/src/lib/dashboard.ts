@@ -112,6 +112,25 @@ const TOOL_LIST: Tool[] = [
   { id: 'dairyFarmerRfqs', icon: '🥛', color: '#0284C7' },
   { id: 'dairyBidCompare', icon: '⚖️', color: '#0284C7' },
   { id: 'dairyRoutePlanner', icon: '🗺️', color: '#0284C7' },
+  // Phase-04 knowledge & consumer routes (deep-linkable pages)
+  { id: 'myLearning', icon: '📚', color: '#7C3AED' },
+  { id: 'browse', icon: '🛒', color: '#4F46E5' },
+  { id: 'storefront', icon: '🏪', color: '#4F46E5' },
+  { id: 'quotes', icon: '💬', color: '#4F46E5' },
+  { id: 'inspection', icon: '🔎', color: '#4F46E5' },
+  { id: 'favorites', icon: '⭐', color: '#4F46E5' },
+  { id: 'gyanWorkshops', icon: '🛠️', color: '#D97706' },
+  { id: 'gyanTalks', icon: '🎤', color: '#D97706' },
+  { id: 'gyanVideos', icon: '🎬', color: '#D97706' },
+  { id: 'gyanBlogs', icon: '📝', color: '#D97706' },
+  { id: 'newsDetail', icon: '📰', color: '#0284C7' },
+  { id: 'channelPlayer', icon: '📺', color: '#E11D48' },
+  { id: 'myCourses', icon: '📚', color: '#7C3AED' },
+  { id: 'batches', icon: '🗓️', color: '#7C3AED' },
+  { id: 'enquiries', icon: '📩', color: '#7C3AED' },
+  { id: 'assignments', icon: '📸', color: '#7C3AED' },
+  { id: 'earnings', icon: '💰', color: '#7C3AED' },
+  { id: 'credentials', icon: '🪪', color: '#7C3AED' },
 ];
 
 export const TOOL_BY_ID: Record<string, Tool> = Object.fromEntries(
@@ -135,6 +154,14 @@ const COMMON = [
   'settings',
   'helpSupport',
   'accountDelete',
+  // Phase-04 content pages reachable from any persona dashboard.
+  'myLearning',
+  'gyanWorkshops',
+  'gyanTalks',
+  'gyanVideos',
+  'gyanBlogs',
+  'newsDetail',
+  'channelPlayer',
 ];
 
 /** Routes every persona can open (mobile _universalRoutes). */
@@ -177,7 +204,10 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
     'brokerHome', 'deals', 'mandi', 'buyers', 'commissions', 'brokerProfile',
     'settlements', 'profitLoss', 'liveChannels', ...COMMON,
   ],
-  instructor: ['instructorHome', 'courseDetail', 'settlements', ...COMMON],
+  instructor: [
+    'instructorHome', 'myCourses', 'batches', 'enquiries', 'assignments', 'earnings',
+    'credentials', 'courseDetail', 'settlements', ...COMMON,
+  ],
   dairyManager: [
     'dairyManagerHome', 'dairyRoutePlanner', 'dairyFarmerRfqs', 'dairyBidCompare', 'livestock', 'livestockDairy', 'dairyConsole', 'gaushalaConsole',
     'vetNetwork', 'settlements', ...COMMON,
@@ -190,6 +220,7 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
   coldStorageProvider: ['coldStorageHome', 'postHarvest', 'myBookings', 'settlements', ...COMMON],
   customer: [
     'emarketHome', 'marketplace', 'orderTracking', 'addressBook', 'myBookings', 'liveChannels',
+    'browse', 'storefront', 'demands', 'quotes', 'inspection', 'favorites',
     ...COMMON,
   ],
   directBuyer: [

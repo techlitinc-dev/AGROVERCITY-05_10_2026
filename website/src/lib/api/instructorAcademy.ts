@@ -18,7 +18,9 @@ export interface AcademyCourse {
   materialsList?: string[];
   ratingAverage: number;
   ratingCount: number;
-  status: 'published' | 'draft' | 'archived';
+  status: 'published' | 'draft' | 'archived' | 'pendingReview' | 'rejected';
+  /** Phase-07 module 27 consumes this; set by WS-02 task 2.24. */
+  moderationStatus?: string;
   createdAt: string;
 }
 
@@ -84,6 +86,12 @@ export interface PracticalAssignment {
   feedback?: string;
   status: 'submitted' | 'graded';
   submittedAt: string;
+  /** Prefill-only AI grade suggestion (WS-06 task 6.9) — never auto-publishes. */
+  aiSuggestion?: {
+    rubric?: Array<{ questionId: string; score: number; maxScore: number; feedbackKey: string }>;
+    overallFeedbackKey?: string;
+    decision_id?: string;
+  };
 }
 
 export interface AcademyAnalytics {
@@ -204,4 +212,88 @@ export async function verifyCertificate(certificateId: string): Promise<Certific
 export async function fetchInstructorEarnings(): Promise<InstructorEarnings> {
   const res = await api.get<InstructorEarnings>('/teachers/earnings');
   return res.data;
+}
+
+/**
+ * Instructor earnings ledger (WS-02 task 2.19 contract) — integer paisa
+ * everywhere. `onHold` mirrors the bank-verification rule used by the
+ * settlement payout rails; `nextPayoutDate` is the next weekly run (ISO date).
+ */
+export interface InstructorEarningsLedger {
+  grossPaisa: number;
+  commissionPaisa: number;
+  netPaisa: number;
+  currency: string;
+  commissionPct: number;
+  byCourse: Array<{
+    courseId: string;
+    courseTitle: string;
+    grossPaisa: number;
+    commissionPaisa: number;
+    netPaisa: number;
+  }>;
+  nextPayoutDate: string;
+  onHold: boolean;
+}
+
+export async function fetchEarningsLedger(): Promise<InstructorEarningsLedger> {
+  const res = await api.get<InstructorEarningsLedger>('/teachers/earnings');
+  return res.data;
+}
+
+/** Edit an existing course (courses.py PUT /v1/courses/{id}). */
+export async function updateCourse(
+  courseId: string,
+  data: {
+    title?: string;
+    subtitle?: string;
+    description?: string;
+    category?: string;
+    priceRupees?: number;
+    coinsDiscountAllowed?: number;
+    status?: string;
+  }
+): Promise<AcademyCourse> {
+  const res = await api.put<AcademyCourse>(`/courses/${courseId}`, data);
+  return res.data;
+}
+
+/** Phase-00 KYC pipeline wrapper (routers/kyc.py). */
+export interface KycDoc {
+  docId: string;
+  type: string;
+  status: 'pending' | 'verified' | 'rejected';
+  storagePath?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface KycCase {
+  caseId: string;
+  userId: string;
+  persona: string;
+  status: 'pending' | 'verified' | 'rejected';
+  docs: KycDoc[];
+}
+
+export async function getMyKycCases(): Promise<KycCase[]> {
+  const res = await api.get<{ data: KycCase[] }>('/kyc/status');
+  return res.data.data;
+}
+
+export async function submitKycCase(
+  persona: string,
+  docs: Array<{ type: string; storagePath?: string; expiresAt?: string }>
+): Promise<KycCase> {
+  const res = await api.post<{ case: KycCase; requiredDocs: string[] }>('/kyc/cases', {
+    persona,
+    docs,
+  });
+  return res.data.case;
+}
+
+export async function uploadCredentialDoc(caseId: string, docId: string, file: File): Promise<KycCase> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await api.post<{ case: KycCase }>(`/kyc/cases/${caseId}/docs/${docId}/upload`, form);
+  return res.data.case;
 }

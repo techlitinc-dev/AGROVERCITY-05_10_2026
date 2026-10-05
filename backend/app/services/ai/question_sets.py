@@ -580,6 +580,72 @@ register(
 )
 
 
+def _course_crop_match(category, crops: set[str]) -> bool:
+    """True when a course category matches one of the farmer's crops."""
+    category = str(category or "").strip().lower()
+    if not category:
+        return False
+    return any(crop and (crop == category or crop in category or category in crop) for crop in crops)
+
+
+def _course_popularity(course: dict) -> int:
+    try:
+        return int(course.get("salesCount") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _courses_recommend_fallback(state: dict) -> dict:
+    """Deterministic course ordering (M20 SDR step 5, `fallback_fn`).
+
+    Newest published course in the farmer's crop categories first (then by
+    popularity), followed by the remaining courses ordered by popularity
+    (`salesCount`), ties broken by newest then id. No AI involved — the catalog
+    renders identically whether or not a model answered.
+    """
+    courses = [c for c in (state.get("courses") or []) if isinstance(c, dict) and c.get("id")]
+    crops = {str(c).strip().lower() for c in (state.get("crops") or []) if str(c).strip()}
+
+    def _relevance(course: dict) -> float:
+        return 0.9 if _course_crop_match(course.get("category"), crops) else 0.3
+
+    def _badges(course: dict) -> list[str]:
+        return ["matches_your_crops"] if _course_crop_match(course.get("category"), crops) else []
+
+    matched = [c for c in courses if _course_crop_match(c.get("category"), crops)]
+    others = [c for c in courses if not _course_crop_match(c.get("category"), crops)]
+    matched.sort(
+        key=lambda c: (str(c.get("createdAt") or ""), _course_popularity(c), str(c.get("id"))),
+        reverse=True,
+    )
+    others.sort(
+        key=lambda c: (_course_popularity(c), str(c.get("createdAt") or ""), str(c.get("id"))),
+        reverse=True,
+    )
+
+    recommendations = [
+        {"courseId": course["id"], "relevance": _relevance(course), "badges": _badges(course)}
+        for course in (*matched, *others)
+    ]
+    return {"recommendations": recommendations, "confidence": 0.0}
+
+
+# Brief M20 — Krishi Academy course recommendations (ai_implementation_plan §2
+# `courses.recommend.v1`, §5 M20). Per-course `relevance` batch-scored from the
+# farmer's crops/season/completed courses; `suggest` (annotates the catalog, the
+# learner still chooses), with the deterministic crop-category ordering above.
+register(
+    QuestionSet(
+        id="courses.recommend.v1",
+        version="v1",
+        schema={"recommendations": [], "confidence": 0.0},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_courses_recommend_fallback,
+    )
+)
+
+
 
 
 

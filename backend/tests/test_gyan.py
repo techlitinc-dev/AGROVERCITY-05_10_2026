@@ -23,27 +23,58 @@ async def test_workshops_list_not_enrolled(client, user_store):
     assert all(item["isEnrolled"] is False for item in body["data"])
 
 
-async def test_enroll_fully_with_coins_201(client, user_store):
+async def test_enroll_free_workshop_201(client, user_store):
+    # A zero-fee workshop flips straight to `enrolled` and takes a seat. (The
+    # X11 ≤50%-of-order cap added in task 4.3 forbids covering a paid fee
+    # entirely with coins, so full coverage only happens for a free workshop.)
+    seed_gyan_store(user_store)
+    ws = dict(user_store["workshops/ws-1"])
+    ws["feeRupees"] = 0
+    ws["coinsDiscountAllowed"] = 0
+    user_store["workshops/ws-1"] = ws
+    token = seed_user(user_store, agriCoins=500)
+    resp = await client.post(
+        "/v1/workshops/ws-1/enroll",
+        json={"useCoins": False, "coinsToRedeem": 0},
+        headers=auth(token),
+    )
+    assert resp.status_code == 201
+    assert resp.json() == {"enrolled": True}
+    assert user_store["workshops/ws-1"]["enrolledCount"] == 185
+    enrollment = user_store["users/uid-1/workshop_enrollments/ws-1"]
+    assert enrollment["status"] == "enrolled"
+
+
+async def test_enroll_coins_at_half_cap_returns_order(client, user_store):
+    # ws-2 fee ₹200 → the X11 ≤50%-of-order cap allows at most 100 coins, so a
+    # coin redemption leaves a payable Razorpay order (no stranded enrollment).
     seed_gyan_store(user_store)
     token = seed_user(user_store, agriCoins=500)
     before = user_store["workshops/ws-2"]["enrolledCount"]
     resp = await client.post(
         "/v1/workshops/ws-2/enroll",
-        json={"useCoins": True, "coinsToRedeem": 200},
+        json={"useCoins": True, "coinsToRedeem": 100},
         headers=auth(token),
     )
-    assert resp.status_code == 201
-    assert resp.json() == {"enrolled": True}
-    assert user_store["users/uid-1"]["agriCoins"] == 300
-    assert user_store["workshops/ws-2"]["enrolledCount"] == before + 1
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["enrolled"] is False
+    assert body["paymentOrderId"].startswith("order_dev_")
+    assert body["amountDue"] == 100
+    assert user_store["users/uid-1"]["agriCoins"] == 400
+    assert user_store["workshops/ws-2"]["enrolledCount"] == before
     enrollment = user_store["users/uid-1/workshop_enrollments/ws-2"]
-    assert enrollment["status"] == "enrolled"
+    assert enrollment["status"] == "awaiting_payment"
 
 
 async def test_enroll_twice_409(client, user_store):
     seed_gyan_store(user_store)
+    ws = dict(user_store["workshops/ws-2"])
+    ws["feeRupees"] = 0
+    ws["coinsDiscountAllowed"] = 0
+    user_store["workshops/ws-2"] = ws
     token = seed_user(user_store, agriCoins=500)
-    payload = {"useCoins": True, "coinsToRedeem": 200}
+    payload = {"useCoins": False, "coinsToRedeem": 0}
     resp = await client.post("/v1/workshops/ws-2/enroll", json=payload, headers=auth(token))
     assert resp.status_code == 201
     resp = await client.post("/v1/workshops/ws-2/enroll", json=payload, headers=auth(token))
@@ -85,7 +116,7 @@ async def test_enroll_insufficient_coins_409(client, user_store):
     token = seed_user(user_store, agriCoins=50)
     resp = await client.post(
         "/v1/workshops/ws-2/enroll",
-        json={"useCoins": True, "coinsToRedeem": 200},
+        json={"useCoins": True, "coinsToRedeem": 100},
         headers=auth(token),
     )
     assert resp.status_code == 409

@@ -13,6 +13,17 @@ def _instructor_token(user_store):
     )
 
 
+def _grant_instructor_pro(user_store, uid="uid-teacher-1"):
+    """WS-02 task 2.23: the full analytics payload is a Pro capability."""
+    user_store[f"subscriptions/sub-{uid}"] = {
+        "id": f"sub-{uid}",
+        "userId": uid,
+        "planId": "instructor_pro",
+        "status": "active",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+
+
 SUPERSTORE_COURSE = {
     "title": "Hi-Tech Hydroponics Masterclass",
     "subtitle": "From seed to harvest in 30 days",
@@ -227,6 +238,7 @@ async def test_teacher_profile_and_management(client, user_store):
 
 async def test_teacher_student_management_and_analytics(client, user_store):
     teacher = _instructor_token(user_store)
+    _grant_instructor_pro(user_store)
     farmer = seed_user(user_store, uid="uid-farmer-managed", name="Suresh Patil", phone="+919811122233")
 
     # Create free course

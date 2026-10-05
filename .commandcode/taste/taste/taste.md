@@ -18,4 +18,7 @@
 - Prefers placeholder-first UI scaffolding — build out the navigation, pages, and layout with static stubs and explicitly no data/API wiring until the structure is approved. Confidence: 0.8
 - Expects existing functionality to be preserved when rebuilding or replacing a component/page — called out that the assistant silently dropped onboarding prompts during a dashboard rebuild. Confidence: 0.7
 - Organizes large work as structured, phase-based execution plans (readme.md + instructions.md + a tasks.md checklist) and directs the assistant to execute them end-to-end, ticking off completed tasks as it goes. Confidence: 0.7
+- Names project directories/repos with a `<PROJECT>_<DD_MM_YYYY>` date-stamped convention (e.g. `AGROVERCITY-05_10_2026`) and expects matching GitHub repos created under the project's org. Confidence: 0.5
+- Opts for public GitHub repositories for project code (chose Public over the assistant-recommended Private) rather than keeping project repos private by default. Confidence: 0.5
+- Supplies exact commit messages and expects them applied verbatim, even when the working tree is clean (acceptable to amend the existing HEAD commit to match). Confidence: 0.5
 - Expects a written completion summary document (e.g. summary.md) after finishing a multi-step plan — status per workstream, verification-gate results, and explicit open/deferred items rather than a chat-only recap. Confidence: 0.7

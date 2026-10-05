@@ -8,10 +8,15 @@ import { api } from './client';
 
 export interface ChatRoom {
   id: string;
-  /** 'offer' = negotiation thread; 'purchase' = booking chat; 'direct' = simple 1:1. */
-  kind?: 'offer' | 'purchase' | 'direct';
+  /** 'offer' = negotiation thread; 'purchase' = booking chat; 'direct' = simple 1:1;
+   *  'batch' = instructor broadcast room (WS-02 task 2.35). */
+  kind?: 'offer' | 'purchase' | 'direct' | 'batch';
   purchaseId?: string;
   offerId?: string;
+  batchId?: string;
+  instructorId?: string;
+  memberIds?: string[];
+  sealed?: boolean;
   farmerId: string;
   farmerName: string;
   buyerId: string;
@@ -34,6 +39,8 @@ export interface ChatMessage {
   fromSide: 'farmer' | 'buyer';
   text: string;
   imageUrl?: string | null;
+  /** In-platform lesson card reference (batch chat only). */
+  lessonCardId?: string | null;
   createdAt: string;
 }
 
@@ -77,5 +84,28 @@ export async function openDirectChat(payload: {
   demandId?: string;
 }): Promise<ChatRoom> {
   const { data } = await api.post<ChatRoom>('/chat/direct', payload);
+  return data;
+}
+
+/**
+ * Batch group chat (WS-02 task 2.35/2.40). One room per batch; the instructor
+ * is admin and may only broadcast (text + in-platform lesson cards). Conversation
+ * room id is the batch id. Backend: GET /v1/chat/rooms/{batchId}.
+ */
+export async function getBatchRoom(batchId: string): Promise<ChatRoom> {
+  const { data } = await api.get<ChatRoom>(`/chat/rooms/${batchId}`);
+  return data;
+}
+
+/** POST a broadcast to a batch room — text plus an optional lesson card id. */
+export async function postBatchMessage(
+  roomId: string,
+  text: string,
+  lessonCardId?: string
+): Promise<ChatMessage> {
+  const { data } = await api.post<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
+    text,
+    lessonCardId: lessonCardId ?? '',
+  });
   return data;
 }
