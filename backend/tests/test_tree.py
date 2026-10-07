@@ -43,10 +43,16 @@ async def test_sapling_request_201(client, user_store):
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert body["status"] == "requested"
+    assert body["status"] == "pending"
     request = user_store[f"users/uid-1/sapling_requests/{body['requestId']}"]
     assert request["ngoId"] == "ngo-1"
     assert request["count"] == 50
+    assert request["status"] == "pending"
+
+    listed = await client.get("/v1/tree/sapling-requests/mine", headers=auth(token))
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert listed.json()["data"][0]["status"] == "pending"
 
 
 async def test_sapling_count_over_500_422(client, user_store):
@@ -166,4 +172,30 @@ async def test_agroforestry_schemes_and_suitability(client, user_store):
     adop_resp = await client.get("/v1/tree/adoptions/mine", headers=auth(token))
     assert adop_resp.status_code == 200
     assert adop_resp.json()["total"] >= 1
+
+
+async def test_plantation_registration_emits_survival_tasks(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/tree/plantations",
+        json={
+            "parcelName": "North Farm Bund",
+            "treeSpecies": "Bamboo",
+            "treeCount": 40,
+            "plantingDate": "2026-08-10",
+            "landType": "bund",
+            "latitude": 19.9975,
+            "longitude": 73.7898,
+            "initialHeightCm": 30.0,
+        },
+        headers=auth(token),
+    )
+    assert resp.status_code == 201
+    plantation_id = resp.json()["id"]
+    tasks = [d for key, d in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 3
+    assert all(t["kind"] == "survival_check" for t in tasks)
+    assert all(t["module"] == "treePlantation" for t in tasks)
+    assert all(t["deepLink"] == "/dashboard/p/treePlantation" for t in tasks)
+    assert {t["sourceId"].split(":")[0] for t in tasks} == {plantation_id}
 

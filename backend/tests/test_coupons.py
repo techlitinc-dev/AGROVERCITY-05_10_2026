@@ -2,11 +2,23 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.routers.coupons import coupon_discount
 from tests.test_marketplace import seeded  # noqa: F401
 from tests.test_orders import _place
 from tests.test_users import _auth, _register
 
 NOW = datetime.now(timezone.utc)
+
+
+def test_coupon_discount_is_exact_in_paisa():
+    """10% of ₹199.50 must be ₹19.95 exactly — no float truncation (rule 6)."""
+    coupon = {"type": "percentage", "value": 10, "maxDiscount": None}
+    assert round(coupon_discount(coupon, 199.5) * 100) == 1995
+
+
+def test_coupon_discount_cap_is_exact_in_paisa():
+    coupon = {"type": "percentage", "value": 10, "maxDiscount": 1.5}
+    assert round(coupon_discount(coupon, 199.5) * 100) == 150
 
 
 def _coupon(code, **overrides):

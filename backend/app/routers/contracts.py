@@ -432,6 +432,66 @@ async def create_contract(body: ContractCreate, user: dict = Depends(_contract_b
     return ContractOut(**doc).model_dump(exclude_none=True)
 
 
+def _delivery_completion_date(purchase: dict) -> str | None:
+    """ISO date (YYYY-MM-DD) a delivery purchase was marked completed/delivered.
+
+    Reads the purchase event trail (appended by the purchases router). Returns
+    None when the purchase carries no completion event.
+    """
+    for event in reversed(purchase.get("events") or []):
+        if event.get("status") in ("completed", "delivered"):
+            at = event.get("at") or ""
+            return at[:10] or None
+    return None
+
+
+@router.get("/analytics")
+async def contract_analytics(user: dict = Depends(_contract_buyer)):
+    """Contract performance for the calling buyer (WS-01 task 1.23).
+
+    Counts every delivery slot across the caller's contracts; a slot is
+    `on_time` when its purchase is completed and the completion date is on or
+    before the scheduled slot date. `fulfillment_pct` is the rounded share of
+    completed slots (0 when there are no slots).
+    """
+    uid = user["id"]
+    contracts = await query("contracts", [("buyerId", "==", uid)], limit=1000)
+    total = 0
+    completed = 0
+    on_time = 0
+    for contract in contracts:
+        for slot in contract.get("deliveries") or []:
+            total += 1
+            purchase = await get_doc("purchases", slot.get("purchaseId") or "")
+            if not purchase or purchase.get("status") != "completed":
+                continue
+            completed += 1
+            completion_date = _delivery_completion_date(purchase)
+            slot_date = (slot.get("slotDate") or "")[:10]
+            if completion_date is None or completion_date <= slot_date:
+                on_time += 1
+    fulfillment_pct = round(100 * completed / total) if total else 0
+    return {
+        "fulfillment_pct": fulfillment_pct,
+        "on_time_deliveries": on_time,
+        "total_deliveries": total,
+    }
+
+
+@router.get("/templates")
+async def list_contract_templates():
+    """Curated contract templates (Firestore `contract_templates`).
+
+    Seeded by `scripts/seed_contract_templates.py`. Read-only reference data —
+    the ContractFormPage template picker prefills the form from these docs
+    (title + terms in en/hi). Static content, so no role gate beyond the app
+    shell. Declared before `/{contract_id}` so the literal path wins.
+    """
+    templates = await query("contract_templates", [], limit=200)
+    templates.sort(key=lambda d: d.get("crop", ""))
+    return {"data": templates}
+
+
 @router.get("/mine")
 async def my_contracts(
     role: str = "buyer",

@@ -1,8 +1,10 @@
+import asyncio
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
+from app.core.config import settings
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.data.cold_storage_seed import seed_cold_storage
@@ -20,14 +22,18 @@ from app.models.cold_storage import (
 )
 from app.routers.users import require_role
 from app.services import storage
+from app.services.ai import gateway
 from app.services.billing import check_entitlement
 from app.services.fcm import send_fcm_to_user
 from app.services.grading_model import get_grading_adapter
+from app.services.grading_model.gemini import GRADING_MODULE
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/post-harvest", tags=["post-harvest"])
 
 MAX_GRADE_IMAGES = 3
+GRADING_HUMAN_THRESHOLD = 0.7
 PROVIDER_ROLES = {"coldStorageProvider", "admin"}
 FARMER_ROLES = {"farmer", "farmLandlord", "seller", "transport", "transporter", "coldStorageProvider", "admin"}
 
@@ -147,6 +153,41 @@ def _shape_facility(doc: dict) -> dict:
 
 
 # ==============================================================================
+# Chamber capacity reservation (atomic — F11)
+# ==============================================================================
+# The read-check-write below is serialized per facility so two concurrent
+# bookings can never oversell a chamber. In production this maps to a Firestore
+# transaction; the in-process lock is the equivalent guard for the async worker.
+_capacity_locks: dict[str, asyncio.Lock] = {}
+
+
+def _capacity_lock(facility_id: str) -> asyncio.Lock:
+    lock = _capacity_locks.get(facility_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _capacity_locks[facility_id] = lock
+    return lock
+
+
+async def _reserve_capacity(facility_id: str, quantity_quintals: float) -> dict:
+    """Atomically reserve `quantity_quintals` against the facility's free space.
+
+    404 when the facility is unknown, 409 when capacity is insufficient. Returns
+    the updated facility doc (bookedQuintals already incremented).
+    """
+    async with _capacity_lock(facility_id):
+        facility = await get_doc("cold_storage", facility_id)
+        if facility is None:
+            _error(404, "STORAGE_NOT_FOUND", "कोल्ड स्टोरेज नहीं मिला")
+        available_quintals = facility["availableMT"] * 10 - facility.get("bookedQuintals", 0)
+        if quantity_quintals > available_quintals:
+            _error(409, "INSUFFICIENT_CAPACITY", "इतनी क्षमता उपलब्ध नहीं")
+        facility["bookedQuintals"] = facility.get("bookedQuintals", 0) + quantity_quintals
+        await set_doc("cold_storage", facility_id, facility)
+        return facility
+
+
+# ==============================================================================
 # Farmer & Public Endpoints
 # ==============================================================================
 
@@ -185,14 +226,7 @@ async def book_cold_storage(
     if date.fromisoformat(body.fromDate) < date.today():
         _error(422, "PAST_DATE", "आरंभ तिथि भूतकाल में नहीं हो सकती")
     await seed_cold_storage()
-    facility = await get_doc("cold_storage", facility_id)
-    if facility is None:
-        _error(404, "STORAGE_NOT_FOUND", "कोल्ड स्टोरेज नहीं मिला")
-    available_quintals = facility["availableMT"] * 10 - facility.get("bookedQuintals", 0)
-    if body.quantityQuintals > available_quintals:
-        _error(409, "INSUFFICIENT_CAPACITY", "इतनी क्षमता उपलब्ध नहीं")
-    facility["bookedQuintals"] = facility.get("bookedQuintals", 0) + body.quantityQuintals
-    await set_doc("cold_storage", facility_id, facility)
+    facility = await _reserve_capacity(facility_id, body.quantityQuintals)
 
     rate = facility.get("ratePerQuintalMonth", 12.0)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -238,14 +272,7 @@ async def apply_cold_storage(
     if date.fromisoformat(body.fromDate) < date.today():
         _error(422, "PAST_DATE", "आरंभ तिथि भूतकाल में नहीं हो सकती")
     await seed_cold_storage()
-    facility = await get_doc("cold_storage", facility_id)
-    if facility is None:
-        _error(404, "STORAGE_NOT_FOUND", "कोल्ड स्टोरेज नहीं मिला")
-    available_quintals = facility["availableMT"] * 10 - facility.get("bookedQuintals", 0)
-    if body.quantityQuintals > available_quintals:
-        _error(409, "INSUFFICIENT_CAPACITY", "इतनी क्षमता उपलब्ध नहीं")
-    facility["bookedQuintals"] = facility.get("bookedQuintals", 0) + body.quantityQuintals
-    await set_doc("cold_storage", facility_id, facility)
+    facility = await _reserve_capacity(facility_id, body.quantityQuintals)
 
     rate = facility.get("ratePerQuintalMonth", 12.0)
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -338,6 +365,28 @@ async def request_booking_release(
     farmer_uid = booking.get("farmerUid") or user["id"]
     await set_doc(f"users/{farmer_uid}/cold_storage_bookings", booking_id, booking)
     return booking
+
+
+@router.get("/receipts")
+async def list_my_receipts(
+    user: dict = Depends(_require_user("farmer", "seller", "coldStorageProvider")),
+):
+    """The caller's own warehouse receipts (e-NWR) — vault feed (WS-06 §7.14).
+
+    Scoped to the farmer's own bookings subcollection; the depositor is the only
+    reader here (the single-receipt endpoint additionally serves the provider).
+    """
+    bookings = await query(f"users/{user['id']}/cold_storage_bookings", [], limit=500)
+    receipts = []
+    for booking in bookings:
+        number = booking.get("receiptNumber")
+        if not number:
+            continue
+        receipt = await get_doc("warehouse_receipts", number)
+        if receipt is not None:
+            receipts.append(receipt)
+    receipts.sort(key=lambda r: r.get("issueDate") or "", reverse=True)
+    return {"data": receipts, "page": 1, "pageSize": 50, "total": len(receipts)}
 
 
 @router.get("/receipts/{receipt_number}")
@@ -915,13 +964,32 @@ async def provider_update_facility(
 
 
 # ==============================================================================
-# AI Grading Endpoint (Unchanged)
+# AI Grading (M10, SDR + vision) — gateway-only vision + human-review gate
 # ==============================================================================
+
+
+def _price_band(recommended_paisa: int, mandi_modal_paisa: int | None) -> dict:
+    """Recommended price band in integer paisa with an honest vs-mandi delta."""
+    low = recommended_paisa - recommended_paisa * 10 // 100
+    high = recommended_paisa + recommended_paisa * 10 // 100
+    vs_mandi = None
+    if mandi_modal_paisa:
+        vs_mandi = round((recommended_paisa - mandi_modal_paisa) / mandi_modal_paisa * 100)
+    return {
+        "lowPaisa": low,
+        "highPaisa": high,
+        "recommendedPaisa": recommended_paisa,
+        "mandiModalPaisa": mandi_modal_paisa,
+        "vsMandiPct": vs_mandi,
+    }
 
 
 @router.post("/grade")
 async def grade_produce(
     images: list[UploadFile] = File(...),
+    crop: str | None = Form(None),
+    quantityQuintals: float | None = Form(None),
+    mandiModalPaisa: int | None = Form(None),
     user: dict = Depends(_require_user("farmer", "seller")),
 ):
     if len(images) > MAX_GRADE_IMAGES:
@@ -934,4 +1002,72 @@ async def grade_produce(
         )
         if first is None:
             first = data
-    return await get_grading_adapter().scan(first or b"")
+
+    # Vision grading runs ONLY through the gateway (rule 10); the deterministic
+    # stub answers when the model is off/unavailable or its answer is invalid.
+    assessment = await get_grading_adapter().scan(first or b"")
+    confidence = float(assessment.get("confidence", 0.0))
+    recommended_paisa = int(assessment.get("recommendedPrice", 0)) * 100
+
+    # M10 gate: a low-confidence grade (or an explicit gate verdict) is routed to
+    # the human-grader ops queue instead of being published as an AI grade.
+    gate = await gateway.decide(
+        {"confidence": confidence, "grade": assessment.get("grade")},
+        "grading.gate.v1",
+        module=GRADING_MODULE,
+    )
+    gate_answers = gate.answers or {}
+    needs_human = confidence < GRADING_HUMAN_THRESHOLD or bool(gate_answers.get("needs_human"))
+
+    scan_id = f"grade_{uuid4().hex[:12]}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await set_doc(
+        "grading_scans",
+        scan_id,
+        {
+            "scan_id": scan_id,
+            "farmerId": user["id"],
+            "crop": crop,
+            "quantityQuintals": quantityQuintals,
+            "assessment": assessment,
+            "confidence": confidence,
+            "needsHuman": needs_human,
+            "createdAt": now_iso,
+        },
+    )
+
+    demo = settings.ai_provider == "shim" or assessment.get("source") != "ai"
+    result = {
+        "grade": None if needs_human else assessment.get("grade"),
+        "uniformityPercent": assessment.get("uniformityPercent"),
+        "shelfLifeDays": assessment.get("shelfLifeDays"),
+        "recommendedPrice": assessment.get("recommendedPrice"),
+        "recommendedPricePaisa": recommended_paisa,
+        "priceBandPaisa": _price_band(recommended_paisa, mandiModalPaisa),
+        "confidence": confidence,
+        "confidenceClass": gate_answers.get("confidence_class"),
+        "source": assessment.get("source", "stub"),
+        "decisionId": gate.decision_id,
+        "automationLevel": "suggest",
+        "demo": demo,
+        "scanId": scan_id,
+    }
+
+    if needs_human:
+        task_id = await emit_task(
+            user_id=user["id"],
+            persona="ops",
+            module="post_harvest",
+            kind="grading_human_review",
+            title_en="Produce grading needs a human grader",
+            title_hi="उपज ग्रेडिंग के लिए मानव ग्रेडर आवश्यक",
+            subtitle=f"AI confidence {round(confidence * 100)}% — route to the ops grading queue",
+            priority="today",
+            deep_link="/dashboard/p/postHarvest",
+            source_id=scan_id,
+        )
+        result.update({"needsHuman": True, "status": "pending_human", "taskId": task_id})
+        return result
+
+    result.update({"needsHuman": False, "status": "graded", "taskId": None})
+    return result

@@ -159,3 +159,25 @@ async def test_razorpay_verify_bad_signature(client, seeded, razorpay):
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "PAYMENT_SIGNATURE_INVALID"
+
+
+async def test_order_mutations_write_audit_logs(client, seeded, razorpay, user_store):
+    token = await _token(client)
+    order_id = (await _place(client, token)).json()["orderId"]
+    headers = _auth(token)
+    rzp = await client.post("/v1/payments/razorpay/order", json={"orderId": order_id}, headers=headers)
+    await client.post(
+        "/v1/payments/razorpay/verify",
+        json={
+            "orderId": order_id,
+            "razorpayOrderId": rzp.json()["razorpayOrderId"],
+            "razorpayPaymentId": "pay_test_1",
+            "razorpaySignature": rzp_signature(rzp.json()["razorpayOrderId"], "pay_test_1"),
+        },
+        headers=headers,
+    )
+    audits = [doc for key, doc in user_store.items() if key.startswith("audit_logs/")]
+    actions = {doc.get("action") for doc in audits if doc.get("orderId") == order_id}
+    assert {"order_placed", "payment_received"} <= actions
+    paid = next(doc for doc in audits if doc.get("action") == "payment_received")
+    assert paid["amountPaisa"] == int(round(1140 * 100))

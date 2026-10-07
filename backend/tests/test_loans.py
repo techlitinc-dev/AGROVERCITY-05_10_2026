@@ -431,3 +431,27 @@ async def test_quick_login_bank_manager_persona(client, user_store):
     user = resp.json()["user"]
     assert user["activeProfile"] == "bankManager"
     assert "bankManager" in user["linkedProfiles"]
+
+
+async def test_info_request_emits_farmer_task(client, user_store):
+    """WS-05 task 5.24 — a bank document request surfaces as a farmer task."""
+    farmer_token = seed_user(user_store)
+    banker_token = _banker(user_store)
+    application_id = (await _apply(client, farmer_token)).json()["applicationId"]
+    await _review(client, banker_token, application_id)
+
+    resp = await client.post(
+        f"/v1/loans/{application_id}/info-request",
+        json={"message": "कृपया 7/12 की प्रति अपलोड करें"},
+        headers=auth(banker_token),
+    )
+    assert resp.status_code == 200
+
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["module"] == "loans"
+    assert task["kind"] == "loan_doc_request"
+    assert task["userId"] == "uid-1"
+    assert task["sourceId"] == application_id
+    assert task["deepLink"].startswith("/dashboard/p/")

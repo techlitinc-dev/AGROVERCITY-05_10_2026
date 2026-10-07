@@ -14,10 +14,12 @@ import LotsPage from './LotsPage';
 import LotForm from './LotForm';
 import LotDetailPage from './LotDetailPage';
 import MandiPage from './MandiPage';
+import MandiChartsPage from './MandiChartsPage';
 import NotificationsPage from './NotificationsPage';
 import OfferDetailPage from './OfferDetailPage';
 import OffersPage from './OffersPage';
 import PosPage from './PosPage';
+import PriceAlertsPage from './PriceAlertsPage';
 import ProcurementPage from './ProcurementPage';
 import PurchaseDetailPage from './PurchaseDetailPage';
 import PurchasesPage from './PurchasesPage';
@@ -39,6 +41,8 @@ export const TRADE_PAGES: Record<string, ComponentType> = {
   buyDemands: BrowseDemandsPage,
   savedFarmers: SavedFarmersPage,
   mandi: MandiPage,
+  mandiCharts: MandiChartsPage,
+  priceAlerts: PriceAlertsPage,
   analytics: AnalyticsPage,
   khata: KhataPage,
   pos: PosPage,
@@ -66,10 +70,12 @@ export {
   LotForm,
   LotDetailPage,
   MandiPage,
+  MandiChartsPage,
   NotificationsPage,
   OfferDetailPage,
   OffersPage,
   PosPage,
+  PriceAlertsPage,
   ProcurementPage,
   PurchaseDetailPage,
   PurchasesPage,

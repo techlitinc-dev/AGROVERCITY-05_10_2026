@@ -12,6 +12,13 @@ from app.services.users import get_user
 
 router = APIRouter(prefix="/fpo", tags=["fpo"])
 
+# Deferred(2026-10-03, phase-07): admin FPO verification UI (A8). Hook: verification_status field on FPO docs.
+FPO_VERIFICATION_DEFAULT = "unverified"
+
+
+def _verification_status(fpo: dict) -> str:
+    return fpo.get("verification_status") or FPO_VERIFICATION_DEFAULT
+
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
     raise HTTPException(
@@ -49,7 +56,105 @@ async def fpo_me(uid: str = Depends(_farmer)):
     if user.get("fpoId") != fpo.get("id"):
         user["fpoId"] = fpo.get("id")
         await set_doc("users", uid, user)
+    if not fpo.get("verification_status"):
+        # A8 hook — persist the default on read so the field always exists.
+        fpo["verification_status"] = _verification_status(fpo)
+        await set_doc("fpos", fpo["id"], fpo)
     return fpo
+
+
+# ==============================================================================
+# FPO discovery directory + join-request flow (F19)
+# ==============================================================================
+
+
+async def _membership_state(fpo_id: str, user: dict, requests: list[dict]) -> str:
+    """`member` | `pending` | `none` for the caller against one FPO."""
+    if user.get("fpoId") == fpo_id or fpo_id in (user.get("fpoMemberships") or []):
+        return "member"
+    for request in requests:
+        if request.get("fpoId") != fpo_id:
+            continue
+        status = request.get("status")
+        if status == "approved":
+            return "member"
+        if status == "pending":
+            return "pending"
+    return "none"
+
+
+def _join_request_id(fpo_id: str, uid: str) -> str:
+    return f"joinreq_{fpo_id}_{uid}"
+
+
+@router.get("/directory")
+async def fpo_directory(uid: str = Depends(_farmer)):
+    """Every FPO with the caller's membership state + verification_status (A8)."""
+    fpos = await query("fpos", [], limit=100)
+    user = await get_user(uid)
+    requests = await query("fpo_join_requests", [("farmerId", "==", uid)], limit=100)
+    return {
+        "data": [
+            {
+                **fpo,
+                "verification_status": _verification_status(fpo),
+                "membership": await _membership_state(fpo["id"], user, requests),
+            }
+            for fpo in fpos
+        ]
+    }
+
+
+@router.post("/{fpo_id}/join-request", status_code=201)
+async def request_join_fpo(fpo_id: str, uid: str = Depends(_farmer)):
+    """Non-member sends a join request; the state transitions to `pending`."""
+    fpo = await get_doc("fpos", fpo_id)
+    if fpo is None:
+        _error(404, "FPO_NOT_FOUND", "no fpo found")
+    user = await get_user(uid)
+    if user.get("fpoId") == fpo_id or fpo_id in (user.get("fpoMemberships") or []):
+        _error(409, "ALREADY_MEMBER", "आप पहले से इस संस्था के सदस्य हैं")
+
+    request_id = _join_request_id(fpo_id, uid)
+    existing = await get_doc("fpo_join_requests", request_id)
+    if existing is None:
+        existing = {
+            "id": request_id,
+            "fpoId": fpo_id,
+            "fpoName": fpo.get("name"),
+            "farmerId": uid,
+            "status": "pending",
+            "verification_status": _verification_status(fpo),
+            "requestedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        await set_doc("fpo_join_requests", request_id, existing)
+    return {"id": request_id, "fpoId": fpo_id, "status": existing["status"], "membership": "pending"}
+
+
+@router.post("/{fpo_id}/join-request/approve")
+async def approve_join_fpo(fpo_id: str, uid: str = Depends(_farmer)):
+    """Dev-approve the caller's own pending request; transitions to `member`.
+
+    Deferred(2026-10-03, phase-07): the real approval is the admin FPO
+    verification console (A8) via the join-request status; this dev affordance
+    only exists so the farmer flow can be exercised before that console lands.
+    """
+    request_id = _join_request_id(fpo_id, uid)
+    request = await get_doc("fpo_join_requests", request_id)
+    if request is None:
+        _error(404, "JOIN_REQUEST_NOT_FOUND", "कोई सदस्यता अनुरोध नहीं मिला")
+
+    user = await get_user(uid)
+    user["fpoId"] = fpo_id
+    memberships = sorted({*(user.get("fpoMemberships") or []), fpo_id})
+    user["fpoMemberships"] = memberships
+    await set_doc("users", uid, user)
+
+    request["status"] = "approved"
+    request["approvedAt"] = datetime.now(timezone.utc).isoformat()
+    request["approvedBy"] = "dev"
+    await set_doc("fpo_join_requests", request_id, request)
+    return {"id": request_id, "fpoId": fpo_id, "status": "approved", "membership": "member"}
 
 
 @router.get("/pools")

@@ -20,6 +20,8 @@ from app.services.payments import (
     refund_razorpay_payment,
     verify_razorpay_signature,
 )
+from app.services.tasks import emit_task
+from app.services.pnl_engine import record_auto_entry
 from app.services.users import get_user
 
 router = APIRouter(tags=["orders"])
@@ -64,6 +66,57 @@ async def _restore_stock(order: dict):
         if product is not None and isinstance(product.get("stock"), int):
             product["stock"] += item["quantity"]
             await set_doc("products", item["productId"], product)
+
+
+# Buyer-facing task titles per order status (phase-05 WS-03 task 3.14).
+ORDER_STATUS_TITLES: dict[str, tuple[str, str]] = {
+    "placed": ("Order placed", "ऑर्डर दिया गया"),
+    "paid": ("Payment received", "भुगतान प्राप्त हुआ"),
+    "confirmed": ("Order confirmed", "ऑर्डर की पुष्टि हुई"),
+    "shipped": ("Order shipped", "ऑर्डर भेज दिया गया"),
+    "out_for_delivery": ("Order out for delivery", "ऑर्डर डिलीवरी के लिए निकला"),
+    "delivered": ("Order delivered", "ऑर्डर पहुँच गया"),
+    "closed": ("Order closed", "ऑर्डर पूर्ण हुआ"),
+    "returned": ("Order returned", "ऑर्डर वापस हुआ"),
+    "cancelled": ("Order cancelled", "ऑर्डर रद्द हुआ"),
+    "return_requested": ("Return requested", "वापसी का अनुरोध किया"),
+}
+
+
+async def emit_order_status_task(order: dict, status: str) -> None:
+    """Emit/refresh the buyer's order-status task (dedupe-safe per order)."""
+    title_en, title_hi = ORDER_STATUS_TITLES.get(status, (f"Order {status}", f"ऑर्डर {status}"))
+    order_id = str(order.get("id") or "")
+    await emit_task(
+        user_id=str(order.get("userId") or ""),
+        persona="farmer",
+        module="marketplace",
+        kind="order_status",
+        title_en=title_en,
+        title_hi=title_hi,
+        subtitle=order_id,
+        priority="today",
+        deep_link="/dashboard/p/orders",
+        source_id=order_id or status,
+    )
+
+
+async def _audit(order: dict, action: str, extra: dict | None = None) -> None:
+    """Rule 3: every financial order mutation writes an audit_logs row."""
+    audit_id = f"audit_{uuid.uuid4().hex[:12]}"
+    await set_doc(
+        "audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "action": action,
+            "orderId": order.get("id"),
+            "userId": order.get("userId"),
+            "amountPaisa": int(round(float(order.get("finalTotal", order.get("total", 0)) or 0) * 100)),
+            "at": datetime.now(timezone.utc).isoformat(),
+            **(extra or {}),
+        },
+    )
 
 
 @router.post("/orders")
@@ -148,6 +201,14 @@ async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
             {"installment": 2, "dueInDays": 60, "amount": final_total / 2},
         ]
     await set_doc("idempotency_keys", body.idempotencyKey, {"key": body.idempotencyKey, "response": response})
+    await _audit(order, "order_placed")
+    await emit_order_status_task(order, "placed")
+    order_amount_paisa = int(
+        round(float(order.get("finalTotal", order.get("total", 0)) or 0) * 100)
+    )
+    await record_auto_entry(
+        uid, "expense", order_amount_paisa, "marketplace_order", "marketplace_order", order_id
+    )
     return response
 
 
@@ -178,6 +239,8 @@ async def cancel_order(order_id: str, uid: str = Depends(_order_user)):
         order["refundStatus"] = "requested"
     await _restore_stock(order)
     await set_doc("orders", order_id, order)
+    await _audit(order, "order_cancelled")
+    await emit_order_status_task(order, "cancelled")
     return order
 
 
@@ -208,6 +271,8 @@ async def razorpay_verify(body: RazorpayVerifyRequest, uid: str = Depends(_order
     order["razorpayPaymentId"] = body.razorpayPaymentId
     _append_event(order, "paid")
     await set_doc("orders", body.orderId, order)
+    await _audit(order, "payment_received", {"razorpayPaymentId": body.razorpayPaymentId})
+    await emit_order_status_task(order, "paid")
     return {"ok": True, "status": "paid"}
 
 
@@ -227,4 +292,5 @@ async def razorpay_refund(body: RazorpayRefundRequest, uid: str = Depends(_order
     order["refundStatus"] = "processed"
     order["razorpayRefundId"] = refund["id"]
     await set_doc("orders", body.orderId, order)
+    await _audit(order, "refund_processed", {"razorpayRefundId": refund["id"]})
     return {"ok": True, "refundStatus": "processed"}

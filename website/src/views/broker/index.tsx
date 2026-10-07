@@ -20,7 +20,7 @@ const BuyersGate: ComponentType = () => {
   if (activeProfile === 'broker') return <LeadsPage />;
   return (
     <ToolShell toolId="buyers">
-      <EmptyState icon="📇" titleKey="buyersComingSoon" bodyKey="buyersComingSoonBody" />
+      <EmptyState icon="📇" titleKey="buyersWorkspace" bodyKey="buyersWorkspaceBody" />
     </ToolShell>
   );
 };

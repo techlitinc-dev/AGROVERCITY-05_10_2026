@@ -19,18 +19,18 @@ from app.models.gamification import (
     RewardDetail,
     RewardItem,
 )
-from app.services.coins import InsufficientCoins, coins_earned_total, get_ledger_page, spend_coins
+from app.services.coins import (
+    InsufficientCoins,
+    coin_tiers,
+    coins_earned_total,
+    get_ledger_page,
+    redemption_cap_coins,
+    spend_coins,
+)
 from app.services.notifications import send_fcm_to_user
 from app.services.users import get_user
 
 router = APIRouter(prefix="/gamification", tags=["gamification"])
-
-TIERS = [
-    {"tier": "bronze", "title": "शुरुआत", "minCoins": 0},
-    {"tier": "silver", "title": "तरक्की", "minCoins": 200},
-    {"tier": "gold", "title": "खुशहाल", "minCoins": 500},
-    {"tier": "diamond", "title": "कृषि रत्न", "minCoins": 1000},
-]
 
 REWARDS_CATALOG = [
     {
@@ -71,13 +71,13 @@ def _error(status_code: int, code: str, message: str, field_errors: dict | None 
     )
 
 
-def _level_info(coins: int) -> LevelInfo:
-    current = TIERS[0]
-    for tier in TIERS:
+def _level_info(coins: int, tiers: list[dict]) -> LevelInfo:
+    current = tiers[0]
+    for tier in tiers:
         if coins >= tier["minCoins"]:
             current = tier
-    idx = TIERS.index(current)
-    if idx == len(TIERS) - 1:
+    idx = tiers.index(current)
+    if idx == len(tiers) - 1:
         return LevelInfo(
             tier=current["tier"],
             title=current["title"],
@@ -86,7 +86,7 @@ def _level_info(coins: int) -> LevelInfo:
             coinsToNextTier=0,
             progressPct=100.0,
         )
-    nxt = TIERS[idx + 1]
+    nxt = tiers[idx + 1]
     span = nxt["minCoins"] - current["minCoins"]
     return LevelInfo(
         tier=current["tier"],
@@ -135,6 +135,7 @@ async def get_gamification_status(uid: str = Depends(current_user_id)):
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
     coins = user.get("agriCoins", 0)
+    tiers = await coin_tiers()
 
     ledger = await query(f"users/{uid}/coin_ledger", [], limit=1000)
     dates = {datetime.fromisoformat(e["at"]).date() for e in ledger if e.get("at")}
@@ -228,7 +229,7 @@ async def get_gamification_status(uid: str = Depends(current_user_id)):
     return GamificationStatusResponse(
         userId=uid,
         agriCoins=coins,
-        level=_level_info(coins),
+        level=_level_info(coins, tiers),
         dailyStreak=DailyStreak(current=streak_current, longest=streak_longest),
         stats=GamificationStats(
             coinsEarnedTotal=earned_total,
@@ -290,6 +291,17 @@ async def redeem_coins(body: RedeemRequest, uid: str = Depends(current_user_id))
             f"{body.rewardType} costs exactly {item['coinsCost']} coins",
             {"coins": f"must be {item['coinsCost']}"},
         )
+    # X11: when the redemption is applied against an order, coins may never
+    # exceed the configured share of the order value (platform_config/coins).
+    if body.orderValuePaisa is not None:
+        cap = await redemption_cap_coins(body.orderValuePaisa)
+        if body.coins > cap:
+            _error(
+                422,
+                "REDEMPTION_CAP_EXCEEDED",
+                "coins may not exceed the allowed share of the order value",
+                {"coins": f"must be 1..{cap}"},
+            )
     reward_id = f"rw_{uuid.uuid4().hex[:12]}"
     try:
         balance = await spend_coins(uid, body.coins, "redeem", reward_id)

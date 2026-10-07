@@ -110,7 +110,12 @@ async def client(monkeypatch, user_store, fake_redis):
     async def fake_get_redis():
         return fake_redis
 
-    monkeypatch.setattr("app.routers.content.get_redis", fake_get_redis)
+    import app.core.cache as cache_module
+
+    monkeypatch.setattr(cache_module, "_redis", None)
+    for mod in _DB_MODULES:
+        if hasattr(mod, "get_redis"):
+            monkeypatch.setattr(mod, "get_redis", fake_get_redis)
     monkeypatch.setattr(firebase_auth, "verify_id_token", fake_verify_id_token)
 
     transport = httpx.ASGITransport(app=app)

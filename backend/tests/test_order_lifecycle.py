@@ -163,3 +163,22 @@ async def test_return_foreign_order_404(client, seeded, user_store):
         "/v1/orders/ord_other/return", json={"reason": "not mine"}, headers=_auth(token)
     )
     assert resp.status_code == 404
+
+
+async def test_status_transition_emits_buyer_task(client, seeded, user_store):
+    token = await _token(client)
+    admin = _admin_token(user_store)
+    order_id = (await _place(client, token)).json()["orderId"]
+    resp = await client.patch(
+        f"/v1/orders/{order_id}/status",
+        json={"status": "confirmed", "note": "packed"},
+        headers=_auth(admin),
+    )
+    assert resp.status_code == 200
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    matching = [
+        doc for doc in tasks if doc.get("kind") == "order_status" and doc.get("sourceId") == order_id
+    ]
+    assert len(matching) == 1
+    assert matching[0]["module"] == "marketplace"
+    assert matching[0]["deepLink"] == "/dashboard/p/orders"

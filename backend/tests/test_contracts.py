@@ -133,3 +133,81 @@ async def test_accept_broker_forbidden(client, seeded_contracts):
     resp = await client.post("/v1/contracts/contract-1/accept", json=ACCEPT_BODY, headers=_auth(token))
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"
+
+
+def _seed_analytics_store(user_store):
+    user_store["contracts/con-a"] = {
+        "id": "con-a",
+        "buyerId": "uid-1",
+        "farmerId": "uid-farmer",
+        "crop": "Wheat",
+        "status": "active",
+        "createdAt": "2026-09-01T00:00:00+00:00",
+        "deliveries": [
+            {"slotDate": "2026-09-01", "purchaseId": "pur-ontime"},
+            {"slotDate": "2026-09-08", "purchaseId": "pur-late"},
+            {"slotDate": "2026-09-15", "purchaseId": "pur-pending"},
+        ],
+        "deliveriesGenerated": 3,
+    }
+    # Another buyer's contract must not leak into the caller's analytics.
+    user_store["contracts/con-b"] = {
+        "id": "con-b",
+        "buyerId": "uid-2",
+        "farmerId": "uid-farmer",
+        "crop": "Onion",
+        "status": "active",
+        "createdAt": "2026-09-01T00:00:00+00:00",
+        "deliveries": [{"slotDate": "2026-09-02", "purchaseId": "pur-other"}],
+        "deliveriesGenerated": 1,
+    }
+    user_store["purchases/pur-ontime"] = {
+        "id": "pur-ontime",
+        "status": "completed",
+        "events": [{"status": "completed", "at": "2026-09-01T10:00:00+00:00"}],
+    }
+    user_store["purchases/pur-late"] = {
+        "id": "pur-late",
+        "status": "completed",
+        "events": [{"status": "completed", "at": "2026-09-12T10:00:00+00:00"}],
+    }
+    user_store["purchases/pur-pending"] = {
+        "id": "pur-pending",
+        "status": "confirmed",
+        "events": [],
+    }
+    user_store["purchases/pur-other"] = {
+        "id": "pur-other",
+        "status": "completed",
+        "events": [{"status": "completed", "at": "2026-09-02T10:00:00+00:00"}],
+    }
+
+
+async def test_contract_analytics_computes_fulfilment(client, user_store):
+    token = await _token(client, primaryProfile="seller")
+    _seed_analytics_store(user_store)
+    resp = await client.get("/v1/contracts/analytics", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "fulfillment_pct": 67,
+        "on_time_deliveries": 1,
+        "total_deliveries": 3,
+    }
+
+
+async def test_contract_analytics_empty(client, user_store):
+    token = await _token(client, primaryProfile="seller")
+    resp = await client.get("/v1/contracts/analytics", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "fulfillment_pct": 0,
+        "on_time_deliveries": 0,
+        "total_deliveries": 0,
+    }
+
+
+async def test_contract_analytics_broker_forbidden(client, user_store):
+    token = await _token(client, profiles=["broker"], primaryProfile="broker")
+    resp = await client.get("/v1/contracts/analytics", headers=_auth(token))
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"

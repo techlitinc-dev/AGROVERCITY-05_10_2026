@@ -32,6 +32,19 @@ import { DAIRY_MARKET_PAGES } from '../dairyMarket';
 import { BANK_PAGES } from '../bank';
 import { INSURANCE_PAGES } from '../insurance';
 import { COLD_STORAGE_PAGES } from '../coldstorage';
+import { ADVISORY_PAGES } from '../advisory';
+import { MARKETPLACE_PAGES } from '../marketplace';
+import { SCHEMES_PAGES } from '../schemes';
+import { FINANCE_PAGES } from '../finance';
+import { LAND_PAGES } from '../land';
+import { FPO_PAGES } from '../fpo';
+import { POSTHARVEST_PAGES } from '../postharvest';
+import { WATER_PAGES } from '../water';
+import { CLIMATE_PAGES } from '../climate';
+import { TREE_PAGES } from '../trees';
+import { REWARDS_PAGES } from '../rewards';
+import { REFERRALS_PAGES } from '../referrals';
+import { WOMEN_PAGES } from '../women';
 import '../../theme/dashboard.css';
 
 /**
@@ -75,11 +88,28 @@ export default function ToolPage() {
   const BankPage = BANK_PAGES[toolId];
   const InsurancePage = INSURANCE_PAGES[toolId];
   const ColdStoragePage = COLD_STORAGE_PAGES[toolId];
+  const AdvisoryPage = ADVISORY_PAGES[toolId];
+  const MarketplacePage = MARKETPLACE_PAGES[toolId];
+  const SchemesPage = SCHEMES_PAGES[toolId];
+  const FinancePage = FINANCE_PAGES[toolId];
+  const LandPage = LAND_PAGES[toolId];
+  const FpoPage = FPO_PAGES[toolId];
+  const PostHarvestPage = POSTHARVEST_PAGES[toolId];
+  const WaterPage = WATER_PAGES[toolId];
+  const ClimatePage = CLIMATE_PAGES[toolId];
+  const TreePage = TREE_PAGES[toolId];
+  const RewardsPage = REWARDS_PAGES[toolId];
+  const ReferralsPage = REFERRALS_PAGES[toolId];
+  const WomenPage = WOMEN_PAGES[toolId];
   const RealPage =
     TradePage ?? TransportPage ?? DiaryPage ?? DairyPage ?? GaushalaPage ?? VetPage ?? AnimalPage
-    ?? PnlPage ?? BrokerPage ?? DirectBuyerPage ?? FarmerPage ?? LandlordPage ?? EquipmentPage
+    ?? PnlPage ?? BrokerPage ?? DirectBuyerPage ?? LandPage ?? FpoPage ?? PostHarvestPage
+    ?? WaterPage ?? ClimatePage ?? TreePage
+    ?? FarmerPage ?? LandlordPage ?? EquipmentPage
     ?? CustomerPage ?? InstructorPage ?? AcademyPage ?? GyanPage ?? NewsPage ?? ChannelPage
-    ?? DairyMarketPage ?? BankPage ?? InsurancePage ?? ColdStoragePage;
+    ?? DairyMarketPage ?? BankPage ?? InsurancePage ?? ColdStoragePage ?? AdvisoryPage
+    ?? MarketplacePage ?? SchemesPage ?? FinancePage
+    ?? RewardsPage ?? ReferralsPage ?? WomenPage;
 
   // Trade/transport pages render their own chrome via ToolShell (also used by deep routes).
   if (RealPage) {

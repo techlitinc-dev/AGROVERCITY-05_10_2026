@@ -390,6 +390,40 @@ export async function getMyPolicies(): Promise<CropInsurancePolicy[]> {
   return data.data;
 }
 
+/** Farmer e-certificate: builds + stores the PDF and returns its signed URL. */
+export async function getPolicyCertificate(policyId: string): Promise<{ certificateUrl: string }> {
+  const { data } = await api.get<{ certificateUrl: string }>(
+    `/insurance/policies/${policyId}/certificate`
+  );
+  return data;
+}
+
+export interface PremiumCalcInput {
+  cropName: string;
+  season: string;
+  landAreaAcres: number;
+  /** Optional explicit sum insured (integer paisa); server derives it otherwise. */
+  sumInsuredPaisa?: number;
+}
+
+/** Integer-paisa premium breakdown computed from the server rate table. */
+export interface PremiumCalcResult {
+  cropName: string;
+  season: string;
+  landAreaAcres: number;
+  sumInsuredPaisa: number;
+  farmerPremiumPaisa: number;
+  govtSubsidyPaisa: number;
+  farmerSharePercent: number;
+  totalActuarialRatePercent: number;
+}
+
+/** Premium calculator (task 5.28) — no client-side rate tables (rule 1). */
+export async function calculatePremium(input: PremiumCalcInput): Promise<PremiumCalcResult> {
+  const { data } = await api.post<PremiumCalcResult>('/insurance/premium-calculator', input);
+  return data;
+}
+
 export async function getSchemes(): Promise<InsuranceScheme[]> {
   const { data } = await api.get<{ data: InsuranceScheme[]; total: number }>('/insurance/schemes');
   return data.data;

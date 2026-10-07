@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -14,9 +14,18 @@ from app.models.tree import (
     TreePlantationIn,
 )
 from app.routers.users import require_role
+from app.services import idempotency
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/tree", tags=["tree"])
+
+# Tool deep link — the tree-plantation module's registered `TREE_PAGES` tool id.
+TREE_DEEP_LINK = "/dashboard/p/treePlantation"
+
+# Recurring survival-check offsets (days after planting) emitted as tasks
+# (phase-05 WS-07 task 7.12).
+SURVIVAL_CHECK_DAYS = (30, 90, 180)
 
 CO2_RATES: dict[str, float] = {
     "teak": 22.0,
@@ -106,11 +115,34 @@ async def list_ngos(page: int = 1, pageSize: int = 20, uid: str = Depends(_viewe
 
 
 @router.post("/ngos/{ngo_id}/sapling-request", status_code=201)
-async def request_saplings(ngo_id: str, body: SaplingRequestIn, uid: str = Depends(_viewer)):
+async def request_saplings(
+    ngo_id: str,
+    body: SaplingRequestIn,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    uid: str = Depends(_viewer),
+):
+    """Free-sapling request. Status starts `pending` — approval is phase-07.
+
+    Deferred(2026-10-03, phase-07): NGO sapling-approval console. Hook: the
+    request doc's `status` (`pending` → `approved`/`rejected`).
+    """
     ngo = await get_doc("ngos", ngo_id)
     if ngo is None:
         _error(404, "NGO_NOT_FOUND", "NGO not found")
+
+    scope = f"tree.sapling_request.{uid}"
+    replayed = await idempotency.replay(scope, idempotency_key)
+    if replayed is not None:
+        return replayed
+
     request_id = f"sr_{uuid.uuid4().hex[:12]}"
+    response = {
+        "requestId": request_id,
+        "ngoId": ngo_id,
+        "treeType": body.treeType,
+        "count": body.count,
+        "status": "pending",
+    }
     await set_doc(
         f"users/{uid}/sapling_requests",
         request_id,
@@ -120,11 +152,20 @@ async def request_saplings(ngo_id: str, body: SaplingRequestIn, uid: str = Depen
             "ngoName": ngo["name"],
             "treeType": body.treeType,
             "count": body.count,
-            "status": "requested",
+            "status": "pending",
             "createdAt": datetime.now(timezone.utc).isoformat(),
         },
     )
-    return {"requestId": request_id, "status": "requested"}
+    if idempotency_key:
+        await idempotency.store(scope, idempotency_key, response)
+    return response
+
+
+@router.get("/sapling-requests/mine")
+async def list_my_sapling_requests(page: int = 1, pageSize: int = 20, uid: str = Depends(_viewer)):
+    docs = await query(f"users/{uid}/sapling_requests", [], limit=500)
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return _envelope(docs, page, pageSize)
 
 
 @router.get("/biofuel")
@@ -179,7 +220,32 @@ async def register_plantation(body: TreePlantationIn, uid: str = Depends(_viewer
     }
     await set_doc(f"users/{uid}/tree_plantations", plantation_id, doc)
     await set_doc("tree_plantations", plantation_id, doc)
+    await _emit_survival_checks(
+        uid, plantation_id, body.treeSpecies, body.parcelName, body.treeCount
+    )
     return doc
+
+
+async def _emit_survival_checks(
+    uid: str, plantation_id: str, species: str, parcel: str, count: int
+) -> None:
+    """Recurring survival-check tasks for a new plantation (task 7.12)."""
+    today = date.today()
+    for offset in SURVIVAL_CHECK_DAYS:
+        due = (today + timedelta(days=offset)).isoformat()
+        await emit_task(
+            uid,
+            persona="farmer",
+            module="treePlantation",
+            kind="survival_check",
+            title_en=f"Tree survival check — {species}",
+            title_hi=f"वृक्ष जीवित दर जाँच — {species}",
+            subtitle=f"{parcel} · {count} saplings · due {due}",
+            priority="upcoming",
+            deep_link=TREE_DEEP_LINK,
+            source_id=f"{plantation_id}:d{offset}",
+            due_at=due,
+        )
 
 
 @router.get("/plantations/mine")

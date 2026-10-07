@@ -91,7 +91,7 @@ export function LiveCard({ titleKey }: { titleKey: string }) {
     <div className="dash-live-card">
       <div className="dash-live-head">
         <span className="dash-live-title">📡 {t(titleKey)}</span>
-        <span className="dash-live-badge">{t('dashComingSoon')}</span>
+        <span className="dash-live-badge">{t('dashLiveSoon')}</span>
       </div>
       <div className="dash-live-rows">
         {[0, 1, 2].map((i) => (
@@ -118,7 +118,7 @@ export function SkeletonCard({ label }: { label?: string }) {
       <span className="dash-live-line w60" />
       <span className="dash-live-line w40" />
       <span className="dash-live-note" style={{ marginTop: 0 }}>
-        {label ?? t('dashComingSoon')}
+        {label ?? t('dashLiveSoon')}
       </span>
     </div>
   );

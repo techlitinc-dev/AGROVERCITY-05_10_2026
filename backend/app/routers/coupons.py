@@ -49,14 +49,22 @@ def coupon_reject_reason(coupon: dict, cart_total: int) -> str | None:
 
 
 def coupon_discount(coupon: dict, cart_total: int) -> int:
+    """Exact coupon discount in the cart unit, computed in integer paisa (rule 6).
+
+    The catalog stores money in rupees; we convert ONCE to integer paisa, apply
+    the percentage/cap with integer arithmetic (no float drift), then convert
+    back so the caller keeps receiving the same unit it passed in.
+    """
+    cart_paisa = int(round(cart_total * 100))
     if coupon["type"] == "percentage":
-        discount = int(cart_total * coupon["value"] / 100)
+        discount_paisa = cart_paisa * coupon["value"] // 100
         cap = coupon.get("maxDiscount")
         if cap is not None:
-            discount = min(discount, cap)
+            discount_paisa = min(discount_paisa, int(round(cap * 100)))
     else:
-        discount = min(coupon["value"], cart_total)
-    return max(discount, 0)
+        discount_paisa = min(int(round(coupon["value"] * 100)), cart_paisa)
+    discount_paisa = max(discount_paisa, 0)
+    return discount_paisa / 100
 
 
 def _public_coupon(coupon: dict, cart_total: int | None) -> dict:

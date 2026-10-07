@@ -26,3 +26,19 @@ export async function fetchStates(): Promise<StatesResponse> {
   const { data } = await api.get<StatesResponse>('/states');
   return data;
 }
+
+/** One MSP reference row — price is integer paisa. (WS-01 task 1.26) */
+export interface MspEntry {
+  crop: string;
+  msp_paisa: number;
+  season?: string;
+}
+
+/**
+ * GET /v1/reference/msp → MSP reference rows. Public endpoint; crops without a
+ * notified MSP are simply absent (the UI renders an "unavailable" label).
+ */
+export async function fetchMsp(): Promise<MspEntry[]> {
+  const { data } = await api.get<{ items: MspEntry[] }>('/reference/msp');
+  return data.items;
+}

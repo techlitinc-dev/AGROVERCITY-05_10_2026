@@ -3,7 +3,14 @@ from fastapi import APIRouter, Depends
 from app.core.db import get_doc, set_doc
 from app.core.deps import current_user_id
 from app.models.emarket import OrderStatusPatch, ReturnRequest
-from app.routers.orders import _append_event, _error, _order_user, _own_order, _restore_stock
+from app.routers.orders import (
+    _append_event,
+    _error,
+    _order_user,
+    _own_order,
+    _restore_stock,
+    emit_order_status_task,
+)
 from app.services.users import get_user
 
 router = APIRouter(tags=["orders"])
@@ -54,6 +61,7 @@ async def request_return(order_id: str, body: ReturnRequest, uid: str = Depends(
     if order.get("razorpayPaymentId"):
         order["refundStatus"] = "requested"
     await set_doc("orders", order_id, order)
+    await emit_order_status_task(order, "return_requested")
     return order
 
 
@@ -76,4 +84,5 @@ async def patch_order_status(
             order["refundStatus"] = "requested"
         await _restore_stock(order)
     await set_doc("orders", order_id, order)
+    await emit_order_status_task(order, body.status)
     return order

@@ -267,3 +267,37 @@ async def test_submit_response_has_photo_guidelines(client, user_store, monkeypa
     resp = await _submit(client, token)
     assert resp.status_code == 201
     assert len(resp.json()["photoGuidelines"]) > 0
+
+
+async def test_submit_claim_writes_audit_log(client, user_store, monkeypatch):
+    _fake_storage(monkeypatch)
+    token = _farmer(user_store)
+    _seed_policy(user_store)
+    created = (await _submit(client, token)).json()
+    audits = [doc for key, doc in user_store.items() if key.startswith("audit_logs/")]
+    assert len(audits) == 1
+    assert audits[0]["action"] == "CLAIM_INTIMATE"
+    assert audits[0]["claimId"] == created["id"]
+    assert audits[0]["actor"] == "uid-1"
+    assert isinstance(audits[0]["amountPaisa"], int)
+
+
+async def test_appeal_writes_audit_log(client, user_store, monkeypatch):
+    _fake_storage(monkeypatch)
+    token = _farmer(user_store)
+    _seed_policy(user_store)
+    await _submit(client, token)
+    claim_id = _drive_to_rejected(user_store)
+    resp = await client.post(
+        f"/v1/insurance/claims/{claim_id}/appeal",
+        json={"reason": APPEAL_REASON},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    actions = {
+        doc["action"]
+        for key, doc in user_store.items()
+        if key.startswith("audit_logs/")
+    }
+    assert "CLAIM_INTIMATE" in actions
+    assert "CLAIM_APPEAL" in actions

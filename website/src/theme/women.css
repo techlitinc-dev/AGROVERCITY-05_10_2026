@@ -1,0 +1,64 @@
+/* Women Farmer Hub — rose theme overlay (phase-05 WS-08 task 8.16).
+   Reuses tokens.css custom properties; classes are women-* prefixed. Imported
+   only by the hub page so the rest of the app keeps the green identity. */
+
+.women-hub {
+  --women-rose: #db2777;
+  --women-rose-soft: #fce7f3;
+  --women-rose-dark: #9d174d;
+}
+
+.women-hub .women-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+  padding-bottom: 4px;
+}
+
+.women-hub .women-tab {
+  border: 1.5px solid var(--av-border-grey-soft);
+  background: #fff;
+  color: var(--av-slate-1);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-family: var(--av-font);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.women-hub .women-tab-active {
+  background: var(--women-rose-soft);
+  border-color: var(--women-rose);
+  color: var(--women-rose-dark);
+}
+
+.women-hub .women-card {
+  background: #fff;
+  border: 1.5px solid var(--av-border-grey-soft);
+  border-left: 4px solid var(--women-rose);
+  border-radius: var(--av-radius-card);
+  box-shadow: var(--av-shadow-card);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.women-hub .women-metric {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--women-rose-dark);
+}
+
+.women-hub .women-chip {
+  display: inline-block;
+  background: var(--women-rose-soft);
+  color: var(--women-rose-dark);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}

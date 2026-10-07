@@ -278,14 +278,14 @@ const en: Record<string, string> = {
   dashMahila: 'Mahila',
   dashOnline: 'Online',
   dashWeather: 'Weather & Alerts',
-  dashWeatherComingSoon: 'Weather strip placeholder — live data coming soon',
+  dashWeatherLiveSoon: 'Weather strip placeholder — live data coming soon',
   dashGoodMorning: 'Good Morning',
   dashGoodAfternoon: 'Good Afternoon',
   dashGoodEvening: 'Good Evening',
   dashActiveRole: 'Active Role: {role} ({count} profiles)',
   dashChange: 'Change',
   dashBack: 'Back to Dashboard',
-  dashComingSoon: 'Coming soon',
+  dashLiveSoon: 'Coming soon',
   dashPlaceholderBody: 'This is a placeholder page — full functionality is coming soon.',
   dashNoLiveData: 'Live data will appear here',
   dashBottomNav: 'Primary navigation',
@@ -481,6 +481,18 @@ const en: Record<string, string> = {
   languagesAvailable: '{count} languages',
   saveAndContinue: 'Save & Continue',
   completeLaterNote: 'You can add farm and business details anytime from your dashboard.',
+
+  // ---- Global search (phase-05 WS-09) ----
+  searchTitle: 'Search',
+  searchPlaceholder: 'Search schemes, products, news…',
+  searchSeeAll: 'See all',
+  searchNoResults: 'No results found',
+  searchGroupSchemes: 'Schemes',
+  searchGroupProducts: 'Products',
+  searchGroupNews: 'News',
+  searchGroupCrops: 'Crops',
+  searchGroupCourses: 'Courses',
+  searchGroupLots: 'Lots',
 };
 
 registerLocale('en', en);

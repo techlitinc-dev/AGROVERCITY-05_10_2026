@@ -63,7 +63,11 @@ async def import_record(record_id: str, user: dict = Depends(_user)):
     if record is None:
         _error(404, "RECORD_NOT_FOUND", "record not found")
     user["landAreaAcres"] = record.totalAreaAcres
-    land_records = user.get("landRecords", [])
+    # Idempotent: re-importing the same Gat number replaces its entry instead of
+    # appending a duplicate (safe to replay with the same Idempotency-Key).
+    land_records = [
+        r for r in user.get("landRecords", []) if r.get("gatNumber") != record.gatNumber
+    ]
     land_records.append(
         {
             "gatNumber": record.gatNumber,

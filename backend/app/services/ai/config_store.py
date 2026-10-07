@@ -26,6 +26,12 @@ DEFAULT_AI_CONFIG = {
         # Brief M20 — objective auto-grading of assignment submissions. Prefill
         # only: the instructor must confirm before a grade is published.
         "courses_autograde": True,
+        # Brief M21 (WS-05) — government-scheme matching. The rules engine
+        # decides eligibility; the model only ranks + explains. `suggest`.
+        "schemes_match": True,
+        # Deferred(2026-10-03, phase-08): M26 women SHG-readiness AI — flag slot:
+        # women.shg_readiness (reserved, off).
+        "women_shg_readiness": False,
     },
     "thresholds": {
         "seller.rate_check.v1": 0.75,
@@ -39,6 +45,7 @@ DEFAULT_AI_CONFIG = {
         "contracts.attractiveness.v1": 0.75,
         "courses.recommend.v1": 0.75,
         "courses.grade_suggest.v1": 0.75,
+        "schemes.match.v1": 0.75,
     },
     "automation": {
         "seller.rate_check.v1": "suggest",
@@ -53,6 +60,8 @@ DEFAULT_AI_CONFIG = {
         "courses.recommend.v1": "suggest",
         # Auto-grading never publishes on its own — instructor confirm required.
         "courses.grade_suggest.v1": "require_confirm",
+        # M21 matching annotates the discovery list only — never auto-applies.
+        "schemes.match.v1": "suggest",
     },
 }
 CACHE_TTL_SECONDS = 60.0

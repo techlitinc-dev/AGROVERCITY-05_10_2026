@@ -9,8 +9,6 @@ import { registerLocale } from '../index';
 const enDairy: Record<string, string> = {
   // ---- Shared ----
   dairyLoadFailed: 'Could not load dairy data. Please try again.',
-  dairyComingSoon: 'Coming soon in this build',
-  dairyComingSoonBody: 'This dairy console section ships in the next phase.',
   dairy_status_pending: 'Pending',
   dairy_status_paid: 'Paid',
   dairy_status_active: 'Active',

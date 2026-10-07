@@ -75,6 +75,9 @@ const hiIntel: Record<string, string> = {
   ctFarmerManualHint: 'सहेजी सूची से चुनें, या सीधे किसान का UID लिखें।',
   ctFarmerRequired: 'किसान चुनें',
   ctCrop: 'फसल',
+  ctContractTitle: 'अनुबंध का शीर्षक (वैकल्पिक)',
+  contractTemplatePickerLabel: 'टेम्पलेट से शुरू करें',
+  contractTemplateCustom: 'अपना अनुबंध',
   ctQuantity: 'कुल मात्रा (क्विंटल)',
   ctPriceType: 'भाव का तरीका',
   ctPriceFixed: 'तय भाव',
@@ -123,6 +126,11 @@ const hiIntel: Record<string, string> = {
   ctSlotDate: 'डिलीवरी तारीख़',
   ctDeliveriesEmpty: 'अभी कोई डिलीवरी नहीं',
   ctDeliveriesEmptyBody: 'कार्यक्रम की हर तारीख़ खरीद ऑर्डर बनती है — उसे खरीद में ट्रैक करें।',
+  ctCalendarTitle: 'डिलीवरी कैलेंडर',
+  ctCalendarPrev: 'पिछला महीना',
+  ctCalendarNext: 'अगला महीना',
+  ctCalendarScheduled: 'तय डिलीवरी',
+  ctCalendarDelivered: 'खरीद ऑर्डर बना',
   ctPurchaseCreated: 'खरीद ऑर्डर बन गया',
   ctEdit: 'बदलें',
   ctCancel: 'अनुबंध रद्द करें',
@@ -187,6 +195,14 @@ const hiIntel: Record<string, string> = {
   stale_lot: 'आपके {crop} लॉट पर अब तक कोई ऑफ़र नहीं — अपेक्षित भाव जाँचें।',
   sold_below_mandi: 'आपकी {crop} मंडी कांटे से 10% से ज़्यादा सस्ती बिकी है।',
   settlement_pending: '₹{amount} का सेटलमेंट भुगतान बाकी है।',
+
+  // ---- WS-01 अनुबंध प्रदर्शन + MSP (कार्य 1.24, 1.26) ----
+  ctAnalyticsTitle: 'अनुबंध प्रदर्शन',
+  ctAnalyticsFulfillment: '{pct}% पूरा',
+  ctAnalyticsOnTime: '{total} में से {onTime} डिलीवरी समय पर',
+  ctAnalyticsEmpty: 'अभी तक कोई डिलीवरी पूरी नहीं हुई',
+  contractMspLabel: 'MSP',
+  contractMspUnavailable: 'MSP उपलब्ध नहीं',
 };
 
 registerLocale('hi', hiIntel);

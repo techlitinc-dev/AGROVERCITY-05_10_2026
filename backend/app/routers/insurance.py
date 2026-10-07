@@ -290,6 +290,53 @@ async def list_schemes(user: dict = Depends(_require_insurance_user)):
     return {"data": items, "total": len(items)}
 
 
+class PremiumCalcIn(BaseModel):
+    """Premium calculator inputs (farmer face, task 5.28).
+
+    Premiums are returned in integer paisa; the rate table stays server-side so
+    no client-side rate constants exist (rule 1).
+    """
+
+    cropName: str = Field(min_length=1)
+    season: str = "Kharif"
+    landAreaAcres: float = Field(gt=0)
+    sumInsuredPaisa: int | None = Field(default=None, ge=0)
+
+
+@router.post("/premium-calculator")
+async def premium_calculator(
+    body: PremiumCalcIn, user: dict = Depends(_require_insurance_user)
+):
+    """Compute the farmer premium + govt subsidy from the published rate table."""
+    rates = await query(
+        "insurance_rates",
+        [("cropName", "==", body.cropName), ("season", "==", body.season)],
+    )
+    if not rates:
+        _error(404, "RATE_NOT_FOUND", "इस फसल/सीज़न की दर उपलब्ध नहीं")
+    rate = rates[0]
+    if body.sumInsuredPaisa is not None:
+        sum_insured_paisa = int(body.sumInsuredPaisa)
+    else:
+        sum_insured_paisa = int(round(rate["sumInsuredPerAcre"] * body.landAreaAcres * 100))
+    farmer_share = float(rate.get("farmerSharePercent") or 0)
+    actuarial = float(rate.get("totalActuarialRatePercent") or 0)
+    farmer_premium_paisa = int(round(sum_insured_paisa * farmer_share / 100))
+    govt_subsidy_paisa = int(
+        round(sum_insured_paisa * max(0.0, actuarial - farmer_share) / 100)
+    )
+    return {
+        "cropName": body.cropName,
+        "season": body.season,
+        "landAreaAcres": body.landAreaAcres,
+        "sumInsuredPaisa": sum_insured_paisa,
+        "farmerPremiumPaisa": farmer_premium_paisa,
+        "govtSubsidyPaisa": govt_subsidy_paisa,
+        "farmerSharePercent": farmer_share,
+        "totalActuarialRatePercent": actuarial,
+    }
+
+
 # ==============================================================================
 # Insurance Provider Workspace & Review Endpoints
 # ==============================================================================

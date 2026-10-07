@@ -35,9 +35,12 @@ def _check_price(mrp: int | None, discounted_price: int | None):
         )
 
 
-@router.post("", status_code=201)
-async def create_product(body: UserProductCreate, ctx: tuple = Depends(_any_user)):
-    user, uid = ctx
+async def create_listing(user: dict, uid: str, body: UserProductCreate) -> dict:
+    """Publish a user product into the marketplace `products` catalog.
+
+    Shared by `POST /v1/my-products` and the Women Farmer Hub home-enterprise
+    listing form (phase-05 WS-08 task 8.20) so both go through the same shape.
+    """
     _check_price(body.mrp, body.discountedPrice)
     product_id = f"prod_{uuid.uuid4().hex[:10]}"
     now = datetime.now(timezone.utc).isoformat()
@@ -58,6 +61,12 @@ async def create_product(body: UserProductCreate, ctx: tuple = Depends(_any_user
         doc["batchNo"] = f"USR-{uuid.uuid4().hex[:8].upper()}"
     await set_doc("products", product_id, doc)
     return doc
+
+
+@router.post("", status_code=201)
+async def create_product(body: UserProductCreate, ctx: tuple = Depends(_any_user)):
+    user, uid = ctx
+    return await create_listing(user, uid, body)
 
 
 @router.get("")

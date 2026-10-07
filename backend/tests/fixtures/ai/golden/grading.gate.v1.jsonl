@@ -1,0 +1,12 @@
+{"id": "onion-a-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:a", "expectedGrade": "AGMARK A"}
+{"id": "onion-a-02", "questionSetId": "grading.gate.v1", "imageRef": "grade:a", "expectedGrade": "AGMARK A"}
+{"id": "potato-b-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:b", "expectedGrade": "AGMARK B"}
+{"id": "potato-b-02", "questionSetId": "grading.gate.v1", "imageRef": "grade:b", "expectedGrade": "AGMARK B"}
+{"id": "tomato-c-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:c", "expectedGrade": "AGMARK C"}
+{"id": "tomato-c-02", "questionSetId": "grading.gate.v1", "imageRef": "grade:c", "expectedGrade": "AGMARK C"}
+{"id": "apple-d-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:d", "expectedGrade": "AGMARK D"}
+{"id": "apple-d-02", "questionSetId": "grading.gate.v1", "imageRef": "grade:d", "expectedGrade": "AGMARK D"}
+{"id": "grapes-a-b-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:a", "expectedGrade": "AGMARK B"}
+{"id": "grapes-b-a-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:b", "expectedGrade": "AGMARK A"}
+{"id": "mango-c-a-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:c", "expectedGrade": "AGMARK A"}
+{"id": "pomegranate-d-b-01", "questionSetId": "grading.gate.v1", "imageRef": "grade:d", "expectedGrade": "AGMARK B", "answers": {"needs_human": false, "confidence_class": "high"}}

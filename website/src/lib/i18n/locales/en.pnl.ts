@@ -71,6 +71,23 @@ const enPnl: Record<string, string> = {
   // ---- Export ----
   pnlExportStatement: 'Statement CSV',
   pnlExportCashflow: 'Cash-flow CSV',
+  pnlExportPdf: 'PDF report',
+  pnlExportTally: 'Tally export',
+  pnlExportFailed: 'Could not prepare the export — please retry',
+
+  // ---- Per-crop statements ----
+  pnlCropSelectLabel: 'Crop filter',
+  pnlAllCrops: 'All crops',
+
+  // ---- Break-even calculator (client-side arithmetic) ----
+  pnlBreakEvenTitle: 'Break-even calculator',
+  pnlBreakEvenHint: 'Estimate the price and yield you need to cover your costs.',
+  pnlBreakEvenCost: 'Total input cost (₹)',
+  pnlBreakEvenYield: 'Expected yield (quintals)',
+  pnlBreakEvenPrice: 'Expected price (₹/quintal)',
+  pnlBreakEvenPriceOut: 'Break-even price',
+  pnlBreakEvenYieldOut: 'Break-even yield',
+  pnlBreakEvenIncomplete: 'Enter cost, yield and price to see the break-even point',
 };
 
 registerLocale('en', enPnl);

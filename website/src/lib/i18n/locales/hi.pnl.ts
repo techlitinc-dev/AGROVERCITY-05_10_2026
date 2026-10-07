@@ -71,6 +71,23 @@ const hiPnl: Record<string, string> = {
   // ---- Export ----
   pnlExportStatement: 'विवरण CSV',
   pnlExportCashflow: 'कैश-फ्लो CSV',
+  pnlExportPdf: 'PDF रिपोर्ट',
+  pnlExportTally: 'टैली निर्यात',
+  pnlExportFailed: 'निर्यात तैयार नहीं हो सका — दोबारा कोशिश करें',
+
+  // ---- Per-crop statements ----
+  pnlCropSelectLabel: 'फसल फ़िल्टर',
+  pnlAllCrops: 'सभी फसलें',
+
+  // ---- Break-even calculator (client-side arithmetic) ----
+  pnlBreakEvenTitle: 'ब्रेक-ईवन कैलकुलेटर',
+  pnlBreakEvenHint: 'अपनी लागत निकालने के लिए ज़रूरी भाव और उपज का अनुमान लगाएँ।',
+  pnlBreakEvenCost: 'कुल इनपुट लागत (₹)',
+  pnlBreakEvenYield: 'अनुमानित उपज (क्विंटल)',
+  pnlBreakEvenPrice: 'अनुमानित भाव (₹/क्विंटल)',
+  pnlBreakEvenPriceOut: 'ब्रेक-ईवन भाव',
+  pnlBreakEvenYieldOut: 'ब्रेक-ईवन उपज',
+  pnlBreakEvenIncomplete: 'ब्रेक-ईवन देखने के लिए लागत, उपज और भाव भरें',
 };
 
 registerLocale('hi', hiPnl);

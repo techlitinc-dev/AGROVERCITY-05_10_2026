@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.core.db import query
 from app.data.district_crops import DISTRICT_CROPS
 from app.data.languages import LANGUAGES, REGIONAL_MAPPING
 from app.data.states import INDIAN_STATES
@@ -29,3 +30,26 @@ async def region_crops(district: str):
 @router.get("/languages")
 async def languages():
     return {"languages": LANGUAGES, "regionalMapping": REGIONAL_MAPPING}
+
+
+@router.get("/reference/msp")
+async def msp_reference():
+    """Crop → minimum support price in integer paisa.
+
+    Phase-05 WS-01 task 1.25. Reads the `msp_reference` collection seeded by
+    `scripts/seed_msp_reference.py`. Reference data only — no computed values;
+    a crop absent from the collection is simply absent from the response (the
+    UI shows an "unavailable" label rather than an invented number).
+    """
+    docs = await query("msp_reference", limit=500)
+    items = [
+        {
+            "crop": d.get("crop"),
+            "msp_paisa": d.get("msp_paisa"),
+            "season": d.get("season"),
+        }
+        for d in docs
+        if d.get("crop") is not None and d.get("msp_paisa") is not None
+    ]
+    items.sort(key=lambda d: str(d["crop"]).lower())
+    return {"items": items}

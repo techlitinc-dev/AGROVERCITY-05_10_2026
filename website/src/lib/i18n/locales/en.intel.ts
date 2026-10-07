@@ -77,6 +77,9 @@ const enIntel: Record<string, string> = {
   ctFarmerManualHint: 'Pick from your saved farmers, or type the farmer UID directly.',
   ctFarmerRequired: 'Choose a farmer',
   ctCrop: 'Crop',
+  ctContractTitle: 'Contract title (optional)',
+  contractTemplatePickerLabel: 'Start from a template',
+  contractTemplateCustom: 'Custom contract',
   ctQuantity: 'Total quantity (quintal)',
   ctPriceType: 'Price type',
   ctPriceFixed: 'Fixed rate',
@@ -126,6 +129,11 @@ const enIntel: Record<string, string> = {
   ctDeliveriesEmpty: 'No deliveries yet',
   ctDeliveriesEmptyBody:
     'Each scheduled slot becomes a purchase order you can track in Purchases.',
+  ctCalendarTitle: 'Delivery calendar',
+  ctCalendarPrev: 'Previous month',
+  ctCalendarNext: 'Next month',
+  ctCalendarScheduled: 'Scheduled delivery',
+  ctCalendarDelivered: 'Delivery created',
   ctPurchaseCreated: 'Purchase order created',
   ctEdit: 'Edit',
   ctCancel: 'Cancel contract',
@@ -191,6 +199,14 @@ const enIntel: Record<string, string> = {
   stale_lot: 'Your {crop} lot has no offers yet — check the expected rate.',
   sold_below_mandi: 'Your {crop} sold more than 10% below the mandi modal.',
   settlement_pending: '₹{amount} of settlements is pending payout.',
+
+  // ---- WS-01 contract performance + MSP (tasks 1.24, 1.26) ----
+  ctAnalyticsTitle: 'Contract performance',
+  ctAnalyticsFulfillment: '{pct}% fulfilled',
+  ctAnalyticsOnTime: '{onTime} of {total} deliveries on time',
+  ctAnalyticsEmpty: 'No deliveries completed yet',
+  contractMspLabel: 'MSP',
+  contractMspUnavailable: 'MSP not available',
 };
 
 registerLocale('en', enIntel);

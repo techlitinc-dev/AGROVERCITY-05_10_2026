@@ -148,6 +148,7 @@ export interface Contract {
   buyerId?: string;
   farmerId?: string;
   crop: string;
+  title?: string;
   quantityTotal?: number;
   priceType?: ContractPriceType;
   baseRate?: number;
@@ -168,6 +169,7 @@ export interface Contract {
 export interface ContractCreateInput {
   farmerId: string;
   crop: string;
+  title?: string;
   quantityTotal: number;
   priceType: ContractPriceType;
   baseRate?: number;
@@ -186,6 +188,21 @@ export type ContractUpdateInput = Partial<
 export interface ContractActionResult {
   ok: boolean;
   status: string;
+}
+
+/**
+ * Curated direct-buyer contract templates (Firestore `contract_templates`,
+ * seeded by backend/scripts/seed_contract_templates.py). Read-only reference
+ * data; the picker in ContractFormPage prefills title + terms from these.
+ */
+export interface ContractTemplate {
+  template_id: string;
+  crop: string;
+  title_en: string;
+  title_hi: string;
+  terms_text_en: string;
+  terms_text_hi: string;
+  created_at?: string;
 }
 
 export interface ContractAcceptResult {
@@ -225,6 +242,27 @@ export async function listContractsMine(
 
 export async function createContract(input: ContractCreateInput): Promise<Contract> {
   const { data } = await api.post<Contract>('/contracts', input);
+  return data;
+}
+
+/**
+ * GET /v1/contracts/templates → the curated template library. Reference data
+ * (no page/pageSize); the picker prefills title + terms from a selected doc.
+ */
+export async function listContractTemplates(): Promise<{ data: ContractTemplate[] }> {
+  const { data } = await api.get<{ data: ContractTemplate[] }>('/contracts/templates');
+  return data;
+}
+
+export interface ContractAnalytics {
+  fulfillment_pct: number;
+  on_time_deliveries: number;
+  total_deliveries: number;
+}
+
+/** GET /v1/contracts/analytics → the buyer's contract performance summary. */
+export async function getContractAnalytics(): Promise<ContractAnalytics> {
+  const { data } = await api.get<ContractAnalytics>('/contracts/analytics');
   return data;
 }
 

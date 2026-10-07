@@ -38,3 +38,21 @@ async def test_languages_all_24_entries(client):
     codes = {lang["code"] for lang in languages}
     assert {"en", "hi", "mr", "gu", "pa", "te", "ta", "bn", "ur", "kn", "ml", "or"}.issubset(codes)
     assert all(lang["audioText"] for lang in languages)
+
+
+async def test_msp_reference_returns_seeded_crops(client, user_store):
+    user_store["msp_reference/wheat"] = {
+        "crop": "Wheat",
+        "msp_paisa": 227500,
+        "season": "rabi",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    user_store["msp_reference/onion"] = {"crop": "Onion", "season": "rabi"}  # no price → omitted
+
+    resp = await client.get("/v1/reference/msp")
+
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert {"crop": "Wheat", "msp_paisa": 227500, "season": "rabi"} in items
+    assert all(item["crop"] != "Onion" for item in items)
+

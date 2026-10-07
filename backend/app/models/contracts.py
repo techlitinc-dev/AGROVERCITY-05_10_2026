@@ -26,6 +26,7 @@ class ContractOut(BaseModel):
     termsText: str | None = None
     acceptedBy: str | None = None
     # targeted supply contracts (P8/P10) — all optional so legacy seed docs validate
+    title: str | None = None
     buyerId: str | None = None
     farmerId: str | None = None
     quantityTotal: float | None = None
@@ -48,6 +49,7 @@ class ContractOut(BaseModel):
 class ContractCreate(BaseModel):
     farmerId: str
     crop: str
+    title: str = ""
     quantityTotal: float = Field(gt=0)
     priceType: Literal["fixed", "mandiLinked"] = "fixed"
     baseRate: float | None = None
@@ -63,6 +65,7 @@ class ContractCreate(BaseModel):
 
 class ContractUpdate(BaseModel):
     crop: str | None = None
+    title: str | None = None
     quantityTotal: float | None = Field(default=None, gt=0)
     priceType: Literal["fixed", "mandiLinked"] | None = None
     baseRate: float | None = None

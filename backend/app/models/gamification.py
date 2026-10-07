@@ -5,6 +5,9 @@ class RedeemRequest(BaseModel):
     rewardType: str = Field(..., description="voucher | soil_test | expert_call | workshop")
     coins: int = Field(..., ge=10, le=1000)
     targetId: str | None = None
+    # X11: when the redemption is applied against an order, the order value (in
+    # integer paisa) makes the ≤50%-of-order ceiling enforceable server-side.
+    orderValuePaisa: int | None = Field(default=None, ge=0)
 
 
 class LevelInfo(BaseModel):

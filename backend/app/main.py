@@ -77,6 +77,7 @@ from app.routers import (
     reference,
     referrals,
     schemes,
+    search,
     seller,
     seller_products,
     settlements,
@@ -180,6 +181,7 @@ app.include_router(billing.router, prefix="/v1")
 app.include_router(jobs.router, prefix="/v1")
 app.include_router(settlements.router, prefix="/v1")
 app.include_router(schemes.router, prefix="/v1")
+app.include_router(search.router, prefix="/v1")
 app.include_router(vault.router, prefix="/v1")
 app.include_router(land_records.router, prefix="/v1")
 app.include_router(water.router, prefix="/v1")

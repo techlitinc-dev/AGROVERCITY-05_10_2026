@@ -19,8 +19,8 @@ const hiBroker: Record<string, string> = {
   tool_brokerProfile_sub: 'मंडी, दर-पत्रक, शर्तें',
   tool_brokerOffers: 'दलाल ऑफ़र',
   tool_brokerOffers_sub: 'आपकी फसल के दलाल ऑफ़र',
-  buyersComingSoon: 'जल्द आएगा',
-  buyersComingSoonBody: 'इस प्रोफ़ाइल के लिए खरीदार-सूची रोडमैप पर है।',
+  buyersWorkspace: 'खरीदार निर्देशिका',
+  buyersWorkspaceBody: 'खरीदार CRM ब्रोकर कार्यक्षेत्र का हिस्सा है।',
 
   // ---- Deal status pills (वाक्य-शैली, plan §2.3) ----
   dealStatus_negotiating: 'भाव की बातचीत चल रही है',

@@ -1,3 +1,18 @@
+"""Report renderers (PDF + data exports).
+
+Tally-compatible export column mapping (`build_tally_csv`) — documented contract:
+    Date | Voucher Type | Ledger | Debit | Credit | Narration
+- Date: ISO `YYYY-MM-DD` entry date.
+- Voucher Type: "Receipt" for income rows, "Payment" for expense rows.
+- Ledger: the entry category.
+- Debit: expense amount in rupees with exactly 2 decimals ("0.00" for income).
+- Credit: income amount in rupees with exactly 2 decimals ("0.00" for expense).
+Amounts are integer paisa internally; they are rendered as rupees to exactly two
+decimals so a Tally import matches the cashbook to the paisa.
+"""
+
+import csv
+import io
 import logging
 import os
 import uuid
@@ -510,5 +525,75 @@ def build_member_statement_pdf(
         ])
     )
     story.append(t_pays)
+    doc.build(story)
+    return path
+
+
+TALLY_HEADER = ["Date", "Voucher Type", "Ledger", "Debit", "Credit", "Narration"]
+
+
+def build_tally_csv(entries: list[dict]) -> str:
+    """Tally-importable CSV — see the module docstring for the column mapping."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(TALLY_HEADER)
+    for entry in entries:
+        etype = entry.get("type")
+        amount = float(entry.get("amount", 0) or 0)
+        debit = f"{amount:.2f}" if etype == "expense" else "0.00"
+        credit = f"{amount:.2f}" if etype == "income" else "0.00"
+        voucher = "Payment" if etype == "expense" else "Receipt"
+        writer.writerow(
+            [
+                entry.get("date", ""),
+                voucher,
+                entry.get("category", ""),
+                debit,
+                credit,
+                entry.get("title") or entry.get("category", ""),
+            ]
+        )
+    return buffer.getvalue()
+
+
+def build_pnl_pdf(uid: str, entries: list[dict], from_date: str, to_date: str) -> str:
+    """Render the Farm CEO P&L statement to a PDF and return the temp path."""
+    path = f"/tmp/pnl_{uid}_{uuid.uuid4().hex[:8]}.pdf"
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    styles = getSampleStyleSheet()
+    total_income = sum(e.get("amount", 0) for e in entries if e.get("type") == "income")
+    total_expense = sum(e.get("amount", 0) for e in entries if e.get("type") == "expense")
+    story = [
+        Paragraph("Farm P&amp;L Report", styles["Title"]),
+        Paragraph(f"{from_date} to {to_date}", styles["Normal"]),
+        Spacer(1, 12),
+        Paragraph(f"Income: Rs {total_income:.2f}", styles["Normal"]),
+        Paragraph(f"Expense: Rs {total_expense:.2f}", styles["Normal"]),
+        Paragraph(f"Net: Rs {total_income - total_expense:.2f}", styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    rows = [["Date", "Category", "Type", "Amount"]]
+    for entry in entries:
+        rows.append(
+            [
+                entry.get("date", ""),
+                entry.get("category", ""),
+                entry.get("type", ""),
+                f"Rs {float(entry.get('amount', 0) or 0):.2f}",
+            ]
+        )
+    table = Table(rows, colWidths=[90, 180, 90, 110])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#43A047")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
     doc.build(story)
     return path

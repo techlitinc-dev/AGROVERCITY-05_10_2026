@@ -155,3 +155,118 @@ async def test_intent_feeds_saturation_count(client, user_store):
     )
     assert resp.status_code == 200
     assert resp.json()["sowingCount"] >= 1
+
+
+async def test_saturation_returns_data_basis_and_logs_decision(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/saturation",
+        json={**SATURATION_BODY, "shareSowingIntent": False},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dataBasis"] == {"count": 0, "district": "Nashik"}
+    assert body["priceSource"] in ("mandi_history", "unavailable")
+    assert body["automationLevel"] == "suggest"
+    assert any(key.startswith("ai_decisions/") for key in user_store)
+
+
+async def test_saturation_red_emits_task(client, user_store):
+    token = seed_user(user_store)
+    for i in range(65):
+        user_store[f"crop_cycles/u{i}_onion_Kharif"] = {
+            "userId": f"u{i}",
+            "crop": "onion",
+            "district": "Nashik",
+            "season": "Kharif",
+        }
+    resp = await client.post(
+        "/v1/advisory/saturation",
+        json={**SATURATION_BODY, "shareSowingIntent": False},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert any(doc.get("module") == "advisory" for doc in tasks)
+
+
+async def test_disease_gate_blocks_non_leaf(client, user_store, monkeypatch):
+    from app.services.ai import gateway
+
+    async def fake_analyze(image_bytes, prompt, schema=None, module="x"):
+        return {"is_plant_leaf": False, "quality_ok": True, "confidence": 0.9}
+
+    monkeypatch.setattr(gateway, "analyze_image", fake_analyze)
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["gate"]["passed"] is False
+    assert body["retake"] is not None
+    assert body["results"] == []
+    assert not any(key.startswith("disease_scans/") for key in user_store)
+
+
+async def test_disease_low_confidence_creates_ticket(client, user_store, monkeypatch):
+    from app.services.ai import gateway
+
+    async def fake_analyze(image_bytes, prompt, schema=None, module="x"):
+        return {
+            "is_plant_leaf": True,
+            "quality_ok": True,
+            "diseaseName": "Leaf Rust",
+            "crop": "Wheat",
+            "pathogen": "Puccinia triticina",
+            "confidence": 0.55,
+            "symptoms": "orange pustules",
+            "chemicalTreatment": "Propiconazole 25% EC",
+            "organicTreatment": "Neem oil",
+            "dosage": "1 ml/L",
+            "estimatedCost": 300.0,
+        }
+
+    monkeypatch.setattr(gateway, "analyze_image", fake_analyze)
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["gate"]["passed"] is True
+    assert any(key.startswith("expert_tickets/") for key in user_store)
+
+
+async def test_disease_scan_history_per_plot(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        data={"plotId": "plot-1"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    scan_id = resp.json()["scanId"]
+    assert scan_id
+    history = await client.get(
+        "/v1/advisory/disease-scans", params={"plotId": "plot-1"}, headers=auth(token)
+    )
+    assert history.status_code == 200
+    assert scan_id in [row["scanId"] for row in history.json()["data"]]
+
+
+async def test_disease_treatment_emits_task(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    assert any(doc.get("kind") == "disease_treatment" for doc in tasks)

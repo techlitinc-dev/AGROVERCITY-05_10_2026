@@ -619,6 +619,15 @@ export default function CashbookPage() {
                   </button>
                 </span>
               </div>
+              {e.photos && e.photos.length > 0 ? (
+                <div className="trade-photo-grid">
+                  {e.photos.slice(0, 3).map((url) => (
+                    <div key={url} className="trade-photo-thumb">
+                      <img src={url} alt={e.title} />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

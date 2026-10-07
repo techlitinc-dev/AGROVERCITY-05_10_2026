@@ -9,8 +9,6 @@ import { registerLocale } from '../index';
 const hiDairy: Record<string, string> = {
   // ---- Shared ----
   dairyLoadFailed: 'डेयरी जानकारी नहीं मिली। फिर कोशिश करें।',
-  dairyComingSoon: 'इस बिल्ड में जल्द आ रहा है',
-  dairyComingSoonBody: 'डेयरी कंसोल का यह हिस्सा अगले चरण में जुड़ेगा।',
   dairy_status_pending: 'बाकी',
   dairy_status_paid: 'भुगतान हो गया',
   dairy_status_active: 'सक्रिय',

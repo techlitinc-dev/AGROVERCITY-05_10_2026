@@ -12,6 +12,7 @@ import {
   type Contract,
   type ContractDeliveriesResponse,
 } from '../../lib/api/intelligence';
+import { fetchMsp, type MspEntry } from '../../lib/api/reference';
 import { inr } from '../../lib/api/trade';
 import { useT } from '../../lib/i18n';
 import '../../theme/trade.css';
@@ -42,6 +43,15 @@ export default function FarmerContractDetailPage() {
   const [contract, setContract] = useState<Contract | null>(null);
   const [deliveries, setDeliveries] = useState<ContractDeliveriesResponse | null>(null);
   const [notFound, setNotFound] = useState(false);
+  // MSP reference (WS-01 task 1.26) — null until loaded / on failure; a missing
+  // crop shows the "unavailable" label rather than an invented number.
+  const [msp, setMsp] = useState<MspEntry[] | null>(null);
+
+  useEffect(() => {
+    fetchMsp()
+      .then(setMsp)
+      .catch(() => setMsp(null));
+  }, []);
 
   useEffect(() => {
     listContractsMine('farmer')
@@ -90,6 +100,7 @@ export default function FarmerContractDetailPage() {
   const fulfilment = deliveries?.fulfilment;
   const attractiveness = (contract as Contract & { attractiveness?: ContractAttractiveness })
     .attractiveness;
+  const mspEntry = msp?.find((m) => m.crop?.toLowerCase() === contract.crop?.toLowerCase());
 
   return (
     <ToolShell toolId="myContracts" backTo="/dashboard/p/myContracts">
@@ -109,6 +120,12 @@ export default function FarmerContractDetailPage() {
             <span className="ct-current-price">
               {inr(contract.currentPrice)}
               <small>{t('perQuintal')}</small>
+            </span>
+          ) : null}
+          {msp ? (
+            <span className="ct-formula-chip">
+              {t('contractMspLabel')}:{' '}
+              {mspEntry ? inr(mspEntry.msp_paisa) : t('contractMspUnavailable')}
             </span>
           ) : null}
         </div>

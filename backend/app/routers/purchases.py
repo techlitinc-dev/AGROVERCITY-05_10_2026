@@ -9,11 +9,28 @@ from app.models.direct import AdvanceIn, CancelIn, PickupIn, PurchaseCreate
 from app.services import settlements as settlements_service
 from app.services.chat import ensure_chat_room
 from app.services.notify import notify_user
+from app.services.pnl_engine import record_auto_entry
 from app.services.users import get_user
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
 
 TERMINAL_STATUSES = ("completed", "cancelled")
+
+
+async def _record_lot_sale(purchase: dict) -> None:
+    """Auto-feed P&L (WS-04): a sold lot produces exactly one income line."""
+    farmer_id = purchase.get("farmerId")
+    amount_paisa = int(
+        round(
+            float(purchase.get("agreedPricePerUnit", 0) or 0)
+            * float(purchase.get("quantity", 0) or 0)
+            * 100
+        )
+    )
+    if farmer_id and amount_paisa > 0:
+        await record_auto_entry(
+            farmer_id, "income", amount_paisa, "lot_sale", "lot_sale", purchase["id"]
+        )
 
 # Spec C5 commission engine — config-driven via platform_config/settlements
 # (sellerPct / sellerMinRupees; see commission_for below). Defaults: 2% min ₹50,
@@ -351,6 +368,7 @@ async def create_purchase_from_offer(offer: dict) -> dict:
         target["status"] = "sold"
         await set_doc("market_lots", target["id"], target)
     await set_doc("purchases", purchase["id"], purchase)
+    await _record_lot_sale(purchase)
     await ensure_chat_room(purchase)  # spec §4.1 — room created by CONFIRMED event
     return purchase
 
@@ -385,6 +403,7 @@ async def create_purchase(body: PurchaseCreate, uid: str = Depends(current_user_
         price=lot.get("expectedRate", 0),
     )
     await set_doc("purchases", purchase["id"], purchase)
+    await _record_lot_sale(purchase)
     await ensure_chat_room(purchase)  # spec §4.1 — room created by CONFIRMED event
     await notify_user(
         purchase["farmerId"],

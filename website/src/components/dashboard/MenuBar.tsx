@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useT } from '../../lib/i18n';
 import { LANGUAGE_CATALOGUE } from '../../lib/languages';
 import { listNotifications } from '../../lib/api/notifications';
@@ -30,6 +30,7 @@ interface MenuBarProps {
 export default function MenuBar({ onOpenAllTools }: MenuBarProps) {
   const t = useT();
   const navigate = useNavigate();
+  const location = useLocation();
   const clear = useSessionStore((s) => s.clear);
   const setOnboarded = useOnboardingStore((s) => s.setOnboarded);
   const language = useOnboardingStore((s) => s.language);
@@ -37,8 +38,23 @@ export default function MenuBar({ onOpenAllTools }: MenuBarProps) {
   const hasToken = useSessionStore((s) => !!s.accessToken);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mahila, setMahila] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [now, setNow] = useState(() => new Date());
   const barRef = useRef<HTMLDivElement>(null);
+
+  // Keep the header search box in sync with the results page URL (?q=).
+  useEffect(() => {
+    if (location.pathname === '/search') {
+      setSearchQuery(new URLSearchParams(location.search).get('q') ?? '');
+    }
+  }, [location.pathname, location.search]);
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const value = searchQuery.trim();
+    if (!value) return;
+    navigate(`/search?q=${encodeURIComponent(value)}`);
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
@@ -224,6 +240,27 @@ export default function MenuBar({ onOpenAllTools }: MenuBarProps) {
         ))}
         <span className="dash-menu-spacer" />
         <div className="dash-tray">
+          <form role="search" onSubmit={submitSearch} style={{ display: 'inline-flex' }}>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t('searchPlaceholder')}
+              aria-label={t('searchTitle')}
+              style={{
+                background: 'rgba(255, 255, 255, 0.12)',
+                color: '#e8f5e9',
+                border: 'none',
+                borderRadius: 999,
+                fontFamily: 'var(--av-font)',
+                fontSize: 11.5,
+                fontWeight: 800,
+                padding: '4px 10px',
+                minWidth: 140,
+                maxWidth: 180,
+              }}
+            />
+          </form>
           <button
             type="button"
             className="dash-tray-pill coins"

@@ -10,15 +10,18 @@ import {
   mandiList,
   mandiPriceHistory,
   mandiPrices,
+  mandiSmartSelect,
+  paisaInr,
   vyapariRates,
   type MandiCompareItem,
   type MandiInfo,
   type MandiPrice,
   type PricePoint,
+  type SmartSelectResult,
   type VyapariRate,
 } from '../../lib/api/mandi';
 import { inr } from '../../lib/api/trade';
-import { useT } from '../../lib/i18n';
+import { currentLanguage, useT } from '../../lib/i18n';
 import '../../theme/trade.css';
 
 const fmtDate = (iso: string): string =>
@@ -31,6 +34,32 @@ const trendArrow = (trend: string | undefined, fallback: string): string => {
   if (v.includes('down')) return `↘ ${trend}`;
   return trend;
 };
+
+/**
+ * Speak one line in the current locale via the browser speechSynthesis API.
+ * Client-side accessibility only — no server TTS (voice AI is descoped).
+ */
+const speakLine = (text: string): void => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = currentLanguage() === 'hi' ? 'hi-IN' : 'en-IN';
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+};
+
+/** Readout button for a mandi card — speaks the day's modal-price line. */
+function MandiListenButton({ mandi, price }: { mandi: string; price: number }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      className="av-btn av-btn-ghost"
+      onClick={() => speakLine(t('mandiPriceLine', { mandi, price: inr(price) }))}
+    >
+      🔊 {t('mandiListen')}
+    </button>
+  );
+}
 
 /**
  * Mandi reference (spec F7/V3) — live APMC prices with crop filters, the
@@ -52,6 +81,8 @@ export default function MandiPage() {
   const [compareErrors, setCompareErrors] = useState<Record<string, string>>({});
   const [compareBusy, setCompareBusy] = useState(false);
   const [compareItems, setCompareItems] = useState<MandiCompareItem[] | null>(null);
+  // Smart mandi selection (brief M12) — null keeps the plain compare view.
+  const [bestCard, setBestCard] = useState<SmartSelectResult | null>(null);
 
   const [mandis, setMandis] = useState<MandiInfo[] | null>(null);
   const [mandisFailed, setMandisFailed] = useState(false);
@@ -113,6 +144,19 @@ export default function MandiPage() {
     });
   };
 
+  const runBestMandi = async () => {
+    try {
+      const res = await mandiSmartSelect({
+        crop: compareCrop.trim(),
+        quantityQuintals: Math.round(Number(compareQty)),
+      });
+      setBestCard(res.data);
+    } catch {
+      // AI off / no mandi data / any failure — the compare view below is the fallback.
+      setBestCard(null);
+    }
+  };
+
   const runCompare = async () => {
     const next: Record<string, string> = {};
     if (!compareCrop.trim()) next.crop = t('commonRequired');
@@ -132,6 +176,7 @@ export default function MandiPage() {
     } finally {
       setCompareBusy(false);
     }
+    void runBestMandi();
   };
 
   const runHistory = async () => {
@@ -204,6 +249,11 @@ export default function MandiPage() {
                       </span>
                     ) : null}
                   </div>
+                  {p.modalPrice !== undefined ? (
+                    <div className="trade-card-row">
+                      <MandiListenButton mandi={p.mandiName} price={p.modalPrice} />
+                    </div>
+                  ) : null}
                   <div className="trade-detail-grid" style={{ marginBottom: 0 }}>
                     <div className="trade-detail-item">
                       <p className="trade-detail-label">{t('mandiMin')}</p>
@@ -289,6 +339,51 @@ export default function MandiPage() {
             ))}
           </div>
         )
+      ) : null}
+
+      {bestCard !== null && bestCard.best !== null ? (
+        <>
+          <p className="trade-section-title">{t('mandiBestCardTitle')}</p>
+          <div className="trade-card" style={{ cursor: 'default' }}>
+            <div className="trade-card-row">
+              <span className="trade-card-title">{bestCard.best.mandi}</span>
+              <span className="trade-card-amount">{paisaInr(bestCard.best.netPaisa)}</span>
+            </div>
+            <div className="trade-card-row">
+              <span className="trade-card-sub">
+                {paisaInr(bestCard.best.modalPricePaisa)}
+                {t('perQuintal')} · {bestCard.quantityQuintals} {t('unitQuintalShort')}
+              </span>
+            </div>
+            <div className="trade-invoice-box" style={{ marginTop: 4 }}>
+              <div className="trade-invoice-row">
+                <span>{t('mandiNetMathPrice')}</span>
+                <span>{paisaInr(bestCard.best.modalPricePaisa * bestCard.quantityQuintals)}</span>
+              </div>
+              <div className="trade-invoice-row">
+                <span>{t('mandiNetMathTransport')}</span>
+                <span>− {paisaInr(bestCard.best.transportFarePaisa)}</span>
+              </div>
+              <div className="trade-invoice-row">
+                <span>{t('mandiNetMathCommission')}</span>
+                <span>− {paisaInr(bestCard.best.commissionPaisa)}</span>
+              </div>
+              <div className="trade-invoice-row trade-invoice-total">
+                <span>{t('mandiNetMathNet')}</span>
+                <span>{paisaInr(bestCard.best.netPaisa)}</span>
+              </div>
+            </div>
+            {bestCard.candidates.length > 1 ? (
+              <div className="trade-card-row">
+                <span className="trade-card-sub">
+                  {bestCard.candidates
+                    .map((candidate) => `${candidate.rank}. ${candidate.mandi}`)
+                    .join(' · ')}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </>
       ) : null}
 
       {rates === null && !ratesFailed ? <p className="trade-hint">{t('commonLoading')}</p> : null}

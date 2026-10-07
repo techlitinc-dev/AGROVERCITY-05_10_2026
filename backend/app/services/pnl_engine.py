@@ -4,11 +4,85 @@ Money rules mirror services/diary_analytics.py: only entries with type
 "income"/"expense" AND amount != 0 move money. Everything here is computed
 from the user's own diary entries so the P&L always reconciles with the
 cashbook to the paisa.
+
+Phase-05 WS-04 additions:
+- `record_auto_entry()` writes ONE source-linked diary (cashbook) entry for a
+  completed platform transaction. Because the P&L statement is derived from the
+  very same diary entries, that single write is also the P&L line — it lands in
+  Farm CEO and the cashbook with zero manual entry. It is idempotent on
+  (source_kind, source_id) via a deterministic doc id, and carries the source
+  doc id for traceability (rule 3). Input `amount_paisa` is integer paisa;
+  the diary store keeps rupees, so we convert once on write.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
+
+from app.core.db import get_doc, set_doc
 
 OTHER_BUCKET = "other"
+
+
+def _auto_entry_id(source_kind: str, source_id: str) -> str:
+    """Deterministic, filesystem-safe doc id — makes the write idempotent."""
+    raw = f"{source_kind}__{source_id}"
+    slug = "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in raw)
+    return f"auto_{slug[:100]}"
+
+
+async def record_auto_entry(
+    user_id: str,
+    direction: str,
+    amount_paisa: int,
+    category: str,
+    source_kind: str,
+    source_id: str,
+) -> str:
+    """Write (or return) the auto cashbook/P&L entry for a completed transaction.
+
+    `direction` is "income" or "expense". Idempotent on (source_kind, source_id):
+    a second call with the same source returns the existing entry id without
+    duplicating. Returns the diary entry id (== the P&L line source id).
+    """
+    if direction not in ("income", "expense"):
+        raise ValueError("direction must be 'income' or 'expense'")
+    entry_id = _auto_entry_id(source_kind, source_id)
+    path = f"users/{user_id}/diary_entries"
+    existing = await get_doc(path, entry_id)
+    if existing is not None:
+        return entry_id
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": entry_id,
+        "title": category,
+        "category": category,
+        "type": direction,
+        "amount": round(int(amount_paisa) / 100, 2),
+        "date": date.today().isoformat(),
+        "cropName": None,
+        "notes": None,
+        "photos": [],
+        "quantity": None,
+        "unit": None,
+        "party": "",
+        "auto": True,
+        "sourceKind": source_kind,
+        "sourceId": source_id,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    await set_doc(path, entry_id, entry)
+    # A completed transaction is the trigger for the X11 referral credit: the
+    # referrer is paid only after the invitee's FIRST transaction (never at
+    # registration). Idempotent + best-effort — a referral failure must never
+    # fail the transaction's cashbook write.
+    try:
+        from app.services.referrals import credit_referral_on_first_transaction
+
+        await credit_referral_on_first_transaction(user_id)
+    except Exception:
+        pass
+    return entry_id
+
 
 
 def _month_key(d: date) -> str:

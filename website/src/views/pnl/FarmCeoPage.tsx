@@ -3,7 +3,15 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EmptyState from '../../components/trade/EmptyState';
 import ToolShell from '../../components/trade/ToolShell';
-import { pnlDashboard, type PnlCashflowMonth, type PnlDashboard } from '../../lib/api/pnl';
+import { toast } from '../../components/toast';
+import {
+  downloadBlob,
+  pnlDashboard,
+  pnlReportPdf,
+  pnlTallyExport,
+  type PnlCashflowMonth,
+  type PnlDashboard,
+} from '../../lib/api/pnl';
 import { inr } from '../../lib/api/trade';
 import { categoryLabel } from '../../lib/cashbook-catalog';
 import { downloadCsv } from '../../lib/csv';
@@ -100,6 +108,11 @@ export default function FarmCeoPage() {
   const [months, setMonths] = useState(12);
   const [dashboard, setDashboard] = useState<PnlDashboard | null>(null);
   const [failed, setFailed] = useState(false);
+  const [cropFilter, setCropFilter] = useState('');
+  const [beCost, setBeCost] = useState('');
+  const [beYield, setBeYield] = useState('');
+  const [bePrice, setBePrice] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -168,6 +181,41 @@ export default function FarmCeoPage() {
   const matrixCats = expensesFirst.filter((c) => c.type === 'expense').slice(0, 5);
   const hasStatement = d.statement.income.length + d.statement.expense.length > 0;
   const h = d.highlights;
+  const cropsFiltered = cropFilter ? d.crops.filter((c) => c.cropName === cropFilter) : d.crops;
+
+  // Break-even calculator — pure client-side arithmetic on user input.
+  const beCostNum = Number(beCost) || 0;
+  const beYieldNum = Number(beYield) || 0;
+  const bePriceNum = Number(bePrice) || 0;
+  const beReady = beCostNum > 0 && beYieldNum > 0 && bePriceNum > 0;
+  const bePriceOut = beYieldNum > 0 ? beCostNum / beYieldNum : 0;
+  const beYieldOut = bePriceNum > 0 ? beCostNum / bePriceNum : 0;
+
+  // Server-rendered exports use the dashboard's own window (month keys → days).
+  const rangeFrom = `${d.window.from}-01`;
+  const rangeTo = `${d.window.to}-31`;
+
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      downloadBlob(await pnlReportPdf(rangeFrom, rangeTo), 'pnl-report.pdf');
+    } catch {
+      toast(t('pnlExportFailed'), { error: true });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportTally = async () => {
+    setExporting(true);
+    try {
+      downloadBlob(await pnlTallyExport(rangeFrom, rangeTo), 'pnl-tally.csv');
+    } catch {
+      toast(t('pnlExportFailed'), { error: true });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const exportStatement = () => {
     downloadCsv(
@@ -470,6 +518,23 @@ export default function FarmCeoPage() {
       {d.crops.length > 0 ? (
         <>
           <p className="trade-section-title">{t('pnlCropsTitle')}</p>
+          <div className="trade-filter-row">
+            <label className="trade-hint" htmlFor="pnl-crop-filter">
+              {t('pnlCropSelectLabel')}
+            </label>
+            <select
+              id="pnl-crop-filter"
+              value={cropFilter}
+              onChange={(e) => setCropFilter(e.target.value)}
+            >
+              <option value="">{t('pnlAllCrops')}</option>
+              {d.crops.map((c) => (
+                <option key={c.cropName} value={c.cropName}>
+                  {c.cropName}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="trade-invoice-box" style={{ marginTop: 0 }}>
             <div
               className="trade-invoice-row"
@@ -486,7 +551,7 @@ export default function FarmCeoPage() {
               <span style={{ textAlign: 'right' }}>{t('pnlNetProfit')}</span>
               <span style={{ textAlign: 'right' }}>{t('pnlMarginCol')}</span>
             </div>
-            {d.crops.map((c) => (
+            {cropsFiltered.map((c) => (
               <div
                 key={c.cropName}
                 className="trade-invoice-row"
@@ -509,6 +574,38 @@ export default function FarmCeoPage() {
           </div>
         </>
       ) : null}
+
+      {/* ---- H2) Break-even calculator (pure client-side arithmetic) ---- */}
+      <p className="trade-section-title">{t('pnlBreakEvenTitle')}</p>
+      <p className="trade-hint" style={{ marginTop: -2 }}>{t('pnlBreakEvenHint')}</p>
+      <div className="trade-invoice-box" style={{ marginTop: 0 }}>
+        <label className="trade-field">
+          <span className="trade-hint">{t('pnlBreakEvenCost')}</span>
+          <input value={beCost} inputMode="decimal" onChange={(e) => setBeCost(e.target.value)} />
+        </label>
+        <label className="trade-field">
+          <span className="trade-hint">{t('pnlBreakEvenYield')}</span>
+          <input value={beYield} inputMode="decimal" onChange={(e) => setBeYield(e.target.value)} />
+        </label>
+        <label className="trade-field">
+          <span className="trade-hint">{t('pnlBreakEvenPrice')}</span>
+          <input value={bePrice} inputMode="decimal" onChange={(e) => setBePrice(e.target.value)} />
+        </label>
+      </div>
+      {beReady ? (
+        <div className="trade-stats-grid">
+          <div className="trade-stat">
+            <p className="trade-stat-label">{t('pnlBreakEvenPriceOut')}</p>
+            <p className="trade-stat-value">{inr(Math.round(bePriceOut))}</p>
+          </div>
+          <div className="trade-stat">
+            <p className="trade-stat-label">{t('pnlBreakEvenYieldOut')}</p>
+            <p className="trade-stat-value">{beYieldOut.toFixed(2)}</p>
+          </div>
+        </div>
+      ) : (
+        <p className="trade-hint">{t('pnlBreakEvenIncomplete')}</p>
+      )}
 
       {/* ---- I) CEO highlights ---- */}
       <p className="trade-section-title">{t('pnlHighlightsTitle')}</p>
@@ -564,6 +661,22 @@ export default function FarmCeoPage() {
           disabled={d.cashflow.length === 0}
         >
           ⬇ {t('pnlExportCashflow')}
+        </button>
+        <button
+          type="button"
+          className="av-btn av-btn-ghost"
+          onClick={() => void exportPdf()}
+          disabled={exporting}
+        >
+          ⬇ {t('pnlExportPdf')}
+        </button>
+        <button
+          type="button"
+          className="av-btn av-btn-ghost"
+          onClick={() => void exportTally()}
+          disabled={exporting}
+        >
+          ⬇ {t('pnlExportTally')}
         </button>
         <button
           type="button"

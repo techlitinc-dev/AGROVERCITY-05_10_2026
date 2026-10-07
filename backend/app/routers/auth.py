@@ -22,8 +22,6 @@ from app.models.auth import (
 )
 from app.models.role_profiles import ROLE_PROFILE_MODELS
 from app.models.user import RegisterRequest, VALID_PROFILES
-from app.services.notifications import send_fcm_to_user
-from app.services.referrals import record_join
 from app.services.tokens import (
     create_access_token,
     create_refresh_token,
@@ -236,6 +234,10 @@ async def register(body: RegisterRequest, user_agent: str | None = Header(None))
     if referrer is not None:
         user["referralCodeUsed"] = body.referralCode
         await set_doc("users", uid, user)
+        # Attribution ONLY — no coins move at registration. The referrer is
+        # credited after the invitee's FIRST completed transaction
+        # (services.referrals.credit_referral_on_first_transaction), per the
+        # X11 anti-fraud rule in robust.md §7.16.
         existing_attribution = await get_doc("referral_attributions", uid)
         await set_doc(
             "referral_attributions",
@@ -245,35 +247,11 @@ async def register(body: RegisterRequest, user_agent: str | None = Header(None))
                 "referredUid": uid,
                 "code": body.referralCode,
                 "status": "joined",
+                "credited": bool(existing_attribution and existing_attribution.get("credited")),
                 "referredPhone": phone,
                 "createdAt": now,
             },
         )
-        if existing_attribution is None or existing_attribution.get("status") != "joined":
-            join = await record_join(
-                referrer["id"],
-                uid,
-                body.referralCode,
-                referred_phone=phone,
-                referred_name=body.name,
-            )
-            await send_fcm_to_user(
-                referrer["id"],
-                "नया रेफरल जुड़ा",
-                "+100 AgriCoins आपके खाते में जुड़े",
-                {"type": "referral_joined", "referredUid": uid},
-            )
-            for milestone in join["newMilestones"]:
-                await send_fcm_to_user(
-                    referrer["id"],
-                    "रेफरल माइलस्टोन पूरा",
-                    f"{milestone['count']} रेफरल पूरे — +{milestone['rewardCoins']} AgriCoins मिले",
-                    {
-                        "type": "referral_milestone",
-                        "milestoneCount": milestone["count"],
-                        "rewardCoins": milestone["rewardCoins"],
-                    },
-                )
     pair = await _issue_session(uid, user_agent)
     return AuthResponse(
         accessToken=pair["accessToken"],

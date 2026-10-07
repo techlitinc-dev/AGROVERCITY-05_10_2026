@@ -174,10 +174,11 @@ async def test_my_rank_computed_outside_top_ten(client, user_store):
     assert body["myRank"] == {"rank": 11, "referralCount": 1}
 
 
-async def test_first_join_via_register_awards_join_and_milestone(client, user_store):
-    # X11 daily earn cap (WS-01 task 1.20): this flow legitimately awards
-    # >200 coins/day, so grant a higher daily budget for the test.
-    user_store["platform_config/gamification"] = {"dailyEarnCap": 100000}
+async def test_registration_attributes_but_does_not_credit(client, user_store):
+    """X11 task 8.13 — registering with a code stores attribution, NO credit."""
+    # X11 daily earn cap: this flow later legitimately awards >200 coins/day,
+    # so grant a higher daily budget for the test.
+    user_store["platform_config/coins"] = {"dailyEarnCap": 100000}
     token = seed_user(user_store, uid="ref-1", name="Referrer One", village="Pimplas")
     resp = await client.post(
         "/v1/referrals/invite",
@@ -191,6 +192,34 @@ async def test_first_join_via_register_awards_join_and_milestone(client, user_st
     assert resp.status_code == 200
     assert resp.json()["referral"]["applied"] is True
 
+    # Registration wrote the attribution but moved no coins.
+    assert user_store["users/ref-1"]["agriCoins"] == 100
+    attribution = user_store["referral_attributions/uid-1"]
+    assert attribution["status"] == "joined"
+    assert attribution["credited"] is False
+    assert attribution["referrerUid"] == "ref-1"
+    assert user_store["users/uid-1"]["referralCodeUsed"] == "ref_ref-1"
+    # No join credit yet → the invited doc is untouched and no FCM fired.
+    assert user_store["referrals/ref-1/invited/+919812345678"]["status"] == "invited"
+    assert _notifications_for(user_store, "ref-1") == []
+
+
+async def test_first_transaction_credits_referrer_once(client, user_store):
+    """X11 task 8.13 — the invitee's FIRST completed transaction credits once."""
+    user_store["platform_config/coins"] = {"dailyEarnCap": 100000}
+    token = seed_user(user_store, uid="ref-1", name="Referrer One", village="Pimplas")
+    await client.post(
+        "/v1/referrals/invite",
+        json={"name": "Ram Patil", "phone": "+919812345678"},
+        headers=auth(token),
+    )
+    resp = await _register(client, referralCode="ref_ref-1")
+    assert resp.status_code == 200
+
+    from app.services.pnl_engine import record_auto_entry
+
+    # Invitee completes their first transaction → referrer credited.
+    await record_auto_entry("uid-1", "income", 100000, "crop_sale", "lot_sale", "lot-1")
     # 100 (invite) + 100 (join) + 50 (first milestone)
     assert user_store["users/ref-1"]["agriCoins"] == 250
     profile = user_store["referrals/ref-1"]
@@ -206,18 +235,22 @@ async def test_first_join_via_register_awards_join_and_milestone(client, user_st
     assert invited["referredUid"] == "uid-1"
 
     attribution = user_store["referral_attributions/uid-1"]
-    assert attribution["status"] == "joined"
-    assert attribution["referrerUid"] == "ref-1"
-
-    assert user_store["users/uid-1"]["referralCodeUsed"] == "ref_ref-1"
+    assert attribution["credited"] is True
+    assert attribution["creditedAt"]
 
     notifications = _notifications_for(user_store, "ref-1")
-    assert len(notifications) == 2
     types = {n["data"]["type"] for n in notifications}
     assert types == {"referral_joined", "referral_milestone"}
-    milestone_ntf = next(n for n in notifications if n["data"]["type"] == "referral_milestone")
-    assert milestone_ntf["data"]["milestoneCount"] == 1
-    assert milestone_ntf["data"]["rewardCoins"] == 50
+
+    # Rule 3 (task 8.11): the referral credit wrote an audit_logs row.
+    audits = [d for k, d in user_store.items() if k.startswith("audit_logs/")]
+    assert any(a["action"] == "REFERRAL_CREDIT" for a in audits)
+
+    # Replaying the same transaction event must NOT double-credit.
+    await record_auto_entry("uid-1", "income", 100000, "crop_sale", "lot_sale", "lot-1")
+    await record_auto_entry("uid-1", "income", 50000, "crop_sale", "lot_sale", "lot-2")
+    assert user_store["users/ref-1"]["agriCoins"] == 250
+    assert user_store["referrals/ref-1"]["joinedCount"] == 1
 
     # referred list shows exactly one joined entry, no duplicate from attribution
     resp = await client.get("/v1/referrals", headers=auth(token))
@@ -233,6 +266,7 @@ async def test_first_join_via_register_awards_join_and_milestone(client, user_st
 
 
 async def test_code_join_without_invite_synthesizes_referred_entry(client, user_store):
+    user_store["platform_config/coins"] = {"dailyEarnCap": 100000}
     seed_user(user_store, uid="ref-2", name="Direct Referrer", referralCode="ref_ref-2")
     resp = await _register(client, referralCode="ref_ref-2")
     assert resp.status_code == 200
@@ -241,7 +275,8 @@ async def test_code_join_without_invite_synthesizes_referred_entry(client, user_
     resp = await client.get("/v1/referrals", headers=auth(token))
     assert resp.status_code == 200
     body = resp.json()
-    assert body["stats"]["joined"] == 1
+    # No credit until the invitee transacts → joinedCount is still 0.
+    assert body["stats"]["joined"] == 0
     assert body["stats"]["invited"] == 0
     assert body["myRank"] == {"rank": 1, "referralCount": 1}
     assert len(body["referred"]) == 1
@@ -251,11 +286,17 @@ async def test_code_join_without_invite_synthesizes_referred_entry(client, user_
     assert entry["phone"] == "+919812345678"
     assert entry["rewardCoins"] == 100
 
+    from app.services.pnl_engine import record_auto_entry
+
+    await record_auto_entry("uid-1", "income", 100000, "crop_sale", "lot_sale", "lot-1")
+    resp = await client.get("/v1/referrals", headers=auth(token))
+    assert resp.json()["stats"]["joined"] == 1
+
 
 async def test_milestones_flip_at_five_and_ten_joins(client, user_store):
     # X11 daily earn cap (WS-01 task 1.20): this flow legitimately awards
     # >200 coins/day, so grant a higher daily budget for the test.
-    user_store["platform_config/gamification"] = {"dailyEarnCap": 100000}
+    user_store["platform_config/coins"] = {"dailyEarnCap": 100000}
     seed_user(user_store, uid="ref-3", name="Power Referrer")
     profile = {
         "userId": "ref-3",

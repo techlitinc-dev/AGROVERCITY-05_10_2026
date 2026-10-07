@@ -97,3 +97,33 @@ export async function pnlDashboard(months = 12): Promise<PnlDashboard> {
   const { data } = await api.get<PnlDashboard>('/pnl/dashboard', { params: { months } });
   return data;
 }
+
+/** Server-rendered PDF statement (`GET /pnl/report.pdf`) — phase-05 WS-04. */
+export async function pnlReportPdf(from: string, to: string): Promise<Blob> {
+  const { data } = await api.get('/pnl/report.pdf', {
+    params: { from, to },
+    responseType: 'blob',
+  });
+  return data as Blob;
+}
+
+/** Tally-compatible CSV export (`GET /pnl/export/tally`) — phase-05 WS-04. */
+export async function pnlTallyExport(from: string, to: string): Promise<Blob> {
+  const { data } = await api.get('/pnl/export/tally', {
+    params: { from, to },
+    responseType: 'blob',
+  });
+  return data as Blob;
+}
+
+/** Trigger a browser download for a fetched Blob. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

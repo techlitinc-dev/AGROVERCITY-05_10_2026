@@ -11,7 +11,7 @@ from app.services import claims as claims_service
 from app.services import storage
 from app.services.ai import config_store, decision_log, gateway, question_sets
 from app.services.ai.privacy import build_claim_triage_state
-from app.routers.insurance import _error, _require_insurance_user
+from app.routers.insurance import _error, _require_insurance_user, _write_audit
 
 log = logging.getLogger(__name__)
 
@@ -179,6 +179,20 @@ async def submit_claim(
         claim["fraudFlag"] = bool(float(triage.get("fraudSignal") or 0.0) > FRAUD_FLAG_THRESHOLD)
     await set_doc(f"users/{uid}/insurance_claims", claim["id"], claim)
     await set_doc("insurance_claims", claim["id"], claim)
+    # Rule 3: every claim mutation writes an audit_logs row.
+    await _write_audit(
+        f"aud_claim_intimate_{claim['id']}",
+        {
+            "actor": uid,
+            "action": "CLAIM_INTIMATE",
+            "claimId": claim["id"],
+            "claimNumber": claim.get("claimNumber"),
+            "policyId": policyId,
+            "reason": calamityType,
+            "amountPaisa": int(round(float(claim.get("requestedAmount") or 0) * 100)),
+            "at": now,
+        },
+    )
     response = {**InsuranceClaimRecord(**claim).model_dump(), "photoGuidelines": PHOTO_GUIDELINES}
     if triage is not None:
         response["triage"] = triage_annotation(triage)
@@ -220,4 +234,17 @@ async def appeal_claim(
     claim["damagePhotos"] = merged
     await set_doc(f"users/{uid}/insurance_claims", claim_id, claim)
     await set_doc("insurance_claims", claim_id, claim)
+    # Rule 3: appeal/resubmit is a claim mutation — audit it.
+    await _write_audit(
+        f"aud_claim_appeal_{claim_id}_{claim.get('appealCount')}",
+        {
+            "actor": uid,
+            "action": "CLAIM_APPEAL",
+            "claimId": claim_id,
+            "claimNumber": claim.get("claimNumber"),
+            "reason": body.reason,
+            "appealCount": claim.get("appealCount"),
+            "at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     return InsuranceClaimRecord(**claim).model_dump()

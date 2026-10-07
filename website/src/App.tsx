@@ -11,6 +11,7 @@ import RegisterWizard from './views/auth/RegisterWizard';
 import DashboardHome from './views/dashboard/DashboardHome';
 import PlaceholderPage from './views/dashboard/PlaceholderPage';
 import ProfilesPage from './views/dashboard/ProfilesPage';
+import SearchResultsPage from './views/dashboard/SearchResultsPage';
 import ToolPage from './views/dashboard/ToolPage';
 import LegalPage from './views/legal/LegalPage';
 import FarmMap from './views/onboarding/FarmMap';
@@ -21,10 +22,47 @@ import {
   DemandForm,
   LotDetailPage,
   LotForm,
+  MandiChartsPage,
   OfferDetailPage,
+  PriceAlertsPage,
   PurchaseDetailPage,
 } from './views/trade';
 import { LoadDetailPage, LoadForm, TripPage, VehicleForm } from './views/transport';
+import {
+  AdvisoryHubPage,
+  CropPlannerPage,
+  DiseaseScanPage,
+} from './views/advisory';
+import { SchemeDetailPage } from './views/schemes';
+import { LandRecordDetailPage } from './views/land';
+import { FpoMachineryPage, FpoPoolsPage } from './views/fpo';
+import { GradingPage, MyBookingsPage, ReceiptsVaultPage } from './views/postharvest';
+import { WaterHomePage } from './views/water';
+import { ClimateHomePage } from './views/climate';
+import { RewardsStorePage } from './views/rewards';
+import { ReferralHubPage } from './views/referrals';
+import { WomenHubPage } from './views/women';
+import { BiofuelPage, NgoDirectoryPage } from './views/trees';
+import {
+  CreditScorePage,
+  EmiCalculatorPage,
+  LoanMarketplacePage,
+  LoanStatusPage,
+  LoanWizardPage,
+} from './views/finance';
+import ToolShell from './components/trade/ToolShell';
+import {
+  AddressBookPage,
+  CartPage,
+  CheckoutPage,
+  OrderDetailPage as MarketplaceOrderDetailPage,
+  OrdersPage as MarketplaceOrdersPage,
+  ProductDetailPage,
+  ProductFormPage,
+  ReturnsPage,
+  SellerProductsPage,
+  WishlistPage,
+} from './views/marketplace';
 import { DealDetailPage, DealFormPage } from './views/broker';
 import {
   ContractDetailPage,
@@ -47,6 +85,7 @@ import {
   ClaimDetailPage,
   ClaimsQueuePage,
   DisbursePage,
+  InsuranceHubPage,
   PolicyReviewPage,
   RatesPage as InsuranceRatesPage,
   SurveyorsPage,
@@ -204,6 +243,11 @@ export default function App() {
           path="/dashboard"
           element={loggedIn ? <DashboardHome /> : <Navigate to="/auth" replace />}
         />
+        {/* Global search results (phase-05 WS-09) — deep-linkable ?q=query. */}
+        <Route
+          path="/search"
+          element={loggedIn ? <SearchResultsPage /> : <Navigate to="/auth" replace />}
+        />
         {/* Deep-linkable tool pages (backend DEEP_LINKS) resolve here:
             path="/dashboard/p/machineManage" (equipment),
             path="/dashboard/p/landlordLeases" (land),
@@ -292,6 +336,178 @@ export default function App() {
         <Route
           path="/dashboard/p/browseLots/:lotId"
           element={loggedIn ? <LotDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/mandiCharts"
+          element={loggedIn ? <MandiChartsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/priceAlerts"
+          element={loggedIn ? <PriceAlertsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/advisoryHub"
+          element={loggedIn ? <AdvisoryHubPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/diseaseScan"
+          element={
+            loggedIn ? (
+              <ToolShell toolId="advisory">
+                <DiseaseScanPage />
+              </ToolShell>
+            ) : (
+              <Navigate to="/auth" replace />
+            )
+          }
+        />
+        <Route
+          path="/dashboard/p/cropPlanner"
+          element={
+            loggedIn ? (
+              <ToolShell toolId="advisory">
+                <CropPlannerPage />
+              </ToolShell>
+            ) : (
+              <Navigate to="/auth" replace />
+            )
+          }
+        />
+        {/* WS-05 finance & protection deep routes */}
+        <Route
+          path="/dashboard/p/schemes/:schemeId"
+          element={loggedIn ? <SchemeDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/creditScore"
+          element={loggedIn ? <CreditScorePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/loanMarketplace"
+          element={loggedIn ? <LoanMarketplacePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/emiCalculator"
+          element={loggedIn ? <EmiCalculatorPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/loanWizard"
+          element={loggedIn ? <LoanWizardPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/loanStatus"
+          element={loggedIn ? <LoanStatusPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/insuranceHub"
+          element={loggedIn ? <InsuranceHubPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* WS-06 land, FPO & post-harvest deep routes */}
+        <Route
+          path="/dashboard/p/landRecordView"
+          element={loggedIn ? <LandRecordDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/fpoPools"
+          element={loggedIn ? <FpoPoolsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/fpoMachinery"
+          element={loggedIn ? <FpoMachineryPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/storageBookings"
+          element={loggedIn ? <MyBookingsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/receiptsVault"
+          element={loggedIn ? <ReceiptsVaultPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/grading"
+          element={loggedIn ? <GradingPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* WS-07 water, climate & green deep routes */}
+        <Route
+          path="/dashboard/p/waterSchedule"
+          element={loggedIn ? <WaterHomePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/climateCarbon"
+          element={loggedIn ? <ClimateHomePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/treeNgo"
+          element={loggedIn ? <NgoDirectoryPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/biofuel"
+          element={loggedIn ? <BiofuelPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* WS-08 engagement deep routes (Krishi Ratna, Refer & Earn, Women Hub) */}
+        <Route
+          path="/dashboard/p/rewards"
+          element={loggedIn ? <RewardsStorePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/rewardsStore"
+          element={loggedIn ? <RewardsStorePage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/referralHub"
+          element={loggedIn ? <ReferralHubPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/womenHub"
+          element={loggedIn ? <WomenHubPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/marketplace/cart"
+          element={loggedIn ? <CartPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/marketplace/checkout"
+          element={loggedIn ? <CheckoutPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/marketplace/returns"
+          element={loggedIn ? <ReturnsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/marketplace/products/new"
+          element={loggedIn ? <ProductFormPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/marketplace/products/:productId/edit"
+          element={loggedIn ? <ProductFormPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/marketplace/:productId"
+          element={loggedIn ? <ProductDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/orders"
+          element={loggedIn ? <MarketplaceOrdersPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/orders/:orderId"
+          element={loggedIn ? <MarketplaceOrderDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/wishlist"
+          element={loggedIn ? <WishlistPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/addressBook"
+          element={loggedIn ? <AddressBookPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/sellerProducts"
+          element={loggedIn ? <SellerProductsPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/dashboard/p/myProducts"
+          element={loggedIn ? <SellerProductsPage /> : <Navigate to="/auth" replace />}
         />
         <Route
           path="/dashboard/p/myOffers/:offerId"

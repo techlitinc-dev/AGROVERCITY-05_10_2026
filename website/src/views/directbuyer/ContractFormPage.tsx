@@ -11,13 +11,15 @@ import { getOrg, type BuyerOrg, type BuyerOrgRole } from '../../lib/api/buyerOrg
 import { listSavedFarmers, type SavedFarmer } from '../../lib/api/discovery';
 import {
   createContract,
+  listContractTemplates,
   listContractsMine,
   updateContract,
   type Contract,
+  type ContractTemplate,
   type DeliveryFrequency,
 } from '../../lib/api/intelligence';
 import { mandiPrices } from '../../lib/api/mandi';
-import { useT } from '../../lib/i18n';
+import { currentLanguage, useT } from '../../lib/i18n';
 import { useSessionStore } from '../../stores/session';
 import '../../theme/trade.css';
 import '../../theme/contracts.css';
@@ -27,6 +29,7 @@ const MANUAL = '__manual';
 interface FormDraft {
   farmerId: string;
   crop: string;
+  title: string;
   quantityTotal: number;
   priceType: 'fixed' | 'mandiLinked';
   baseRate: number;
@@ -44,6 +47,7 @@ interface FormDraft {
 const EMPTY_DRAFT: FormDraft = {
   farmerId: '',
   crop: '',
+  title: '',
   quantityTotal: 100,
   priceType: 'fixed',
   baseRate: 0,
@@ -78,6 +82,9 @@ export default function ContractFormPage() {
   const [pickerValue, setPickerValue] = useState<string>(MANUAL);
   const [savedFarmers, setSavedFarmers] = useState<SavedFarmer[]>([]);
   const [cropOptions, setCropOptions] = useState<string[]>([]);
+  // Curated contract templates (WS-01 task 1.21) — empty when the seed is absent.
+  const [templates, setTemplates] = useState<ContractTemplate[]>([]);
+  const [templateId, setTemplateId] = useState('');
   const [mandiModal, setMandiModal] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingContract, setLoadingContract] = useState(editing);
@@ -110,6 +117,9 @@ export default function ContractFormPage() {
         setCropOptions(Array.from(new Set(res.data.map((p) => p.commodity).filter(Boolean))));
       })
       .catch(() => setCropOptions([]));
+    listContractTemplates()
+      .then((res) => setTemplates(res.data))
+      .catch(() => setTemplates([]));
   }, []);
 
   // Edit mode: no GET-single exists — resolve from the buyer's own list.
@@ -126,6 +136,7 @@ export default function ContractFormPage() {
         setDraft({
           farmerId: contract.farmerId ?? '',
           crop: contract.crop,
+          title: contract.title ?? '',
           quantityTotal: contract.quantityTotal ?? EMPTY_DRAFT.quantityTotal,
           priceType: contract.priceType ?? 'fixed',
           baseRate: contract.baseRate ?? ZERO,
@@ -184,6 +195,25 @@ export default function ContractFormPage() {
     if (value !== MANUAL) patch({ farmerId: value });
   };
 
+  // Template picker: prefill the draft's title + terms (and crop) in the
+  // current locale. `contractTemplateCustom` clears back to a blank contract.
+  const localizedTemplate = (tpl: ContractTemplate, lang: string): { title: string; terms: string } => {
+    const hi = lang === 'hi';
+    return {
+      title: (hi ? tpl.title_hi : tpl.title_en) || tpl.title_en || '',
+      terms: (hi ? tpl.terms_text_hi : tpl.terms_text_en) || tpl.terms_text_en || '',
+    };
+  };
+
+  const onPickTemplate = (value: string) => {
+    setTemplateId(value);
+    if (!value) return;
+    const tpl = templates.find((x) => x.template_id === value);
+    if (!tpl) return;
+    const { title, terms } = localizedTemplate(tpl, currentLanguage());
+    patch({ title, termsText: terms, crop: tpl.crop });
+  };
+
   const validate = useMemo(
     () => (): Record<string, string> => {
       const next: Record<string, string> = {};
@@ -218,6 +248,7 @@ export default function ContractFormPage() {
     const body = {
       farmerId: draft.farmerId.trim(),
       crop: draft.crop.trim(),
+      title: draft.title.trim() || undefined,
       quantityTotal: draft.quantityTotal,
       priceType: draft.priceType,
       baseRate: draft.priceType === 'fixed' ? draft.baseRate : undefined,
@@ -280,6 +311,34 @@ export default function ContractFormPage() {
 
       {!loadingContract ? (
         <>
+          {/* ---- Template library (WS-01 task 1.21) ---- */}
+          <div className="av-field">
+            <label className="av-label" htmlFor="ct-template-picker">
+              {t('contractTemplatePickerLabel')}
+            </label>
+            <select
+              id="ct-template-picker"
+              className="av-input"
+              value={templateId}
+              onChange={(e) => onPickTemplate(e.target.value)}
+            >
+              <option value="">{t('contractTemplateCustom')}</option>
+              {templates.map((tpl) => (
+                <option key={tpl.template_id} value={tpl.template_id}>
+                  {localizedTemplate(tpl, currentLanguage()).title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ---- Contract title ---- */}
+          <LabeledTextField
+            label={t('ctContractTitle')}
+            value={draft.title}
+            onChange={(v) => patch({ title: v })}
+            maxLength={120}
+          />
+
           {/* ---- Farmer ---- */}
           {savedFarmers.length > 0 ? (
             <div className="av-field">

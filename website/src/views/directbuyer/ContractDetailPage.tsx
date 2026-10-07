@@ -1,5 +1,5 @@
 import { ZERO } from '../../lib/numDefaults';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import LabeledTextField from '../../components/LabeledTextField';
 import ModalSheet from '../../components/ModalSheet';
@@ -19,15 +19,45 @@ import {
   nextSlotDate,
   type Contract,
   type ContractDeliveriesResponse,
+  type ContractSchedule,
 } from '../../lib/api/intelligence';
 import { mandiPrices } from '../../lib/api/mandi';
 import { inr } from '../../lib/api/trade';
-import { useT } from '../../lib/i18n';
+import { currentLanguage, useT } from '../../lib/i18n';
 import '../../theme/trade.css';
 import '../../theme/contracts.css';
 
 const fmtDate = (iso: string): string =>
   new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+const FREQ_STEP_DAYS: Record<string, number> = { weekly: 7, biweekly: 14, monthly: 28 };
+
+const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+
+/** Every scheduled delivery date for a schedule (start → end, by frequency). */
+const scheduledDeliveryDates = (schedule: ContractSchedule): string[] => {
+  const [sy, sm, sd] = schedule.startDate.slice(0, 10).split('-').map(Number);
+  const [ey, em, ed] = schedule.endDate.slice(0, 10).split('-').map(Number);
+  const start = new Date(Date.UTC(sy, sm - 1, sd));
+  const end = new Date(Date.UTC(ey, em - 1, ed));
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+  const step = FREQ_STEP_DAYS[schedule.frequency] ?? 7;
+  const out: string[] = [];
+  const slot = new Date(start);
+  for (let i = 0; i < 1000 && slot <= end; i += 1) {
+    out.push(isoDay(slot));
+    slot.setUTCDate(slot.getUTCDate() + step);
+  }
+  return out;
+};
+
+const firstOfMonth = (iso: string): Date => {
+  const [y, m] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1));
+};
+
+const shiftMonth = (d: Date, delta: number): Date =>
+  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + delta, 1));
 
 /**
  * Buyer contract detail — status header, live price formula card, terms,
@@ -52,6 +82,8 @@ export default function ContractDetailPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [mandiModal, setMandiModal] = useState<number | null>(null);
+  // Delivery-schedule calendar (WS-01 task 1.22) — month currently shown.
+  const [calMonth, setCalMonth] = useState<Date | null>(null);
 
   useEffect(() => {
     listContractsMine('buyer')
@@ -64,6 +96,7 @@ export default function ContractDetailPage() {
         setContract(found);
         const next = found.schedule ? nextSlotDate(found.schedule) : null;
         setSlotDate(next ?? '');
+        if (found.schedule) setCalMonth(firstOfMonth(found.schedule.startDate));
       })
       .catch(() => setNotFound(true));
     listContractDeliveries(contractId ?? '')
@@ -102,6 +135,42 @@ export default function ContractDetailPage() {
     (contract?.priceType === 'mandiLinked' && mandiModal !== null
       ? mandiModal + (contract.premiumPerQuintal ?? ZERO)
       : null);
+
+  // Delivery-schedule calendar (WS-01 task 1.22): month grid over the
+  // contract's schedule — dates come from the existing detail payload only.
+  const locale = currentLanguage() === 'hi' ? 'hi-IN' : 'en-IN';
+  const scheduledSlots = useMemo(
+    () => (contract?.schedule ? scheduledDeliveryDates(contract.schedule) : []),
+    [contract]
+  );
+  const scheduledSet = useMemo(() => new Set(scheduledSlots), [scheduledSlots]);
+  const deliveredSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of deliveries?.data ?? []) set.add(row.slotDate.slice(0, 10));
+    return set;
+  }, [deliveries]);
+  const weekdayLabels = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, i) =>
+        new Date(Date.UTC(2023, 0, 1 + i)).toLocaleDateString(locale, {
+          weekday: 'short',
+          timeZone: 'UTC',
+        })
+      ),
+    [locale]
+  );
+  const calendarCells: Array<string | null> = [];
+  if (calMonth && contract?.schedule) {
+    const y = calMonth.getUTCFullYear();
+    const m = calMonth.getUTCMonth();
+    const firstWeekday = new Date(Date.UTC(y, m, 1)).getUTCDay();
+    const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    for (let i = 0; i < firstWeekday; i += 1) calendarCells.push(null);
+    for (let d = 1; d <= daysInMonth; d += 1) {
+      calendarCells.push(`${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+    }
+    while (calendarCells.length % 7 !== 0) calendarCells.push(null);
+  }
 
   const createPurchase = async () => {
     if (!slotDate || creating) {
@@ -266,6 +335,71 @@ export default function ContractDetailPage() {
       {contract.termsText ? <p className="trade-hint">{contract.termsText}</p> : null}
       {contract.schedule ? (
         <p className="trade-hint">{contractScheduleSummary(t, contract.schedule)}</p>
+      ) : null}
+
+      {/* ---- Delivery-schedule calendar (WS-01 task 1.22) ---- */}
+      {contract.schedule && calMonth ? (
+        <>
+          <p className="trade-section-title">{t('ctCalendarTitle')}</p>
+          <div className="trade-actions-row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <button
+              type="button"
+              className="av-btn av-btn-ghost"
+              aria-label={t('ctCalendarPrev')}
+              onClick={() => setCalMonth(shiftMonth(calMonth, -1))}
+            >
+              ‹
+            </button>
+            <span className="trade-card-sub">
+              {calMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })}
+            </span>
+            <button
+              type="button"
+              className="av-btn av-btn-ghost"
+              aria-label={t('ctCalendarNext')}
+              onClick={() => setCalMonth(shiftMonth(calMonth, 1))}
+            >
+              ›
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginTop: 8 }}>
+            {weekdayLabels.map((w) => (
+              <span key={w} className="trade-card-sub" style={{ textAlign: 'center' }}>
+                {w}
+              </span>
+            ))}
+            {calendarCells.map((iso, idx) => {
+              if (!iso) return <span key={`blank-${idx}`} />;
+              const isScheduled = scheduledSet.has(iso);
+              const isDelivered = deliveredSet.has(iso);
+              return (
+                <span
+                  key={iso}
+                  style={{
+                    textAlign: 'center',
+                    padding: '6px 0',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    border: isScheduled ? '1px solid var(--av-border-green)' : '1px solid transparent',
+                    borderStyle: isScheduled && !isDelivered ? 'dashed' : 'solid',
+                    background: isDelivered
+                      ? 'var(--av-accent-tint)'
+                      : isScheduled
+                        ? 'var(--av-gold-bg)'
+                        : 'transparent',
+                    color: isDelivered ? 'var(--av-green-deep)' : 'inherit',
+                    fontWeight: isScheduled ? 700 : 400,
+                  }}
+                >
+                  {Number(iso.slice(8, 10))}
+                </span>
+              );
+            })}
+          </div>
+          <p className="trade-hint">
+            {t('ctCalendarScheduled')} · {t('ctCalendarDelivered')}
+          </p>
+        </>
       ) : null}
 
       {/* ---- Buyer actions ---- */}

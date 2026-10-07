@@ -1,5 +1,7 @@
 from app.core.db import query, set_doc
 
+# `portalUrl` is the official-portal deep link (the external apply path); it is
+# one of the editable scheme fields the phase-07 admin editor (A3) will manage.
 SCHEMES = [
     {
         "id": "pm-kisan",
@@ -10,6 +12,7 @@ SCHEMES = [
         "status": "open",
         "nextDeadline": "2026-12-31",
         "description": "सभी किसान परिवारों को प्रति वर्ष ₹6,000 की आय सहायता।",
+        "portalUrl": "https://pmkisan.gov.in",
         "eligibilityRules": {"maxLandAcres": 10, "states": [], "requiresKcc": False},
     },
     {
@@ -21,6 +24,7 @@ SCHEMES = [
         "status": "open",
         "nextDeadline": "2026-10-31",
         "description": "प्रधानमंत्री फसल बीमा योजना — फसल नुकसान पर बीमा सुरक्षा।",
+        "portalUrl": "https://pmfby.gov.in",
         "eligibilityRules": {"states": ["Maharashtra"]},
     },
     {
@@ -32,6 +36,7 @@ SCHEMES = [
         "status": "open",
         "nextDeadline": "2026-12-31",
         "description": "अपनी मिट्टी की मुफ़्त जाँच कराएँ और स्वास्थ्य कार्ड पाएँ।",
+        "portalUrl": "https://soilhealth.dac.gov.in",
         "eligibilityRules": {},
     },
     {
@@ -43,6 +48,7 @@ SCHEMES = [
         "status": "open",
         "nextDeadline": "2026-11-30",
         "description": "छोटे किसानों के लिए सौर ऊर्जा पंप सब्सिडी योजना।",
+        "portalUrl": "https://pmkusum.mnre.gov.in",
         "eligibilityRules": {"maxLandAcres": 2},
     },
     {
@@ -54,6 +60,7 @@ SCHEMES = [
         "status": "open",
         "nextDeadline": "2026-12-31",
         "description": "राष्ट्रीय इलेक्ट्रॉनिक कृषि बाज़ार — ऑनलाइन फसल बिक्री।",
+        "portalUrl": "https://enam.gov.in",
         "eligibilityRules": {},
     },
     {
@@ -65,6 +72,7 @@ SCHEMES = [
         "status": "open",
         "nextDeadline": "2026-09-30",
         "description": "सूक्ष्म सिंचाई (ड्रिप/स्प्रिंकलर) पर सब्सिडी।",
+        "portalUrl": "https://pmksy.gov.in",
         "eligibilityRules": {"states": ["Gujarat"], "requiresKcc": True},
     },
 ]

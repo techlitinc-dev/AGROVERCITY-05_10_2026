@@ -646,6 +646,202 @@ register(
 )
 
 
+# Brief M12 (SDR) — smart mandi selection. Batch-scores every candidate mandi
+# (`net_score`, integer paisa) and picks a vernacular `explain_key` choice. The
+# deterministic fallback is plain net-after-transport arithmetic:
+#     net = modal_price_paisa × qty − transport_fare_paisa − commission_paisa
+# ranked descending with a name-ascending tie-break, so shim / AI-off runs match
+# the hand-computed golden cases in tests/fixtures/ai/golden exactly. `suggest`.
+MANDI_SMART_EXPLAIN_KEYS = ("net_after_transport", "distance", "price_only", "insufficient_data")
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    """Best-effort int coercion — money is integer paisa, never a float."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _mandi_smart_select_fallback(state: dict) -> dict:
+    """Deterministic net-after-transport ranking (M12, SDR step 5)."""
+    qty = _as_int(state.get("qty_quintals"))
+    candidates = [
+        candidate
+        for candidate in (state.get("candidates") or [])
+        if isinstance(candidate, dict) and candidate.get("mandi")
+    ]
+    net_score: dict[str, int] = {}
+    ordered: list[tuple[int, str]] = []
+    for candidate in candidates:
+        name = str(candidate["mandi"])
+        net = (
+            _as_int(candidate.get("modal_price_paisa")) * qty
+            - _as_int(candidate.get("transport_fare_paisa"))
+            - _as_int(candidate.get("commission_paisa"))
+        )
+        net_score[name] = net
+        ordered.append((net, name))
+    ordered.sort(key=lambda item: (-item[0], item[1].lower()))
+    return {
+        "ranking": [name for _, name in ordered],
+        "net_score": net_score,
+        "explain_key": "net_after_transport" if candidates else "insufficient_data",
+        "confidence": 0.0,
+    }
+
+
+register(
+    QuestionSet(
+        id="mandi.smart_select.v1",
+        version="v1",
+        schema={
+            "ranking": [],
+            "net_score": {},
+            "explain_key": "net_after_transport",
+            "confidence": 0.0,
+        },
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_mandi_smart_select_fallback,
+    )
+)
+
+
+# Brief M13 (SDR) — advisory market saturation. The risk class is decided by the
+# RULES over district-crop sowing-intent aggregates (never by the model); the
+# model only ranks the alternative crops (`alt_crops`) and picks a vernacular
+# explanation key. Deterministic fallback = the rules class + expected-price
+# ordering, so shim / AI-off runs are identical to the rule engine's truth.
+ADVISORY_SATURATION_RISK = ("low", "medium", "high")
+
+
+def _advisory_saturation_fallback(state: dict) -> dict:
+    """Deterministic district-crop saturation class (M13, SDR step 5)."""
+    count = _as_int(state.get("sowing_count"))
+    if count < 20:
+        risk = "low"
+    elif count < 60:
+        risk = "medium"
+    else:
+        risk = "high"
+    alternatives = [
+        alt
+        for alt in (state.get("alternatives") or [])
+        if isinstance(alt, dict) and alt.get("crop")
+    ]
+    alternatives.sort(
+        key=lambda alt: (-_as_int(alt.get("expected_price_paisa")), str(alt["crop"]).lower())
+    )
+    return {
+        "risk": risk,
+        "alt_crops": [str(alt["crop"]) for alt in alternatives],
+        "confidence": 0.0,
+    }
+
+
+register(
+    QuestionSet(
+        id="advisory.saturation.v1",
+        version="v1",
+        schema={"risk": "low", "alt_crops": [], "confidence": 0.0},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_advisory_saturation_fallback,
+    )
+)
+
+
+# Brief M9 (SDR) — disease-scan image gate. Runs FIRST on every scan: a non-leaf
+# or poor-quality photo is answered with retake guidance instead of a diagnosis.
+# Deterministic fallback passes the gate (the stub diagnosis still stands) only
+# when the state explicitly says the gate could not be judged.
+def _disease_gate_fallback(state: dict) -> dict:
+    return {
+        "is_plant_leaf": bool(state.get("is_plant_leaf", True)),
+        "quality_ok": bool(state.get("quality_ok", True)),
+    }
+
+
+register(
+    QuestionSet(
+        id="disease.gate.v1",
+        version="v1",
+        schema={"is_plant_leaf": True, "quality_ok": True},
+        confidence_threshold=0.6,
+        automation_level="suggest",
+        fallback_fn=_disease_gate_fallback,
+    )
+)
+
+
+# Brief M21 (SDR) — government-scheme matching. The RULES engine
+# (`services/eligibility.py`) decides `eligible` + the `missing` documents; the
+# model only supplies a `fit` score so the discovery list can rank
+# matched-to-profile first and explain the verdict in the farmer's language.
+# Deterministic fallback = the rules verdict with a missing-doc penalty, so
+# shim / AI-off runs answer identically to the rules engine's truth set.
+def _schemes_match_fallback(state: dict) -> dict:
+    """Deterministic scheme-fit (M21, SDR step 5) — never overrides the rules."""
+    eligible = bool(state.get("eligible", False))
+    missing = [str(doc) for doc in (state.get("missing") or [])]
+    if not eligible:
+        fit = 0.0
+    else:
+        fit = round(max(0.4, 1.0 - 0.15 * len(missing)), 2)
+    return {"eligible": eligible, "missing": missing, "fit": fit}
+
+
+register(
+    QuestionSet(
+        id="schemes.match.v1",
+        version="v1",
+        schema={"eligible": False, "missing": [], "fit": 0.0},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_schemes_match_fallback,
+    )
+)
+
+
+# Brief M10 (SDR + vision) — produce-grading human-review gate. Runs after the
+# grading assessment: a low-confidence grade (or an explicit gate verdict) is
+# routed to the human-grader ops queue instead of being published as an AI
+# grade. `confidence_class` is a vernacular choice, never a raw number.
+GRADING_CONFIDENCE_CLASSES = ("high", "medium", "low")
+
+
+def _grading_gate_fallback(state: dict) -> dict:
+    """Deterministic human-review gate (M10, SDR step 5)."""
+    try:
+        confidence = float(state.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if confidence >= 0.85:
+        confidence_class = "high"
+    elif confidence >= 0.7:
+        confidence_class = "medium"
+    else:
+        confidence_class = "low"
+    return {
+        "needs_human": confidence < 0.7,
+        "confidence_class": confidence_class,
+    }
+
+
+register(
+    QuestionSet(
+        id="grading.gate.v1",
+        version="v1",
+        schema={"needs_human": False, "confidence_class": "high"},
+        confidence_threshold=0.7,
+        automation_level="suggest",
+        fallback_fn=_grading_gate_fallback,
+    )
+)
+
+
+
 
 
 

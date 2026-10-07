@@ -268,14 +268,14 @@ const hi: Record<string, string> = {
   dashMahila: 'महिला',
   dashOnline: 'ऑनलाइन',
   dashWeather: 'मौसम और सूचनाएं',
-  dashWeatherComingSoon: 'मौसम पट्टी प्लेसहोल्डर — लाइव डेटा जल्द आएगा',
+  dashWeatherLiveSoon: 'मौसम पट्टी प्लेसहोल्डर — लाइव डेटा जल्द आएगा',
   dashGoodMorning: 'सुप्रभात',
   dashGoodAfternoon: 'शुभ दोपहर',
   dashGoodEvening: 'शुभ संध्या',
   dashActiveRole: 'सक्रिय भूमिका: {role} ({count} प्रोफाइल)',
   dashChange: 'बदलें',
   dashBack: 'डैशबोर्ड पर वापस',
-  dashComingSoon: 'जल्द आ रहा है',
+  dashLiveSoon: 'जल्द आ रहा है',
   dashPlaceholderBody: 'यह प्लेसहोल्डर पेज है — पूरी सुविधा जल्द आएगी।',
   dashNoLiveData: 'यहां लाइव डेटा दिखेगा',
   dashBottomNav: 'मुख्य नेविगेशन',
@@ -460,6 +460,18 @@ const hi: Record<string, string> = {
   legalRefundsTitle: 'रिफंड और रद्दीकरण नीति',
   legalCommunityTitle: 'समुदाय दिशानिर्देश',
   legalLastUpdated: 'अंतिम अपडेट: सितंबर 2026',
+
+  // ---- Global search (phase-05 WS-09) ----
+  searchTitle: 'खोज',
+  searchPlaceholder: 'योजनाएं, उत्पाद, समाचार खोजें…',
+  searchSeeAll: 'सभी देखें',
+  searchNoResults: 'कोई परिणाम नहीं मिला',
+  searchGroupSchemes: 'योजनाएं',
+  searchGroupProducts: 'उत्पाद',
+  searchGroupNews: 'समाचार',
+  searchGroupCrops: 'फसलें',
+  searchGroupCourses: 'पाठ्यक्रम',
+  searchGroupLots: 'लॉट',
 };
 
 registerLocale('hi', hi);

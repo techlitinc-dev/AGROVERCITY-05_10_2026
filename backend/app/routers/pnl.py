@@ -1,7 +1,8 @@
 import json
+from datetime import date, timedelta
 from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.core.cache import cache_get, cache_set
 from app.core.db import get_doc, query, set_doc
@@ -14,6 +15,7 @@ from app.models.pnl import (
     ExpenseIn,
     PnlSummary,
 )
+from app.services import reports
 from app.services.pnl_engine import build_dashboard
 from app.services.users import get_user
 
@@ -112,4 +114,58 @@ async def add_expense(crop_id: str, body: ExpenseIn, uid: str = Depends(_viewer)
 async def break_even(body: BreakEvenIn, uid: str = Depends(_viewer)):
     return BreakEvenOut(
         minSafePricePerQuintal=ceil(body.totalCost / body.expectedYieldQuintals)
+    )
+
+
+def _resolve_range(from_date: str | None, to_date: str | None) -> tuple[str, str]:
+    today = date.today()
+    if from_date is None:
+        from_date = today.replace(day=1).isoformat()
+    if to_date is None:
+        if today.month == 12:
+            first_next = today.replace(year=today.year + 1, month=1, day=1)
+        else:
+            first_next = today.replace(month=today.month + 1, day=1)
+        to_date = (first_next - timedelta(days=1)).isoformat()
+    return from_date, to_date
+
+
+async def _entries_in_range(uid: str, from_date: str, to_date: str) -> list[dict]:
+    entries = await query(f"users/{uid}/diary_entries", [], limit=1000)
+    return [e for e in entries if from_date <= e.get("date", "") <= to_date]
+
+
+@router.get("/report.pdf")
+async def pnl_report_pdf(
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    uid: str = Depends(_viewer),
+):
+    """PDF export of the P&L statement for the range (defaults to this month)."""
+    start, end = _resolve_range(from_date, to_date)
+    entries = await _entries_in_range(uid, start, end)
+    path = reports.build_pnl_pdf(uid, entries, start, end)
+    with open(path, "rb") as handle:
+        body = handle.read()
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="pnl-report.pdf"'},
+    )
+
+
+@router.get("/export/tally")
+async def pnl_export_tally(
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    uid: str = Depends(_viewer),
+):
+    """Tally-compatible CSV export — column mapping in services/reports.py."""
+    start, end = _resolve_range(from_date, to_date)
+    entries = await _entries_in_range(uid, start, end)
+    csv_body = reports.build_tally_csv(entries)
+    return Response(
+        content=csv_body,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="pnl-tally.csv"'},
     )

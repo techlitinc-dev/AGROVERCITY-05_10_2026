@@ -131,6 +131,14 @@ const TOOL_LIST: Tool[] = [
   { id: 'assignments', icon: '📸', color: '#7C3AED' },
   { id: 'earnings', icon: '💰', color: '#7C3AED' },
   { id: 'credentials', icon: '🪪', color: '#7C3AED' },
+  // Phase-05 WS-05 finance & protection sub-pages (deep-routed; appended after
+  // the 26 master modules so ALL_TOOLS_IDS is unchanged).
+  { id: 'insuranceHub', icon: '🛡️', color: '#047857' },
+  { id: 'creditScore', icon: '💯', color: '#8B5CF6' },
+  { id: 'loanMarketplace', icon: '⚖️', color: '#8B5CF6' },
+  { id: 'emiCalculator', icon: '🧮', color: '#8B5CF6' },
+  { id: 'loanWizard', icon: '📝', color: '#8B5CF6' },
+  { id: 'loanStatus', icon: '🚦', color: '#8B5CF6' },
 ];
 
 export const TOOL_BY_ID: Record<string, Tool> = Object.fromEntries(
@@ -175,6 +183,7 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
     'landListings', 'leaseRequests',
     'landlordLeases', 'landlordRent', 'womenFarmer', 'fpo', 'equipment', 'landLegal', 'climate',
     'postHarvest', 'treePlantation', 'liveChannels', 'livestockDairy', 'farmDiary', 'cropInsurance',
+    'insuranceHub', 'creditScore', 'loanMarketplace', 'emiCalculator', 'loanWizard', 'loanStatus',
     'myBookings', 'loadBoard', 'liveTracking', 'biltyView', 'buyDemands', 'myOffers', 'purchases',
     ...COMMON,
   ],
@@ -286,13 +295,20 @@ export const PERSONA_HOME_CONFIG: Record<string, PersonaHomeConfig> = {
       },
       {
         titleKey: 'dashOurServices',
-        tiles: ['equipment', 'mandi', 'advisory', 'finance', 'profitLoss', 'farmDiary'],
+        tiles: [
+          'equipment', 'mandi', 'advisory', 'marketplace', 'finance', 'schemes',
+          'water', 'climate', 'profitLoss', 'farmDiary',
+        ],
       },
       {
         titleKey: 'dashSpecialModules',
         tiles: [
-          'cropInsurance', 'treePlantation', 'liveChannels', 'livestockDairy',
-          'farmDiary', 'agriNews', 'gyanHub',
+          'cropInsurance', 'insuranceHub', 'treePlantation', 'liveChannels', 'livestockDairy',
+          'landLegal', 'fpo', 'postHarvest', 'farmDiary', 'agriNews', 'gyanHub',
+          // WS-08 engagement modules (farmer persona; all three are on the
+          // farmer's route map — krishiRatna/referEarn via COMMON, womenFarmer
+          // directly — so canAccess() lets them through).
+          'krishiRatna', 'referEarn', 'womenFarmer',
         ],
       },
     ],

@@ -8,8 +8,10 @@ import { useEnsureProfile } from '../../components/trade/useEnsureProfile';
 import { listSavedFarmers } from '../../lib/api/discovery';
 import {
   contractFormulaLabel,
+  getContractAnalytics,
   listContractsMine,
   type Contract,
+  type ContractAnalytics,
   type ContractStatus,
 } from '../../lib/api/intelligence';
 import { useT } from '../../lib/i18n';
@@ -41,6 +43,8 @@ export default function ContractsPage() {
   const [contracts, setContracts] = useState<Contract[] | null>(null);
   const [farmerNames, setFarmerNames] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState(false);
+  // Contract performance (WS-01 task 1.24) — null until loaded / on failure.
+  const [analytics, setAnalytics] = useState<ContractAnalytics | null>(null);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -61,6 +65,13 @@ export default function ContractsPage() {
         setFarmerNames(map);
       })
       .catch(() => setFarmerNames({}));
+  }, []);
+
+  // Contract performance summary. A failure hides the card (no invented numbers).
+  useEffect(() => {
+    getContractAnalytics()
+      .then(setAnalytics)
+      .catch(() => setAnalytics(null));
   }, []);
 
   const filters = useMemo(() => STATUS_FILTERS, []);
@@ -89,6 +100,27 @@ export default function ContractsPage() {
           </button>
         ))}
       </div>
+
+      {analytics ? (
+        <div className="trade-card" style={{ cursor: 'default', marginBottom: 12 }}>
+          <div className="trade-card-row">
+            <span className="trade-card-title">{t('ctAnalyticsTitle')}</span>
+            <span className="ct-formula-chip live">
+              {t('ctAnalyticsFulfillment', { pct: analytics.fulfillment_pct })}
+            </span>
+          </div>
+          <div className="trade-card-row">
+            <span className="trade-card-sub">
+              {analytics.total_deliveries > 0
+                ? t('ctAnalyticsOnTime', {
+                    onTime: analytics.on_time_deliveries,
+                    total: analytics.total_deliveries,
+                  })
+                : t('ctAnalyticsEmpty')}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       {contracts === null && !failed ? <p className="trade-hint">{t('commonLoading')}</p> : null}
 

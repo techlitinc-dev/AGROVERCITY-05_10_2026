@@ -29,6 +29,7 @@ from app.routers.users import require_role
 from app.services import kyc as kyc_service
 from app.services import reports
 from app.services import settlements as settlements_service
+from app.services.pnl_engine import record_auto_entry
 from app.services import transport_match
 from app.services.billing import effective_plan, entitlement_guard, record_usage
 from app.services.chat import ensure_transport_room
@@ -862,6 +863,16 @@ async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = 
     booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
     await set_doc("transport_bookings", booking_id, booking)
     await transport_match.record_transport_outcome(booking_id, "completed")
+    transporter_id = booking.get("transporterId")
+    if transporter_id:
+        await record_auto_entry(
+            transporter_id,
+            "income",
+            int(booking.get("fare") or 0) * 100,
+            "freight_income",
+            "freight_income",
+            booking_id,
+        )
     await notify_user(
         booking["userId"],
         type="trip_delivered",

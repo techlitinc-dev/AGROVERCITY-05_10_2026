@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from app.core.db import get_doc, query, set_doc
@@ -15,6 +16,26 @@ class AlreadyInvited(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _audit_referral_credit(
+    referrer_uid: str, referred_uid: str, units: int, kind: str
+) -> None:
+    """Rule 3: every referral credit writes an audit_logs row (integer units)."""
+    audit_id = f"aud_ref_{uuid.uuid4().hex[:12]}"
+    await set_doc(
+        "audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "action": "REFERRAL_CREDIT",
+            "kind": kind,
+            "referrerUid": referrer_uid,
+            "referredUid": referred_uid,
+            "units": int(units),
+            "at": _now(),
+        },
+    )
 
 
 def _default_milestones() -> list[dict]:
@@ -97,6 +118,7 @@ async def record_join(
             invited_flipped = True
 
     await award_coins(referrer_uid, JOIN_REWARD_COINS, "referral", referred_uid)
+    await _audit_referral_credit(referrer_uid, referred_uid, JOIN_REWARD_COINS, "join")
     earned = JOIN_REWARD_COINS
     new_milestones: list[dict] = []
     for milestone in profile.get("milestones", _default_milestones()):
@@ -104,6 +126,9 @@ async def record_join(
             milestone["achieved"] = True
             bonus = milestone["rewardCoins"]
             await award_coins(referrer_uid, bonus, "referral_milestone", f"milestone_{milestone['count']}")
+            await _audit_referral_credit(
+                referrer_uid, referred_uid, bonus, f"milestone_{milestone['count']}"
+            )
             new_milestones.append({"count": milestone["count"], "rewardCoins": bonus})
             earned += bonus
 
@@ -117,6 +142,55 @@ async def record_join(
         "newMilestones": new_milestones,
         "referredName": referred_name,
     }
+
+
+async def credit_referral_on_first_transaction(referred_uid: str) -> dict | None:
+    """Anti-fraud (X11 / §7.16): credit the referrer ONLY once the invitee
+    completes their first transaction — never at registration.
+
+    Registration stores a `referral_attributions/{referred_uid}` doc (no coins).
+    The transaction-completion hook calls this; it is idempotent on the
+    attribution's `credited` flag, so replaying the same transaction never
+    double-credits. Returns the `record_join` result on the first credit, else
+    `None`.
+    """
+    attribution = await get_doc("referral_attributions", referred_uid)
+    if attribution is None or attribution.get("credited"):
+        return None
+    referrer_uid = attribution.get("referrerUid")
+    if not referrer_uid:
+        return None
+    result = await record_join(
+        referrer_uid,
+        referred_uid,
+        attribution.get("code", ""),
+        referred_phone=attribution.get("referredPhone"),
+    )
+    attribution["credited"] = True
+    attribution["creditedAt"] = _now()
+    attribution["status"] = "credited"
+    await set_doc("referral_attributions", referred_uid, attribution)
+    # Notify the referrer now that the reward is real.
+    from app.services.notifications import send_fcm_to_user
+
+    await send_fcm_to_user(
+        referrer_uid,
+        "नया रेफरल जुड़ा",
+        f"+{JOIN_REWARD_COINS} AgriCoins आपके खाते में जुड़े",
+        {"type": "referral_joined", "referredUid": referred_uid},
+    )
+    for milestone in result["newMilestones"]:
+        await send_fcm_to_user(
+            referrer_uid,
+            "रेफरल माइलस्टोन पूरा",
+            f"{milestone['count']} रेफरल पूरे — +{milestone['rewardCoins']} AgriCoins मिले",
+            {
+                "type": "referral_milestone",
+                "milestoneCount": milestone["count"],
+                "rewardCoins": milestone["rewardCoins"],
+            },
+        )
+    return result
 
 
 async def referral_leaderboard(uid: str, limit: int = 10) -> tuple[list[dict], dict | None]:

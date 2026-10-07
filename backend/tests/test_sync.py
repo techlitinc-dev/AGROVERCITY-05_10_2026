@@ -1,3 +1,7 @@
+import pytest
+
+from app.services import sync as sync_service
+from app.services.sync import MandiSyncError, sync_mandi_prices
 from tests.test_diary import ENTRY, auth, seed_user
 
 DIARY_PATH = "/v1/diary/entries"
@@ -195,3 +199,51 @@ async def test_claim_replay_ignores_status_field(client, user_store):
     result = resp.json()["results"][0]
     assert result["status"] == "applied"
     assert result["result"]["status"] == "intimated"
+
+
+async def test_mandi_sync_writes_last_success_at(client, user_store):
+    calls = {"n": 0}
+
+    async def fetch():
+        calls["n"] += 1
+        return [{"crop": "Wheat", "mandi": "Nashik", "modalPricePaisa": 240000}]
+
+    summary = await sync_mandi_prices(fetch=fetch)
+    assert calls["n"] == 1
+    assert summary["rows"] == 1
+    assert summary["attempts"] == 1
+    assert "T" in summary["last_success_at"]
+    doc = user_store["platform_config/mandi_sync"]
+    assert doc["last_success_at"] == summary["last_success_at"]
+    assert doc["rows"] == 1
+
+
+async def test_mandi_sync_retries_then_succeeds(client, user_store, monkeypatch):
+    monkeypatch.setattr(sync_service, "MANDI_SYNC_BACKOFF_SECONDS", 0)
+    calls = {"n": 0}
+
+    async def flaky_fetch():
+        calls["n"] += 1
+        if calls["n"] < sync_service.MANDI_SYNC_MAX_ATTEMPTS:
+            raise RuntimeError("transient source error")
+        return [{"crop": "Wheat"}, {"crop": "Onion"}]
+
+    summary = await sync_mandi_prices(fetch=flaky_fetch)
+    assert calls["n"] == sync_service.MANDI_SYNC_MAX_ATTEMPTS
+    assert summary["attempts"] == sync_service.MANDI_SYNC_MAX_ATTEMPTS
+    assert summary["rows"] == 2
+    assert user_store["platform_config/mandi_sync"]["last_success_at"] == summary["last_success_at"]
+
+
+async def test_mandi_sync_exhausts_retries_without_stamp(client, user_store, monkeypatch):
+    monkeypatch.setattr(sync_service, "MANDI_SYNC_BACKOFF_SECONDS", 0)
+    calls = {"n": 0}
+
+    async def always_fails():
+        calls["n"] += 1
+        raise RuntimeError("source down")
+
+    with pytest.raises(MandiSyncError):
+        await sync_mandi_prices(fetch=always_fails)
+    assert calls["n"] == sync_service.MANDI_SYNC_MAX_ATTEMPTS
+    assert "platform_config/mandi_sync" not in user_store

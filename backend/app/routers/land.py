@@ -29,6 +29,7 @@ from app.routers.users import require_role
 from app.services import billing, idempotency, reports
 from app.services.ai import gateway
 from app.services.ai.privacy import build_land_listing_quality_state
+from app.services.pnl_engine import record_auto_entry
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
@@ -293,6 +294,9 @@ async def add_payment(lease_id: str, body: RentPaymentIn, uid: str = Depends(_ow
             "amountPaidPaisa": amount_paisa,
             "balancePaisa": max(0, int(ledger.get("amountDuePaisa", due_paisa)) - paid),
         },
+    )
+    await record_auto_entry(
+        uid, "income", amount_paisa, "lease_payment", "lease_payment", payment.id
     )
     return payment
 

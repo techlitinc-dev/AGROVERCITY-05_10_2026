@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import uuid
@@ -22,6 +23,63 @@ from app.services import claims as claims_service
 from app.services.users import get_user
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Agmarknet / eNAM mandi price sync (phase-05 WS-01 task 1.18).
+#
+# The live Agmarknet/eNAM adapter is not wired yet — the on-disk seed remains
+# scripts/seed_mandi.py — so the fetcher is an explicit injection seam. What
+# this job hardens is the failure mode: bounded retries with backoff, and a
+# `last_success_at` timestamp on `platform_config/mandi_sync` so staleness is
+# visible. (Health note only; the admin console is phase-07.)
+# Deferred(2026-10-03, phase-07): surface mandi_sync.last_success_at in the admin
+# health console — hook left behind: the platform_config/mandi_sync doc below.
+# ---------------------------------------------------------------------------
+MANDI_SYNC_CONFIG_DOC = "mandi_sync"
+MANDI_SYNC_MAX_ATTEMPTS = 3
+MANDI_SYNC_BACKOFF_SECONDS = 0.5
+
+
+class MandiSyncError(RuntimeError):
+    """Raised when every bounded retry of the Agmarknet/eNAM fetch failed."""
+
+
+async def _default_mandi_fetch() -> list[dict]:
+    """No Agmarknet/eNAM adapter is configured — fail loudly, never fabricate."""
+    raise MandiSyncError("no Agmarknet/eNAM adapter configured")
+
+
+async def sync_mandi_prices(fetch=None) -> dict:
+    """Fetch mandi prices with bounded retries; stamp the last success.
+
+    Retries up to `MANDI_SYNC_MAX_ATTEMPTS` with linear backoff. On success it
+    writes `last_success_at` (ISO string) plus the row count and attempt number
+    to the `platform_config/mandi_sync` doc, then returns the same summary. A
+    fetch that keeps failing raises `MandiSyncError` and leaves the previous
+    timestamp untouched.
+    """
+    fetcher = fetch or _default_mandi_fetch
+    last_error: Exception | None = None
+    for attempt in range(1, MANDI_SYNC_MAX_ATTEMPTS + 1):
+        try:
+            rows = await fetcher()
+        except Exception as exc:  # noqa: BLE001 — retry every transport/source error
+            last_error = exc
+            logger.warning(
+                "mandi sync fetch attempt %s/%s failed: %s",
+                attempt,
+                MANDI_SYNC_MAX_ATTEMPTS,
+                exc,
+            )
+            if attempt < MANDI_SYNC_MAX_ATTEMPTS:
+                await asyncio.sleep(MANDI_SYNC_BACKOFF_SECONDS * attempt)
+            continue
+        now = datetime.now(timezone.utc).isoformat()
+        summary = {"last_success_at": now, "rows": len(rows or []), "attempts": attempt}
+        await set_doc("platform_config", MANDI_SYNC_CONFIG_DOC, {"id": MANDI_SYNC_CONFIG_DOC, **summary})
+        return summary
+    raise MandiSyncError(str(last_error))
 
 
 async def already_processed(key: str) -> dict | None:

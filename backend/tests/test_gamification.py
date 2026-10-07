@@ -325,3 +325,96 @@ async def test_leaderboard_all_and_month_periods(client, user_store):
     resp = await client.get("/v1/gamification/leaderboard?period=week", headers=auth(token))
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def _audit_logs(user_store):
+    return [
+        doc for key, doc in user_store.items() if key.startswith("audit_logs/")
+    ]
+
+
+async def test_daily_earn_cap_is_enforced_from_platform_config(client, user_store):
+    """X11 task 8.8 — a >cap award in one day credits exactly the configured cap."""
+    seed_user(user_store, uid="uid-cap-1")
+    from app.services.coins import award_coins
+
+    balance = await award_coins("uid-cap-1", 500, "diary_entry")
+    config = user_store["platform_config/coins"]
+    assert config["dailyEarnCap"] == 200
+    assert balance == config["dailyEarnCap"]
+    ledger = _coin_ledger(user_store, "uid-cap-1")
+    assert sum(e["amount"] for e in ledger.values()) == 200
+
+    # Budget exhausted — a further award is dropped, not deferred.
+    assert await award_coins("uid-cap-1", 50, "diary_entry") == 200
+    assert sum(e["amount"] for e in _coin_ledger(user_store, "uid-cap-1").values()) == 200
+
+
+async def test_redemption_cap_half_order_value(client, user_store):
+    """X11 task 8.9 — redemption >50% of order value rejected; exactly 50% passes."""
+    token = seed_user(user_store, uid="uid-cap-2", agriCoins=500)
+    # Voucher costs 300; ₹500 order = 50000 paisa → cap 250 → rejected.
+    resp = await client.post(
+        "/v1/gamification/redeem",
+        json={"rewardType": "voucher", "coins": 300, "orderValuePaisa": 50000},
+        headers=auth(token),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "REDEMPTION_CAP_EXCEEDED"
+    assert user_store["users/uid-cap-2"]["agriCoins"] == 500
+
+    # Exactly 50% (₹600 = 60000 paisa → cap 300) succeeds.
+    resp = await client.post(
+        "/v1/gamification/redeem",
+        json={"rewardType": "voucher", "coins": 300, "orderValuePaisa": 60000},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["balance"] == 200
+
+
+async def test_nightly_reconcile_reports_drift(client, user_store):
+    """X11 task 8.10 — the reconcile job reports issued/redeemed/drift."""
+    from app.services.coins import award_coins, run_nightly_reconcile
+
+    seed_user(user_store, uid="uid-rec-1")
+    await award_coins("uid-rec-1", 100, "diary_entry")
+    report = await run_nightly_reconcile()
+    assert report["issued"] == 100
+    assert report["redeemed"] == 0
+    assert report["drift"] == 0
+    assert report["checked_at"]
+    assert user_store["platform_config/coins_reconcile_latest"] == report
+
+    # A shadow-ledger mint with no per-user backing is a real drift.
+    user_store["gamification_ledger/uid-ghost_ghost"] = {
+        "userId": "uid-ghost",
+        "amount": 75,
+        "reason": "referral",
+        "refId": None,
+        "balanceAfter": 75,
+        "at": _at(),
+    }
+    drifted = await run_nightly_reconcile()
+    assert drifted["issued"] == 175
+    assert drifted["drift"] == 75
+
+
+async def test_coin_mint_and_burn_write_audit_logs(client, user_store):
+    """Rule 3 (task 8.11) — every mint/burn writes an audit_logs row."""
+    token = seed_user(user_store, uid="uid-aud-1", agriCoins=500)
+    from app.services.coins import award_coins
+
+    await award_coins("uid-aud-1", 10, "diary_entry")
+    assert "COIN_MINT" in {a["action"] for a in _audit_logs(user_store)}
+
+    resp = await client.post(
+        "/v1/gamification/redeem",
+        json={"rewardType": "voucher", "coins": 300},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    burns = [a for a in _audit_logs(user_store) if a["action"] == "COIN_BURN"]
+    assert len(burns) == 1
+    assert burns[0]["units"] == -300
+    assert burns[0]["userId"] == "uid-aud-1"

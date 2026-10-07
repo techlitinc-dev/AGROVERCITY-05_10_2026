@@ -21,8 +21,8 @@ const enBroker: Record<string, string> = {
   tool_brokerProfile_sub: 'Mandis, rate card, terms',
   tool_brokerOffers: 'Broker Offers',
   tool_brokerOffers_sub: 'Dalal offers for your produce',
-  buyersComingSoon: 'Coming soon',
-  buyersComingSoonBody: 'The buyer directory for this profile is on the roadmap.',
+  buyersWorkspace: 'Buyer directory',
+  buyersWorkspaceBody: 'The buyer CRM is part of the broker workspace.',
 
   // ---- Deal status pills (sentence captions, plan §2.3) ----
   dealStatus_negotiating: 'Price negotiation on',

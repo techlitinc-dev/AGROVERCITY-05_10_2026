@@ -46,3 +46,19 @@ async def test_import_updates_profile(client, user_store):
 async def test_adapter_swap_env(monkeypatch):
     monkeypatch.setenv("LAND_RECORDS_ADAPTER", "mock")
     assert isinstance(get_adapter(), MockAdapter)
+
+
+async def test_import_writes_profile_and_is_idempotent(client, user_store):
+    """WS-06 §7.10 — one-tap import copies the survey area into the profile and
+    replaying the same Gat number never duplicates the land-records entry."""
+    token = seed_user(user_store)
+    first = await client.post("/v1/land-records/rec-1/import", headers=auth(token))
+    assert first.status_code == 200
+    assert first.json()["landAreaAcres"] == 2.97
+    second = await client.post("/v1/land-records/rec-1/import", headers=auth(token))
+    assert second.status_code == 200
+
+    user = user_store["users/uid-1"]
+    assert user["landAreaAcres"] == 2.97
+    matching = [r for r in user["landRecords"] if r["gatNumber"] == "123"]
+    assert len(matching) == 1

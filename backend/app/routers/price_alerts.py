@@ -7,9 +7,13 @@ from pydantic import BaseModel, Field
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.services.notify import notify_user
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/price-alerts", tags=["price-alerts"])
+
+# Deep link into the mandi price-history chart tool (phase-05 WS-01 task 1.9).
+MANDI_CHART_DEEP_LINK = "/dashboard/p/mandiCharts"
 
 
 class PriceAlertCreate(BaseModel):
@@ -77,6 +81,25 @@ async def list_alerts(uid: str = Depends(_alert_user)):
                     )
                 except Exception:
                     pass  # notifications are best-effort
+                try:
+                    user = await get_user(uid)
+                    await emit_task(
+                        uid,
+                        persona=(user or {}).get("activeProfile") or "farmer",
+                        module="mandi",
+                        kind="price_alert",
+                        title_en=f"Price alert: {doc['crop']}",
+                        title_hi=f"भाव अलर्ट: {doc['crop']}",
+                        subtitle=(
+                            f"{doc['crop']}: mandi modal ₹{modal} "
+                            f"{'≥' if doc.get('above', True) else '≤'} your ₹{doc['targetPrice']}"
+                        ),
+                        priority="today",
+                        deep_link=MANDI_CHART_DEEP_LINK,
+                        source_id=doc["id"],
+                    )
+                except Exception:
+                    pass  # task emission is best-effort
         data.append(_alert_out(doc, modal))
     return {"data": data}
 

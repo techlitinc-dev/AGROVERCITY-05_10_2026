@@ -90,3 +90,50 @@ async def test_machinery_calendar(client, user_store):
     assert set(machine["days"].keys()) == expected_dates
     for slots in machine["days"].values():
         assert len(slots) == 4
+
+
+async def test_fpo_directory_reports_verification_and_membership(client, user_store):
+    _seed_fpo(user_store)
+    token = await _token(client)
+    resp = await client.get("/v1/fpo/directory", headers=_auth(token))
+    assert resp.status_code == 200
+    row = next(i for i in resp.json()["data"] if i["id"] == "sahyadri-fpo")
+    assert row["verification_status"] == "unverified"
+    assert row["membership"] == "none"
+
+
+async def test_join_request_transitions_member_state(client, user_store):
+    """F19 — a join request moves none -> pending -> member (dev-approve)."""
+    _seed_fpo(user_store)
+    token = await _token(client)
+
+    resp = await client.post("/v1/fpo/sahyadri-fpo/join-request", headers=_auth(token))
+    assert resp.status_code == 201
+    assert resp.json()["membership"] == "pending"
+    resp = await client.get("/v1/fpo/directory", headers=_auth(token))
+    row = next(i for i in resp.json()["data"] if i["id"] == "sahyadri-fpo")
+    assert row["membership"] == "pending"
+
+    resp = await client.post("/v1/fpo/sahyadri-fpo/join-request/approve", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json()["membership"] == "member"
+    resp = await client.get("/v1/fpo/directory", headers=_auth(token))
+    row = next(i for i in resp.json()["data"] if i["id"] == "sahyadri-fpo")
+    assert row["membership"] == "member"
+
+
+async def test_join_request_unknown_fpo_404(client, user_store):
+    _seed_fpo(user_store)
+    token = await _token(client)
+    resp = await client.post("/v1/fpo/nope/join-request", headers=_auth(token))
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "FPO_NOT_FOUND"
+
+
+async def test_fpo_me_persists_verification_status(client, user_store):
+    _seed_fpo(user_store)
+    token = await _token(client)
+    resp = await client.get("/v1/fpo/me", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json()["verification_status"] == "unverified"
+    assert user_store["fpos/sahyadri-fpo"]["verification_status"] == "unverified"

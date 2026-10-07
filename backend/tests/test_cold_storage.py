@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, timedelta
 
 from tests.test_diary import auth, seed_user
@@ -117,3 +118,30 @@ async def test_receipt_endpoint_is_owner_only(client, user_store):
     other = await client.get(f"/v1/post-harvest/receipts/{receipt_no}", headers=auth(other_token))
     assert other.status_code == 404
     assert other.json()["error"]["code"] == "RECEIPT_NOT_FOUND"
+
+
+async def test_concurrent_bookings_never_oversell(client, user_store, monkeypatch):
+    """F11 — capacity is reserved atomically: two bookings that together exceed
+    the free space cannot both succeed. `get_doc` is made to yield so the two
+    handlers interleave exactly where an unguarded read-check-write would race.
+    """
+    import app.routers.post_harvest as ph
+
+    real_get = ph.get_doc
+
+    async def yielding_get(collection, doc_id):
+        await asyncio.sleep(0)
+        return await real_get(collection, doc_id)
+
+    monkeypatch.setattr(ph, "get_doc", yielding_get)
+    token = seed_user(user_store)
+
+    first, second = await asyncio.gather(
+        _book(client, token, "cs-1", 300),
+        _book(client, token, "cs-1", 300),
+    )
+    assert sorted([first.status_code, second.status_code]) == [201, 409]
+
+    resp = await client.get("/v1/post-harvest/cold-storage", headers=auth(token))
+    cs1 = next(i for i in resp.json()["data"] if i["id"] == "cs-1")
+    assert cs1["bookedQuintals"] == 300
