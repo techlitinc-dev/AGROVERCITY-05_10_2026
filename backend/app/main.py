@@ -21,6 +21,8 @@ from app.services.billing import seed_plans
 from app.routers import (
     addresses,
     admin,
+    admin_console,
+    admin_copilot,
     ads,
     advisory,
     analytics,
@@ -214,6 +216,8 @@ app.include_router(chatbot.router, prefix="/v1")
 app.include_router(gamification.router, prefix="/v1")
 app.include_router(referrals.router, prefix="/v1")
 app.include_router(admin.router, prefix="/v1")
+app.include_router(admin_console.router, prefix="/v1")
+app.include_router(admin_copilot.router, prefix="/v1")
 
 
 @app.exception_handler(StarletteHTTPException)

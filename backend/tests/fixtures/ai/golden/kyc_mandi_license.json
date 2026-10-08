@@ -1,0 +1,5 @@
+{
+  "docType": "mandi_license",
+  "input": {"note": "APMC mandi license"},
+  "expected": {"licenseNumber": "MH-APMC-0001", "holderName": "Test Holder", "validUntil": "2027-03-31"}
+}

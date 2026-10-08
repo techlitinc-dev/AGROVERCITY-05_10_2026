@@ -90,8 +90,9 @@ async def test_admin_mutation_requires_audit_reason(client, user_store):
         json={"status": "suspended", "reason": "fraud check"},
         headers=auth("admin-token"),
     )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "AUDIT_REASON_REQUIRED"
+    # Phase-07 WS-01: X-Audit-Reason is enforced by FastAPI (min_length=3) → 422.
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 async def test_admin_kyc_and_expert_ticket_flow(client, user_store):

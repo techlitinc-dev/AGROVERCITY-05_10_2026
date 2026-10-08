@@ -1,0 +1,220 @@
+/* Phase-07 WS-01 — superadmin console: dark, utilitarian, flat surfaces. */
+.admin-shell {
+  --admin-bg: #111827;
+  --admin-surface: #1f2937;
+  --admin-border: #374151;
+  --admin-text: #f9fafb;
+  --admin-muted: #9ca3af;
+  --admin-accent: #34d399;
+  --admin-danger: #f87171;
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  min-height: 100vh;
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.admin-nav {
+  border-right: 1px solid var(--admin-border);
+  padding: 16px 12px;
+  overflow-y: auto;
+  background: var(--admin-bg);
+}
+
+.admin-nav h1 {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--admin-accent);
+  margin: 0 0 16px;
+}
+
+.admin-nav-group {
+  margin-bottom: 14px;
+}
+
+.admin-nav-group-label {
+  font-size: 11px;
+  color: var(--admin-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 4px;
+}
+
+.admin-nav a {
+  display: block;
+  padding: 6px 8px;
+  color: var(--admin-text);
+  text-decoration: none;
+  font-size: 13px;
+  border-radius: 2px;
+}
+
+.admin-nav a:hover,
+.admin-nav a.active {
+  background: var(--admin-surface);
+  color: var(--admin-accent);
+}
+
+.admin-content {
+  padding: 20px 24px;
+  overflow-x: auto;
+}
+
+.admin-content h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
+.admin-grid {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+}
+
+.admin-grid th,
+.admin-grid td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--admin-border);
+  font-size: 13px;
+  vertical-align: top;
+}
+
+.admin-grid th {
+  color: var(--admin-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.admin-grid tr:hover td {
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.admin-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--admin-muted);
+  cursor: pointer;
+}
+
+.admin-chip.active {
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+}
+
+.admin-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 460px;
+  max-width: 90vw;
+  background: var(--admin-surface);
+  border-left: 1px solid var(--admin-border);
+  padding: 16px;
+  overflow-y: auto;
+  z-index: 40;
+}
+
+.admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.admin-modal {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  padding: 20px;
+  width: 420px;
+  max-width: 92vw;
+}
+
+.admin-error {
+  color: var(--admin-danger);
+  font-size: 12px;
+}
+
+.admin-button {
+  background: var(--admin-accent);
+  color: #06281c;
+  border: 1px solid var(--admin-accent);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.admin-button.secondary {
+  background: transparent;
+  color: var(--admin-text);
+  border-color: var(--admin-border);
+}
+
+.admin-button.danger {
+  background: transparent;
+  color: var(--admin-danger);
+  border-color: var(--admin-danger);
+}
+
+.admin-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-input,
+.admin-textarea,
+.admin-select {
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  border: 1px solid var(--admin-border);
+  padding: 6px 8px;
+  font-size: 13px;
+  width: 100%;
+}
+
+.admin-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-kpi-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  padding: 12px;
+}
+
+.admin-kpi-card .label {
+  color: var(--admin-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.admin-kpi-card .value {
+  font-size: 22px;
+  color: var(--admin-accent);
+  margin-top: 6px;
+}
+
+.admin-pre {
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  padding: 10px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

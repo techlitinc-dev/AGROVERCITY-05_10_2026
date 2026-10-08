@@ -367,3 +367,30 @@ async def dairy_adulteration_route_summary_job(
         "periodStart": window_from,
         "periodEnd": window_to,
     }
+
+
+@router.post("/gateway-health/run")
+async def run_gateway_health_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-04 — probe the 7/12 (Mahabhulekh) gateway and record a health row."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.gateway_health import probe_land_records
+
+    return await probe_land_records()
+
+
+@router.post("/admin-briefing/run")
+async def run_admin_briefing_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-07 (M31) — nightly admin copilot briefing."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.copilot import generate_briefing
+
+    return await generate_briefing()
+
+
+@router.post("/ai-calibration/run")
+async def run_ai_calibration_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-08 — weekly AI calibration aggregation."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.ai.calibration import run_weekly_calibration
+
+    return await run_weekly_calibration()

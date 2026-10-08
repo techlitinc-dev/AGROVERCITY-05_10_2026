@@ -1,0 +1,5 @@
+{
+  "docType": "712",
+  "input": {"note": "7/12 land extract (Mahabhulekh)"},
+  "expected": {"ownerName": "Test Owner", "surveyNumber": "123/2", "district": "Nashik", "area": "2.5"}
+}

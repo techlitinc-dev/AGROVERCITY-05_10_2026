@@ -1,0 +1,5 @@
+{
+  "docType": "aadhaar",
+  "input": {"note": "Aadhaar card image (masked on extraction)"},
+  "expected": {"name": "Test User", "dob": "1990-01-01", "maskedAadhaar": "XXXX-XXXX-1234"}
+}

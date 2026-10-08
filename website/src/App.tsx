@@ -8,6 +8,7 @@ import { useT } from './lib/i18n';
 import { useOnboardingStore } from './stores/onboarding';
 import { useDashboardStore } from './stores/dashboard';
 import { useSessionStore } from './stores/session';
+import { ADMIN_MODULES, RequireAdminRole } from './views/admin/AdminShell';
 
 // Eager: splash / auth / legal render before the app shell is warmed.
 import Splash from './views/Splash';
@@ -23,6 +24,8 @@ const ProfilesPage = lazy(() => import('./views/dashboard/ProfilesPage'));
 const SearchResultsPage = lazy(() => import('./views/dashboard/SearchResultsPage'));
 const ToolPage = lazy(() => import('./views/dashboard/ToolPage'));
 const ChatsHubPage = lazy(() => import('./views/chat/ChatsHubPage'));
+const AdminShell = lazy(() => import('./views/admin/AdminShell'));
+const AdminHomePage = lazy(() => import('./views/admin/AdminHomePage'));
 const ModerationQueuePage = lazy(() => import('./views/admin/ModerationQueuePage'));
 const FraudQueuePage = lazy(() => import('./views/admin/FraudQueuePage'));
 const LocaleReviewPage = lazy(() => import('./views/admin/LocaleReviewPage'));
@@ -178,6 +181,87 @@ const ChannelPlayerPage = named(() => import('./views/channels'), 'ChannelPlayer
 const InspectionPage = named(() => import('./views/customer'), 'InspectionPage');
 const StorefrontPage = named(() => import('./views/customer'), 'StorefrontPage');
 
+// Phase-07 admin console module pages.
+const AdminP1 = () => import('./views/admin/AdminPagesP1');
+const AdminP2 = () => import('./views/admin/AdminPagesP2');
+const AdminP3 = () => import('./views/admin/AdminPagesP3');
+const AdminP45 = () => import('./views/admin/AdminPagesP45');
+const UsersPage = named(AdminP1, 'UsersPage');
+const SessionsPage = named(AdminP1, 'SessionsPage');
+const KycQueuePage = named(AdminP1, 'KycQueuePage');
+const ConfigPage = named(AdminP1, 'ConfigPage');
+const BroadcastPage = named(AdminP1, 'BroadcastPage');
+const ModerationPage = named(AdminP1, 'ModerationPage');
+const ConsentAuditPage = named(AdminP1, 'ConsentAuditPage');
+const MandiRatesPage = named(AdminP2, 'MandiRatesPage');
+const LotsDealsPage = named(AdminP2, 'LotsDealsPage');
+const OrdersPage = named(AdminP2, 'OrdersPage');
+const BuyersPage = named(AdminP2, 'BuyersPage');
+const FleetPage = named(AdminP2, 'FleetPage');
+const EquipmentPage = named(AdminP2, 'EquipmentPage');
+const DiaryPage = named(AdminP2, 'DiaryPage');
+const SettlementsPage = named(AdminP2, 'SettlementsPage');
+const LandLeasesPage = named(AdminP3, 'LandLeasesPage');
+const AdvisoryOpsPage = named(AdminP3, 'AdvisoryOpsPage');
+const ChatbotOpsPage = named(AdminP3, 'ChatbotOpsPage');
+const LandRecordsHealthPage = named(AdminP3, 'LandRecordsHealthPage');
+const WaterSchedulesPage = named(AdminP3, 'WaterSchedulesPage');
+const ColdStoragePage = named(AdminP3, 'ColdStoragePage');
+const DisputesInboxPage = named(AdminP3, 'DisputesInboxPage');
+const BankingPage = named(AdminP45, 'BankingPage');
+const LoansPage = named(AdminP45, 'LoansPage');
+const InsuranceClaimsPage = named(AdminP45, 'InsuranceClaimsPage');
+const AdminInsuranceRatesPage = named(AdminP45, 'InsuranceRatesPage');
+const FpoPage = named(AdminP45, 'FpoPage');
+const AdminVetsPage = named(AdminP45, 'VetsPage');
+const ContentCmsPage = named(AdminP45, 'ContentCmsPage');
+const TreesPage = named(AdminP45, 'TreesPage');
+const GamificationPage = named(AdminP45, 'GamificationPage');
+const ShgPage = named(AdminP45, 'ShgPage');
+const CoursesPage = named(AdminP45, 'CoursesPage');
+const AiHealthPage = named(AdminP45, 'AiHealthPage');
+
+function adminRolesFor(path: string): string[] {
+  return ADMIN_MODULES.find((m) => m.path === path)?.roles ?? ['superadmin'];
+}
+
+const ADMIN_ROUTES: { path: string; Component: ComponentType }[] = [
+  { path: '/admin/users', Component: UsersPage },
+  { path: '/admin/auth', Component: SessionsPage },
+  { path: '/admin/kyc', Component: KycQueuePage },
+  { path: '/admin/config', Component: ConfigPage },
+  { path: '/admin/broadcasts', Component: BroadcastPage },
+  { path: '/admin/moderation', Component: ModerationPage },
+  { path: '/admin/consents', Component: ConsentAuditPage },
+  { path: '/admin/mandi', Component: MandiRatesPage },
+  { path: '/admin/lots', Component: LotsDealsPage },
+  { path: '/admin/orders', Component: OrdersPage },
+  { path: '/admin/buyers', Component: BuyersPage },
+  { path: '/admin/fleet', Component: FleetPage },
+  { path: '/admin/equipment', Component: EquipmentPage },
+  { path: '/admin/diary', Component: DiaryPage },
+  { path: '/admin/settlements', Component: SettlementsPage },
+  { path: '/admin/land', Component: LandLeasesPage },
+  { path: '/admin/advisory', Component: AdvisoryOpsPage },
+  { path: '/admin/chatbot', Component: ChatbotOpsPage },
+  { path: '/admin/land-records', Component: LandRecordsHealthPage },
+  { path: '/admin/water', Component: WaterSchedulesPage },
+  { path: '/admin/cold-storage', Component: ColdStoragePage },
+  { path: '/admin/disputes', Component: DisputesInboxPage },
+  { path: '/admin/banking', Component: BankingPage },
+  { path: '/admin/loans', Component: LoansPage },
+  { path: '/admin/insurance', Component: InsuranceClaimsPage },
+  { path: '/admin/insurance-rates', Component: AdminInsuranceRatesPage },
+  { path: '/admin/fpos', Component: FpoPage },
+  { path: '/admin/vets', Component: AdminVetsPage },
+  { path: '/admin/content', Component: ContentCmsPage },
+  { path: '/admin/trees', Component: TreesPage },
+  { path: '/admin/gamification', Component: GamificationPage },
+  { path: '/admin/shgs', Component: ShgPage },
+  { path: '/admin/courses', Component: CoursesPage },
+  { path: '/admin/ai-health', Component: AiHealthPage },
+];
+
 /** Re-hydrate the persisted session on first load (mirrors mobile loadPersistedState). */
 function useSessionHydration() {
   const accessToken = useSessionStore((s) => s.accessToken);
@@ -280,6 +364,28 @@ export default function App() {
           path="/chats"
           element={loggedIn ? <ChatsHubPage /> : <Navigate to="/auth" replace />}
         />
+        {/* Phase-07 superadmin console shell — role-gated /admin/* section. */}
+        <Route
+          path="/admin"
+          element={loggedIn ? <AdminShell /> : <Navigate to="/auth" replace />}
+        >
+          <Route index element={<AdminHomePage />} />
+          {ADMIN_ROUTES.map((route) => (
+            <Route
+              key={route.path}
+              path={route.path}
+              element={
+                loggedIn ? (
+                  <RequireAdminRole roles={adminRolesFor(route.path)}>
+                    <route.Component />
+                  </RequireAdminRole>
+                ) : (
+                  <Navigate to="/auth" replace />
+                )
+              }
+            />
+          ))}
+        </Route>
         {/* Admin moderation queue (phase-06 WS-01; phase-07 restyles). */}
         <Route
           path="/admin/moderation-queue"

@@ -296,6 +296,67 @@ def _land_listing_quality_answers(state: dict) -> tuple[dict, float]:
     return answers, 0.90
 
 
+def _kyc_risk_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic KYC authenticity-risk shim (M11): mismatches and poor image
+    quality add risk; a clean match stays below the 0.3 auto-advance threshold."""
+    risk = 0.1
+    reasons: list[str] = []
+    if state.get("name_match") is False:
+        risk += 0.3
+        reasons.append("name does not match profile")
+    if state.get("dob_match") is False:
+        risk += 0.3
+        reasons.append("date of birth does not match profile")
+    if state.get("image_quality_ok") is False:
+        risk += 0.3
+        reasons.append("low image quality")
+    if int(state.get("doc_age_days") or 0) > 3650:
+        risk += 0.1
+        reasons.append("document older than 10 years")
+    return {"riskScore": round(min(1.0, risk), 2), "riskReasons": reasons}, 0.9
+
+
+def _dispute_triage_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic dispute-triage shim (M22): category from the money/escalation
+    keywords, urgency medium by default, high for fraud/payment disputes."""
+    text = str(state.get("summary") or "").lower()
+    source = str(state.get("source") or "general")
+    if any(w in text for w in ("fraud", "fake", "cheat", "फर्जी", "धोखा")):
+        category, urgency = "fraud", "high"
+    elif any(w in text for w in ("payment", "refund", "payout", "भुगतान", "रिफंड")):
+        category, urgency = "payment", "high"
+    else:
+        category, urgency = source, "medium"
+    return {"category": category, "urgency": urgency, "liabilityHint": f"{source} dispute"}, 0.85
+
+
+def _kyc_extract_answer(schema: dict) -> dict:
+    """Deterministic KYC field extraction shim — masked Aadhaar only."""
+    if "maskedAadhaar" in schema:
+        return {
+            "name": "Test User",
+            "dob": "1990-01-01",
+            "maskedAadhaar": "XXXX-XXXX-1234",
+            "confidence": 0.9,
+        }
+    if "ownerName" in schema:
+        return {
+            "ownerName": "Test Owner",
+            "surveyNumber": "123/2",
+            "district": "Nashik",
+            "area": "2.5",
+            "confidence": 0.9,
+        }
+    if "licenseNumber" in schema:
+        return {
+            "licenseNumber": "MH-APMC-0001",
+            "holderName": "Test Holder",
+            "validUntil": "2027-03-31",
+            "confidence": 0.9,
+        }
+    return {"confidence": 0.9}
+
+
 async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
     if question_set_id == "tasks.rank.v1":
         return _rank_answers(state)
@@ -325,6 +386,10 @@ async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
         return _support_intent_answers(state)
     if question_set_id == "search.intent.v1":
         return _search_intent_answers(state)
+    if question_set_id == "kyc.authenticity_risk.v1":
+        return _kyc_risk_answers(state)
+    if question_set_id == "dispute.triage.v1":
+        return _dispute_triage_answers(state)
     record = _load_fixtures().get(question_set_id)
     if record is not None:
         return dict(record.get("answers") or {}), float(record.get("confidence", 0.9))
@@ -338,6 +403,8 @@ async def generate(prompt: str, opts: dict | None = None) -> str:
 
 async def analyze_image(image_bytes: bytes, prompt: str, schema: dict | None = None) -> dict:
     p_lower = (prompt or "").lower()
+    if "kyc" in p_lower and schema is not None:
+        return _kyc_extract_answer(schema)
     if "damage" in p_lower or "equipment" in p_lower or "deduction" in p_lower or (schema and "severity" in schema):
         content_text = p_lower
         for phrase in ("(minor, moderate, severe)", "minor, moderate, severe", "estimate severity", "severity estimate"):

@@ -485,3 +485,25 @@ def build_contract_attractiveness_state(
 
 
 
+
+
+def build_kyc_risk_state(
+    doc_type: str,
+    name_match: bool = True,
+    dob_match: bool = True,
+    doc_age_days: int = 0,
+    image_quality_ok: bool = True,
+    extracted_field_count: int = 0,
+) -> dict:
+    """M11 state builder: consistency + quality signals only (booleans/counts),
+    never the document's PII — pseudonymized, no Aadhaar / phone / email."""
+    return sanitize_state(
+        {
+            "doc_type": doc_type,
+            "name_match": bool(name_match),
+            "dob_match": bool(dob_match),
+            "doc_age_days": int(doc_age_days or 0),
+            "image_quality_ok": bool(image_quality_ok),
+            "extracted_field_count": int(extracted_field_count or 0),
+        }
+    )

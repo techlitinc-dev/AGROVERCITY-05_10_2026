@@ -1,9 +1,120 @@
 import { api } from './client';
 
 /**
- * Minimal admin API wrappers (WS-01/WS-03). The full console styling lands in
- * phase-07; these back the plain queue pages shipped this phase.
+ * Admin API wrappers. Phase-06 shipped the plain queue pages; phase-07 adds the
+ * full console. Every mutation attaches `X-Admin-Role` + `X-Audit-Reason`.
  */
+
+export function mutationHeaders(role: string, reason: string): Record<string, string> {
+  return { 'X-Admin-Role': role, 'X-Audit-Reason': reason };
+}
+
+export interface AdminOverview {
+  activeUsersTotal: number;
+  personaBreakdown: Record<string, number>;
+  marketplaceGMV: number;
+  pendingClaimsCount: number;
+  pendingSettlementsAmount: number;
+  pendingKycCount?: number;
+  activeFarmlandLeases?: number;
+  platformHealth?: string;
+  timestamp?: string;
+}
+
+export async function getOverview(): Promise<AdminOverview> {
+  const { data } = await api.get<AdminOverview>('/admin/overview');
+  return data;
+}
+
+export interface AdminUser {
+  id: string;
+  name?: string;
+  phone?: string;
+  status?: string;
+  linkedProfiles?: string[];
+  [key: string]: unknown;
+}
+
+export async function listUsers(params: {
+  persona?: string;
+  status?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<{ data: AdminUser[]; total: number; page: number; pageSize: number }> {
+  const { data } = await api.get('/admin/users', { params });
+  return data;
+}
+
+export async function setUserStatus(
+  uid: string,
+  status: string,
+  reason: string,
+  role: string
+): Promise<unknown> {
+  const { data } = await api.post(
+    `/admin/users/${uid}/status`,
+    { status, reason },
+    { headers: mutationHeaders(role, reason) }
+  );
+  return data;
+}
+
+export interface AuditEntry {
+  id: string;
+  adminId?: string;
+  adminEmail?: string;
+  module?: string;
+  action?: string;
+  targetId?: string;
+  previousState?: unknown;
+  newState?: unknown;
+  reason?: string;
+  timestamp?: string;
+  ipAddress?: string;
+}
+
+export async function getAudit(params: {
+  targetId?: string;
+  module?: string;
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<{ data: AuditEntry[]; total: number; page: number; pageSize: number }> {
+  const { data } = await api.get('/admin/audit', { params });
+  return data;
+}
+
+export async function verifyMpin(mpin: string): Promise<{ ok: boolean }> {
+  const { data } = await api.post('/admin/verify-mpin', { mpin });
+  return data;
+}
+
+// Generic console helpers — pages compose these with the shared grid/drawer.
+export async function adminGet<T = unknown>(
+  url: string,
+  params?: Record<string, unknown>
+): Promise<T> {
+  const { data } = await api.get<T>(url, { params });
+  return data;
+}
+
+export async function adminPost<T = unknown>(
+  url: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<T> {
+  const { data } = await api.post<T>(url, body ?? {}, { headers });
+  return data;
+}
+
+export async function adminPut<T = unknown>(
+  url: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<T> {
+  const { data } = await api.put<T>(url, body ?? {}, { headers });
+  return data;
+}
 
 export interface ModerationQueueItem {
   contentType: string;

@@ -956,6 +956,66 @@ register(
 )
 
 
+# Brief M11 (WS-02) — KYC document field extraction (vision, generate-type).
+# The per-doc-type Pydantic schema lives in `kyc_schemas.py`; this entry gives
+# the call a stable question-set id for `ai_decisions` logging.
+register(
+    QuestionSet(
+        id="kyc.extract.v1",
+        version="v1",
+        schema={},
+        confidence_threshold=0.6,
+        automation_level="suggest",
+    )
+)
+
+
+def _kyc_risk_fallback(state: dict) -> dict:
+    """Fallback: never auto-clear a document — always route to the human queue."""
+    return {
+        "riskScore": 1.0,
+        "riskReasons": ["risk model unavailable — manual review required"],
+    }
+
+
+# Brief M11 (WS-02) — KYC authenticity risk. risk < 0.3 auto-advances the doc to
+# `verified-pending-bank`; anything else stays in the human queue with reasons.
+# Never auto-rejects. Documented fallback = human queue.
+register(
+    QuestionSet(
+        id="kyc.authenticity_risk.v1",
+        version="v1",
+        schema={"riskScore": 0.0, "riskReasons": []},
+        confidence_threshold=0.7,
+        automation_level="suggest",
+        fallback_fn=_kyc_risk_fallback,
+    )
+)
+
+
+def _dispute_triage_fallback(state: dict) -> dict:
+    """Documented fallback: route to the operations_lead queue, urgency medium."""
+    return {
+        "category": state.get("source") or "general",
+        "urgency": "medium",
+        "liabilityHint": "unclassified — manual triage required",
+    }
+
+
+# Brief M22 (WS-04) — dispute triage. Routing annotation only (suggest level);
+# never resolves a dispute. Fallback = operations_lead queue, urgency medium.
+register(
+    QuestionSet(
+        id="dispute.triage.v1",
+        version="v1",
+        schema={"category": "general", "urgency": "medium", "liabilityHint": ""},
+        confidence_threshold=0.7,
+        automation_level="suggest",
+        fallback_fn=_dispute_triage_fallback,
+    )
+)
+
+
 
 
 
