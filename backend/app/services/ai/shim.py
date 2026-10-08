@@ -390,6 +390,9 @@ async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
         return _kyc_risk_answers(state)
     if question_set_id == "dispute.triage.v1":
         return _dispute_triage_answers(state)
+    if question_set_id in ("women.shg_readiness.v1", "churn.signal.v1", "agent.rule_match.v1"):
+        # Phase-08 WS-01: deterministic rules mirror the registered fallback_fn.
+        return question_sets.fallback_answers(question_set_id, state), 0.9
     record = _load_fixtures().get(question_set_id)
     if record is not None:
         return dict(record.get("answers") or {}), float(record.get("confidence", 0.9))
@@ -403,6 +406,16 @@ async def generate(prompt: str, opts: dict | None = None) -> str:
 
 async def analyze_image(image_bytes: bytes, prompt: str, schema: dict | None = None) -> dict:
     p_lower = (prompt or "").lower()
+    if schema is not None and "amount_paisa" in (schema.get("properties") or {}):
+        # Phase-08 WS-01 M28 — receipt / weigh-slip field extraction (deterministic).
+        return {
+            "amount_paisa": 45000,
+            "category": "seeds",
+            "party": "Kisan Beej Bhandar",
+            "date": "2026-10-01",
+            "entry_type": "expense",
+            "confidence": 0.88,
+        }
     if "kyc" in p_lower and schema is not None:
         return _kyc_extract_answer(schema)
     if "damage" in p_lower or "equipment" in p_lower or "deduction" in p_lower or (schema and "severity" in schema):

@@ -1,0 +1,4 @@
+{"questionSetId": "churn.signal.v1", "id": "active-user", "input": {"inactivity_days": 3}, "output": {"churn_risk": 0.0, "best_hook": "course_reminder"}}
+{"questionSetId": "churn.signal.v1", "id": "borderline-dormant", "input": {"inactivity_days": 7}, "output": {"churn_risk": 0.23, "best_hook": "course_reminder"}}
+{"questionSetId": "churn.signal.v1", "id": "dormant-pending-offer", "input": {"inactivity_days": 30, "pending_offer": true}, "output": {"churn_risk": 1.0, "best_hook": "pending_offer"}}
+{"questionSetId": "churn.signal.v1", "id": "dormant-price-move", "input": {"inactivity_days": 15, "mandi_price_move": true}, "output": {"churn_risk": 0.5, "best_hook": "mandi_price_move"}}

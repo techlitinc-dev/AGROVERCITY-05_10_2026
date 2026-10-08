@@ -25,6 +25,7 @@ from app.routers import (
     admin_copilot,
     ads,
     advisory,
+    agent_rules,
     analytics,
     app_config,
     auth,
@@ -70,6 +71,7 @@ from app.routers import (
     notifications,
     orders,
     order_tracking,
+    partner_api,
     offers,
     purchases,
     purchase_settlement,
@@ -189,6 +191,8 @@ app.include_router(schemes.router, prefix="/v1")
 app.include_router(search.router, prefix="/v1")
 app.include_router(vault.router, prefix="/v1")
 app.include_router(land_records.router, prefix="/v1")
+app.include_router(agent_rules.router, prefix="/v1")
+app.include_router(partner_api.router, prefix="/v1")
 app.include_router(water.router, prefix="/v1")
 app.include_router(soil_tests.router, prefix="/v1")
 app.include_router(insurance.router, prefix="/v1")

@@ -121,6 +121,14 @@ async def login_with_phone_mpin(
             _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
         _error(401, "WRONG_MPIN", "incorrect MPIN")
     uid = user["id"]
+    try:
+        # WS-01 (task 1.25): a login within 72h of a churn touch records the
+        # re-engagement outcome. Never blocks login.
+        from app.services.churn import record_return
+
+        await record_return(uid)
+    except Exception:  # noqa: BLE001 — outcome hook must never fail a login
+        pass
     pair = await _issue_session(uid, user_agent)
     return AuthResponse(
         accessToken=pair["accessToken"],
@@ -138,6 +146,12 @@ async def firebase_verify(body: FirebaseVerifyRequest, user_agent: str | None = 
     if phone and not phone.startswith("+"):
         phone = "+91" + phone
     user, is_new = await upsert_user_from_firebase(uid, phone)
+    try:
+        from app.services.churn import record_return
+
+        await record_return(uid)
+    except Exception:  # noqa: BLE001 — outcome hook must never fail a login
+        pass
     pair = await _issue_session(uid, user_agent)
     return AuthResponse(
         accessToken=pair["accessToken"],

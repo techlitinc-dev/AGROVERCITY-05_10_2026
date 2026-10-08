@@ -1,0 +1,1 @@
+{"id": "dispute.triage.v1-case-1", "input": {"summary": "payment issue", "source": "equipment"}, "output": {"category": "equipment", "urgency": "medium", "liabilityHint": "unclassified \u2014 manual triage required"}}

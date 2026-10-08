@@ -569,6 +569,42 @@ const hi: Record<string, string> = {
   'legal.community.s6.h': '6. रिपोर्टिंग',
   'legal.community.s6.p1':
     'इन दिशानिर्देशों का उल्लंघन करने वाली किसी भी प्रोफ़ाइल, लिस्टिंग या संदेश पर रिपोर्ट विकल्प का उपयोग करें। हमारी टीम 48 घंटों के भीतर रिपोर्ट जाँचती है और बार-बार उल्लंघन करने वाले खातों को चेतावनी, प्रतिबंध या निलंबित कर सकती है।',
+
+  // ---- AI primitives (phase-08) ----
+  dashAiExplain: 'यह सुझाव क्यों',
+  dashAiDraft: 'AI ड्राफ़्ट — सहेजने से पहले जाँचें',
+  close: 'बंद करें',
+  discard: 'हटाएँ',
+
+  // ---- M26 SHG readiness (phase-08 WS-01) ----
+  'shgReadiness.title': 'SHG तैयारी',
+  'shgReadiness.factors.savings_regularity': 'नियमित बचत',
+  'shgReadiness.factors.meeting_attendance': 'बैठक उपस्थिति',
+  'shgReadiness.factors.enterprise_income': 'गृह-उद्यम आय',
+  'shgReadiness.factors.record_keeping': 'रिकॉर्ड रखना',
+  'shgReadiness.nextStep': 'सुझाया गया अगला कदम',
+  'shgReadiness.loanCta': 'समूह ऋण देखें',
+
+  // ---- M28 receipt scan (phase-08 WS-01) ----
+  'receiptScan.upload': 'रसीद स्कैन करें',
+  'receiptScan.uploading': 'रसीद पढ़ी जा रही है…',
+  'receiptScan.banner': 'रसीद से भरे गए विवरण — कृपया पुष्टि करें',
+  'receiptScan.failed': 'रसीद पढ़ी नहीं जा सकी — विवरण मैन्युअल रूप से भरें',
+
+  // ---- M29 standing-agent rules (phase-08 WS-01) ----
+  'agentRules.title': 'मेरे स्थायी नियम',
+  'agentRules.createTitle': 'नियम बनाएँ',
+  'agentRules.example': 'उदाहरण: "₹1,800 या उससे अधिक का ऑफर आए तो स्वीकार करें"',
+  'agentRules.reviewTitle': 'अपना नियम जाँचें',
+  'agentRules.confirm': 'हाँ, यह नियम बनाएँ',
+  'agentRules.active': 'सक्रिय',
+  'agentRules.paused': 'रोका गया',
+  'agentRules.pause': 'रोकें',
+  'agentRules.resume': 'फिर शुरू करें',
+  'agentRules.delete': 'हटाएँ',
+  'agentRules.auditTitle': 'ऑडिट इतिहास',
+  'agentRules.fireConfirm': 'पुष्टि करें',
+  'agentRules.fireDismiss': 'खारिज करें',
 };
 
 registerLocale('hi', hi);

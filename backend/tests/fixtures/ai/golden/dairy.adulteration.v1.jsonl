@@ -1,0 +1,1 @@
+{"id": "dairy.adulteration.v1-case-1", "input": {"history": {"fat": [4.1, 4.2, 4.0], "snf": [8.5, 8.6, 8.5]}, "today": {"fat": 4.1, "snf": 8.5}}, "output": {"anomaly": false, "confidence": 0.18, "baseline": {"fatAvg": 4.1, "snfAvg": 8.53, "windowDays": 30}}}

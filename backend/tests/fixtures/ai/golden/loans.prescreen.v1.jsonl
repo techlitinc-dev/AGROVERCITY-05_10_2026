@@ -1,0 +1,1 @@
+{"id": "loans.prescreen.v1-case-1", "input": {"credit_score": 700, "land_holding_acres": 2, "repayment": {"total": 3, "on_time": 3, "overdue": 0, "defaults": 0}}, "output": {"riskBand": "low", "missingDocs": ["aadhaar", "land_record", "bank_passbook", "income_proof"], "confidence": 0.0}}

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly live golden-set run (phase-08 WS-02) at 02:00 IST (20:30 UTC).
+    - cron: "30 20 * * *"
 
 jobs:
   backend:
@@ -25,6 +28,10 @@ jobs:
         env:
           AI_PROVIDER: shim
         run: python -m pytest -q
+      - name: Golden suites (shim, every merge)
+        env:
+          AI_PROVIDER: shim
+        run: python -m pytest -q -k golden
 
   website:
     name: Website typecheck, build & locale parity

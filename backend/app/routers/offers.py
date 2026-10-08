@@ -7,6 +7,7 @@ from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.direct import OfferCounter, OfferCreate
 from app.routers.purchases import create_purchase_from_offer
+from app.services import agent_rules
 from app.services.chat import ensure_offer_room
 from app.services.notify import notify_user
 from app.services.tasks import emit_task, module_deep_link
@@ -159,6 +160,26 @@ async def create_offer(body: OfferCreate, response: Response, uid: str = Depends
         deep_link=module_deep_link("trade"),
         source_id=doc["id"],
         due_at=doc.get("expiresAt"),
+    )
+    # M29 (phase-08 WS-01): evaluate the recipient's standing-agent rules. A fire
+    # only emits a one-tap confirm task calling the EXISTING accept endpoint —
+    # nothing auto-executes (rule 12 hard cap).
+    price_paisa = int(round(float(body.pricePerUnit) * 100))
+    quantity = float(body.quantity)
+    await agent_rules.evaluate_rules_for_event(
+        doc["toId"],
+        "offers",
+        {
+            "offer_id": doc["id"],
+            "entity_id": doc["id"],
+            "module": "offers",
+            "price_per_unit_paisa": price_paisa,
+            "quantity": quantity,
+            "total_value_paisa": int(round(price_paisa * quantity)),
+            "summary": f"₹{body.pricePerUnit}/{doc['unit']} for {body.quantity} {doc['unit']}",
+            "deepLink": f"/dashboard/p/myOffers/{doc['id']}",
+            "confirmEndpoint": f"/v1/offers/{doc['id']}/accept",
+        },
     )
     return doc
 

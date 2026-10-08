@@ -22,6 +22,20 @@ export async function fetchRegionCrops(district: string): Promise<RegionCropsRes
   return data;
 }
 
+/** M33 (phase-08 WS-01) — admin-curated crops for a district (active rows only). */
+export interface DistrictCropsResponse {
+  district: string;
+  crops: string[];
+  status: string;
+}
+
+export async function fetchDistrictCrops(district: string): Promise<DistrictCropsResponse> {
+  const { data } = await api.get<DistrictCropsResponse>('/reference/district-crops', {
+    params: { district },
+  });
+  return data;
+}
+
 export async function fetchStates(): Promise<StatesResponse> {
   const { data } = await api.get<StatesResponse>('/states');
   return data;

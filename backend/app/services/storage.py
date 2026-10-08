@@ -79,6 +79,23 @@ def signed_download_url(blob_path: str, minutes: int = 60) -> str:
     return blob.generate_signed_url(expiration=timedelta(minutes=minutes), method="GET")
 
 
+def read_blob(blob_path: str) -> bytes:
+    """Read an uploaded blob's bytes (used by the receipt-scan vision path).
+
+    Dev mode reads the local upload store; a missing file returns b"" so the
+    shim/test path still works without a live bucket.
+    """
+    if _dev_mode():
+        target = _LOCAL_UPLOAD_ROOT / blob_path
+        try:
+            return target.read_bytes()
+        except OSError:
+            return b""
+    import firebase_admin.storage
+
+    return firebase_admin.storage.bucket().blob(blob_path).download_as_bytes()
+
+
 def delete_blob(blob_path: str):
     if _dev_mode():
         try:

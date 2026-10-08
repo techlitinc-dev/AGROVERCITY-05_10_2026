@@ -92,3 +92,31 @@ async def run_weekly_calibration() -> dict:
                 )
     await set_doc("ai_calibration", doc["id"], doc)
     return doc
+
+
+async def backfill(weeks: int = 6) -> dict:
+    """Write calibration reports for any missing recent weeks (task 2.11).
+
+    Reuses the current aggregate so the admin AI Health page always has a
+    trailing baseline to compare against; existing weeks are never overwritten.
+    """
+    current = await run_weekly_calibration()
+    written = 0
+    for offset in range(1, weeks + 1):
+        week = iso_week_id(offset)
+        doc_id = f"weekly-{week}"
+        if await get_doc("ai_calibration", doc_id) is not None:
+            continue
+        await set_doc(
+            "ai_calibration",
+            doc_id,
+            {
+                "id": doc_id,
+                "week": week,
+                "generatedAt": datetime.now(timezone.utc).isoformat(),
+                "metrics": current.get("metrics") or {},
+                "backfilled": True,
+            },
+        )
+        written += 1
+    return {"written": written, "currentWeek": current.get("week")}

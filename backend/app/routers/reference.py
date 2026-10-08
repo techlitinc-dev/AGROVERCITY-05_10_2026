@@ -4,6 +4,7 @@ from app.core.db import query
 from app.data.district_crops import DISTRICT_CROPS
 from app.data.languages import LANGUAGES, REGIONAL_MAPPING
 from app.data.states import INDIAN_STATES
+from app.services import district_crops as district_crops_service
 from app.services.geo import adapter
 
 router = APIRouter(tags=["reference"])
@@ -25,6 +26,16 @@ async def region_crops(district: str):
     if entry is None:
         return {"district": district, "kharif": [], "rabi": [], "suggested": []}
     return entry
+
+
+@router.get("/reference/district-crops")
+async def district_crops(district: str):
+    """M33 (phase-08 WS-01) — admin-curated crops for a district.
+
+    Serves ONLY `status: "active"` rows; raw AI proposals (pending) are never
+    returned to users.
+    """
+    return await district_crops_service.get_active_crops(district)
 
 
 @router.get("/languages")

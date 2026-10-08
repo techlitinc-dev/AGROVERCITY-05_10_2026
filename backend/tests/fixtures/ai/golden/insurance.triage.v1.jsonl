@@ -1,0 +1,1 @@
+{"id": "insurance.triage.v1-case-1", "input": {"photo_count": 4, "required_photo_count": 4, "gps_present": true, "fraud_signal": 0.0}, "output": {"photoQuality": "ok", "completeness": 1.0, "retakeGuidance": {"en": "", "hi": ""}, "fraudSignal": 0.0, "triageReasons": [], "suggestedSurveyor": null}}

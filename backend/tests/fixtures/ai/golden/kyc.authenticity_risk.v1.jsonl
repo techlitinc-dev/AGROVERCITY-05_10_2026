@@ -1,0 +1,1 @@
+{"id": "kyc.authenticity_risk.v1-case-1", "input": {"name_match": true, "dob_match": true, "image_quality_ok": true}, "output": {"riskScore": 1.0, "riskReasons": ["risk model unavailable \u2014 manual review required"]}}

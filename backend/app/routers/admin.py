@@ -851,8 +851,11 @@ async def verify_admin_mpin(body: MpinVerifyIn, user: dict = Depends(current_adm
 async def get_platform_ai_config(user: dict = Depends(require_admin_role("superadmin"))):
     """Current `platform_config/ai` (question-set thresholds + automation)."""
     from app.services.ai.config_store import get_ai_config
+    from app.services.ai.phase_g import HARD_CAPPED
 
-    return await get_ai_config(force=True)
+    config = await get_ai_config(force=True)
+    # Rule 12 — the editor must never offer `auto` for credit/insurance/legal.
+    return {**config, "cappedSets": list(HARD_CAPPED)}
 
 
 class AiConfigIn(BaseModel):
@@ -866,18 +869,24 @@ async def put_platform_ai_config(
     _role: dict = Depends(require_admin_role("superadmin")),
 ):
     from app.services.ai.config import validate_ai_config
+    from app.services.ai.phase_g import PhaseGGateError, enforce_automation_raise
 
+    previous = await get_doc("platform_config", "ai")
     try:
         validate_ai_config(body.config)
     except ValueError:
         _error(422, "AI_AUTOMATION_LEVEL_FORBIDDEN", "automation level is not permitted")
+    # Phase-G gate (WS-02): a suggest -> require_confirm raise needs evidence.
+    try:
+        await enforce_automation_raise(previous, body.config)
+    except PhaseGGateError as exc:
+        _error(422, str(exc), "automation raise does not meet the phase-G evidence gate")
     payload = {"config": body.config}
     pending = await approvals.maybe_require_approval(
         ctx["admin"], "ai-config", "update", payload, ctx["reason"], force=True
     )
     if pending is not None:
         return {"success": True, "requiresApproval": True, "approval": pending}
-    previous = await get_doc("platform_config", "ai")
     await set_doc("platform_config", "ai", body.config)
     from app.services.ai import config_store
 
@@ -928,7 +937,8 @@ async def get_ai_health(
         golden = sorted(p.name for p in golden_dir.glob("*") if p.is_file())
     except Exception:  # noqa: BLE001 — fixtures are optional at runtime
         golden = []
-    return {"week": latest.get("week"), "metrics": rows, "goldenSets": golden}
+    banner = await get_doc("ai_golden_banner", "current")
+    return {"week": latest.get("week"), "metrics": rows, "goldenSets": golden, "banner": banner}
 
 
 
@@ -1183,3 +1193,121 @@ async def _exec_app_config(approval: dict, approver: dict) -> None:
 
 approvals.register_executor("config", "feature-flags", _exec_feature_flags)
 approvals.register_executor("config", "app-config", _exec_app_config)
+
+
+# ===========================================================================
+# WS-03 (phase-08) — B2B partner API key management
+# ===========================================================================
+class PartnerKeyIn(BaseModel):
+    partnerId: str = Field(min_length=1)
+    scopes: list[str] = Field(default_factory=list)
+    rateLimit: int = Field(default=60, ge=1, le=100000)
+
+
+@router.post("/partner-keys", status_code=201)
+async def issue_partner_key(
+    body: PartnerKeyIn,
+    ctx: dict = Depends(admin_mutation_context),
+    _role: dict = Depends(require_admin_role("superadmin")),
+):
+    from app.services import partner_keys
+
+    result = await partner_keys.issue_key(body.partnerId, body.scopes, body.rateLimit)
+    await log_admin_action(
+        ctx["admin"], "partner-keys", "issue", result["keyId"], None,
+        {"partnerId": body.partnerId, "scopes": result["scopes"]}, ctx["reason"], ctx["ip"],
+    )
+    return result
+
+
+@router.post("/partner-keys/{key_id}/revoke")
+async def revoke_partner_key(
+    key_id: str,
+    ctx: dict = Depends(admin_mutation_context),
+    _role: dict = Depends(require_admin_role("superadmin")),
+):
+    from app.services import partner_keys
+
+    try:
+        doc = await partner_keys.revoke_key(key_id)
+    except ValueError:
+        _error(404, "KEY_NOT_FOUND", "partner key not found")
+    await log_admin_action(
+        ctx["admin"], "partner-keys", "revoke", key_id, None,
+        {"revoked": True}, ctx["reason"], ctx["ip"],
+    )
+    return doc
+
+
+@router.get("/partner-keys")
+async def list_partner_keys(
+    partnerId: str | None = None,
+    user: dict = Depends(require_admin_role("superadmin")),
+):
+    from app.services import partner_keys
+
+    return {"data": await partner_keys.list_keys(partnerId)}
+
+
+@router.get("/partner-keys/{key_id}/usage")
+async def partner_key_usage(
+    key_id: str,
+    user: dict = Depends(require_admin_role("superadmin")),
+):
+    periods = await query("partner_usage", [("keyId", "==", key_id)], limit=100)
+    periods.sort(key=lambda r: str(r.get("period") or ""))
+    records = await query("billing_usage_records", [("keyId", "==", key_id)], limit=5000)
+    return {"periods": periods, "meteredRequests": len(records)}
+
+
+# ===========================================================================
+# WS-01 (phase-08, M33) — admin curation of the district-crop table
+# ===========================================================================
+class DistrictCropsIn(BaseModel):
+    crops: list[str] = Field(default_factory=list)
+
+
+@router.get("/district-crops")
+async def list_district_crops(user: dict = Depends(require_admin_role("superadmin"))):
+    rows = await query("district_crops", [], limit=500)
+    rows.sort(key=lambda r: str(r.get("district") or ""))
+    return {"data": rows}
+
+
+@router.put("/district-crops/{district}")
+async def upsert_district_crops(
+    district: str,
+    body: DistrictCropsIn,
+    ctx: dict = Depends(admin_mutation_context),
+    _role: dict = Depends(require_admin_role("superadmin")),
+):
+    from app.services import district_crops as district_crops_service
+
+    previous = await query("district_crops", [("district", "==", district.lower())], limit=1)
+    doc = await district_crops_service.upsert_curated(
+        district, body.crops, ctx["admin"].get("id") or ctx["admin"].get("uid") or "admin"
+    )
+    await log_admin_action(
+        ctx["admin"], "district-crops", "upsert", district,
+        previous[0] if previous else None, doc, ctx["reason"], ctx["ip"],
+    )
+    return doc
+
+
+@router.post("/district-crops/{district}/approve")
+async def approve_district_crops(
+    district: str,
+    ctx: dict = Depends(admin_mutation_context),
+    _role: dict = Depends(require_admin_role("superadmin")),
+):
+    from app.services import district_crops as district_crops_service
+
+    try:
+        doc = await district_crops_service.set_status(district, "active")
+    except ValueError:
+        _error(404, "DISTRICT_NOT_FOUND", "district-crop row not found")
+    await log_admin_action(
+        ctx["admin"], "district-crops", "approve", district, None,
+        {"status": "active"}, ctx["reason"], ctx["ip"],
+    )
+    return doc

@@ -1,0 +1,1 @@
+{"id": "notify.timing.v1-case-1", "input": {"type": "offer_received"}, "output": {"send_now": true, "channel": "push"}}

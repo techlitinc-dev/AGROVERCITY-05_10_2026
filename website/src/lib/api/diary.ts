@@ -145,3 +145,28 @@ export async function diaryReport(params?: { from?: string; to?: string }): Prom
   });
   return data;
 }
+
+/** M28 (phase-08 WS-01) — receipt / weigh-slip vision prefill (confirm-only). */
+export interface ReceiptScanPrefill {
+  amount_paisa: number;
+  category: string;
+  party: string;
+  date: string;
+  entry_type: 'expense' | 'income';
+  confidence: number;
+}
+
+export interface ReceiptScanResponse {
+  available: boolean;
+  prefill: ReceiptScanPrefill | null;
+}
+
+/**
+ * POST /v1/diary/receipt-scan — extracts fields from an already-uploaded receipt
+ * photo. CONFIRM-ONLY: nothing is written until the user saves the prefilled form.
+ * Never invents a numeric fallback — `prefill` is null when unavailable.
+ */
+export async function scanDiaryReceipt(storagePath: string): Promise<ReceiptScanResponse> {
+  const { data } = await api.post<ReceiptScanResponse>('/diary/receipt-scan', { storagePath });
+  return data;
+}

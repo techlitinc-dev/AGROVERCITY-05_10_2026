@@ -1,0 +1,1 @@
+{"id": "support.intent.v1-case-1", "input": {"question": "how to add a plot"}, "output": {"resolvable": false, "category": "other", "escalate": true}}

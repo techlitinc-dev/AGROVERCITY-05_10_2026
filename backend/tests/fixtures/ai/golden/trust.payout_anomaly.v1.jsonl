@@ -1,0 +1,1 @@
+{"id": "trust.payout_anomaly.v1-case-1", "input": {"netRupees": 1000}, "output": {"anomaly": false, "severity": 0.0}}

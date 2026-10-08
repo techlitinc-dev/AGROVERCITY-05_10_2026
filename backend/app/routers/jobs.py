@@ -394,3 +394,50 @@ async def run_ai_calibration_job(x_cron_secret: str | None = Header(None, alias=
     from app.services.ai.calibration import run_weekly_calibration
 
     return await run_weekly_calibration()
+
+
+@router.post("/churn/score")
+async def run_churn_scoring_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Phase-08 WS-01 (M28) — nightly churn re-engagement scoring."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.churn import score_dormant_users
+
+    return await score_dormant_users()
+
+
+@router.post("/district-crops/propose")
+async def propose_district_crops_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Phase-08 WS-01 (M33) — propose crops for districts beyond the spec mapping
+    (AI proposes as `pending`; an admin approves to `active`)."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.district_crops import propose_district_crops
+
+    return await propose_district_crops()
+
+
+@router.post("/ai-golden/run")
+async def run_ai_golden_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Phase-08 WS-02 — nightly golden-set run (live models in prod); baselines +
+    >5pt regression alerts."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.ai.golden_alerts import run_golden_suite
+
+    return await run_golden_suite()
+
+
+@router.post("/ai-calibration/backfill")
+async def backfill_ai_calibration_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Phase-08 WS-02 — backfill missing weekly calibration reports."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.ai.calibration import backfill
+
+    return await backfill()
+
+
+@router.post("/ai-decisions/export")
+async def export_ai_decisions_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Phase-08 WS-04 — export-then-expire ai_decisions older than 90 days."""
+    _check_cron_secret(x_cron_secret)
+    from app.services.ai.decision_export import export_expired_decisions
+
+    return await export_expired_decisions()

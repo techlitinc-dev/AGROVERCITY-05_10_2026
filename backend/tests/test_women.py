@@ -40,7 +40,7 @@ async def test_shg_without_group_returns_empty_state(client, user_store):
     token = seed_user(user_store)
     resp = await client.get("/v1/women/shg", headers=auth(token))
     assert resp.status_code == 200
-    assert resp.json() == {"group": None, "deposits": [], "meetings": []}
+    assert resp.json() == {"group": None, "deposits": [], "meetings": [], "readiness": None}
 
 
 async def test_deposit_updates_corpus(client, user_store):

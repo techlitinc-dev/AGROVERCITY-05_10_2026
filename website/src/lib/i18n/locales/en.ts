@@ -590,6 +590,42 @@ const en: Record<string, string> = {
   'legal.community.s6.h': '6. Reporting',
   'legal.community.s6.p1':
     'Use the report option on any profile, listing, or message that breaks these guidelines. Our team reviews reports within 48 hours and may warn, restrict, or suspend accounts that repeatedly violate community standards.',
+
+  // ---- AI primitives (phase-08) ----
+  dashAiExplain: 'Why this suggestion',
+  dashAiDraft: 'AI draft — please check before saving',
+  close: 'Close',
+  discard: 'Discard',
+
+  // ---- M26 SHG readiness (phase-08 WS-01) ----
+  'shgReadiness.title': 'SHG readiness',
+  'shgReadiness.factors.savings_regularity': 'Savings regularity',
+  'shgReadiness.factors.meeting_attendance': 'Meeting attendance',
+  'shgReadiness.factors.enterprise_income': 'Home-enterprise income',
+  'shgReadiness.factors.record_keeping': 'Record keeping',
+  'shgReadiness.nextStep': 'Suggested next step',
+  'shgReadiness.loanCta': 'Explore group loans',
+
+  // ---- M28 receipt scan (phase-08 WS-01) ----
+  'receiptScan.upload': 'Scan a receipt',
+  'receiptScan.uploading': 'Reading receipt…',
+  'receiptScan.banner': 'Fields filled from the receipt — please confirm',
+  'receiptScan.failed': 'Could not read the receipt — enter details manually',
+
+  // ---- M29 standing-agent rules (phase-08 WS-01) ----
+  'agentRules.title': 'My standing rules',
+  'agentRules.createTitle': 'Create a rule',
+  'agentRules.example': 'Example: "Accept any offer at or above ₹1,800"',
+  'agentRules.reviewTitle': 'Review your rule',
+  'agentRules.confirm': 'Yes, create this rule',
+  'agentRules.active': 'Active',
+  'agentRules.paused': 'Paused',
+  'agentRules.pause': 'Pause',
+  'agentRules.resume': 'Resume',
+  'agentRules.delete': 'Delete',
+  'agentRules.auditTitle': 'Audit history',
+  'agentRules.fireConfirm': 'Confirm',
+  'agentRules.fireDismiss': 'Dismiss',
 };
 
 registerLocale('en', en);

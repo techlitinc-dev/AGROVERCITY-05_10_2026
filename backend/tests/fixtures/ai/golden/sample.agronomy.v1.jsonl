@@ -1,0 +1,1 @@
+{"id": "sample.agronomy.v1-case-1", "input": {"crop": "wheat"}, "output": {"crop": "unknown", "sowingWindow": "not-available"}}

@@ -3,6 +3,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 
 from app.core.cache import cache_delete, cache_get, cache_set
 from app.core.db import delete_doc, query, set_doc
@@ -14,7 +15,8 @@ from app.models.diary import (
     DiaryEntryOut,
     DiaryPhotoUploadOut,
 )
-from app.services import reports, storage
+from app.services import receipt_scan, reports, storage
+from app.services.ai import config_store
 from app.services.coins import award_coins
 from app.services.diary_analytics import filter_by_range, summarize
 from app.services.users import get_user
@@ -229,3 +231,32 @@ async def diary_report(
         "from": from_date,
         "to": to_date,
     }
+
+
+class ReceiptScanIn(BaseModel):
+    storagePath: str = Field(min_length=1)
+
+
+@router.post("/receipt-scan")
+async def scan_receipt(
+    body: ReceiptScanIn,
+    uid: str = Depends(_farmer_or_landlord),
+):
+    """M28 (phase-08 WS-01) — vision extraction of a receipt/weigh-slip photo.
+
+    CONFIRM-ONLY: returns a prefilled diary-entry payload; it NEVER writes a
+    diary entry (totals and analytics stay unchanged until the user taps save).
+    Flag off degrades gracefully to the manual form.
+    """
+    if not await config_store.module_enabled(receipt_scan.MODULE):
+        return {"available": False, "prefill": None}
+    try:
+        prefill = await receipt_scan.scan_receipt(body.storagePath)
+    except ValueError:
+        _error(
+            422,
+            "RECEIPT_EXTRACTION_FAILED",
+            "रसीद पढ़ी नहीं जा सकी — विवरण मैन्युअल रूप से भरें",
+            {"storagePath": "fields could not be extracted; enter manually"},
+        )
+    return {"available": True, "prefill": prefill}

@@ -30,7 +30,7 @@ from app.core.deps import current_user_id
 from app.models.emarket import UserProductCreate
 from app.routers.user_products import create_listing
 from app.routers.users import require_role
-from app.services import idempotency
+from app.services import idempotency, shg_readiness
 from app.services.users import get_user
 
 router = APIRouter(prefix="/women", tags=["women"])
@@ -127,12 +127,14 @@ async def _farmer_with_user(uid: str = Depends(current_user_id)) -> tuple[dict, 
 async def get_shg(uid: str = Depends(_farmer)):
     group = await _user_group(uid)
     if group is None:
-        return {"group": None, "deposits": [], "meetings": []}
+        return {"group": None, "deposits": [], "meetings": [], "readiness": None}
     deposits = await query(f"{SHG_GROUPS}/{group['id']}/deposits", [], limit=1000)
     deposits.sort(key=lambda d: d.get("month", ""), reverse=True)
     meetings = await query(SHG_MEETINGS, [("groupId", "==", group["id"])], limit=1000)
     meetings.sort(key=lambda m: m.get("date", ""), reverse=True)
-    return {"group": group, "deposits": deposits, "meetings": meetings}
+    # M26 (phase-08 WS-01): cached readiness card (suggest-only annotation).
+    readiness = await shg_readiness.get_shg_readiness(group["id"])
+    return {"group": group, "deposits": deposits, "meetings": meetings, "readiness": readiness}
 
 
 @router.post("/shg", status_code=201)

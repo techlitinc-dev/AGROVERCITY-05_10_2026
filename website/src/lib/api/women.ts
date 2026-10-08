@@ -70,11 +70,39 @@ export interface ShgOverview {
   group: ShgGroup | null;
   deposits: ShgDeposit[];
   meetings: ShgMeeting[];
+  readiness: ShgReadiness | null;
+}
+
+/** M26 (phase-08 WS-01) — explainable readiness card factors (all 0–1). */
+export interface ShgReadinessFactors {
+  savings_regularity: number;
+  meeting_attendance: number;
+  enterprise_income: number;
+  record_keeping: number;
+}
+
+export interface ShgReadiness {
+  available: boolean;
+  shgId: string;
+  readiness: number;
+  gap: string;
+  factors: ShgReadinessFactors;
+  suggestedNextStep: { en: string; hi: string };
+  loanMarketplaceLink: { enabled: boolean; deepLink: string; copy: { en: string; hi: string } } | null;
+  decisionId: string;
+  confidence: number;
+  source: string;
 }
 
 export async function shgOverview(): Promise<ShgOverview> {
   const { data } = await api.get<ShgOverview>('/women/shg');
   return data;
+}
+
+/** M26 readiness card (returned inside `shgOverview`; fetched here on demand). */
+export async function getShgReadiness(): Promise<ShgReadiness | null> {
+  const { data } = await api.get<ShgOverview>('/women/shg');
+  return data.readiness;
 }
 
 export async function createShgGroup(input: {

@@ -14,10 +14,39 @@ def _error(status_code: int, code: str, message: str):
     )
 
 
-async def current_user_id(authorization: str | None = Header(None)) -> str:
+async def current_user_id(
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+) -> str:
     if not authorization or not authorization.startswith("Bearer "):
+        # A partner API key must never act on a user-level endpoint (WS-03).
+        if x_api_key:
+            _error(403, "PARTNER_KEY_NOT_ALLOWED", "partner API keys cannot access user endpoints")
         _error(401, "MISSING_TOKEN", "missing or malformed Authorization header")
     return decode_token(authorization[len("Bearer "):], "access")
+
+
+async def get_partner(x_api_key: str | None = Header(None, alias="X-API-Key")) -> dict:
+    """Authenticate a partner request via the `X-API-Key` header (WS-03)."""
+    from app.services.partner_keys import verify_key
+
+    if not x_api_key:
+        _error(401, "MISSING_API_KEY", "missing X-API-Key header")
+    partner = await verify_key(x_api_key)
+    if partner is None:
+        _error(401, "INVALID_API_KEY", "unknown or revoked API key")
+    return partner
+
+
+def require_scope(scope: str):
+    """Dependency factory enforcing a partner key's scope (WS-03)."""
+
+    async def dep(partner: dict = Depends(get_partner)) -> dict:
+        if scope not in (partner.get("scopes") or []):
+            _error(403, "SCOPE_REQUIRED", f"key is missing the {scope} scope")
+        return partner
+
+    return dep
 
 
 # /v1/admin/* is the ONE exception to the backend-JWT rule: the admin console signs
