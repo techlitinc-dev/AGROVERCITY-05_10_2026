@@ -21,6 +21,7 @@ from app.services import idempotency
 from app.services.coins import InsufficientCoins, spend_coins
 from app.services.payments import create_razorpay_order, verify_razorpay_signature
 from app.services.academy_tasks import emit_learner_discovery_tasks
+from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import emit_task
 from app.services.users import get_user
 
@@ -672,6 +673,14 @@ async def update_lesson_progress(
     purchase["lastAccessedAt"] = _now()
     if is_completed and not purchase.get("completedAt"):
         purchase["completedAt"] = _now()
+        # WS-03: learner rates the instructor on course completion.
+        course_doc = await get_doc("courses", course_id) or {}
+        await open_rating_prompt(
+            user["id"],
+            course_doc.get("instructorId") or purchase.get("instructorId"),
+            course_id,
+            "course_enrollment",
+        )
 
     await set_doc("course_purchases", pid, purchase)
     persona = user.get("activeProfile") or "farmer"

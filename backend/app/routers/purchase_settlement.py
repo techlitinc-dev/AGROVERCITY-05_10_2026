@@ -23,6 +23,7 @@ from app.routers.purchases import (
     maybe_award_vyapari_verified,
     probation_gate_escrow,
 )
+from app.services.rating_prompts import open_rating_prompt
 from app.routers.users import require_role
 from app.services import idempotency, storage
 from app.services.billing import check_entitlement
@@ -86,7 +87,7 @@ async def fund_escrow(purchase_id: str, body: EscrowFundIn, uid: str = Depends(c
         type="escrow_funded",
         title="Escrow funded / एस्क्रो भरा गया",
         body=f"₹{amount} held for {purchase['crop']} — handover OTP is now unlocked",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -172,7 +173,7 @@ async def verify_handover(purchase_id: str, body: dict, uid: str = Depends(curre
         type="handover_verified",
         title="Handover verified / हैंडओवर पक्का",
         body=f"{purchase['crop']} — produce handed over, inspection next",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -347,6 +348,13 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
     if purchase["status"] == "completed":
+        # WS-03: open two-sided rating prompts on completion.
+        if purchase.get("contractId"):
+            kind_a = kind_b = "contract_delivery"
+        else:
+            kind_a, kind_b = "lot_sale", "lot_purchase"
+        await open_rating_prompt(purchase["buyerId"], purchase["farmerId"], purchase_id, kind_a)
+        await open_rating_prompt(purchase["farmerId"], purchase["buyerId"], purchase_id, kind_b)
         await maybe_award_vyapari_verified(purchase["buyerId"])
         for party in (purchase["farmerId"], purchase["buyerId"]):
             await notify_user(
@@ -354,7 +362,7 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
                 type="deal_completed",
                 title="Deal completed / सौदा पूरा 🎉",
                 body=f"{purchase['crop']} — invoice {purchase['invoice']['number']}",
-                path=f"/dashboard/p/purchases/{purchase_id}",
+                deepLink=f"/dashboard/p/purchases/{purchase_id}",
             )
     else:
         other = purchase["buyerId"] if uid == purchase["farmerId"] else purchase["farmerId"]
@@ -363,7 +371,7 @@ async def record_qc(purchase_id: str, body: QcIn, uid: str = Depends(current_use
             type="qc_disputed",
             title="Quality dispute / गुणवत्ता विवाद",
             body=f"{purchase['crop']} — {body.rejectedQty} {purchase['unit']} rejected",
-            path=f"/dashboard/p/purchases/{purchase_id}",
+            deepLink=f"/dashboard/p/purchases/{purchase_id}",
         )
     return _redact(purchase, uid)
 
@@ -428,7 +436,7 @@ async def resolve_dispute(purchase_id: str, body: ResolveIn, uid: str = Depends(
         type="dispute_resolved",
         title="Dispute resolved / विवाद सुलझा",
         body=f"{purchase['crop']} — final ₹{purchase['finalAmount']}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -458,7 +466,7 @@ async def record_payment(purchase_id: str, body: PayIn, uid: str = Depends(curre
         type="payment_received",
         title="Payment received / भुगतान मिला",
         body=f"₹{body.amount} for {purchase['crop']}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -493,7 +501,7 @@ async def rate_counterparty(purchase_id: str, body: RateIn, uid: str = Depends(c
         type="rated",
         title="You got a rating / रेटिंग मिली",
         body=f"{'⭐' * body.rating} for {purchase['crop']}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 

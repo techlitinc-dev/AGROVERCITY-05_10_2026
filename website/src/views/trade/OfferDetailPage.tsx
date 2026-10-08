@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ModalSheet from '../../components/ModalSheet';
+import ReportBlockMenu from '../../components/ReportBlockMenu';
 import ConfirmSheet from '../../components/trade/ConfirmSheet';
 import CounterOfferForm from '../../components/trade/CounterOfferForm';
 import EmptyState from '../../components/trade/EmptyState';
@@ -157,6 +158,7 @@ export default function OfferDetailPage() {
 
   const isTarget = !!uid && offer?.toId === uid;
   const isMaker = !!uid && offer?.fromId === uid;
+  const counterpartyId = offer ? (offer.toId === uid ? offer.fromId : offer.toId) : undefined;
   const countdown =
     offer && (offer.status === 'pending' || offer.status === 'countered') && offer.expiresAt
       ? offerTimeLeft(offer.expiresAt)
@@ -188,6 +190,7 @@ export default function OfferDetailPage() {
                 {fmtDate(offer.createdAt)}
               </span>
               <StatusPill status={offer.status} />
+              <ReportBlockMenu userId={counterpartyId} />
             </div>
             {countdown ? (
               <div className="trade-card-row">

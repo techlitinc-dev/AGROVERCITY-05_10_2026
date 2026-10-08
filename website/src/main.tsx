@@ -4,30 +4,16 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './lib/i18n/locales/en';
 import './lib/i18n/locales/hi';
-import './lib/i18n/locales/mr';
-import './lib/i18n/locales/gu';
-import './lib/i18n/locales/pa';
-import './lib/i18n/locales/te';
-import './lib/i18n/locales/ta';
-import './lib/i18n/locales/as';
-import './lib/i18n/locales/bn';
-import './lib/i18n/locales/bho';
-import './lib/i18n/locales/brx';
-import './lib/i18n/locales/doi';
-import './lib/i18n/locales/kn';
-import './lib/i18n/locales/ks';
-import './lib/i18n/locales/kok';
-import './lib/i18n/locales/mai';
-import './lib/i18n/locales/ml';
-import './lib/i18n/locales/mni';
-import './lib/i18n/locales/ne';
-import './lib/i18n/locales/or';
-import './lib/i18n/locales/sa';
-import './lib/i18n/locales/sat';
-import './lib/i18n/locales/sd';
-import './lib/i18n/locales/ur';
 import './lib/i18n/locales/en.trade';
 import './lib/i18n/locales/hi.trade';
+import './lib/i18n/locales/en.chat';
+import './lib/i18n/locales/hi.chat';
+import './lib/i18n/locales/en.settings';
+import './lib/i18n/locales/hi.settings';
+import './lib/i18n/locales/en.support';
+import './lib/i18n/locales/hi.support';
+import './lib/i18n/locales/en.admin';
+import './lib/i18n/locales/hi.admin';
 import './lib/i18n/locales/en.transport';
 import './lib/i18n/locales/hi.transport';
 import './lib/i18n/locales/en.cashbook';
@@ -89,10 +75,16 @@ import './lib/i18n/locales/hi.referrals';
 import './lib/i18n/locales/en.women';
 import './lib/i18n/locales/hi.women';
 import { initSentry } from './lib/observability';
+import { initAnalytics } from './lib/analytics';
+import { registerSW } from 'virtual:pwa-register';
 import './theme/tokens.css';
 import './theme/layout.css';
 
 initSentry();
+initAnalytics();
+
+// WS-06: register the PWA service worker (auto-update).
+registerSW({ immediate: true });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

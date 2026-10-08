@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -8,6 +9,8 @@ from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.core.ratelimit import hit
 from app.routers.purchases import TERMINAL_STATUSES
+from app.services import chat_moderation
+from app.services.ai import gateway, privacy
 from app.services.chat import (
     contains_banned_content,
     ensure_batch_room,
@@ -22,17 +25,49 @@ from app.services.users import get_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+log = logging.getLogger(__name__)
+
 MAX_TEXT_LEN = 500  # spec §4.2
 MIN_MESSAGE_GAP_SECONDS = 2  # light rate limit (spec §4.2 rate-limits)
 OFFER_TERMINAL_STATUSES = ("accepted", "rejected", "withdrawn", "expired")
 
 
-def _error(status_code: int, code: str, message: str):
-    raise HTTPException(status_code=status_code, detail={"code": code, "message": message, "fieldErrors": {}})
+def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
+    raise HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message, "fieldErrors": field_errors or {}},
+    )
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _clean_chat_image(uid: str, url: str) -> tuple[str, bytes | None]:
+    """Fetch the image, strip EXIF, re-upload. Returns (cleaned_url, cleaned_bytes).
+
+    Falls back to the original URL (and no bytes) when the fetch or the strip
+    fails — this path makes no AI calls, so it works with the AI flag off.
+    """
+    import httpx
+
+    from app.services.storage import signed_download_url, upload_user_file
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            response = await http.get(url)
+            response.raise_for_status()
+            raw = response.content
+    except Exception as exc:  # noqa: BLE001 — never block a chat send on the fetch
+        log.warning("chat image fetch failed (%s) — storing original url", exc)
+        return url, None
+    try:
+        cleaned = chat_moderation.strip_exif(raw)
+        blob_path, _ = upload_user_file(uid, cleaned, "chat.jpg", "image/jpeg", prefix="chat")
+        return signed_download_url(blob_path), cleaned
+    except Exception as exc:  # noqa: BLE001 — keep the original if Pillow/storage fails
+        log.warning("chat image exif strip failed (%s) — storing original url", exc)
+        return url, None
 
 
 async def _load_room(room_id: str, uid: str) -> tuple[dict, bool]:
@@ -95,14 +130,22 @@ def _side(room: dict, uid: str) -> str:
     return "farmer" if uid == room.get("farmerId") else "buyer"
 
 
-def _room_view(room: dict, uid: str) -> dict:
+async def _room_view(room: dict, uid: str) -> dict:
     is_farmer = uid == room.get("farmerId")
     unread = not (room.get("readByFarmer") if is_farmer else room.get("readByBuyer"))
+    unread_count = 0
+    if unread:
+        messages = await query(f"chat_rooms/{room['id']}/messages", [], limit=1000)
+        unread_count = sum(1 for m in messages if m.get("fromId") != uid)
+    counterparty_id = room.get("buyerId") if is_farmer else room.get("farmerId")
+    counterparty = await get_user(counterparty_id) if counterparty_id else None
     return {
         **room,
         "kind": room.get("kind") or "purchase",
         "counterpartyName": room.get("buyerName") if is_farmer else room.get("farmerName"),
+        "counterpartyTrustTier": (counterparty or {}).get("trustTier"),
         "unread": unread,
+        "unreadCount": unread_count,
     }
 
 
@@ -118,13 +161,13 @@ async def list_rooms(uid: str = Depends(current_user_id)):
     as_buyer = await query("chat_rooms", [("buyerId", "==", uid)], limit=500)
     rooms = as_farmer + as_buyer
     rooms.sort(key=lambda r: r.get("lastMessageAt") or r.get("createdAt", ""), reverse=True)
-    return {"data": [_room_view(r, uid) for r in rooms], "total": len(rooms)}
+    return {"data": [await _room_view(r, uid) for r in rooms], "total": len(rooms)}
 
 
 @router.get("/rooms/{room_id}")
 async def get_room(room_id: str, uid: str = Depends(current_user_id)):
     room, terminal = await _load_room(room_id, uid)
-    return {**_room_view(room, uid), "terminal": terminal}
+    return {**await _room_view(room, uid), "terminal": terminal}
 
 
 class MessageIn(BaseModel):
@@ -179,7 +222,7 @@ async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_i
         user.get("name", ""),
         crop,
     )
-    return _room_view(room, uid)
+    return await _room_view(room, uid)
 
 
 @router.get("/rooms/{room_id}/messages")
@@ -263,7 +306,7 @@ async def _post_batch_message(room: dict, body: "MessageIn", uid: str) -> dict:
                 type="chat_message",
                 title="Batch announcement / बैच घोषणा",
                 body=f"{doc['fromName']}: {(text or '📎')[:80]}",
-                path="/dashboard/p/batches",
+                deepLink="/dashboard/p/batches",
             )
     return doc
 
@@ -272,6 +315,19 @@ async def _post_batch_message(room: dict, body: "MessageIn", uid: str) -> dict:
 async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current_user_id)):
     await hit("chat", uid, 60, 60)
     room, terminal = await _load_room(room_id, uid)
+
+    # WS-01 task 1.4 — strike-ladder enforcement (mute / suspension) before write.
+    strike_state = await chat_moderation.get_strike_state(uid)
+    if strike_state["suspended"]:
+        _error(403, "CHAT_SUSPENDED", "chat suspended pending admin review")
+    muted_until = strike_state["mutedUntil"]
+    if muted_until:
+        try:
+            if datetime.fromisoformat(str(muted_until).replace("Z", "+00:00")) > datetime.now(timezone.utc):
+                _error(403, "CHAT_MUTED", "chat muted for 24 hours")
+        except ValueError:
+            pass
+
     if (room.get("kind") or "purchase") == "batch":
         return await _post_batch_message(room, body, uid)
     if terminal:
@@ -279,6 +335,68 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
     text = (body.text or "").strip()
     if not text and not body.imageUrl:
         _error(422, "VALIDATION_ERROR", "message needs text or an image")
+
+    # WS-01 task 1.4 — regex fast-path. A violating message is rejected (422)
+    # and never stored; a strike is recorded on the ladder.
+    if text:
+        scan_result = chat_moderation.scan(text)
+        if scan_result["violation"]:
+            count = await chat_moderation.record_strike(uid, scan_result["kind"], None, room_id)
+            _error(
+                422,
+                "CHAT_MODERATION_VIOLATION",
+                f"message blocked: {scan_result['kind']}",
+                {"count": count},
+            )
+
+        # WS-01 task 1.12 — M6 guardrail for messages the regex missed. Runs only
+        # on the cost-saving pre-filter; any exception/timeout allows the message.
+        if chat_moderation.needs_guardrail(text):
+            state = privacy.build_chat_guardrail_state(text, uid)
+            try:
+                decision = await gateway.decide(
+                    state, "chat.guardrail.v1", module=chat_moderation.GUARDRAIL_MODULE
+                )
+                answers = decision.answers or {}
+                if any(
+                    bool(answers.get(key))
+                    for key in ("shares_contact", "shares_payment_handle", "abuse")
+                ):
+                    count = await chat_moderation.record_strike(uid, "guardrail", None, room_id)
+                    _error(
+                        422,
+                        "CHAT_MODERATION_VIOLATION",
+                        "message blocked: guardrail",
+                        {"count": count},
+                    )
+            except HTTPException:
+                raise
+            except Exception as exc:  # noqa: BLE001 — fail open, never lose a message
+                log.warning("chat guardrail unavailable (%s) — allowing message", exc)
+
+    # WS-01 task 1.8/1.9 — image messages: EXIF strip always (flag-off safe);
+    # OCR through the regex scan only when the chat-guardrail flag is on.
+    image_url = body.imageUrl or None
+    if body.imageUrl:
+        image_url, image_bytes = await _clean_chat_image(uid, body.imageUrl)
+        if image_bytes and await chat_moderation.guardrail_enabled():
+            ocr = await gateway.analyze_image(
+                image_bytes,
+                "Extract any visible text from this chat image.",
+                module=chat_moderation.GUARDRAIL_MODULE,
+            )
+            extracted = str(ocr.get("text") or ocr.get("extractedText") or "")
+            if extracted:
+                ocr_result = chat_moderation.scan(extracted)
+                if ocr_result["violation"]:
+                    count = await chat_moderation.record_strike(uid, ocr_result["kind"], None, room_id)
+                    _error(
+                        422,
+                        "CHAT_MODERATION_VIOLATION",
+                        f"message blocked: {ocr_result['kind']}",
+                        {"count": count},
+                    )
+
     # Light rate limit: max one message every 2s per sender.
     recent = await query(f"chat_rooms/{room['id']}/messages", [("fromId", "==", uid)], limit=3)
     recent.sort(key=lambda m: m.get("createdAt", ""), reverse=True)
@@ -296,7 +414,7 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
         "fromName": first_name(sender.get("name", "")),
         "fromSide": _side(room, uid),
         "text": text,
-        "imageUrl": body.imageUrl or None,
+        "imageUrl": image_url,
         "createdAt": _now(),
     }
     await set_doc(f"chat_rooms/{room['id']}/messages", doc["id"], doc)
@@ -325,7 +443,7 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
         type="chat_message",
         title="New message / नया संदेश",
         body=f"{doc['fromName']}: {(text or '📷')[:80]}",
-        path=path,
+        deepLink=path,
     )
     return doc
 

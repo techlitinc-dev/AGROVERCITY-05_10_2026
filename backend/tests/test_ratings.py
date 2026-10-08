@@ -1,4 +1,5 @@
 from app.data.livestock_seed import VETS
+from app.services.trust import compute_trust_tier
 from tests.test_diary import auth, seed_user
 
 
@@ -114,3 +115,30 @@ async def test_aggregate_averages(client, user_store):
     aggregate = user_store["provider_ratings/uid-t1"]
     assert aggregate["ratingAvg"] == 3.0
     assert aggregate["ratingCount"] == 2
+
+
+def test_trust_tier_table():
+    # boundaries documented in app/services/trust.py
+    assert compute_trust_tier({"completed": 50, "avgRating": 4.5, "disputeRate": 0.01, "kycVerified": True}) == "top"
+    # dispute rate not < 0.02 → falls to established
+    assert compute_trust_tier({"completed": 50, "avgRating": 4.5, "disputeRate": 0.02, "kycVerified": True}) == "established"
+    # KYC missing blocks top
+    assert compute_trust_tier({"completed": 50, "avgRating": 4.5, "disputeRate": 0.0, "kycVerified": False}) == "established"
+    assert compute_trust_tier({"completed": 20, "avgRating": 4.2, "disputeRate": 0.04, "kycVerified": False}) == "established"
+    assert compute_trust_tier({"completed": 5, "avgRating": 4.0, "disputeRate": 0.0, "kycVerified": False}) == "trusted"
+    assert compute_trust_tier({"completed": 4, "avgRating": 4.9, "disputeRate": 0.0, "kycVerified": True}) == "new"
+    assert compute_trust_tier({"completed": 0, "avgRating": 0.0, "disputeRate": 0.0, "kycVerified": False}) == "new"
+
+
+async def test_rating_updates_ratee_trust_tier(client, user_store):
+    token = seed_user(user_store)
+    seed_transport_booking(user_store)
+    seed_user(user_store, uid="uid-t1", active_profile="transport")
+    resp = await client.post(
+        "/v1/ratings",
+        json={"bookingKind": "transport", "bookingId": "trb-1", "stars": 5},
+        headers=auth(token),
+    )
+    assert resp.status_code == 201
+    assert user_store["users/uid-t1"]["trustTier"] == "new"
+

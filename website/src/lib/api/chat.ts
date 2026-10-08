@@ -9,8 +9,8 @@ import { api } from './client';
 export interface ChatRoom {
   id: string;
   /** 'offer' = negotiation thread; 'purchase' = booking chat; 'direct' = simple 1:1;
-   *  'batch' = instructor broadcast room (WS-02 task 2.35). */
-  kind?: 'offer' | 'purchase' | 'direct' | 'batch';
+   *  'transport' = trip booking chat; 'batch' = instructor broadcast room (WS-02 task 2.35). */
+  kind?: 'offer' | 'purchase' | 'direct' | 'transport' | 'batch';
   purchaseId?: string;
   offerId?: string;
   batchId?: string;
@@ -27,9 +27,23 @@ export interface ChatRoom {
   lastMessageText?: string;
   /** Server-enriched per viewer. */
   counterpartyName?: string;
+  /** Counterparty trust tier (WS-03 G9). */
+  counterpartyTrustTier?: string | null;
   unread?: boolean;
+  /** Count of messages from the counterparty the viewer has not read (WS-01). */
+  unreadCount?: number;
   /** Present on getChatRoom: thread is closed (read-only archive). */
   terminal?: boolean;
+}
+
+/** Chat rejection codes surfaced by WS-01 moderation (rule 4 strike ladder). */
+export type ChatErrorCode = 'CHAT_MODERATION_VIOLATION' | 'CHAT_MUTED' | 'CHAT_SUSPENDED';
+
+export interface ChatModerationError {
+  code: ChatErrorCode;
+  message: string;
+  /** Strike number for CHAT_MODERATION_VIOLATION (1..3), when provided. */
+  count?: number;
 }
 
 export interface ChatMessage {
@@ -47,6 +61,14 @@ export interface ChatMessage {
 export async function listChatRooms(): Promise<{ data: ChatRoom[]; total: number }> {
   const { data } = await api.get<{ data: ChatRoom[]; total: number }>('/chat/rooms');
   return data;
+}
+
+/** Room list sorted by last activity (newest first) — WS-01 Chats hub. */
+export async function listRooms(): Promise<ChatRoom[]> {
+  const { data } = await api.get<{ data: ChatRoom[]; total: number }>('/chat/rooms');
+  return [...data.data].sort((a, b) =>
+    (b.lastMessageAt ?? b.createdAt).localeCompare(a.lastMessageAt ?? a.createdAt)
+  );
 }
 
 export async function getChatRoom(purchaseId: string): Promise<ChatRoom> {

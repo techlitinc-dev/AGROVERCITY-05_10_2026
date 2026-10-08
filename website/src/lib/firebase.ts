@@ -12,6 +12,7 @@ import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
 } from 'firebase/auth';
+import { getMessaging, getToken as getMessagingToken, isSupported } from 'firebase/messaging';
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -40,6 +41,27 @@ export async function getAppCheckToken(): Promise<string | null> {
   if (!firebaseAppCheck) return null;
   try {
     return (await getToken(firebaseAppCheck, false)).token;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Register the FCM service worker and return a web push token, or null when
+ * push is unsupported, denied, or the VAPID key is missing. Never throws.
+ */
+export async function getWebPushToken(): Promise<string | null> {
+  try {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !('Notification' in window)) {
+      return null;
+    }
+    if (!(await isSupported())) return null;
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return null;
+    const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const messaging = getMessaging(firebaseApp);
+    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined;
+    return await getMessagingToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
   } catch {
     return null;
   }

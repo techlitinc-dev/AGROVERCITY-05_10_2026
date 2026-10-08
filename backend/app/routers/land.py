@@ -30,6 +30,7 @@ from app.services import billing, idempotency, reports
 from app.services.ai import gateway
 from app.services.ai.privacy import build_land_listing_quality_state
 from app.services.pnl_engine import record_auto_entry
+from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
@@ -567,6 +568,8 @@ async def accept_lease_request(request_id: str, uid: str = Depends(_landlord)):
     await set_doc(
         f"users/{uid}/land_leases", lease.id, {**lease.model_dump(), "retainUntil": _retain_until()}
     )
+    # WS-03: tenant rates the landlord once the lease is active.
+    await open_rating_prompt(request.get("farmerId"), uid, lease.id, "land_lease")
     if lease.plotId:
         await _set_plot_status(uid, lease.plotId, "leased")
     await emit_task(

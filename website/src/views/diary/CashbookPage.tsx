@@ -8,6 +8,7 @@ import EmptyState from '../../components/trade/EmptyState';
 import ToolShell from '../../components/trade/ToolShell';
 import { toast } from '../../components/toast';
 import { isApiError } from '../../lib/api/client';
+import { enqueueOp, pendingCount } from '../../lib/offline/outbox';
 import {
   createDiaryEntry,
   deleteDiaryEntry,
@@ -230,6 +231,19 @@ export default function CashbookPage() {
       ...(fNotes.trim() ? { notes: fNotes.trim() } : {}),
     };
     try {
+      if (!editing && (typeof navigator === 'undefined' || !navigator.onLine)) {
+        // WS-06 X20: offline draft → outbox, replayed via /v1/sync when online.
+        enqueueOp({
+          idempotencyKey: crypto.randomUUID(),
+          method: 'POST',
+          path: '/v1/diary/entries',
+          body: payload,
+          queuedAt: new Date().toISOString(),
+        });
+        toast(t('offline.pendingSync', { count: pendingCount() }));
+        setSheetOpen(false);
+        return;
+      }
       if (editing) await updateDiaryEntry(editing.id, payload);
       else await createDiaryEntry(payload);
       toast(t('cbEntrySaved'));

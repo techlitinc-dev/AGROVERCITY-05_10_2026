@@ -11,6 +11,7 @@ from app.routers.orders import (
     _restore_stock,
     emit_order_status_task,
 )
+from app.services.rating_prompts import open_rating_prompt
 from app.services.users import get_user
 
 router = APIRouter(tags=["orders"])
@@ -79,6 +80,13 @@ async def patch_order_status(
         _error(400, "INVALID_STATUS_TRANSITION", f"cannot move order from {order.get('status')} to {body.status}")
     order["status"] = body.status
     _append_event(order, body.status, body.note)
+    if body.status == "delivered":
+        # WS-03: buyer rates the seller on delivery.
+        seller_id = order.get("sellerId")
+        if not seller_id and order.get("items"):
+            product = await get_doc("products", order["items"][0].get("productId") or "")
+            seller_id = (product or {}).get("sellerId")
+        await open_rating_prompt(order.get("userId"), seller_id, order_id, "marketplace_order")
     if body.status in ("cancelled", "returned"):
         if order.get("razorpayPaymentId") and order.get("refundStatus", "none") == "none":
             order["refundStatus"] = "requested"

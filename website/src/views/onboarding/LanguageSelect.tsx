@@ -4,7 +4,9 @@ import SiteFooter from '../../components/SiteFooter';
 import SiteHeader from '../../components/SiteHeader';
 import { fetchLanguages } from '../../lib/api/reference';
 import type { LanguageInfo } from '../../lib/api/types';
-import { updateSettings } from '../../lib/api/users';
+import { updateProfile } from '../../lib/api/users';
+import { enqueueOp, pendingCount } from '../../lib/offline/outbox';
+import { toast } from '../../components/toast';
 import { useT } from '../../lib/i18n';
 import { LANGUAGE_CATALOGUE } from '../../lib/languages';
 import { useOnboardingStore } from '../../stores/onboarding';
@@ -116,7 +118,20 @@ export default function LanguageSelect() {
 
   const handleContinue = () => {
     if (laterMode) {
-      void updateSettings({ language, preferredLanguage: language }).catch(() => undefined);
+      const patch = { language, preferredLanguage: language };
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        // WS-06 X20: offline profile edit → outbox (PUT /v1/users/me).
+        enqueueOp({
+          idempotencyKey: crypto.randomUUID(),
+          method: 'PUT',
+          path: '/v1/users/me',
+          body: patch,
+          queuedAt: new Date().toISOString(),
+        });
+        toast(t('offline.pendingSync', { count: pendingCount() }));
+      } else {
+        void updateProfile(patch).catch(() => undefined);
+      }
       navigate('/dashboard');
       return;
     }

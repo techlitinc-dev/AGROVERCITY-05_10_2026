@@ -8,6 +8,7 @@ import { registerLocale } from '../index';
 const en: Record<string, string> = {
   // ---- Brand & splash ----
   appName: 'AGROVERCITY',
+  appLoading: 'Loading…',
   getStarted: 'Get Started',
   stepLabel: 'Step {step}/4 • {label}',
   digitalAgriPlatform: 'Digital Agriculture Platform',
@@ -493,6 +494,102 @@ const en: Record<string, string> = {
   searchGroupCrops: 'Crops',
   searchGroupCourses: 'Courses',
   searchGroupLots: 'Lots',
+  // ---- Legal pages (phase-06 WS-04 X18) ----
+  'legal.privacy.title': 'Privacy Policy',
+  'legal.privacy.s1.h': '1. Information we collect',
+  'legal.privacy.s1.p1':
+    'AGROVERCITY is a digital agriculture marketplace. To create your account we collect your name, mobile number (verified by OTP), state, and the farm and role details you enter during onboarding (village, district, land area, soil type, irrigation, crops, and any business details for the roles you select).',
+  'legal.privacy.s1.p2':
+    'If you mark your farm boundary on the map, we store the boundary points and calculated area so we can show you field-level services. We also collect the content you post — listings, bookings, orders, reviews, and messages between buyers and sellers.',
+  'legal.privacy.s2.h': '2. How we use your information',
+  'legal.privacy.s2.p1':
+    'We use your information to run the marketplace: matching farmers with buyers, transporters, equipment owners and service providers; showing mandi prices and crop advisories for your region; processing orders and payments; and keeping your account secure with your MPIN.',
+  'legal.privacy.s2.p2':
+    'Your phone number is visible to counterparties you transact with (for example, a buyer who books your produce) so they can coordinate pickup and delivery. We never sell your personal data to advertisers.',
+  'legal.privacy.s3.h': '3. Location and device data',
+  'legal.privacy.s3.p1':
+    'With your permission we use your GPS location to suggest languages, find nearby mandis, and place you on the farm map. You can deny location access and still use the app — you will just type your village and district manually.',
+  'legal.privacy.s4.h': '4. Data sharing and retention',
+  'legal.privacy.s4.p1':
+    'We share the minimum data needed with service providers who work for us (SMS delivery, payment processing, cloud hosting) and with the counterparty in a transaction you initiate. We may disclose data if the law requires it.',
+  'legal.privacy.s4.p2':
+    'You can ask us to correct or delete your account data at any time from Settings, or by contacting support. Account data is deleted within 30 days of a verified deletion request, except records we must keep for tax, fraud-prevention, or legal reasons.',
+  'legal.privacy.s5.h': '5. Security',
+  'legal.privacy.s5.p1':
+    'Your login is protected by a 4-digit MPIN and Firebase-verified phone authentication. All traffic is encrypted in transit. Access to personal data inside our systems is restricted to staff who need it to operate the service.',
+  'legal.privacy.s6.h': '6. Contact',
+  'legal.privacy.s6.p1':
+    'For privacy questions, data correction, or deletion requests, contact the AGROVERCITY support team through the Help & Support section in the app.',
+  'legal.terms.title': 'Terms of Use',
+  'legal.terms.s1.h': '1. Acceptance of terms',
+  'legal.terms.s1.p1':
+    'By creating an AGROVERCITY account you agree to these Terms of Use and our Privacy Policy. If you do not agree, please do not use the service.',
+  'legal.terms.s1.p2':
+    'You must be 18 years or older and legally able to form a contract in India to register. One person may hold multiple roles (farmer, seller, transporter, and so on) under a single account, and you are responsible for the information you provide for each role.',
+  'legal.terms.s2.h': '2. Your account',
+  'legal.terms.s2.p1':
+    'You are responsible for keeping your MPIN secret and for everything that happens under your account. Tell us immediately at support if you suspect unauthorised use.',
+  'legal.terms.s2.p2':
+    'Information you provide during registration — farm details, licences, GST numbers, vehicle RC numbers — must be true. Listings or profiles with false or misleading information may be suspended.',
+  'legal.terms.s3.h': '3. Marketplace conduct',
+  'legal.terms.s3.p1':
+    'Buyers and sellers negotiate prices and confirm quantities through the platform. Once an order or booking is confirmed, both sides are expected to honour it. Cancelling confirmed orders repeatedly may lead to account restrictions.',
+  'legal.terms.s3.p2':
+    'You agree not to list prohibited items, misrepresent produce quality or quantity, manipulate prices, or use the platform for anything unlawful. Reviews must reflect genuine transactions.',
+  'legal.terms.s4.h': '4. Payments and fees',
+  'legal.terms.s4.p1':
+    'Payments between parties follow the payment terms shown at the time of the order. Any platform fees or commissions are displayed before you confirm a transaction.',
+  'legal.terms.s4.p2':
+    'You are responsible for taxes applicable to your sales under Indian law, including GST where you are registered.',
+  'legal.terms.s5.h': '5. Content and intellectual property',
+  'legal.terms.s5.p1':
+    'You keep ownership of the content you upload, and you grant AGROVERCITY a licence to display it in the app so the marketplace can function. Do not upload content you do not have the rights to.',
+  'legal.terms.s6.h': '6. Changes and termination',
+  'legal.terms.s6.p1':
+    'We may update these terms from time to time; material changes will be announced in the app. You may delete your account at any time. We may suspend accounts that breach these terms, with notice where practicable.',
+  'legal.refunds.title': 'Refund & Cancellation Policy',
+  'legal.refunds.s1.h': '1. Cancellation by the buyer',
+  'legal.refunds.s1.p1':
+    'An order can be cancelled free of charge before the seller confirms it. After confirmation but before dispatch, cancellation is at the seller\'s discretion and may attract charges already incurred (packing, loading, transport booking).',
+  'legal.refunds.s1.p2':
+    'Once produce has been dispatched, orders cannot be cancelled; please use the dispute process below for quality issues on delivery.',
+  'legal.refunds.s2.h': '2. Quality disputes on delivery',
+  'legal.refunds.s2.p1':
+    'If delivered produce does not match the agreed grade or quantity, report it in the app within 24 hours of delivery with photos. Our team will review the evidence and may approve a full or partial refund, or a replacement, within 5–7 working days.',
+  'legal.refunds.s2.p2':
+    'Perishable goods that deteriorate after accepted delivery, or produce rejected for reasons not related to quality (for example, a change of mind), are not eligible for refund.',
+  'legal.refunds.s3.h': '3. Service bookings (transport, equipment, cold storage)',
+  'legal.refunds.s3.p1':
+    'Bookings cancelled more than 12 hours before the scheduled slot receive a full refund of any advance. Cancellations within 12 hours forfeit the advance, which compensates the provider for the reserved slot.',
+  'legal.refunds.s3.p2':
+    'If the provider fails to show up or the service was not delivered as booked, the full advance is refunded automatically.',
+  'legal.refunds.s4.h': '4. How refunds are paid',
+  'legal.refunds.s4.p1':
+    'Approved refunds are returned to the original payment method (UPI, bank account, or wallet) within 5–7 working days. Platform fees on refunded transactions are refunded in full.',
+  'legal.refunds.s5.h': '5. Raising a request',
+  'legal.refunds.s5.p1':
+    'Raise cancellations, disputes, and refund requests from the order or booking detail screen, or through Help & Support. Keep photos of the produce and the weighbridge slip where possible — they make resolution much faster.',
+  'legal.community.title': 'Community Guidelines',
+  'legal.community.s1.h': '1. Who we are',
+  'legal.community.s1.p1':
+    'AGROVERCITY connects farmers, traders, transporters, equipment owners, instructors, dairy operators, banks, and buyers. The community works best when everyone deals honestly and respectfully, in any of the languages the app supports.',
+  'legal.community.s2.h': '2. Deal honestly',
+  'legal.community.s2.p1':
+    'Quote real prices, real quantities, and real grades. Honour confirmed orders and bookings. If something goes wrong — weather, vehicle breakdown, crop failure — tell the other party as early as you can and cancel through the app rather than simply not showing up.',
+  'legal.community.s3.h': '3. Respect each other',
+  'legal.community.s3.p1':
+    'No abuse, harassment, caste or gender-based discrimination, or personal attacks in messages or reviews. Negotiation is part of the mandi culture — keep it hard but fair, never insulting.',
+  'legal.community.s3.p2':
+    'Women farmers, first-time sellers, and smallholders get the same respect and the same prices as everyone else.',
+  'legal.community.s4.h': '4. Keep it useful',
+  'legal.community.s4.p1':
+    'Post in the right category, use real photos of your actual produce or vehicles, and share advice in the community sections only if you genuinely know it. Wrong advice on pesticides, loans, or animal health can cause real damage — when in doubt, say so.',
+  'legal.community.s5.h': '5. Safety',
+  'legal.community.s5.p1':
+    'Meet counterparties in public places where possible, verify vehicle and licence details before big bookings, and never share your MPIN or OTP with anyone — AGROVERCITY staff will never ask for them.',
+  'legal.community.s6.h': '6. Reporting',
+  'legal.community.s6.p1':
+    'Use the report option on any profile, listing, or message that breaks these guidelines. Our team reviews reports within 48 hours and may warn, restrict, or suspend accounts that repeatedly violate community standards.',
 };
 
 registerLocale('en', en);

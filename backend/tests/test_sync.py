@@ -87,6 +87,29 @@ async def test_replay_is_idempotent(client, user_store):
     assert resp.json()["total"] == 2
 
 
+async def test_outbox_replay_diary_and_profile(client, user_store):
+    token = seed_user(user_store)
+    batch = {
+        "operations": [
+            op("k1", DIARY_PATH, ENTRY),
+            op("k2", "/v1/users/me", {"name": "Ram Updated"}, method="PUT"),
+        ]
+    }
+    resp = await client.post("/v1/sync", json=batch, headers=auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["applied"] == 2
+    assert user_store["users/uid-1"]["name"] == "Ram Updated"
+
+    # Replaying the same batch is idempotent — no double-apply.
+    resp = await client.post("/v1/sync", json=batch, headers=auth(token))
+    body = resp.json()
+    assert body["duplicates"] == 2
+    assert body["applied"] == 0
+    resp = await client.get("/v1/diary/entries", headers=auth(token))
+    assert resp.json()["total"] == 1
+
+
 async def test_unknown_path_per_op_error(client, user_store):
     token = seed_user(user_store)
     resp = await client.post(

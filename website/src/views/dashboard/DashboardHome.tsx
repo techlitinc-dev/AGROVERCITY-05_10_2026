@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import SiteFooter from '../../components/SiteFooter';
 import SiteHeader from '../../components/SiteHeader';
@@ -11,6 +11,7 @@ import { PersonaBanner, PromoBanner, SectionTitle, ToolTile } from '../../compon
 import AiBadge from '../../components/ai/AiBadge';
 import ConfidenceGate from '../../components/ai/ConfidenceGate';
 import KisanMitraSheet from '../../components/chatbot/KisanMitraSheet';
+import RatePrompt from '../../components/RatePrompt';
 import BreakingBanner from '../../components/news/BreakingBanner';
 import InsightsPanel from '../../components/intelligence/InsightsPanel';
 import SellerHomeBoard from '../../components/dashboard/SellerHomeBoard';
@@ -21,6 +22,8 @@ import { canAccess, personaHomeConfig } from '../../lib/dashboard';
 import { ZERO } from '../../lib/numDefaults';
 import { PERSONAS, personaByType, personaLabel } from '../../lib/personas';
 import { isKnownRoute } from '../../lib/routes';
+import { pendingCount, subscribe } from '../../lib/offline/outbox';
+import { track } from '../../lib/analytics';
 import { useT } from '../../lib/i18n';
 import { useOnboardingStore } from '../../stores/onboarding';
 import { useDashboardStore } from '../../stores/dashboard';
@@ -139,6 +142,8 @@ export default function DashboardHome() {
   const [switchOpen, setSwitchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [mitraOpen, setMitraOpen] = useState(false);
+  const [pendingSync, setPendingSync] = useState(() => pendingCount());
+  const shownTasksRef = useRef<Set<string>>(new Set());
 
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [summaryData, setSummaryData] = useState<TaskSummary | null>(null);
@@ -200,6 +205,7 @@ export default function DashboardHome() {
     setBusyTask(task.taskId);
     try {
       await markDone(task.taskId, task.decisionId ?? undefined);
+      track('task_completed', { taskId: task.taskId, module: task.module });
       setTasks((prev) =>
         prev ? prev.map((item) => (item.taskId === task.taskId ? { ...item, status: 'done' as const } : item)) : prev
       );
@@ -222,6 +228,7 @@ export default function DashboardHome() {
   };
 
   const openTask = (task: Task) => {
+    track('task_clicked', { taskId: task.taskId, module: task.module });
     if (isKnownRoute(task.deepLink)) navigate(task.deepLink);
   };
 
@@ -232,9 +239,27 @@ export default function DashboardHome() {
   ];
   const moneyVisible = moneyRows.filter((row) => row.paisa !== undefined);
 
+  useEffect(() => subscribe(() => setPendingSync(pendingCount())), []);
+
+  // WS-09 task 9.6 — fire task_shown once per task as cards render.
+  useEffect(() => {
+    (tasks ?? []).forEach((task) => {
+      if (!shownTasksRef.current.has(task.taskId)) {
+        shownTasksRef.current.add(task.taskId);
+        track('task_shown', { taskId: task.taskId, module: task.module });
+      }
+    });
+  }, [tasks]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
+      <RatePrompt />
       <SiteHeader />
+      {pendingSync > 0 ? (
+        <div className="dash-content" style={{ paddingTop: 8, paddingBottom: 0 }}>
+          <p className="trade-hint">📶 {t('offline.pendingSync', { count: pendingSync })}</p>
+        </div>
+      ) : null}
       <MenuBar onOpenAllTools={() => setToolsOpen(true)} />
       <main className="dash-content" style={{ flex: 1 }}>
         {isFarmer ? (

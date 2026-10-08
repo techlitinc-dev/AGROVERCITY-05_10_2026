@@ -82,7 +82,7 @@ async def test_list_fires_notification_when_crossed(client, user_store):
     assert "1500" in note["body"]
     assert "≥" in note["body"]
     assert "9876543210" not in note["body"]  # never leak phone numbers
-    assert note["data"]["path"] == "/dashboard/p/mandi"
+    assert note["data"]["deepLink"] == "/dashboard/p/mandi"
 
     # second list: already fired, no duplicate notification
     resp = await client.get("/v1/price-alerts", headers=auth(token))

@@ -66,7 +66,7 @@ async def _expire_if_due(doc: dict) -> dict:
             type="offer_expired",
             title="Offer expired / ऑफर समाप्त",
             body=f"{doc.get('quantity')} {doc.get('unit', 'quintal')} @ ₹{doc.get('pricePerUnit')}",
-            path=f"/dashboard/p/myOffers/{doc['id']}",
+            deepLink=f"/dashboard/p/myOffers/{doc['id']}",
         )
     return doc
 
@@ -144,7 +144,7 @@ async def create_offer(body: OfferCreate, response: Response, uid: str = Depends
         type="offer_received",
         title="New offer / नया ऑफर",
         body=offer_body,
-        path=f"/dashboard/p/myOffers/{doc['id']}",
+        deepLink=f"/dashboard/p/myOffers/{doc['id']}",
     )
     # WS-05 task emission (module: trade).
     await emit_task(
@@ -229,14 +229,14 @@ async def accept_offer(offer_id: str, uid: str = Depends(current_user_id)):
         type="booking_confirmed",
         title="Booking confirmed / बुकिंग पक्की",
         body=f"{purchase['crop']} — {purchase['quantity']} {purchase['unit']} @ ₹{purchase['agreedPricePerUnit']}",
-        path=f"/dashboard/p/purchases/{purchase['id']}",
+        deepLink=f"/dashboard/p/purchases/{purchase['id']}",
     )
     await notify_user(
         purchase["buyerId"],
         type="booking_confirmed",
         title="Booking confirmed / बुकिंग पक्की",
         body=f"{purchase['crop']} — {purchase['quantity']} {purchase['unit']} @ ₹{purchase['agreedPricePerUnit']}",
-        path=f"/dashboard/p/purchases/{purchase['id']}",
+        deepLink=f"/dashboard/p/purchases/{purchase['id']}",
     )
     return {"offer": offer, "purchase": purchase}
 
@@ -258,7 +258,7 @@ async def reject_offer(offer_id: str, uid: str = Depends(current_user_id)):
         type="offer_rejected",
         title="Offer declined / ऑफर मना",
         body=f"₹{offer.get('pricePerUnit')}/{offer.get('unit', 'quintal')} — {offer.get('quantity')} {offer.get('unit', 'quintal')}",
-        path=f"/dashboard/p/myOffers/{offer_id}",
+        deepLink=f"/dashboard/p/myOffers/{offer_id}",
     )
     return offer
 
@@ -280,7 +280,7 @@ async def withdraw_offer(offer_id: str, uid: str = Depends(current_user_id)):
         type="offer_withdrawn",
         title="Offer withdrawn / ऑफर वापस",
         body=f"₹{offer.get('pricePerUnit')}/{offer.get('unit', 'quintal')} — {offer.get('quantity')} {offer.get('unit', 'quintal')}",
-        path=f"/dashboard/p/myOffers/{offer_id}",
+        deepLink=f"/dashboard/p/myOffers/{offer_id}",
     )
     return offer
 
@@ -321,6 +321,6 @@ async def counter_offer(offer_id: str, body: OfferCounter, uid: str = Depends(cu
         type="offer_countered",
         title="Counter-offer / काउंटर ऑफर",
         body=f"₹{body.pricePerUnit}/{offer.get('unit', 'quintal')} for {offer.get('quantity')} {offer.get('unit', 'quintal')} (round {rounds}/{MAX_NEGOTIATION_ROUNDS})",
-        path=f"/dashboard/p/myOffers/{offer_id}",
+        deepLink=f"/dashboard/p/myOffers/{offer_id}",
     )
     return offer

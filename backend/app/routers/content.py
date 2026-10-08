@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -17,11 +18,16 @@ from app.models.content import (
     PollVoteIn,
 )
 from app.services import blocks
+from app.services.ai import gateway, privacy
 from app.services.chat import contains_banned_content, record_strike
 from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(tags=["content"])
+
+log = logging.getLogger(__name__)
+
+CONTENT_MODERATION_MODULE = "content_moderation"
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -49,6 +55,37 @@ def _parse_ts(value) -> datetime | None:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
+
+
+async def _moderate_ugc(content_type: str, content_id: str, text: str, uid: str) -> None:
+    """WS-01 task 1.16 — post-write UGC moderation (suggest level).
+
+    Flagged items are queued for human review; content is never deleted here.
+    On any gateway failure the content simply stays un-flagged."""
+    state = privacy.build_ugc_moderation_state(text, uid)
+    try:
+        decision = await gateway.decide(
+            state, "content.moderation.v1", module=CONTENT_MODERATION_MODULE
+        )
+    except Exception as exc:  # noqa: BLE001 — moderation never breaks a write
+        log.warning("content moderation unavailable (%s) — content stays", exc)
+        return
+    answers = decision.answers or {}
+    if not answers.get("flag"):
+        return
+    await set_doc(
+        "moderation_queue",
+        f"mod_{content_type}_{content_id}",
+        {
+            "contentType": content_type,
+            "contentId": content_id,
+            "flag": True,
+            "reason": str(answers.get("reason") or "none"),
+            "decisionId": decision.decision_id,
+            "status": "open",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
 
 async def _emit_breaking_news_task(docs: list[dict], user: dict) -> None:
@@ -262,6 +299,7 @@ async def post_chat(
     )
     await set_doc(f"channels/{channel_id}/chat", message.id, message.model_dump())
     response.status_code = 201
+    await _moderate_ugc("channel_chat", message.id, text, user["id"])
     return message
 
 
@@ -371,6 +409,7 @@ async def ask_question(channel_id: str, body: LiveQuestionIn, user: dict = Depen
     }
     await set_doc(f"channels/{channel_id}/questions", q_id, q_doc)
     await set_doc(f"users/{user['id']}/question_upvotes", q_id, {"id": q_id})
+    await _moderate_ugc("channel_question", q_id, q_doc["questionText"], user["id"])
     res = dict(q_doc)
     res["userHasUpvoted"] = True
     return res

@@ -841,6 +841,126 @@ register(
 )
 
 
+# Brief M6 (WS-01) — chat guardrail. Runs only on the cost-saving pre-filter
+# (`chat_moderation.needs_guardrail`) after the regex fast-path missed; any True
+# flag feeds the same strike ladder a human-confirmed violation gets.
+# Deterministic fallback = "not a violation" (all three booleans False). `suggest`.
+register(
+    QuestionSet(
+        id="chat.guardrail.v1",
+        version="v1",
+        schema={"shares_contact": False, "shares_payment_handle": False, "abuse": False},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# WS-01 — UGC moderation (news comments / live chat / reviews). Flagged items go
+# to the `moderation_queue` collection for human review; `suggest` level means
+# flagged content is never auto-deleted. Deterministic fallback = no flag.
+CONTENT_MODERATION_REASONS = ("spam", "abuse", "contact_sharing", "off_topic", "none")
+
+register(
+    QuestionSet(
+        id="content.moderation.v1",
+        version="v1",
+        schema={"flag": False, "reason": "none"},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# Brief M7 (WS-02) — notification timing. `send_now` + `channel` per notification;
+# deterministic fallback = immediate push (current behavior), so nothing is lost.
+register(
+    QuestionSet(
+        id="notify.timing.v1",
+        version="v1",
+        schema={"send_now": True, "channel": "push"},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# Brief M7 (WS-02) — vernacular push copy one-liner (generate-type). Fallback is
+# the caller's static template text; cached per (type, lang, day).
+register(
+    QuestionSet(
+        id="notify.copy.v1",
+        version="v1",
+        schema={"text": ""},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# Brief M8 (WS-03) — fraud pattern scoring over cluster features. Fallback =
+# no pattern / zero risk (never auto-punish). `suggest`: holds + queue only.
+FRAUD_PATTERNS = ("circular_bidding", "rate_collusion", "referral_ring", "coin_abuse", "none")
+
+register(
+    QuestionSet(
+        id="trust.fraud.v1",
+        version="v1",
+        schema={"pattern": "none", "risk": 0.0},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# Brief M8 (WS-03) — payout anomaly scoring on a settlement line. Fallback =
+# not anomalous (never block payouts on AI failure). `suggest`.
+register(
+    QuestionSet(
+        id="trust.payout_anomaly.v1",
+        version="v1",
+        schema={"anomaly": False, "severity": 0.0},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# Brief M30 (WS-05) — support intent routing. Safe default is escalate; money
+# and account always escalate to a human. `suggest`.
+SUPPORT_CATEGORIES = ("app_help", "money", "account", "other")
+
+register(
+    QuestionSet(
+        id="support.intent.v1",
+        version="v1",
+        schema={"resolvable": False, "category": "other", "escalate": True},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+# Brief M23 (WS-08) — search intent routing. Chooses which index to surface
+# first; fallback (null) queries all indexes by keyword. `suggest`.
+SEARCH_INDEXES = ("schemes", "products", "news", "crops", "courses", "lots")
+
+register(
+    QuestionSet(
+        id="search.intent.v1",
+        version="v1",
+        schema={"index": None},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+    )
+)
+
+
+
+
+
+
+
 
 
 

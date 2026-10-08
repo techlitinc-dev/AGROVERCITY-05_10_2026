@@ -21,6 +21,7 @@ from app.services.ai import gateway
 from app.services.ai.privacy import build_equipment_booking_rec_state
 from app.services.billing import entitlement_guard, record_usage
 from app.services.notifications import send_fcm_to_user
+from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
 
@@ -428,6 +429,10 @@ async def update_booking_execution(
     if booking is not None:
         if body.jobStatus in ("completed", "verified"):
             booking["status"] = "completed"
+            # WS-03: renter rates the equipment owner on completion.
+            await open_rating_prompt(
+                booking.get("userId"), booking.get("ownerId") or uid, booking_id, "equipment_booking"
+            )
         elif body.jobStatus in ("en_route", "on_site", "work_started"):
             booking["status"] = "in_progress"
         if body.hoursLogged:

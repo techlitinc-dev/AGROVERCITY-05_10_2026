@@ -31,6 +31,131 @@ _CONTACT_RE = re.compile(r"(?:(?:\+?91[\s-]?)?[6-9]\d{9})|(?:[\w.+-]+@[\w-]+\.[\
 _FINANCIAL_ADVICE_RE = re.compile(r"\b(loan|interest|emi|कर्ज|ब्याज|लोन)\b", re.IGNORECASE)
 _MEDICAL_CERTAINTY_RE = re.compile(r"\b(cancer cure|guaranteed cure|100% इलाज|पक्का इलाज)\b", re.IGNORECASE)
 
+# M6 chat guardrail — deterministic evasion classifier: a contact-intent word
+# combined with any digit (numeric or spelled-out, English / romanized Hindi /
+# Devanagari) is treated as sharing contact.
+_GUARDRAIL_CONTACT_WORDS = (
+    "call", "whatsapp", "upi", "contact", "phone", "number", "कॉल", "फोन", "व्हाट्सएप", "यूपीआई", "नंबर",
+)
+_GUARDRAIL_DIGIT_WORDS_DEV = ("एक", "दो", "तीन", "चार", "पाँच", "पांच", "छह", "सात", "आठ", "नौ", "शून्य")
+_GUARDRAIL_DIGIT_WORDS_LATIN_RE = re.compile(
+    r"\b(zero|one|two|three|four|five|six|seven|eight|nine|"
+    r"nau|aath|saat|chhe|che|paanch|panch|ek|do|teen|char|chha|shunya)\b"
+)
+_GUARDRAIL_UPI_RE = re.compile(r"[\w.\-]{2,}@[a-z]{2,}", re.IGNORECASE)
+
+
+def _guardrail_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic chat.guardrail.v1 shim (M6): spelled-out or grouped digits
+    paired with a contact word, or a UPI/payment handle."""
+    text = (state.get("message") or state.get("text") or "").lower()
+    has_contact_word = any(word in text for word in _GUARDRAIL_CONTACT_WORDS)
+    has_digit = (
+        bool(re.search(r"\d", text))
+        or bool(_GUARDRAIL_DIGIT_WORDS_LATIN_RE.search(text))
+        or any(word in text for word in _GUARDRAIL_DIGIT_WORDS_DEV)
+    )
+    return (
+        {
+            "shares_contact": bool(has_contact_word and has_digit),
+            "shares_payment_handle": bool(_GUARDRAIL_UPI_RE.search(text)),
+            "abuse": False,
+        },
+        0.9,
+    )
+
+
+def _content_moderation_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic content.moderation.v1 shim: contact-sharing content is
+    flagged; everything else is clean."""
+    text = state.get("text") or ""
+    if _CONTACT_RE.search(text) or _GUARDRAIL_UPI_RE.search(text):
+        return {"flag": True, "reason": "contact_sharing"}, 0.85
+    return {"flag": False, "reason": "none"}, 0.85
+
+
+def _fraud_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic trust.fraud.v1 shim (M8): reciprocal trades + shared devices
+    score a ring over the 0.8 soft-hold threshold."""
+    circular = int(state.get("circularTrades") or 0)
+    shared = int(state.get("sharedDevices") or 0)
+    ring = int(state.get("referralRingSize") or 0)
+    try:
+        coin = float(state.get("coinVelocity") or 0.0)
+    except (TypeError, ValueError):
+        coin = 0.0
+
+    score = 0.0
+    pattern = "none"
+    if circular >= 2:
+        score += 0.6
+        pattern = "circular_bidding"
+    if shared >= 2:
+        score += 0.25
+        if pattern == "none":
+            pattern = "rate_collusion"
+    if ring >= 3:
+        score += 0.3
+        if pattern == "none":
+            pattern = "referral_ring"
+    if coin > 0.5:
+        score += 0.2
+        if pattern == "none":
+            pattern = "coin_abuse"
+    return {"pattern": pattern, "risk": round(min(1.0, score), 2)}, 0.9
+
+
+def _payout_anomaly_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic trust.payout_anomaly.v1 shim (M8): a single large payout
+    (net above ₹5,00,000 from one or two sources) is held for finance review;
+    high-volume batches of ordinary lines settle normally."""
+    try:
+        net = float(state.get("netRupees") or 0)
+    except (TypeError, ValueError):
+        net = 0.0
+    try:
+        source_count = int(state.get("sourceCount") or 1)
+    except (TypeError, ValueError):
+        source_count = 1
+    anomaly = net > 500000 and source_count <= 2
+    return {"anomaly": anomaly, "severity": round(0.9 if anomaly else 0.0, 2)}, 0.9
+
+
+_SUPPORT_MONEY = ("payment", "paisa", "पैसा", "paid", "refund", "भुगतान", "पेमेंट", "bank", "बैंक", "balance")
+_SUPPORT_ACCOUNT = ("account", "login", "mpin", "password", "खाता", "लॉगिन", "sign in", "otp")
+_SUPPORT_APP_HELP = ("how", "kaise", "कैसे", "add", "plot", "notification", "settings", "change", "update")
+
+
+def _support_intent_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic support.intent.v1 shim (M30): money/account escalate; app
+    help is resolvable; anything else escalates (safe default)."""
+    text = (state.get("question") or "").lower()
+    if any(word in text for word in _SUPPORT_MONEY):
+        return {"resolvable": False, "category": "money", "escalate": True}, 0.9
+    if any(word in text for word in _SUPPORT_ACCOUNT):
+        return {"resolvable": False, "category": "account", "escalate": True}, 0.9
+    if any(word in text for word in _SUPPORT_APP_HELP):
+        return {"resolvable": True, "category": "app_help", "escalate": False}, 0.9
+    return {"resolvable": False, "category": "other", "escalate": True}, 0.6
+
+
+def _search_intent_answers(state: dict) -> tuple[dict, float]:
+    """Deterministic search.intent.v1 shim (M23): maps a query to a target index."""
+    text = (state.get("query") or "").lower()
+    if any(w in text for w in ("pyaz", "bhav", "mandi", "price", "rate", "lot", "quintal")):
+        return {"index": "lots"}, 0.9
+    if any(w in text for w in ("scheme", "yojana", "pm-kisan", "pm kisan", "kisan", "subsidy")):
+        return {"index": "schemes"}, 0.9
+    if any(w in text for w in ("course", "sikh", "training", "academy")):
+        return {"index": "courses"}, 0.9
+    if any(w in text for w in ("news", "khabar", "samachar")):
+        return {"index": "news"}, 0.9
+    if any(w in text for w in ("product", "seed", "khad", "fertilizer", "pesticide")):
+        return {"index": "products"}, 0.9
+    if any(w in text for w in ("crop", "fasal", "gehu", "wheat")):
+        return {"index": "crops"}, 0.9
+    return {"index": None}, 0.5
+
 
 def _intent_answers(state: dict) -> tuple[dict, float]:
     """Deterministic intent classifier for the shim (keyword routing)."""
@@ -188,6 +313,18 @@ async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
         return _equipment_booking_rec_answers(state)
     if question_set_id == "land.listing_quality.v1":
         return _land_listing_quality_answers(state)
+    if question_set_id == "chat.guardrail.v1":
+        return _guardrail_answers(state)
+    if question_set_id == "content.moderation.v1":
+        return _content_moderation_answers(state)
+    if question_set_id == "trust.fraud.v1":
+        return _fraud_answers(state)
+    if question_set_id == "trust.payout_anomaly.v1":
+        return _payout_anomaly_answers(state)
+    if question_set_id == "support.intent.v1":
+        return _support_intent_answers(state)
+    if question_set_id == "search.intent.v1":
+        return _search_intent_answers(state)
     record = _load_fixtures().get(question_set_id)
     if record is not None:
         return dict(record.get("answers") or {}), float(record.get("confidence", 0.9))

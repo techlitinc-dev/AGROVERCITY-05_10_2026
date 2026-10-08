@@ -352,6 +352,28 @@ def build_land_listing_quality_state(
     return sanitize_state(state)
 
 
+def build_chat_guardrail_state(text: str, sender_id: str | None = None) -> dict:
+    """M6 (WS-01) state builder: the chat message text only, with the sender
+    pseudonymized and any phone/email/Aadhaar masked (≤1500 tokens, no PII)."""
+    return sanitize_state(
+        {
+            "sender_pseudo_id": hash_user_id(sender_id) if sender_id else "anonymous",
+            "message": sanitize_text(str(text or "")),
+        }
+    )
+
+
+def build_ugc_moderation_state(text: str, author_id: str | None = None) -> dict:
+    """WS-01 state builder for `content.moderation.v1`: the UGC text only, with
+    the author pseudonymized and any phone/email/Aadhaar masked (no PII)."""
+    return sanitize_state(
+        {
+            "author_pseudo_id": hash_user_id(author_id) if author_id else "anonymous",
+            "text": sanitize_text(str(text or "")),
+        }
+    )
+
+
 def _to_float(value, default: float = 0.0) -> float:
     try:
         return float(value)

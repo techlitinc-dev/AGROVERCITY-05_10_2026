@@ -77,7 +77,7 @@ async def list_alerts(uid: str = Depends(_alert_user)):
                             f"{doc['crop']}: mandi modal ₹{modal} "
                             f"{'≥' if doc.get('above', True) else '≤'} your ₹{doc['targetPrice']}"
                         ),
-                        path="/dashboard/p/mandi",
+                        deepLink="/dashboard/p/mandi",
                     )
                 except Exception:
                     pass  # notifications are best-effort

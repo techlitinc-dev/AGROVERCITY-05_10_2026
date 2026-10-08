@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 
 from app.core.db import get_doc, query, set_doc
+from app.services.ai import gateway, privacy
 from app.services.payments import create_razorpayx_payout
+
+PAYOUT_ANOMALY_MODULE = "trust_payout_anomaly"
 
 DEFAULT_CONFIG = {
     "transportPct": 10,
@@ -168,6 +171,25 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
             # held when the instructor has no penny-drop-verified bank account.
             if role == "instructor":
                 doc["onHold"] = not await _has_verified_bank_account(entity_id)
+            # WS-03 M8: score each line; anomalous lines are held for finance_admin
+            # review and never settle until released/rejected. AI failure settles.
+            anomaly_state = privacy.sanitize_state(
+                {
+                    "role": role,
+                    "netRupees": doc["netRupees"],
+                    "grossRupees": gross,
+                    "sourceCount": len(doc.get("sourceIds") or []),
+                }
+            )
+            decision = await gateway.decide(
+                anomaly_state, "trust.payout_anomaly.v1", module=PAYOUT_ANOMALY_MODULE
+            )
+            answers = decision.answers or {}
+            if answers.get("anomaly"):
+                doc["held"] = True
+                doc["holdReason"] = f"payout anomaly (severity {answers.get('severity')})"
+                doc["decisionId"] = decision.decision_id
+                doc["holdRole"] = "finance_admin"
             await set_doc("settlements", doc_id, doc)
             # WS-03: TDS 194-O ledger + GST commission invoice (integer paisa).
             gross_paisa = gross * 100
@@ -245,6 +267,8 @@ async def process_payouts(period_start: str, period_end: str) -> dict:
     for settlement in settlements:
         if settlement.get("periodStart") != period_start or settlement.get("status") != "pending":
             continue
+        if settlement.get("held"):
+            continue  # WS-03: held lines never settle until released/rejected
         accounts = await query(f"users/{settlement['entityId']}/bank_accounts", [], limit=50)
         verified = [a for a in accounts if a.get("verifyStatus") == "verified"]
         if not verified:
@@ -266,6 +290,26 @@ async def process_payouts(period_start: str, period_end: str) -> dict:
         settlement["payoutRef"] = payout.get("id")
         settlement["paidAt"] = now
         await set_doc("settlements", settlement["id"], settlement)
+        # WS-09: money truth emitted server-side (never trust the client for GMV).
+        # Money is integer paisa; eventId is deterministic so retries dedupe.
+        await set_doc(
+            "analytics_events",
+            f"txn_{settlement['id']}",
+            {
+                "eventId": f"txn_{settlement['id']}",
+                "userId": settlement["entityId"],
+                "persona": settlement.get("role"),
+                "name": "transaction_completed",
+                "props": {
+                    "gmv_paisa": int(settlement.get("grossRupees") or 0) * 100,
+                    "take_rate_paisa": int(settlement.get("commissionRupees") or 0) * 100,
+                    "marketplace": settlement.get("role"),
+                },
+                "sessionId": None,
+                "clientTs": None,
+                "serverTs": now,
+            },
+        )
         # Rule 3: every financial mutation writes an audit_logs entry.
         await set_doc(
             "audit_logs",

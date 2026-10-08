@@ -26,11 +26,17 @@ from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.config import settings
 from app.core.db import query
 from app.core.deps import current_user_id
 from app.core.pagination import InvalidCursor, decode_cursor, encode_cursor
+from app.services import search_index
+from app.services.ai import config_store, gateway, privacy
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+SEARCH_INTENT_MODULE = "search_intent"
+SEARCH_EMBEDDINGS_MODULE = "search_embeddings"
 
 # The six indexes, in stable response order.
 GROUPS: tuple[str, ...] = ("schemes", "products", "news", "crops", "courses", "lots")
@@ -264,6 +270,49 @@ _BUILDERS: dict[str, Callable] = {
 }
 
 
+def merge_hits(keyword_items: list[dict], semantic_hits: list[dict]) -> list[dict]:
+    """Merge keyword + cosine hits by doc id (WS-08 M23).
+
+    Final score = keyword score + cosine score; a keyword match wins ties, so a
+    doc matching both ranks above a keyword-only doc, which ranks above a
+    cosine-only doc.
+    """
+    merged: dict[str, dict] = {}
+    for item in keyword_items:
+        merged[item["id"]] = {"item": item, "score": 1.0, "keyword": True}
+    for hit in semantic_hits:
+        doc_id = hit.get("docId")
+        if doc_id is None:
+            continue
+        entry = merged.get(doc_id)
+        if entry is not None:
+            entry["score"] += float(hit.get("score") or 0.0)
+        else:
+            merged[doc_id] = {
+                "item": {"id": doc_id, "text": hit.get("text", "")},
+                "score": float(hit.get("score") or 0.0),
+                "keyword": False,
+            }
+    ordered = sorted(merged.values(), key=lambda entry: (-entry["score"], not entry["keyword"]))
+    return [entry["item"] for entry in ordered]
+
+
+async def _semantic_enabled() -> bool:
+    """Embedding path runs only with a real provider and the module flag on."""
+    if settings.ai_provider == "shim":
+        return False
+    return await config_store.module_enabled(SEARCH_EMBEDDINGS_MODULE)
+
+
+async def _intent_index(needle: str) -> str | None:
+    state = privacy.sanitize_state({"query": needle})
+    answers = (
+        await gateway.decide(state, "search.intent.v1", module=SEARCH_INTENT_MODULE)
+    ).answers
+    index = (answers or {}).get("index")
+    return index if index in GROUPS else None
+
+
 @router.get("")
 async def global_search(
     q: str = Query(default=""),
@@ -289,10 +338,20 @@ async def global_search(
         "lots": cursorLots,
     }
 
+    semantic = await _semantic_enabled()
+    chosen = await _intent_index(needle)
+    order = GROUPS if not chosen else (chosen, *[g for g in GROUPS if g != chosen])
+
     response: dict = {"query": q, "nextCursor": {}}
     try:
-        for group in GROUPS:
+        for group in order:
             items = await _BUILDERS[group](needle)
+            if semantic:
+                try:
+                    hits = await search_index.search_similar(group, needle, limit=20)
+                    items = merge_hits(items, hits)
+                except Exception:  # noqa: BLE001 — semantic failure falls back to keyword
+                    pass
             window, next_cursor = _paginate(items, cursors[group], pageSize)
             response[group] = window
             response["nextCursor"][group] = next_cursor

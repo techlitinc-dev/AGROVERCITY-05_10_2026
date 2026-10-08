@@ -410,7 +410,7 @@ async def create_purchase(body: PurchaseCreate, uid: str = Depends(current_user_
         type="booking_confirmed",
         title="Booking confirmed / बुकिंग पक्की",
         body=f"{purchase['crop']} — {purchase['quantity']} {purchase['unit']} @ ₹{purchase['agreedPricePerUnit']}",
-        path=f"/dashboard/p/purchases/{purchase['id']}",
+        deepLink=f"/dashboard/p/purchases/{purchase['id']}",
     )
     remaining = round(available - qty, 3)
     lot["quantityQuintals"] = remaining
@@ -476,7 +476,7 @@ async def pay_advance(purchase_id: str, body: AdvanceIn, uid: str = Depends(curr
         type="payment_received",
         title="Advance received / एडवांस मिला",
         body=f"₹{body.amount} for {purchase['crop']}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -493,7 +493,7 @@ async def schedule_pickup(purchase_id: str, body: PickupIn, uid: str = Depends(c
         type="pickup_scheduled",
         title="Pickup scheduled / पिकअप तय हुआ",
         body=f"{purchase['crop']} — {(body.model_dump().get('date') or '')}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -508,7 +508,7 @@ async def dispatch_purchase(purchase_id: str, uid: str = Depends(current_user_id
         type="dispatched",
         title="Vehicle dispatched / गाड़ी रवाना",
         body=f"{purchase['crop']} — {purchase['quantity']} {purchase['unit']}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -523,7 +523,7 @@ async def deliver_purchase(purchase_id: str, uid: str = Depends(current_user_id)
         type="delivered",
         title="Marked delivered / डिलीवर हुआ",
         body=f"{purchase['crop']} — share the handover OTP now",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
 
@@ -544,6 +544,6 @@ async def cancel_purchase(purchase_id: str, body: CancelIn, uid: str = Depends(c
         type="booking_cancelled",
         title="Booking cancelled / बुकिंग रद्द",
         body=f"{purchase['crop']} — {body.reason or 'no reason given'}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)

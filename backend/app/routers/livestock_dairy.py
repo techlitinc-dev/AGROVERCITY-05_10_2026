@@ -24,6 +24,7 @@ from app.services.ai import config_store, decision_log, gateway, question_sets
 from app.services.ai.privacy import build_adulteration_state
 from app.services.billing import entitlement_guard, record_usage, require_entitlement
 from app.services.notifications import send_fcm_to_user
+from app.services.rating_prompts import open_rating_prompt
 from app.services.settlements import create_razorpayx_payout
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services import kyc as kyc_service
@@ -914,6 +915,8 @@ async def update_sale_order_status(order_id: str, body: MilkSaleOrderStatusIn, u
     doc["status"] = body.status
     if body.status == "delivered":
         doc["deliveredAt"] = _now()
+        # WS-03: buyer rates the dairy center on delivered collection order.
+        await open_rating_prompt(doc.get("buyerId"), doc.get("centerId") or uid, order_id, "dairy_collection")
     doc["updatedAt"] = _now()
     await set_doc("milk_sale_orders", order_id, doc)
     return doc

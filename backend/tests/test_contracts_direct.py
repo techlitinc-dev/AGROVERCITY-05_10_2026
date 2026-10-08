@@ -112,7 +112,7 @@ async def test_buyer_creates_targeted_contract(client, user_store):
     assert "Shree Foods Pvt Ltd" in notes[0]["body"]
     assert "Tomato" in notes[0]["body"]
     assert "876543210" not in notes[0]["body"]  # no phone numbers
-    assert notes[0]["data"]["path"] == f"/dashboard/p/myContracts/{doc['id']}"
+    assert notes[0]["data"]["deepLink"] == f"/dashboard/p/myContracts/{doc['id']}"
     # create does not mutate the farmer token's doc
     assert user_store["users/uid-f1"]["id"] == "uid-f1"
 
@@ -412,7 +412,7 @@ async def test_deliveries_idempotent_and_purchase_shape(client, user_store):
     assert stored["deliveries"] == [{"slotDate": "2026-10-07", "purchaseId": purchase_id}]
     assert stored["deliveriesGenerated"] == 1
     notes = _notifications_for(user_store, "uid-f1")
-    assert any(n["type"] == "booking_confirmed" and n["data"]["path"] == f"/dashboard/p/purchases/{purchase_id}" for n in notes)
+    assert any(n["type"] == "booking_confirmed" and n["data"]["deepLink"] == f"/dashboard/p/purchases/{purchase_id}" for n in notes)
 
     # second call with same slot is idempotent → 200 with the same purchase
     resp = await client.post(

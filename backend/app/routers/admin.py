@@ -2,10 +2,11 @@
 from datetime import datetime, timezone
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.core.db import get_doc, set_doc, query
 from app.core.deps import admin_action, admin_user
+from app.core.pagination import fetch_page
 from app.models.loans import LoanStatus
 from app.routers.analytics import _line_factor, last_12_months, month_key
 from app.services import kyc as kyc_service
@@ -510,4 +511,97 @@ async def list_flagged_rates(user: dict = Depends(admin_user)):
     ]
     flagged.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
     return {"data": flagged, "total": len(flagged)}
+
+
+# ---------------------------------------------------------------------------
+# WS-01 — UGC moderation queue (phase-07 console renders this)
+# ---------------------------------------------------------------------------
+@router.get("/moderation-queue")
+async def list_moderation_queue(
+    cursor: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    user: dict = Depends(admin_user),
+):
+    """Open UGC items flagged by `content.moderation.v1`, newest first."""
+    page = await fetch_page(
+        "moderation_queue",
+        [("status", "==", "open")],
+        order_field="createdAt",
+        descending=True,
+        cursor=cursor,
+        page_size=limit,
+    )
+    return {"data": page["items"], "nextCursor": page["nextCursor"]}
+
+
+@router.get("/fraud-queue")
+async def list_fraud_queue(
+    cursor: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    user: dict = Depends(admin_user),
+):
+    """Open fraud holds flagged by `trust.fraud.v1`, newest first (WS-03)."""
+    page = await fetch_page(
+        "fraud_queue",
+        [("status", "==", "open")],
+        order_field="createdAt",
+        descending=True,
+        cursor=cursor,
+        page_size=limit,
+    )
+    return {"data": page["items"], "nextCursor": page["nextCursor"]}
+
+
+# ---------------------------------------------------------------------------
+# WS-07 — locale translation approvals (M32)
+# ---------------------------------------------------------------------------
+class LocaleApprovalIn(BaseModel):
+    locale: str
+    key: str
+    action: str = Field(..., description="approve | reject")
+
+
+@router.get("/locale-drafts")
+async def list_locale_drafts(
+    locale: str = Query(...),
+    cursor: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    user: dict = Depends(admin_user),
+):
+    """Pending AI translation drafts for a locale (WS-07)."""
+    page = await fetch_page(
+        "locale_approvals",
+        [("locale", "==", locale), ("status", "==", "pending")],
+        order_field="key",
+        descending=False,
+        cursor=cursor,
+        page_size=limit,
+    )
+    return {"data": page["items"], "nextCursor": page["nextCursor"]}
+
+
+@router.post("/locale-approvals")
+async def set_locale_approval(
+    body: LocaleApprovalIn,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    user: dict = Depends(admin_action("LOCALE_APPROVAL")),
+):
+    if body.action not in ("approve", "reject"):
+        _error(422, "VALIDATION_ERROR", "action must be approve or reject")
+    doc_id = f"{body.locale}__{body.key}"
+    doc = await get_doc("locale_approvals", doc_id)
+    if doc is None:
+        _error(404, "DRAFT_NOT_FOUND", "no draft for that locale/key")
+    now = datetime.now(timezone.utc).isoformat()
+    doc["status"] = "approved" if body.action == "approve" else "rejected"
+    doc["reviewedBy"] = user["uid"]
+    doc["reviewedAt"] = now
+    await set_doc("locale_approvals", doc_id, doc)
+    return {
+        "locale": body.locale,
+        "key": body.key,
+        "status": doc["status"],
+        "reviewedBy": user["uid"],
+        "reviewedAt": now,
+    }
 

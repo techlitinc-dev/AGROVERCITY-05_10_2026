@@ -7,7 +7,7 @@ from app.core.deps import current_user_id
 from app.models.broker import DealMessageCreate, EvidenceKind, RespondRequest
 from app.routers.broker import MAX_EVIDENCE_PER_DEAL, _last10
 from app.routers.users import require_role
-from app.services import storage
+from app.services import blocks, storage
 from app.services.notify import notify_user
 from app.services.users import get_user
 
@@ -43,11 +43,11 @@ async def _load_deal(user: dict, deal_id: str) -> dict:
     return doc
 
 
-async def _notify(uid: str | None, *, type: str, title: str, body: str, path: str | None = None):
+async def _notify(uid: str | None, *, type: str, title: str, body: str, deepLink: str | None = None):
     if not uid:
         return
     try:
-        await notify_user(uid, type=type, title=title, body=body, path=path)
+        await notify_user(uid, type=type, title=title, body=body, deepLink=deepLink)
     except Exception:
         pass  # notifications are best-effort — never break the deal flow
 
@@ -59,9 +59,13 @@ async def list_deals(
     pageSize: int = 20,
     ctx: tuple = Depends(_farmer_user),
 ):
-    user, _ = ctx
+    user, uid = ctx
     docs = await query("broker_deals", [], limit=1000)
     docs = [d for d in docs if _matches(user, d)]
+    # WS-03 task 3.3 — hide deals whose broker has a block relationship with the viewer.
+    hidden = await blocks.hidden_ids(uid)
+    if hidden:
+        docs = [d for d in docs if d.get("brokerId") not in hidden]
 
     if status:
         docs = [d for d in docs if d.get("status") == status]
@@ -123,7 +127,7 @@ async def send_deal_message(deal_id: str, body: DealMessageCreate, ctx: tuple = 
         type="deal_counter_offer",
         title="Counter-offer / काउंटर ऑफर",
         body=body_text,
-        path=DEAL_PATH.format(deal_id),
+        deepLink=DEAL_PATH.format(deal_id),
     )
     return doc
 
@@ -155,7 +159,7 @@ async def respond_to_deal(deal_id: str, body: RespondRequest, ctx: tuple = Depen
             type="deal_accepted",
             title="Farmer accepted / किसान ने स्वीकारा",
             body=f"{doc.get('commodity', '')} — {doc.get('quantityQuintals', 0)}q @ ₹{doc.get('agreedRate', 0)}/quintal",
-            path=DEAL_PATH.format(deal_id),
+            deepLink=DEAL_PATH.format(deal_id),
         )
     return doc
 

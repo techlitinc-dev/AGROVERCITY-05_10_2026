@@ -35,6 +35,7 @@ from app.services.billing import effective_plan, entitlement_guard, record_usage
 from app.services.chat import ensure_transport_room
 from app.services.notifications import send_fcm_to_user
 from app.services.notify import notify_user
+from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
 
@@ -742,7 +743,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
                     type="chat_unlocked",
                     title="Chat unlocked / चैट खुली",
                     body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
-                    path=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                    deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
                 )
     elif body.status == "enRoute":
         await notify_user(
@@ -750,7 +751,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_enroute",
             title="Vehicle en route / गाड़ी निकली",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {booking.get('vehicleNo') or 'vehicle'} is heading to pickup",
-            path=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     elif body.status == "delivered":
         await notify_user(
@@ -758,7 +759,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_delivered",
             title="Delivered / डिलीवर हुआ",
             body="Proof of delivery filed — inspect and rate your transporter",
-            path=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     return booking
 
@@ -853,6 +854,10 @@ async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = 
         "otpVerified": True,
     }
     booking["status"] = "delivered"
+    # WS-03: shipper rates the transporter on delivery completion.
+    await open_rating_prompt(
+        booking.get("userId"), booking.get("transporterId"), booking_id, "transport_delivery"
+    )
     waypoints = booking.get("waypointsLog", [])
     waypoints.append({
         "waypoint": "delivered",
@@ -878,7 +883,7 @@ async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = 
         type="trip_delivered",
         title="Delivered / डिलीवर हुआ",
         body="Proof of delivery verified with OTP — inspect and rate your transporter",
-        path=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
     )
     return booking
 
@@ -929,7 +934,7 @@ async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str =
                 type="chat_unlocked",
                 title="Chat unlocked / चैट खुली",
                 body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
-                path=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
             )
     return booking
 
@@ -985,7 +990,7 @@ async def cancel_booking(booking_id: str, body: RejectBookingRequest, uid: str =
             type="booking_cancelled",
             title="Booking cancelled / बुकिंग रद्द",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {body.reason}",
-            path=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     return booking
 
@@ -1216,7 +1221,7 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
                 type="chat_unlocked",
                 title="Chat unlocked / चैट खुली",
                 body=f"{booking_doc.get('commodity') or 'Trip'} — coordinate the pickup in-app",
-                path=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
             )
     return {"booking": booking_doc, "load": load}
 
@@ -1264,7 +1269,7 @@ async def update_trip_location(booking_id: str, body: TripLocationUpdate, uid: s
             type="trip_milestone",
             title="Trip update / यात्रा अपडेट",
             body=f"{body.waypointLabel or body.waypoint} — {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-            path=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     return {"bookingId": booking_id, "location": location_data}
 
@@ -1378,7 +1383,7 @@ async def record_weighbridge_slip(booking_id: str, body: WeighbridgeSlipRequest,
         type="weighbridge_recorded",
         title="Weighbridge slip / वेब्रिज स्लिप",
         body=f"Net {net_weight} kg recorded for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-        path=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
     )
     return slip_doc
 
@@ -1630,7 +1635,7 @@ async def create_damage_dispute(
             type="damage_dispute_opened",
             title="Damage dispute / नुकसान विवाद",
             body=f"Claim of ₹{body.claimPaisa / 100:.2f} filed on booking {booking_id}",
-            path=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     return doc
 

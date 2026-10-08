@@ -315,6 +315,7 @@ async def register_device(body: DeviceRegisterIn, uid: str = Depends(current_use
         token_hash,
         {
             "id": token_hash,
+            "token": body.fcmToken,
             "platform": body.platform,
             "locale": body.locale,
             "lastSeenAt": datetime.now(timezone.utc).isoformat(),

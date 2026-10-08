@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ModalSheet from '../../components/ModalSheet';
+import ReportBlockMenu from '../../components/ReportBlockMenu';
+import TrustBadge from '../../components/TrustBadge';
 import ConfirmSheet from '../../components/trade/ConfirmSheet';
 import CounterOfferForm from '../../components/trade/CounterOfferForm';
 import EmptyState from '../../components/trade/EmptyState';
@@ -129,6 +131,14 @@ export default function ChatRoomPage() {
   const sendError = (e: unknown) => {
     if (isApiError(e) && e.code === 'RATE_LIMITED') {
       toast(t('chatRateLimited'), { error: true });
+    } else if (isApiError(e) && e.code === 'CHAT_MODERATION_VIOLATION') {
+      // WS-01 strike notice — count comes from the error payload when present.
+      const count = e.fieldErrors?.count;
+      toast(count ? t('chat.strikeWarning', { count }) : t('chat.strikeWarning'), { error: true });
+    } else if (isApiError(e) && e.code === 'CHAT_MUTED') {
+      toast(t('chat.muted24h'), { error: true });
+    } else if (isApiError(e) && e.code === 'CHAT_SUSPENDED') {
+      toast(t('chat.suspended'), { error: true });
     } else if (isApiError(e) && e.code === 'CHAT_CLOSED') {
       setClosed(true);
       toast(t('chatClosedNote'), { error: true });
@@ -262,6 +272,7 @@ export default function ChatRoomPage() {
   // Offer rooms surface the closed state through the deal bar; the room-level
   // banner is the fallback when the offer itself failed to load.
   const showTerminalBanner = terminal && !(kind === 'offer' && offer !== null);
+  const counterpartyId = room ? (room.farmerId === uid ? room.buyerId : room.farmerId) : undefined;
 
   return (
     <ToolShell toolId={toolId} backTo={backTo}>
@@ -288,6 +299,7 @@ export default function ChatRoomPage() {
                   {room.counterpartyName ??
                     (room.farmerId === uid ? room.buyerName : room.farmerName)}
                 </span>
+                <TrustBadge tier={room.counterpartyTrustTier} />
                 <span
                   className="trade-pill"
                   style={{
@@ -306,6 +318,7 @@ export default function ChatRoomPage() {
                           : 'chatsPurchaseTag'
                   )}
                 </span>
+                <ReportBlockMenu userId={counterpartyId} />
               </div>
               {room.crop ? (
                 <div className="trade-card-row">

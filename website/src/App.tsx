@@ -1,179 +1,182 @@
-import { useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, useEffect, type ComponentType } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { fetchMe } from './lib/api/auth';
 import { isApiError } from './lib/api/client';
+import { track } from './lib/analytics';
+import { loadLocale } from './lib/i18n/loadLocale';
+import { useT } from './lib/i18n';
 import { useOnboardingStore } from './stores/onboarding';
 import { useDashboardStore } from './stores/dashboard';
 import { useSessionStore } from './stores/session';
+
+// Eager: splash / auth / legal render before the app shell is warmed.
 import Splash from './views/Splash';
 import AuthView from './views/auth/AuthView';
-import RegisterWizard from './views/auth/RegisterWizard';
-import DashboardHome from './views/dashboard/DashboardHome';
-import PlaceholderPage from './views/dashboard/PlaceholderPage';
-import ProfilesPage from './views/dashboard/ProfilesPage';
-import SearchResultsPage from './views/dashboard/SearchResultsPage';
-import ToolPage from './views/dashboard/ToolPage';
 import LegalPage from './views/legal/LegalPage';
-import FarmMap from './views/onboarding/FarmMap';
-import LanguageSelect from './views/onboarding/LanguageSelect';
-import ProfileSelect from './views/onboarding/ProfileSelect';
-import {
-  ChatRoomPage,
-  DemandForm,
-  LotDetailPage,
-  LotForm,
-  MandiChartsPage,
-  OfferDetailPage,
-  PriceAlertsPage,
-  PurchaseDetailPage,
-} from './views/trade';
-import { LoadDetailPage, LoadForm, TripPage, VehicleForm } from './views/transport';
-import {
-  AdvisoryHubPage,
-  CropPlannerPage,
-  DiseaseScanPage,
-} from './views/advisory';
-import { SchemeDetailPage } from './views/schemes';
-import { LandRecordDetailPage } from './views/land';
-import { FpoMachineryPage, FpoPoolsPage } from './views/fpo';
-import { GradingPage, MyBookingsPage, ReceiptsVaultPage } from './views/postharvest';
-import { WaterHomePage } from './views/water';
-import { ClimateHomePage } from './views/climate';
-import { RewardsStorePage } from './views/rewards';
-import { ReferralHubPage } from './views/referrals';
-import { WomenHubPage } from './views/women';
-import { BiofuelPage, NgoDirectoryPage } from './views/trees';
-import {
-  CreditScorePage,
-  EmiCalculatorPage,
-  LoanMarketplacePage,
-  LoanStatusPage,
-  LoanWizardPage,
-} from './views/finance';
-import ToolShell from './components/trade/ToolShell';
-import {
-  AddressBookPage,
-  CartPage,
-  CheckoutPage,
-  OrderDetailPage as MarketplaceOrderDetailPage,
-  OrdersPage as MarketplaceOrdersPage,
-  ProductDetailPage,
-  ProductFormPage,
-  ReturnsPage,
-  SellerProductsPage,
-  WishlistPage,
-} from './views/marketplace';
-import { DealDetailPage, DealFormPage } from './views/broker';
-import {
-  ContractDetailPage,
-  ContractFormPage,
-  DemandDetailPage,
-  TeamPage,
-} from './views/directbuyer';
-import {
-  ColdStorageDirectoryPage,
-  FarmerClaimIntimatePage,
-  FarmerClaimTrackerPage,
-  FarmerContractDetailPage,
-  FarmerDealDetailPage,
-  LoanTrackingPage,
-  MyStorageBookingsPage,
-  WarehouseReceiptPage,
-} from './views/farmer';
-import { LoanDetailPage } from './views/bank';
-import {
-  ClaimDetailPage,
-  ClaimsQueuePage,
-  DisbursePage,
-  InsuranceHubPage,
-  PolicyReviewPage,
-  RatesPage as InsuranceRatesPage,
-  SurveyorsPage,
-} from './views/insurance';
-import {
-  BookingsQueuePage,
-  ChambersPage,
-  FacilitiesPage,
-  InwardRegisterPage,
-  ReleasePage,
-  UtilizationPage,
-} from './views/coldstorage';
-// Deep-routes routed alongside registries (LANDLORD_PAGES, EQUIPMENT_PAGES)
-import {
-  LandAnalyticsPageRoute,
-  LeasesPageRoute,
-  ListingsPageRoute,
-  ListingWizardRoute,
-  PlotsPageRoute,
-  RequestsInboxPageRoute,
-  RentTrackerPageRoute,
-  Vault712PageRoute,
-} from './views/landlord';
-import {
-  BookingQueuePageRoute,
-  DamageClaimsPageRoute,
-  DispatchPageRoute,
-  EquipmentSlotsPageRoute,
-  FleetPageRoute,
-  MaintenancePageRoute,
-  OwnerOverviewPageRoute,
-  RoiAnalyticsPageRoute,
-} from './views/equipment';
-import {
-  BatchDetailPage,
-  CollectionEntryPage,
-  CollectionsPage,
-  CustomerFormPage,
-  CustomersPage,
-  DairyConsoleHome,
-  MemberFormPage,
-  MemberStatementPage,
-  MembersPage,
-  MyDairyPage,
-  OrderDetailPage,
-  OrdersPage,
-  PaymentsPage,
-  RateChartPage,
-  ReportsPage,
-  StockPage,
-} from './views/dairy';
-import { AnalyticsPage } from './views/dairy';
-import { FarmerRfqsPage, BidComparePage } from './views/dairyMarket';
-import {
-  AdoptionsPage,
-  ByproductsPage,
-  CattleDetailPage,
-  CattleFormPage,
-  CattlePage,
-  DonationsPage,
-  ExpensesPage,
-  GaushalaAnalyticsPage,
-  GaushalaConsoleHome,
-  GaushalaTransparencyPage,
-  ReceiptsPage,
-} from './views/gaushala';
-import {
-  AppointmentsPage,
-  CampaignDetailPage,
-  CampaignsPage,
-  PrescriptionsPage,
-  VetFormPage,
-  VetsPage,
-} from './views/vetnet';
-import { AnimalDetailPage, AnimalFormPage, AnimalsHomePage } from './views/animals';
-// Phase-04 knowledge & consumer deep routes (WS-01…WS-05)
-import {
-  CertificatePage,
-  CourseDetailPage,
-  CoursePlayerPage,
-  PurchaseSheet,
-  SkillPassportPage,
-  VerifyCertificatePage,
-} from './views/academy';
-import { WorkshopsPage } from './views/gyan';
-import { NewsDetailPage } from './views/news';
-import { ChannelPlayerPage } from './views/channels';
-import { InspectionPage, StorefrontPage } from './views/customer';
+
+// Route-level code splitting (WS-06 task 6.13) — heavy persona/module views
+// load on demand so the first-load bundle stays under 400 KB.
+const RegisterWizard = lazy(() => import('./views/auth/RegisterWizard'));
+const DashboardHome = lazy(() => import('./views/dashboard/DashboardHome'));
+const PlaceholderPage = lazy(() => import('./views/dashboard/PlaceholderPage'));
+const ProfilesPage = lazy(() => import('./views/dashboard/ProfilesPage'));
+const SearchResultsPage = lazy(() => import('./views/dashboard/SearchResultsPage'));
+const ToolPage = lazy(() => import('./views/dashboard/ToolPage'));
+const ChatsHubPage = lazy(() => import('./views/chat/ChatsHubPage'));
+const ModerationQueuePage = lazy(() => import('./views/admin/ModerationQueuePage'));
+const FraudQueuePage = lazy(() => import('./views/admin/FraudQueuePage'));
+const LocaleReviewPage = lazy(() => import('./views/admin/LocaleReviewPage'));
+const MetricsPage = lazy(() => import('./views/admin/MetricsPage'));
+const NotificationPrefsPage = lazy(() => import('./views/settings/NotificationPrefsPage'));
+const ConsentCenterPage = lazy(() => import('./views/settings/ConsentCenterPage'));
+const DeleteAccountPage = lazy(() => import('./views/settings/DeleteAccountPage'));
+const HelpCenterPage = lazy(() => import('./views/support/HelpCenterPage'));
+const FarmMap = lazy(() => import('./views/onboarding/FarmMap'));
+const LanguageSelect = lazy(() => import('./views/onboarding/LanguageSelect'));
+const ProfileSelect = lazy(() => import('./views/onboarding/ProfileSelect'));
+const ToolShell = lazy(() => import('./components/trade/ToolShell'));
+
+const named = <K extends string>(loader: () => Promise<Record<string, unknown>>, name: K) =>
+  lazy(() => loader().then((mod) => ({ default: mod[name] as ComponentType })));
+
+const ChatRoomPage = named(() => import('./views/trade'), 'ChatRoomPage');
+const DemandForm = named(() => import('./views/trade'), 'DemandForm');
+const LotDetailPage = named(() => import('./views/trade'), 'LotDetailPage');
+const LotForm = named(() => import('./views/trade'), 'LotForm');
+const MandiChartsPage = named(() => import('./views/trade'), 'MandiChartsPage');
+const OfferDetailPage = named(() => import('./views/trade'), 'OfferDetailPage');
+const PriceAlertsPage = named(() => import('./views/trade'), 'PriceAlertsPage');
+const PurchaseDetailPage = named(() => import('./views/trade'), 'PurchaseDetailPage');
+const LoadDetailPage = named(() => import('./views/transport'), 'LoadDetailPage');
+const LoadForm = named(() => import('./views/transport'), 'LoadForm');
+const TripPage = named(() => import('./views/transport'), 'TripPage');
+const VehicleForm = named(() => import('./views/transport'), 'VehicleForm');
+const AdvisoryHubPage = named(() => import('./views/advisory'), 'AdvisoryHubPage');
+const CropPlannerPage = named(() => import('./views/advisory'), 'CropPlannerPage');
+const DiseaseScanPage = named(() => import('./views/advisory'), 'DiseaseScanPage');
+const SchemeDetailPage = named(() => import('./views/schemes'), 'SchemeDetailPage');
+const LandRecordDetailPage = named(() => import('./views/land'), 'LandRecordDetailPage');
+const FpoMachineryPage = named(() => import('./views/fpo'), 'FpoMachineryPage');
+const FpoPoolsPage = named(() => import('./views/fpo'), 'FpoPoolsPage');
+const GradingPage = named(() => import('./views/postharvest'), 'GradingPage');
+const MyBookingsPage = named(() => import('./views/postharvest'), 'MyBookingsPage');
+const ReceiptsVaultPage = named(() => import('./views/postharvest'), 'ReceiptsVaultPage');
+const WaterHomePage = named(() => import('./views/water'), 'WaterHomePage');
+const ClimateHomePage = named(() => import('./views/climate'), 'ClimateHomePage');
+const RewardsStorePage = named(() => import('./views/rewards'), 'RewardsStorePage');
+const ReferralHubPage = named(() => import('./views/referrals'), 'ReferralHubPage');
+const WomenHubPage = named(() => import('./views/women'), 'WomenHubPage');
+const BiofuelPage = named(() => import('./views/trees'), 'BiofuelPage');
+const NgoDirectoryPage = named(() => import('./views/trees'), 'NgoDirectoryPage');
+const CreditScorePage = named(() => import('./views/finance'), 'CreditScorePage');
+const EmiCalculatorPage = named(() => import('./views/finance'), 'EmiCalculatorPage');
+const LoanMarketplacePage = named(() => import('./views/finance'), 'LoanMarketplacePage');
+const LoanStatusPage = named(() => import('./views/finance'), 'LoanStatusPage');
+const LoanWizardPage = named(() => import('./views/finance'), 'LoanWizardPage');
+const AddressBookPage = named(() => import('./views/marketplace'), 'AddressBookPage');
+const CartPage = named(() => import('./views/marketplace'), 'CartPage');
+const CheckoutPage = named(() => import('./views/marketplace'), 'CheckoutPage');
+const MarketplaceOrderDetailPage = named(() => import('./views/marketplace'), 'OrderDetailPage');
+const MarketplaceOrdersPage = named(() => import('./views/marketplace'), 'OrdersPage');
+const ProductDetailPage = named(() => import('./views/marketplace'), 'ProductDetailPage');
+const ProductFormPage = named(() => import('./views/marketplace'), 'ProductFormPage');
+const ReturnsPage = named(() => import('./views/marketplace'), 'ReturnsPage');
+const SellerProductsPage = named(() => import('./views/marketplace'), 'SellerProductsPage');
+const WishlistPage = named(() => import('./views/marketplace'), 'WishlistPage');
+const DealDetailPage = named(() => import('./views/broker'), 'DealDetailPage');
+const DealFormPage = named(() => import('./views/broker'), 'DealFormPage');
+const ContractDetailPage = named(() => import('./views/directbuyer'), 'ContractDetailPage');
+const ContractFormPage = named(() => import('./views/directbuyer'), 'ContractFormPage');
+const DemandDetailPage = named(() => import('./views/directbuyer'), 'DemandDetailPage');
+const TeamPage = named(() => import('./views/directbuyer'), 'TeamPage');
+const ColdStorageDirectoryPage = named(() => import('./views/farmer'), 'ColdStorageDirectoryPage');
+const FarmerClaimIntimatePage = named(() => import('./views/farmer'), 'FarmerClaimIntimatePage');
+const FarmerClaimTrackerPage = named(() => import('./views/farmer'), 'FarmerClaimTrackerPage');
+const FarmerContractDetailPage = named(() => import('./views/farmer'), 'FarmerContractDetailPage');
+const FarmerDealDetailPage = named(() => import('./views/farmer'), 'FarmerDealDetailPage');
+const LoanTrackingPage = named(() => import('./views/farmer'), 'LoanTrackingPage');
+const MyStorageBookingsPage = named(() => import('./views/farmer'), 'MyStorageBookingsPage');
+const WarehouseReceiptPage = named(() => import('./views/farmer'), 'WarehouseReceiptPage');
+const LoanDetailPage = named(() => import('./views/bank'), 'LoanDetailPage');
+const ClaimDetailPage = named(() => import('./views/insurance'), 'ClaimDetailPage');
+const ClaimsQueuePage = named(() => import('./views/insurance'), 'ClaimsQueuePage');
+const DisbursePage = named(() => import('./views/insurance'), 'DisbursePage');
+const InsuranceHubPage = named(() => import('./views/insurance'), 'InsuranceHubPage');
+const PolicyReviewPage = named(() => import('./views/insurance'), 'PolicyReviewPage');
+const InsuranceRatesPage = named(() => import('./views/insurance'), 'RatesPage');
+const SurveyorsPage = named(() => import('./views/insurance'), 'SurveyorsPage');
+const BookingsQueuePage = named(() => import('./views/coldstorage'), 'BookingsQueuePage');
+const ChambersPage = named(() => import('./views/coldstorage'), 'ChambersPage');
+const FacilitiesPage = named(() => import('./views/coldstorage'), 'FacilitiesPage');
+const InwardRegisterPage = named(() => import('./views/coldstorage'), 'InwardRegisterPage');
+const ReleasePage = named(() => import('./views/coldstorage'), 'ReleasePage');
+const UtilizationPage = named(() => import('./views/coldstorage'), 'UtilizationPage');
+const LandAnalyticsPageRoute = named(() => import('./views/landlord'), 'LandAnalyticsPageRoute');
+const LeasesPageRoute = named(() => import('./views/landlord'), 'LeasesPageRoute');
+const ListingsPageRoute = named(() => import('./views/landlord'), 'ListingsPageRoute');
+const ListingWizardRoute = named(() => import('./views/landlord'), 'ListingWizardRoute');
+const PlotsPageRoute = named(() => import('./views/landlord'), 'PlotsPageRoute');
+const RequestsInboxPageRoute = named(() => import('./views/landlord'), 'RequestsInboxPageRoute');
+const RentTrackerPageRoute = named(() => import('./views/landlord'), 'RentTrackerPageRoute');
+const Vault712PageRoute = named(() => import('./views/landlord'), 'Vault712PageRoute');
+const BookingQueuePageRoute = named(() => import('./views/equipment'), 'BookingQueuePageRoute');
+const DamageClaimsPageRoute = named(() => import('./views/equipment'), 'DamageClaimsPageRoute');
+const DispatchPageRoute = named(() => import('./views/equipment'), 'DispatchPageRoute');
+const EquipmentSlotsPageRoute = named(() => import('./views/equipment'), 'EquipmentSlotsPageRoute');
+const FleetPageRoute = named(() => import('./views/equipment'), 'FleetPageRoute');
+const MaintenancePageRoute = named(() => import('./views/equipment'), 'MaintenancePageRoute');
+const OwnerOverviewPageRoute = named(() => import('./views/equipment'), 'OwnerOverviewPageRoute');
+const RoiAnalyticsPageRoute = named(() => import('./views/equipment'), 'RoiAnalyticsPageRoute');
+const BatchDetailPage = named(() => import('./views/dairy'), 'BatchDetailPage');
+const CollectionEntryPage = named(() => import('./views/dairy'), 'CollectionEntryPage');
+const CollectionsPage = named(() => import('./views/dairy'), 'CollectionsPage');
+const CustomerFormPage = named(() => import('./views/dairy'), 'CustomerFormPage');
+const CustomersPage = named(() => import('./views/dairy'), 'CustomersPage');
+const DairyConsoleHome = named(() => import('./views/dairy'), 'DairyConsoleHome');
+const MemberFormPage = named(() => import('./views/dairy'), 'MemberFormPage');
+const MemberStatementPage = named(() => import('./views/dairy'), 'MemberStatementPage');
+const MembersPage = named(() => import('./views/dairy'), 'MembersPage');
+const MyDairyPage = named(() => import('./views/dairy'), 'MyDairyPage');
+const DairyOrderDetailPage = named(() => import('./views/dairy'), 'OrderDetailPage');
+const DairyOrdersPage = named(() => import('./views/dairy'), 'OrdersPage');
+const PaymentsPage = named(() => import('./views/dairy'), 'PaymentsPage');
+const RateChartPage = named(() => import('./views/dairy'), 'RateChartPage');
+const ReportsPage = named(() => import('./views/dairy'), 'ReportsPage');
+const StockPage = named(() => import('./views/dairy'), 'StockPage');
+const AnalyticsPage = named(() => import('./views/dairy'), 'AnalyticsPage');
+const FarmerRfqsPage = named(() => import('./views/dairyMarket'), 'FarmerRfqsPage');
+const BidComparePage = named(() => import('./views/dairyMarket'), 'BidComparePage');
+const AdoptionsPage = named(() => import('./views/gaushala'), 'AdoptionsPage');
+const ByproductsPage = named(() => import('./views/gaushala'), 'ByproductsPage');
+const CattleDetailPage = named(() => import('./views/gaushala'), 'CattleDetailPage');
+const CattleFormPage = named(() => import('./views/gaushala'), 'CattleFormPage');
+const CattlePage = named(() => import('./views/gaushala'), 'CattlePage');
+const DonationsPage = named(() => import('./views/gaushala'), 'DonationsPage');
+const ExpensesPage = named(() => import('./views/gaushala'), 'ExpensesPage');
+const GaushalaAnalyticsPage = named(() => import('./views/gaushala'), 'GaushalaAnalyticsPage');
+const GaushalaConsoleHome = named(() => import('./views/gaushala'), 'GaushalaConsoleHome');
+const GaushalaTransparencyPage = named(() => import('./views/gaushala'), 'GaushalaTransparencyPage');
+const GaushalaReceiptsPage = named(() => import('./views/gaushala'), 'ReceiptsPage');
+const AppointmentsPage = named(() => import('./views/vetnet'), 'AppointmentsPage');
+const CampaignDetailPage = named(() => import('./views/vetnet'), 'CampaignDetailPage');
+const CampaignsPage = named(() => import('./views/vetnet'), 'CampaignsPage');
+const PrescriptionsPage = named(() => import('./views/vetnet'), 'PrescriptionsPage');
+const VetFormPage = named(() => import('./views/vetnet'), 'VetFormPage');
+const VetsPage = named(() => import('./views/vetnet'), 'VetsPage');
+const AnimalDetailPage = named(() => import('./views/animals'), 'AnimalDetailPage');
+const AnimalFormPage = named(() => import('./views/animals'), 'AnimalFormPage');
+const AnimalsHomePage = named(() => import('./views/animals'), 'AnimalsHomePage');
+const CertificatePage = named(() => import('./views/academy'), 'CertificatePage');
+const CourseDetailPage = named(() => import('./views/academy'), 'CourseDetailPage');
+const CoursePlayerPage = named(() => import('./views/academy'), 'CoursePlayerPage');
+const PurchaseSheet = named(() => import('./views/academy'), 'PurchaseSheet');
+const SkillPassportPage = named(() => import('./views/academy'), 'SkillPassportPage');
+const VerifyCertificatePage = named(() => import('./views/academy'), 'VerifyCertificatePage');
+const WorkshopsPage = named(() => import('./views/gyan'), 'WorkshopsPage');
+const NewsDetailPage = named(() => import('./views/news'), 'NewsDetailPage');
+const ChannelPlayerPage = named(() => import('./views/channels'), 'ChannelPlayerPage');
+const InspectionPage = named(() => import('./views/customer'), 'InspectionPage');
+const StorefrontPage = named(() => import('./views/customer'), 'StorefrontPage');
 
 /** Re-hydrate the persisted session on first load (mirrors mobile loadPersistedState). */
 function useSessionHydration() {
@@ -201,10 +204,26 @@ function useSessionHydration() {
   }, [accessToken, user, setUser, clear]);
 }
 
+/** Route-change analytics (WS-09 task 9.5). */
+function RouteAnalytics() {
+  const location = useLocation();
+  useEffect(() => {
+    track('screen_view', { path: location.pathname });
+  }, [location.pathname]);
+  return null;
+}
+
 export default function App() {
   useSessionHydration();
 
+  const t = useT();
   const isOnboarded = useOnboardingStore((s) => s.isOnboarded);
+  const language = useOnboardingStore((s) => s.language);
+
+  // Lazily load a non-en/hi locale dictionary when it is selected.
+  useEffect(() => {
+    void loadLocale(language);
+  }, [language]);
   const otpVerified = useOnboardingStore((s) => s.wizard.otpVerified);
   const hasToken = useSessionStore((s) => !!s.accessToken);
 
@@ -217,6 +236,14 @@ export default function App() {
 
   return (
     <div className="av-shell">
+      <RouteAnalytics />
+      <Suspense
+        fallback={
+          <div className="dash-content">
+            <p className="trade-hint">{t('appLoading')}</p>
+          </div>
+        }
+      >
       <Routes>
         <Route path="/" element={<Splash />} />
         <Route path="/auth" element={hasToken && isOnboarded ? <Navigate to="/dashboard" replace /> : <AuthView />} />
@@ -247,6 +274,50 @@ export default function App() {
         <Route
           path="/search"
           element={loggedIn ? <SearchResultsPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Chats hub (phase-06 WS-01) — all deal conversations with unread badges. */}
+        <Route
+          path="/chats"
+          element={loggedIn ? <ChatsHubPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Admin moderation queue (phase-06 WS-01; phase-07 restyles). */}
+        <Route
+          path="/admin/moderation-queue"
+          element={loggedIn ? <ModerationQueuePage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Admin fraud/hold queue (phase-06 WS-03; phase-07 restyles). */}
+        <Route
+          path="/admin/fraud-queue"
+          element={loggedIn ? <FraudQueuePage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Admin locale review (phase-06 WS-07; phase-07 restyles). */}
+        <Route
+          path="/admin/locale-review"
+          element={loggedIn ? <LocaleReviewPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Admin north-star metrics (phase-06 WS-09; phase-07 restyles). */}
+        <Route
+          path="/admin/metrics"
+          element={loggedIn ? <MetricsPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Notification preferences center (phase-06 WS-02 G6). */}
+        <Route
+          path="/settings/notifications"
+          element={loggedIn ? <NotificationPrefsPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Consent center + account deletion (phase-06 WS-04). */}
+        <Route
+          path="/settings/consents"
+          element={loggedIn ? <ConsentCenterPage /> : <Navigate to="/auth" replace />}
+        />
+        <Route
+          path="/settings/delete-account"
+          element={loggedIn ? <DeleteAccountPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* Help center + AI support agent (phase-06 WS-05). */}
+        <Route
+          path="/support"
+          element={loggedIn ? <HelpCenterPage /> : <Navigate to="/auth" replace />}
         />
         {/* Deep-linkable tool pages (backend DEEP_LINKS) resolve here:
             path="/dashboard/p/machineManage" (equipment),
@@ -751,11 +822,11 @@ export default function App() {
         />
         <Route
           path="/dairy/console/sales/orders"
-          element={loggedIn ? <OrdersPage /> : <Navigate to="/auth" replace />}
+          element={loggedIn ? <DairyOrdersPage /> : <Navigate to="/auth" replace />}
         />
         <Route
           path="/dairy/console/sales/orders/:orderId"
-          element={loggedIn ? <OrderDetailPage /> : <Navigate to="/auth" replace />}
+          element={loggedIn ? <DairyOrderDetailPage /> : <Navigate to="/auth" replace />}
         />
         <Route
           path="/dairy/console/stock"
@@ -804,7 +875,7 @@ export default function App() {
         />
         <Route
           path="/gaushala/console/receipts"
-          element={loggedIn ? <ReceiptsPage /> : <Navigate to="/auth" replace />}
+          element={loggedIn ? <GaushalaReceiptsPage /> : <Navigate to="/auth" replace />}
         />
         <Route
           path="/gaushala/console/analytics"
@@ -914,6 +985,7 @@ export default function App() {
         <Route path="/done" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </div>
   );
 }

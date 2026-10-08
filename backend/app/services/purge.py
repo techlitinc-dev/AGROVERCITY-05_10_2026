@@ -3,7 +3,7 @@ import logging
 from firebase_admin import auth as firebase_auth
 
 from app.core.config import settings
-from app.core.db import delete_doc, query, set_doc
+from app.core.db import delete_doc, get_doc, query, set_doc
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,12 @@ _SUBCOLLECTIONS = [
     "devices",
     "coin_ledger",
     "soil_tests",
+    # WS-04 task 4.9 — per-user subcollections added by later phases.
+    "chat_strikes",
+    "strikes",
+    "rating_prompts",
+    "expert_tickets",
+    "blocks",
 ]
 
 
@@ -42,6 +48,10 @@ async def purge_user(uid: str) -> dict:
     deleted = 0
     for name in _SUBCOLLECTIONS:
         deleted += await _delete_subcollection(f"users/{uid}/{name}")
+    # notification prefs is a single doc with a fixed id (no `id` field to key on).
+    if await get_doc(f"users/{uid}/notification_prefs", "current") is not None:
+        await delete_doc(f"users/{uid}/notification_prefs", "current")
+        deleted += 1
     leases = await query(f"users/{uid}/land_leases", [], limit=1000)
     for lease in leases:
         if "id" in lease:

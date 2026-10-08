@@ -1,0 +1,46 @@
+{"text": "nine 8 two five call karna", "expect": "violation"}
+{"text": "mera number nine eight seven six five call karo", "expect": "violation"}
+{"text": "whatsapp pe eight seven six five bhejo", "expect": "violation"}
+{"text": "call karo nau aath saat chhe", "expect": "violation"}
+{"text": "upi ke liye call karo nine eight", "expect": "violation"}
+{"text": "phone pe nine nine nine lagao", "expect": "violation"}
+{"text": "whatsapp nine eight seven six five four three two one zero", "expect": "violation"}
+{"text": "call me at nine eight seven six five four", "expect": "violation"}
+{"text": "my whatsapp is nine eight seven six", "expect": "violation"}
+{"text": "कॉल करो नौ आठ सात", "expect": "violation"}
+{"text": "व्हाट्सएप पे आठ सात छह भेजो", "expect": "violation"}
+{"text": "फोन नंबर नौ आठ सात छह", "expect": "violation"}
+{"text": "call karo, number hai eight seven six five", "expect": "violation"}
+{"text": "whatsapp kar lo nau aath", "expect": "violation"}
+{"text": "call nine eight seven six five four three", "expect": "violation"}
+{"text": "mera contact number nine eight seven", "expect": "violation"}
+{"text": "upi id ke liye call karo eight seven", "expect": "violation"}
+{"text": "phone karo nine eight seven six five", "expect": "violation"}
+{"text": "call me, nine-eight-seven-six", "expect": "violation"}
+{"text": "whatsapp number nau aath saat chhe paanch", "expect": "violation"}
+{"text": "call karna nau aath saat", "expect": "violation"}
+{"text": "mera number hai nine eight two call karo", "expect": "violation"}
+{"text": "50 quintal pyaz", "expect": "benign"}
+{"text": "call the mandi office", "expect": "benign"}
+{"text": "9 baje mandi jana hai", "expect": "benign"}
+{"text": "pyaz ka bhav kya hai", "expect": "benign"}
+{"text": "mandi bhav batao", "expect": "benign"}
+{"text": "I have 50 quintal onion", "expect": "benign"}
+{"text": "aaj mausam kaise hai", "expect": "benign"}
+{"text": "prices from last week", "expect": "benign"}
+{"text": "सात दिन में फसल कटाई", "expect": "benign"}
+{"text": "कॉल करो", "expect": "benign"}
+{"text": "do bori urea chahiye", "expect": "benign"}
+{"text": "one acre land bechna hai", "expect": "benign"}
+{"text": "चार लोग आए थे", "expect": "benign"}
+{"text": "five quintal gehu", "expect": "benign"}
+{"text": "mandi office kahan hai", "expect": "benign"}
+{"text": "rate kya hai aaj", "expect": "benign"}
+{"text": "bhav batayein", "expect": "benign"}
+{"text": "tractor ki keemat", "expect": "benign"}
+{"text": "khad kitna dalna hai", "expect": "benign"}
+{"text": "sabzi ka rate", "expect": "benign"}
+{"text": "onion price today", "expect": "benign"}
+{"text": "मंडी का भाव", "expect": "benign"}
+{"text": "3 baje meeting hai", "expect": "benign"}
+{"text": "मौसम पूर्वानुमान बताओ", "expect": "benign"}

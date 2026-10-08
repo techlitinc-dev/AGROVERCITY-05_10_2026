@@ -10,8 +10,11 @@ from app.core.config import settings
 from app.core.db import query, set_doc
 from app.models.settlements import SettlementRunIn
 from app.services.escrow import release_due_escrows
+from app.services.fraud_scan import run_fraud_scan
+from app.services.notify import run_notifications_digest
 from app.services.payments import list_razorpay_payments
 from app.services.rent_reminders import run_rent_reminders
+from app.services.search_index import reindex as reindex_search
 from app.services.settlements import process_payouts, run_settlements
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,27 @@ def _check_cron_secret(x_cron_secret: str | None):
 async def run_rent_reminders_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
     _check_cron_secret(x_cron_secret)
     return await run_rent_reminders()
+
+
+@router.post("/notifications_digest/run")
+async def run_notifications_digest_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-02 — drain queued digest notifications into one push per user."""
+    _check_cron_secret(x_cron_secret)
+    return await run_notifications_digest()
+
+
+@router.post("/fraud_scan")
+async def run_fraud_scan_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-03 (M8) — nightly fraud batch: soft-hold + queue high-risk accounts."""
+    _check_cron_secret(x_cron_secret)
+    return await run_fraud_scan()
+
+
+@router.post("/search_reindex")
+async def run_search_reindex_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WS-08 (M23) — re-embed changed search documents (idempotent + resumable)."""
+    _check_cron_secret(x_cron_secret)
+    return await reindex_search()
 
 
 @router.post("/settlements/run")
@@ -245,7 +269,7 @@ async def expire_stale_broker_offers(x_cron_secret: str | None = Header(None, al
             type="deal_offer_expired",
             title="Offer expired / ऑफर समाप्त",
             body=f"{deal.get('commodity', '')} — the farmer's response window closed",
-            path=f"/dashboard/p/broker/deals/{deal['id']}",
+            deepLink=f"/dashboard/p/broker/deals/{deal['id']}",
         )
         expired += 1
     return {"expired": expired}

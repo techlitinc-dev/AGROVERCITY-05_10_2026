@@ -581,7 +581,6 @@ const hiTrade: Record<string, string> = {
   chatRateLimited: 'संदेशों के बीच थोड़ा रुकें',
   chatUnreadBadge: '{count} नए',
   chatEmpty: 'अभी कोई संदेश नहीं — नमस्ते कहें 👋',
-
   // ---- Negotiation chat + chats list ----
   tool_chats: 'चैट',
   tool_chats_sub: 'सौदों की बातचीत',

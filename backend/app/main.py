@@ -45,6 +45,7 @@ from app.routers import (
     equipment_owner,
     finance,
     farmer_deals,
+    faq,
     fpo,
     gamification,
     gyan,
@@ -71,6 +72,7 @@ from app.routers import (
     purchases,
     purchase_settlement,
     payments,
+    privacy,
     user_products,
     pnl,
     ratings,
@@ -83,6 +85,7 @@ from app.routers import (
     settlements,
     soil_tests,
     specs,
+    support,
     buyer_org,
     post_harvest,
     price_alerts,
@@ -203,6 +206,9 @@ app.include_router(climate.router, prefix="/v1")
 app.include_router(post_harvest.router, prefix="/v1")
 app.include_router(price_alerts.router, prefix="/v1")
 app.include_router(sync.router, prefix="/v1")
+app.include_router(privacy.router, prefix="/v1")
+app.include_router(faq.router, prefix="/v1")
+app.include_router(support.router, prefix="/v1")
 app.include_router(tasks.router, prefix="/v1")
 app.include_router(chatbot.router, prefix="/v1")
 app.include_router(gamification.router, prefix="/v1")

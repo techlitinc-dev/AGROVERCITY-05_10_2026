@@ -6,6 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.ratings import RatingIn, RatingOut
+from app.services import chat_moderation
+from app.services.rating_prompts import close_prompt, pending_prompts
+from app.services.trust import refresh_trust_tier
 from app.services.users import get_user
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
@@ -15,6 +18,14 @@ router = APIRouter(prefix="/ratings", tags=["ratings"])
 # transition exists yet — set when one lands), equipment "booked" (the furthest
 # success status Day 8 implements; there is no completed transition yet)
 TERMINAL_STATUS = {"transport": "delivered", "vet": "completed", "equipment": "booked"}
+
+# WS-03 transaction kinds opened by rating prompts; the ratee is read from the
+# prompt doc the completion path wrote.
+PROMPT_KINDS = {
+    "lot_sale", "lot_purchase", "transport_delivery", "equipment_booking",
+    "land_lease", "dairy_collection", "course_enrollment", "contract_delivery",
+    "marketplace_order",
+}
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -32,6 +43,12 @@ async def provider_rating_fields(provider_id: str) -> dict:
 
 
 async def _resolve_provider(kind: str, booking_id: str, uid: str, target_role: str | None = None) -> str:
+    if kind in PROMPT_KINDS:
+        # WS-03: the completion path already opened a prompt with the ratee.
+        prompt = await get_doc(f"users/{uid}/rating_prompts", booking_id)
+        if prompt is None:
+            _error(404, "PROMPT_NOT_FOUND", "no rating prompt for this transaction")
+        return prompt["rateeUid"]
     if kind == "deal":
         # WS-05 step 8: two-sided deal ratings — the rater must be a deal
         # participant and the deal must be completed.
@@ -79,11 +96,23 @@ async def _resolve_provider(kind: str, booking_id: str, uid: str, target_role: s
     return booking["equipmentId"]
 
 
+@router.get("/pending")
+async def list_pending_ratings(uid: str = Depends(current_user_id)):
+    """Open rating prompts for the caller (WS-03 X8)."""
+    prompts = await pending_prompts(uid)
+    return {"data": prompts, "total": len(prompts)}
+
+
 @router.post("", status_code=201)
 async def create_rating(body: RatingIn, uid: str = Depends(current_user_id)):
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
+    # WS-03: free-text goes through the same moderation scan as chat.
+    if body.comment:
+        scan_result = chat_moderation.scan(body.comment)
+        if scan_result["violation"]:
+            _error(422, "RATING_TEXT_BLOCKED", "rating text contains a blocked pattern")
     provider_id = await _resolve_provider(body.bookingKind, body.bookingId, uid, body.targetRole)
     # WS-05 step 8: deal ratings are two-sided — one rating per PARTY per deal
     filters = [("bookingId", "==", body.bookingId), ("bookingKind", "==", body.bookingKind)]
@@ -116,6 +145,9 @@ async def create_rating(body: RatingIn, uid: str = Depends(current_user_id)):
         provider_id,
         {"id": provider_id, "ratingCount": count, "ratingAvg": avg},
     )
+    # WS-03: close the rater's prompt and refresh the ratee's trust tier.
+    await close_prompt(uid, body.bookingId)
+    await refresh_trust_tier(provider_id)
     return RatingOut(
         id=rating_id,
         providerId=provider_id,

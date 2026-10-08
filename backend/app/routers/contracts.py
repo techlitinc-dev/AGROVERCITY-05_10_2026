@@ -131,11 +131,11 @@ async def _assert_contract_entitlement(uid: str):
         billing._raise_over_limit(plan, "contracts_active", int(limit), len(active))
 
 
-async def _notify(uid: str | None, *, type: str, title: str, body: str, path: str | None = None):
+async def _notify(uid: str | None, *, type: str, title: str, body: str, deepLink: str | None = None):
     if not uid:
         return
     try:
-        await notify_user(uid, type=type, title=title, body=body, path=path)
+        await notify_user(uid, type=type, title=title, body=body, deepLink=deepLink)
     except Exception:
         pass  # notifications are best-effort — never break the contract flow
 
@@ -427,7 +427,7 @@ async def create_contract(body: ContractCreate, user: dict = Depends(_contract_b
         type="contract_offer_received",
         title="Contract offer / अनुबंध ऑफर",
         body=f"{buyer_company} offered a contract: {body.crop} × {body.quantityTotal}q",
-        path=f"/dashboard/p/myContracts/{contract_id}",
+        deepLink=f"/dashboard/p/myContracts/{contract_id}",
     )
     return ContractOut(**doc).model_dump(exclude_none=True)
 
@@ -566,7 +566,7 @@ async def cancel_contract(contract_id: str, body: ContractCancel, user: dict = D
         type="contract_cancelled",
         title="Contract cancelled / अनुबंध रद्द",
         body=f"{doc.get('buyerCompany', 'Buyer')} cancelled the {doc.get('crop', '')} contract",
-        path=f"/dashboard/p/myContracts/{contract_id}",
+        deepLink=f"/dashboard/p/myContracts/{contract_id}",
     )
     return ContractOut(**doc).model_dump(exclude_none=True)
 
@@ -592,7 +592,7 @@ async def decline_contract(contract_id: str, body: ContractDecline, user: dict =
         type="contract_declined",
         title="Contract declined / अनुबंध अस्वीकृत",
         body=f"{user.get('name', 'Farmer')} declined the {doc.get('crop', '')} contract",
-        path=f"/dashboard/p/contracts/{contract_id}",
+        deepLink=f"/dashboard/p/contracts/{contract_id}",
     )
     return ContractOut(**doc).model_dump(exclude_none=True)
 
@@ -640,7 +640,7 @@ async def accept_contract(
         type="contract_accepted",
         title="Contract accepted / अनुबंध स्वीकृत",
         body=f"{user.get('name', 'Farmer')} accepted the {contract.get('crop', '')} contract",
-        path=f"/dashboard/p/contracts/{contract_id}",
+        deepLink=f"/dashboard/p/contracts/{contract_id}",
     )
     return AcceptContractResponse(ok=True, status=contract["status"], contractId=contract_id)
 
@@ -757,7 +757,7 @@ async def create_delivery(
         type="booking_confirmed",
         title="Delivery booked / डिलीवरी बुक",
         body=f"{contract.get('crop', '')} — {qty}q on {body.slotDate}",
-        path=f"/dashboard/p/purchases/{purchase_id}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     response.status_code = 201
     return purchase

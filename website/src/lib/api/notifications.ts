@@ -14,7 +14,14 @@ export interface AppNotification {
   read: boolean;
   createdAt: string;
   /** Deep link into the app (e.g. /dashboard/p/purchases/pur_xxx). */
-  data?: { path?: string; type?: string } & Record<string, unknown>;
+  data?: { deepLink?: string; type?: string } & Record<string, unknown>;
+}
+
+export interface NotificationPrefs {
+  categories: Record<string, boolean>;
+  channels: Record<string, boolean>;
+  quietHoursOverride: boolean;
+  digestMode: boolean;
 }
 
 export async function listNotifications(params?: {
@@ -32,5 +39,25 @@ export async function markRead(notificationId: string): Promise<unknown> {
 
 export async function markAllRead(): Promise<{ updated: number }> {
   const { data } = await api.put<{ updated: number }>('/notifications/read-all');
+  return data;
+}
+
+/** Register a device (web push) token with the backend devices endpoint. */
+export async function registerDevice(
+  token: string,
+  platform: string,
+  locale = 'en'
+): Promise<unknown> {
+  const { data } = await api.post('/devices', { fcmToken: token, platform, locale });
+  return data;
+}
+
+export async function getPreferences(): Promise<NotificationPrefs> {
+  const { data } = await api.get<NotificationPrefs>('/notifications/preferences');
+  return data;
+}
+
+export async function putPreferences(prefs: NotificationPrefs): Promise<NotificationPrefs> {
+  const { data } = await api.put<NotificationPrefs>('/notifications/preferences', prefs);
   return data;
 }

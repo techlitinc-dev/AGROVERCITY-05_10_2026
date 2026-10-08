@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import LabeledTextField from '../../components/LabeledTextField';
 import ModalSheet from '../../components/ModalSheet';
+import ReportBlockMenu from '../../components/ReportBlockMenu';
 import EmptyState from '../../components/trade/EmptyState';
 import PriceWithBenchmark from '../../components/trade/PriceWithBenchmark';
 import QuantityStepper from '../../components/trade/QuantityStepper';
@@ -239,6 +240,7 @@ export default function LotDetailPage() {
         <div className="trade-detail-item">
           <div className="trade-detail-label">{t('lotDetailFarmer')}</div>
           <div className="trade-detail-value">{lot.farmerName ?? t('commonNotAvailable')}</div>
+          <ReportBlockMenu userId={lot.farmerId} />
         </div>
       </div>
 

@@ -7,6 +7,7 @@ from app.core.deps import current_user_id
 from app.models.marketplace import CartItemRequest, CartQuantityRequest
 from app.models.reviews import ReviewIn
 from app.routers.users import require_role
+from app.services import blocks
 from app.services.users import get_user
 
 router = APIRouter(tags=["marketplace"])
@@ -68,6 +69,10 @@ async def list_products(
     uid: str = Depends(_market_user),
 ):
     docs = await db_query("products", [], limit=1000)
+    # WS-03 task 3.2 — hide sellers with a block relationship (either direction).
+    hidden = await blocks.hidden_ids(uid)
+    if hidden:
+        docs = [d for d in docs if d.get("sellerId") not in hidden]
     if category:
         docs = [d for d in docs if category.lower() in d.get("category", "").lower()]
     if query:

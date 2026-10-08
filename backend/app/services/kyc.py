@@ -288,7 +288,7 @@ async def expiry_reminders() -> dict:
                 type="kyc_expiring",
                 title="KYC document expiring / दस्तावेज़ समाप्त हो रहा है",
                 body=f"{doc.get('type')} expires on {expiry.date().isoformat()}",
-                path="/profile/kyc",
+                deepLink="/profile/kyc",
             )
             reminded += 1
             if doc.get("reverifyRequired"):

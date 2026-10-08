@@ -83,11 +83,11 @@ async def _find_uid_by_phone(phone: str) -> str | None:
     return None
 
 
-async def _notify(uid: str | None, *, type: str, title: str, body: str, path: str | None = None):
+async def _notify(uid: str | None, *, type: str, title: str, body: str, deepLink: str | None = None):
     if not uid:
         return
     try:
-        await notify_user(uid, type=type, title=title, body=body, path=path)
+        await notify_user(uid, type=type, title=title, body=body, deepLink=deepLink)
     except Exception:
         pass  # notifications are best-effort — never break the deal flow
 
@@ -166,7 +166,7 @@ async def create_deal(
             f"{doc['brokerName']} offered ₹{body.agreedRate}/quintal for "
             f"{body.quantityQuintals}q {body.commodity}"
         ),
-        path=f"/dashboard/p/farmer/deals/{deal_id}",
+        deepLink=f"/dashboard/p/farmer/deals/{deal_id}",
     )
     return doc
 
@@ -209,7 +209,7 @@ async def update_deal(deal_id: str, body: DealUpdate, ctx: tuple = Depends(_brok
                 type="deal_contract_issued",
                 title="Contract ready / कॉन्ट्रैक्ट तैयार",
                 body=f"{commodity} — accept the contract to confirm the deal",
-                path=f"/dashboard/p/farmer/deals/{deal_id}",
+                deepLink=f"/dashboard/p/farmer/deals/{deal_id}",
             )
         elif new_status == "in_transit":
             await _notify(
@@ -217,7 +217,7 @@ async def update_deal(deal_id: str, body: DealUpdate, ctx: tuple = Depends(_brok
                 type="deal_in_transit",
                 title="Pickup done / गाड़ी रवाना",
                 body=f"{commodity} — pickup completed, goods in transit",
-                path=f"/dashboard/p/farmer/deals/{deal_id}",
+                deepLink=f"/dashboard/p/farmer/deals/{deal_id}",
             )
         elif new_status == "completed":
             await _notify(
@@ -228,7 +228,7 @@ async def update_deal(deal_id: str, body: DealUpdate, ctx: tuple = Depends(_brok
                     f"{commodity} — gross ₹{doc.get('grossAmount', 0)}, "
                     f"commission ₹{doc.get('commissionAmount', 0)}"
                 ),
-                path=f"/dashboard/p/farmer/deals/{deal_id}",
+                deepLink=f"/dashboard/p/farmer/deals/{deal_id}",
             )
     return doc
 

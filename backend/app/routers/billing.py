@@ -73,6 +73,21 @@ async def subscribe(body: SubscribeIn, uid: str = Depends(current_user_id)):
         "createdAt": _now(),
     }
     await set_doc("subscriptions", subscription["subId"], subscription)
+    # WS-09: plan upgrade analytics event (paid-plan conversion).
+    await set_doc(
+        "analytics_events",
+        f"upgrade_{subscription['subId']}",
+        {
+            "eventId": f"upgrade_{subscription['subId']}",
+            "userId": uid,
+            "persona": None,
+            "name": "plan_upgraded",
+            "props": {"plan": plan["planId"]},
+            "sessionId": None,
+            "clientTs": None,
+            "serverTs": _now(),
+        },
+    )
     return subscription
 
 

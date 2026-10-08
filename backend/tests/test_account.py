@@ -31,6 +31,11 @@ async def test_delete_purges_everything(client, user_store, monkeypatch):
     token = _seed_with_mpin(user_store)
     user_store["users/uid-1/diary_entries/e1"] = {"id": "e1", "title": "Urea"}
     user_store["users/uid-1/devices/d1"] = {"id": "d1", "platform": "android"}
+    # WS-04 task 4.9 — subcollections added by later phases must also purge.
+    user_store["users/uid-1/chat_strikes/s1"] = {"id": "s1", "kind": "phone"}
+    user_store["users/uid-1/rating_prompts/rp1"] = {"id": "rp1", "status": "open"}
+    user_store["users/uid-1/expert_tickets/t1"] = {"id": "t1", "status": "queued"}
+    user_store["users/uid-1/notification_prefs/current"] = {"digestMode": True}
     user_store["transport_bookings/b1"] = {"id": "b1", "userId": "uid-1", "fare": 800}
     resp = await client.request(
         "DELETE", "/v1/users/me", json={"mpin": "1234"}, headers=auth(token)
@@ -38,11 +43,15 @@ async def test_delete_purges_everything(client, user_store, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["deleted"] is True
-    assert body["purged"]["subcollectionsDeleted"] == 2
+    assert body["purged"]["subcollectionsDeleted"] == 6
     assert body["purged"]["financialAnonymized"] == 1
     assert "users/uid-1" not in user_store
     assert "users/uid-1/diary_entries/e1" not in user_store
     assert "users/uid-1/devices/d1" not in user_store
+    assert "users/uid-1/chat_strikes/s1" not in user_store
+    assert "users/uid-1/rating_prompts/rp1" not in user_store
+    assert "users/uid-1/expert_tickets/t1" not in user_store
+    assert "users/uid-1/notification_prefs/current" not in user_store
     delete_user.assert_called_once_with("uid-1")
     assert user_store["transport_bookings/b1"]["userId"] == "deleted:uid-1"
 

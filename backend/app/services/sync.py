@@ -13,12 +13,14 @@ from app.models.equipment import BookSlotRequest
 from app.models.fpo import JoinPoolRequest
 from app.models.livestock import VetBookIn
 from app.models.livestock_mgmt import AppointmentIn
+from app.models.user import UserUpdateRequest
 from app.routers import diary as diary_router
 from app.routers import equipment as equipment_router
 from app.routers import fpo as fpo_router
 from app.routers import insurance_claims as claims_router
 from app.routers import livestock as livestock_router
 from app.routers import livestock_vets as livestock_vets_router
+from app.routers import users as users_router
 from app.services import claims as claims_service
 from app.services.users import get_user
 
@@ -156,11 +158,17 @@ async def _handle_pool_join(uid: str, pool_id: str, body: dict) -> dict:
     return await fpo_router.join_pool(pool_id, JoinPoolRequest(**body), uid)
 
 
+async def _handle_profile_update(uid: str, _resource_id: str | None, body: dict) -> dict:
+    # WS-06 task 6.10/6.11: offline profile edits replay via PUT /v1/users/me.
+    return await users_router.put_me(UserUpdateRequest(**body), uid)
+
+
 # REPLAYABLE whitelist — the only paths /sync will execute
 _EXACT_HANDLERS = {
     "/v1/diary/entries": _handle_diary_create,
     "/v1/insurance/claims": _handle_claim_create,
     "/v1/livestock/appointments": _handle_appointment_create,
+    "/v1/users/me": _handle_profile_update,
 }
 _PREFIX_HANDLERS = (
     ("/v1/equipment/slots/", "/book", _handle_equipment_book),
@@ -218,12 +226,12 @@ async def dispatch(uid: str, op: dict) -> dict:
             "result": stored.get("result"),
             "replayed": False,
         }
-    if op.get("method", "").upper() != "POST":
+    if op.get("method", "").upper() not in ("POST", "PUT"):
         return {
             **base,
             "status": "error",
             "httpStatus": 400,
-            "error": _envelope_error("UNSUPPORTED_METHOD", "only POST ops are replayable"),
+            "error": _envelope_error("UNSUPPORTED_METHOD", "only POST/PUT ops are replayable"),
             "replayed": True,
         }
     handler, resource_id = _match(op.get("path", ""))

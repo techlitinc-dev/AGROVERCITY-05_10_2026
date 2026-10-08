@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import EmptyState from '../../components/trade/EmptyState';
 import ToolShell from '../../components/trade/ToolShell';
 import { toast } from '../../components/toast';
+import { getWebPushToken } from '../../lib/firebase';
+import { track } from '../../lib/analytics';
 import {
   listNotifications,
   markAllRead,
   markRead,
+  registerDevice,
   type AppNotification,
 } from '../../lib/api/notifications';
 import { useT } from '../../lib/i18n';
+import { useOnboardingStore } from '../../stores/onboarding';
 import '../../theme/trade.css';
 
 const fmtTime = (iso: string): string =>
@@ -43,10 +47,13 @@ const typeIcon = (type?: string): string => {
  */
 export default function NotificationsPage() {
   const t = useT();
+  const navigate = useNavigate();
+  const language = useOnboardingStore((s) => s.language);
 
   const [items, setItems] = useState<AppNotification[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [enablingPush, setEnablingPush] = useState(false);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -60,6 +67,13 @@ export default function NotificationsPage() {
   const hasUnread = items?.some((n) => !n.read) ?? false;
 
   const openItem = async (notification: AppNotification) => {
+    // WS-09 task 9.7 — notification open + deep-link completion funnel.
+    track('notification_opened', { notificationId: notification.id });
+    const deepLink = notification.data?.deepLink;
+    if (typeof deepLink === 'string' && deepLink) {
+      track('deep_link_completed', { notificationId: notification.id, deepLink });
+      navigate(deepLink);
+    }
     if (notification.read) return;
     setItems((prev) =>
       prev ? prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)) : prev
@@ -68,6 +82,23 @@ export default function NotificationsPage() {
       await markRead(notification.id);
     } catch {
       load();
+    }
+  };
+
+  const enablePush = async () => {
+    setEnablingPush(true);
+    try {
+      const token = await getWebPushToken();
+      if (!token) {
+        toast(t('notifPushDenied'), { error: true });
+        return;
+      }
+      await registerDevice(token, 'web', language || 'en');
+      toast(t('notifPushEnabled'));
+    } catch {
+      toast(t('actionFailed'), { error: true });
+    } finally {
+      setEnablingPush(false);
     }
   };
 
@@ -87,6 +118,14 @@ export default function NotificationsPage() {
   return (
     <ToolShell toolId="notifications">
       <div className="trade-actions" style={{ marginTop: 4 }}>
+        <button
+          type="button"
+          className="av-btn av-btn-ghost"
+          onClick={() => void enablePush()}
+          disabled={enablingPush}
+        >
+          {enablingPush ? <span className="av-spinner" aria-hidden /> : t('notifEnablePush')}
+        </button>
         <button
           type="button"
           className="av-btn av-btn-ghost"
@@ -140,10 +179,8 @@ export default function NotificationsPage() {
                 <div className="trade-notif-body">{notification.body}</div>
               ) : null}
               <div className="trade-notif-time">{fmtTime(notification.createdAt)}</div>
-              {notification.data?.path ? (
-                <Link className="av-link trade-notif-open" to={notification.data.path}>
-                  {t('chatOpenCta')} →
-                </Link>
+              {notification.data?.deepLink ? (
+                <span className="av-link trade-notif-open">{t('chatOpenCta')} →</span>
               ) : null}
             </div>
           </div>

@@ -6,6 +6,8 @@ independent per-group cursor pagination, the empty-query envelope error, and the
 empty (no-hit) response.
 """
 
+from app.routers.search import merge_hits
+from app.services import search_index
 from tests.test_diary import auth, seed_user
 
 GROUPS = ["schemes", "products", "news", "crops", "courses", "lots"]
@@ -215,3 +217,55 @@ async def test_search_invalid_cursor_returns_envelope_error(client, user_store):
     )
     assert resp.status_code == 400
     assert resp.json()["error"]["code"] == "INVALID_CURSOR"
+
+
+async def test_intent_routing_orders_group_first(client, user_store):
+    seed_search_store(user_store)
+    token = seed_user(user_store)
+
+    resp = await client.get("/v1/search", params={"q": "pyaz ka bhav"}, headers=auth(token))
+    assert resp.status_code == 200
+    groups = [k for k in resp.json() if k in GROUPS]
+    assert groups[0] == "lots"
+
+    resp = await client.get("/v1/search", params={"q": "PM-Kisan"}, headers=auth(token))
+    assert resp.status_code == 200
+    groups = [k for k in resp.json() if k in GROUPS]
+    assert groups[0] == "schemes"
+
+
+def test_merge_hits_ordering():
+    keyword_items = [{"id": "kw"}, {"id": "both"}]
+    semantic = [{"docId": "both", "score": 0.9}, {"docId": "sem", "score": 0.8}]
+    ordered = [hit["id"] for hit in merge_hits(keyword_items, semantic)]
+    assert ordered[0] == "both"   # keyword + cosine
+    assert ordered[1] == "kw"     # keyword-only
+    assert ordered[-1] == "sem"   # cosine-only
+
+
+async def test_reindex_idempotent(client, user_store, monkeypatch):
+    async def _embed(texts):
+        return [[1.0, 0.0, 0.0] for _ in texts]
+
+    monkeypatch.setattr(search_index.gateway, "embed", _embed)
+    seed_search_store(user_store)
+
+    first = await search_index.reindex(["schemes"])
+    assert first["schemes"] >= 1
+    second = await search_index.reindex(["schemes"])
+    assert second["schemes"] == 0
+
+
+async def test_shim_keyword_only(client, user_store, monkeypatch):
+    seed_search_store(user_store)
+    token = seed_user(user_store)
+
+    async def _boom(*args, **kwargs):
+        raise AssertionError("embedding path must not run on shim")
+
+    monkeypatch.setattr(search_index, "search_similar", _boom)
+    resp = await client.get("/v1/search", params={"q": "pyaz"}, headers=auth(token))
+    assert resp.status_code == 200
+    # A job route exists and runs.
+    resp = await client.post("/v1/jobs/search_reindex")
+    assert resp.status_code == 200

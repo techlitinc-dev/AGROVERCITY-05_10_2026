@@ -200,7 +200,6 @@ async def test_flag_off_no_annotation_and_sign_unchanged(client, user_store):
     before = len(_decisions(user_store))
     contract_id = (await _create_contract(client, buyer)).json()["id"]
     assert "attractiveness" not in _contract(user_store, contract_id)
-
     mine = (await client.get("/v1/contracts/mine?role=farmer", headers=auth(farmer))).json()
     row = next(d for d in mine["data"] if d["id"] == contract_id)
     assert "attractiveness" not in row
@@ -215,6 +214,8 @@ async def test_flag_off_no_annotation_and_sign_unchanged(client, user_store):
     assert acceptance["signatureData"] == ACCEPT_BODY["signatureData"]
     assert acceptance["consentTimestamp"] == ACCEPT_BODY["consentTimestamp"]
 
-    assert len(_decisions(user_store)) == before  # no ai_decisions rows written
+    # No contracts.attractiveness decisions are written with the module flag off
+    # (notification timing/copy decisions from the sign flow are unrelated).
+    assert len(_attractiveness_decisions(user_store)) == 0
     # FIXED_BODY fixture unchanged (guards against accidental mutation)
     assert FIXED_BODY["priceType"] == "fixed"
