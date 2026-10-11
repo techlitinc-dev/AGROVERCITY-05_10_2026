@@ -390,8 +390,15 @@ async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
         return _kyc_risk_answers(state)
     if question_set_id == "dispute.triage.v1":
         return _dispute_triage_answers(state)
-    if question_set_id in ("women.shg_readiness.v1", "churn.signal.v1", "agent.rule_match.v1"):
-        # Phase-08 WS-01: deterministic rules mirror the registered fallback_fn.
+    if question_set_id in (
+        "women.shg_readiness.v1",
+        "churn.signal.v1",
+        "agent.rule_match.v1",
+        "trade.offer_score.v1",
+        "weather.spray_window.v1",
+        "demand.forecast.v1",
+    ):
+        # Phase-08: deterministic rules mirror the registered fallback_fn.
         return question_sets.fallback_answers(question_set_id, state), 0.9
     record = _load_fixtures().get(question_set_id)
     if record is not None:

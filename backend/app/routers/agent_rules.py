@@ -1,8 +1,9 @@
 """M29 farmer standing-agent rules router (phase-08 WS-01).
 
-Vernacular rule text is parsed to a structured rule by `gateway.generate()`
-(one repair retry, deterministic regex fallback), reviewed by the user, then
-persisted. A fire only ever emits a confirm task — no auto-execution path.
+Vernacular rule text is parsed to a structured rule by
+`services/agent_rules.parse_rule()` (one repair retry, deterministic regex
+fallback), reviewed by the user, then persisted. A fire only ever emits a
+confirm task — no auto-execution path.
 """
 import json
 import re
@@ -13,7 +14,6 @@ from pydantic import BaseModel, Field
 from app.core.deps import current_user_id
 from app.core.pagination import InvalidCursor, fetch_page
 from app.services import agent_rules as rules_service, idempotency
-from app.services.ai import gateway
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -104,7 +104,7 @@ async def parse_rule(body: RuleParseIn, uid: str = Depends(current_user_id)):
         f'"action": str, "max_value_paisa": int, "summary": {{"en": str, "hi": str}}}}. '
         f"Module: {body.module}. Sentence: {body.text}"
     )
-    text = await gateway.generate(prompt, {"module": rules_service.MODULE, "json_schema": schema})
+    text = await rules_service.parse_rule(prompt, schema)
     parsed = fallback
     try:
         parsed = _coerce_parsed(json.loads(text), fallback, body.module)

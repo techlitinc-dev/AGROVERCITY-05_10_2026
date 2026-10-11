@@ -77,6 +77,10 @@ const enCashbook: Record<string, string> = {
   cbWorstMonth: 'Worst month',
   cbActivityNote: 'Activity entries are log-only — they never move money.',
   cbPhotos: 'Photos (optional)',
+  // ---- M28 receipt scan (phase-08 WS-01, task 1.19) ----
+  // The banner + failure strings are the shared receiptScan.* keys in en.ts.
+  cbReceiptScan: 'Scan a receipt',
+  cbReceiptScanning: 'Reading receipt…',
 };
 
 registerLocale('en', enCashbook);

@@ -53,7 +53,7 @@
   top: calc(100% + 6px);
   left: 0;
   min-width: 210px;
-  background: #fff;
+  background: var(--av-glass-fill);
   color: var(--av-title);
   border-radius: 14px;
   border: 1px solid var(--av-border-grey-soft);
@@ -125,7 +125,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #4ade80;
+  background: #5cd65c;
 }
 .dash-tray-pill.coins {
   background: rgba(234, 179, 8, 0.22);
@@ -177,13 +177,16 @@
   gap: 22px;
 }
 
-/* Farmer hero header */
+/* Farmer hero header — Verdant Glass: floats on the scene as a frosted pane. */
 .dash-hero {
   border-radius: 22px;
   padding: 24px;
-  color: #fff;
-  background: linear-gradient(120deg, #1b5e20, #43a047 60%, #2e7d32);
-  box-shadow: var(--av-shadow-glow);
+  color: var(--av-title);
+  background: var(--av-glass-card-bg);
+  border: 1px solid var(--av-glass-stroke);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: var(--av-shadow-card), var(--av-glass-highlight);
 }
 .dash-hero-top {
   display: flex;
@@ -286,7 +289,7 @@
 
 /* ---- Profile switcher bar ---- */
 .dash-switcher-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -325,7 +328,7 @@
   padding: 8px 14px;
   border-radius: 999px;
   border: 1.5px solid var(--av-border-grey);
-  background: #fff;
+  background: var(--av-glass-fill);
   font-family: var(--av-font);
   font-size: 13px;
   font-weight: 800;
@@ -336,7 +339,7 @@
 .dash-role-chip.active {
   background: linear-gradient(135deg, var(--av-primary), var(--av-green-dark));
   border-color: var(--av-green-dark);
-  color: #fff;
+  color: #16240f;
   box-shadow: var(--av-shadow-glow);
 }
 .dash-role-chip.add {
@@ -378,7 +381,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -436,13 +439,13 @@
   opacity: 0.85;
 }
 .dash-banner.hot {
-  background: linear-gradient(120deg, #fef3c7, #fde68a);
-  border-color: #fcd34d;
-  color: #92400e;
+  background: linear-gradient(120deg, rgba(251, 191, 36, 0.16), rgba(251, 191, 36, 0.4));
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #fbbf24;
 }
 .dash-banner.refer {
-  background: linear-gradient(120deg, #f5e9d7, #e8cba3);
-  border-color: #d6b98a;
+  background: linear-gradient(120deg, rgba(92, 214, 92, 0.18), rgba(92, 214, 92, 0.08));
+  border-color: rgba(92, 214, 92, 0.4);
   color: #7c4a03;
 }
 .dash-banner.buy {
@@ -453,7 +456,7 @@
 
 /* ---- Live placeholder card ---- */
 .dash-live-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px dashed var(--av-border-green-strong);
   border-radius: var(--av-radius-card);
   padding: 18px 20px;
@@ -513,7 +516,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -540,7 +543,7 @@
   color: var(--av-slate-1);
 }
 .dash-placeholder-body {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px dashed var(--av-border-green-strong);
   border-radius: var(--av-radius-card);
   padding: 26px;
@@ -560,7 +563,7 @@
   }
 }
 .dash-skeleton {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   padding: 18px;
@@ -628,7 +631,7 @@
   padding: 9px 10px;
   border-radius: 12px;
   border: 1.5px solid var(--av-border-grey-soft);
-  background: #fff;
+  background: var(--av-glass-fill);
   margin-bottom: 8px;
 }
 .dash-sheet-persona-row.active {
@@ -657,7 +660,7 @@
 }
 .dash-sheet-toggle {
   border: 1.5px solid var(--av-border-green);
-  background: #fff;
+  background: var(--av-glass-fill);
   color: var(--av-green-dark);
   border-radius: 999px;
   padding: 6px 14px;
@@ -669,7 +672,7 @@
 }
 .dash-sheet-toggle.linked {
   background: var(--av-green-dark);
-  color: #fff;
+  color: #16240f;
   border-color: var(--av-green-dark);
 }
 .dash-sheet-active-badge {
@@ -678,7 +681,7 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--av-primary);
-  color: #fff;
+  color: #16240f;
   margin-left: 6px;
 }
 .dash-sheet-mini-cards {
@@ -690,7 +693,7 @@
 .dash-sheet-mini-card {
   min-width: 120px;
   border: 1.5px solid var(--av-border-grey);
-  background: #fff;
+  background: var(--av-glass-fill);
   border-radius: 14px;
   padding: 12px;
   cursor: pointer;
@@ -735,7 +738,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -810,7 +813,7 @@
 }
 
 .dash-bottombar-tab:hover {
-  color: #ffffff;
+  color: var(--av-primary);
 }
 
 .dash-bottombar-iconpill {
@@ -835,7 +838,7 @@
 }
 
 .dash-bottombar-tab.is-active {
-  color: #ffffff;
+  color: var(--av-primary);
 }
 
 .dash-bottombar-tab.is-active .dash-bottombar-iconpill {
@@ -866,7 +869,7 @@
 
 .dash-aggregate-toggle {
   border: 1px solid #D8E3D3;
-  background: #fff;
+  background: var(--av-glass-fill);
   color: var(--av-slate-1);
   border-radius: 999px;
   padding: 8px 14px;
@@ -878,7 +881,7 @@
 .dash-aggregate-toggle.on {
   background: var(--av-primary, #43A047);
   border-color: var(--av-primary, #43A047);
-  color: #fff;
+  color: #16240f;
 }
 
 .dash-aggregate-hint {
@@ -908,12 +911,12 @@
 .dash-action-title {
   font-weight: 800;
   font-size: 15px;
-  color: #14532D;
+  color: #5cd65c;
 }
 
 .dash-action-sub {
   font-size: 12.5px;
-  color: #166534;
+  color: #5cd65c;
   margin-top: 2px;
 }
 
@@ -921,7 +924,7 @@
 .dash-task-open {
   border: none;
   background: var(--av-primary, #43A047);
-  color: #fff;
+  color: #16240f;
   border-radius: 999px;
   padding: 9px 14px;
   font-weight: 700;
@@ -941,8 +944,8 @@
   flex-direction: column;
   gap: 4px;
   text-align: left;
-  background: #FEF2F2;
-  border: 1px solid #FECACA;
+  background: rgba(242, 109, 91, 0.14);
+  border: 1px solid rgba(242, 109, 91, 0.4);
   border-radius: 14px;
   padding: 14px;
   cursor: pointer;
@@ -965,7 +968,7 @@
 
 .dash-urgent-sub {
   font-size: 12px;
-  color: #991B1B;
+  color: #f26d5b;
 }
 
 .dash-task-list {
@@ -978,7 +981,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1px solid #E5E7EB;
   border-radius: 14px;
   padding: 12px 14px;
@@ -995,7 +998,7 @@
 
 .dash-task-row.celebrate {
   animation: dash-pop 0.9s ease;
-  border-color: #86EFAC;
+  border-color: rgba(92, 214, 92, 0.4);
   background: #F0FDF4;
 }
 
@@ -1011,8 +1014,8 @@
   min-width: 26px;
   border-radius: 50%;
   border: 2px solid #A7B8A0;
-  background: #fff;
-  color: #fff;
+  background: var(--av-glass-fill);
+  color: #16240f;
   font-weight: 900;
   font-size: 13px;
   cursor: pointer;
@@ -1051,9 +1054,9 @@
   position: absolute;
   right: 14px;
   top: -10px;
-  background: #FEF9C3;
-  border: 1px solid #FDE68A;
-  color: #92400E;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
   font-size: 11.5px;
   font-weight: 800;
   border-radius: 999px;
@@ -1074,7 +1077,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1px solid #E5E7EB;
   border-radius: 14px;
   padding: 14px;
@@ -1093,7 +1096,7 @@
 .dash-module-count {
   font-size: 12px;
   font-weight: 800;
-  color: #B45309;
+  color: #fbbf24;
 }
 
 .dash-module-count.clear {
@@ -1125,7 +1128,7 @@
 .dash-money-value {
   font-size: 18px;
   font-weight: 800;
-  color: #14532D;
+  color: #5cd65c;
 }
 
 /* ---- AI badge + confidence gate (phase-01 WS-03) ---- */
@@ -1142,25 +1145,25 @@
 }
 
 .ai-badge-high {
-  background: #DCFCE7;
-  color: #166534;
-  border: 1px solid #86EFAC;
+  background: rgba(92, 214, 92, 0.16);
+  color: #5cd65c;
+  border: 1px solid rgba(92, 214, 92, 0.4);
 }
 
 .ai-badge-mid {
-  background: #FEF9C3;
-  color: #854D0E;
-  border: 1px solid #FDE68A;
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
 .ai-badge-low {
-  background: #F1F5F9;
-  color: #475569;
-  border: 1px solid #CBD5E1;
+  background: rgba(255, 255, 255, 0.08);
+  color: #a8bfae;
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .dash-action-card.confident {
-  border-color: #4ADE80;
+  border-color: #5cd65c;
   box-shadow: 0 6px 18px rgba(74, 222, 128, 0.18);
 }
 
@@ -1180,7 +1183,7 @@
   border-radius: 50%;
   border: none;
   background: var(--av-primary, #43A047);
-  color: #fff;
+  color: #16240f;
   font-size: 24px;
   cursor: pointer;
   box-shadow: 0 8px 22px rgba(67, 160, 71, 0.45);
@@ -1213,13 +1216,13 @@
 
 .km-bubble.user {
   align-self: flex-end;
-  background: #DCFCE7;
-  color: #14532D;
+  background: rgba(92, 214, 92, 0.16);
+  color: #5cd65c;
 }
 
 .km-bubble.bot {
   align-self: flex-start;
-  background: #F1F5F9;
+  background: rgba(255, 255, 255, 0.08);
   color: #1F2937;
 }
 
@@ -1253,8 +1256,8 @@
   display: flex;
   gap: 10px;
   align-items: center;
-  background: #FEF9C3;
-  border: 1px solid #FDE68A;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.4);
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 8px;
@@ -1267,10 +1270,53 @@
 .km-thread-title {
   font-weight: 800;
   font-size: 13px;
-  color: #854D0E;
+  color: #fbbf24;
 }
 
 .km-thread-meta {
   font-size: 12px;
-  color: #92400E;
+  color: #fbbf24;
+}
+
+/* ---- Verdant Glass v2.0 — scene dashboard additions (§7.2/§10) ---- */
+.dash-stat-pills {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 2px 0 14px;
+}
+.dash-hero-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: stretch;
+  margin: 6px 0 20px;
+}
+@media (max-width: 900px) {
+  .dash-hero-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 719px) {
+  .agro-hero-metric {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agro-tri-card {
+    grid-template-columns: 1fr;
+  }
+  .agro-metric + .agro-metric {
+    border-left: none;
+    border-top: 1px solid var(--agro-glass-stroke);
+  }
+}
+
+/* Verdant Glass — dashboard scene root: children stack as a full-height column. */
+.dash-scene {
+  min-height: 100dvh;
+}
+.dash-scene .agro-scene-ui {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
 }

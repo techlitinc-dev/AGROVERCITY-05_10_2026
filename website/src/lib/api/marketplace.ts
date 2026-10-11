@@ -1,4 +1,5 @@
 import { api } from './client';
+import { uuid } from '../uuid';
 
 /**
  * Marketplace (mall) API wrappers — phase-05 WS-03.
@@ -221,7 +222,7 @@ export async function addCartItem(productId: string, quantity: number): Promise<
   const { data } = await api.post<RawCart>(
     '/cart/items',
     { productId, quantity },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return toCart(data);
 }
@@ -231,14 +232,14 @@ export async function updateCartItem(productId: string, quantity: number): Promi
   const { data } = await api.put<RawCart>(
     `/cart/items/${productId}`,
     { quantity },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return toCart(data);
 }
 
 export async function removeCartItem(productId: string): Promise<Cart> {
   const { data } = await api.delete<RawCart>(`/cart/items/${productId}`, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return toCart(data);
 }
@@ -366,7 +367,7 @@ export interface PlaceOrderResult {
  * (quirk 3). The cart is cleared server-side on success.
  */
 export async function placeOrder(payload: PlaceOrderPayload): Promise<PlaceOrderResult> {
-  const idempotencyKey = payload.idempotencyKey ?? crypto.randomUUID();
+  const idempotencyKey = payload.idempotencyKey ?? uuid();
   const { data } = await api.post<{
     orderId: string;
     total: number;
@@ -389,7 +390,7 @@ export async function cancelOrder(orderId: string): Promise<MarketplaceOrder> {
   const { data } = await api.post<RawOrder>(
     `/orders/${orderId}/cancel`,
     {},
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return toOrder(data);
 }
@@ -399,7 +400,7 @@ export async function requestReturn(orderId: string, reason: string): Promise<Ma
   const { data } = await api.post<RawOrder>(
     `/orders/${orderId}/return`,
     { reason },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return toOrder(data);
 }
@@ -420,7 +421,7 @@ export async function createRazorpayOrder(orderId: string): Promise<RazorpayOrde
     amount: number;
     currency: string;
     keyId: string;
-  }>('/payments/razorpay/order', { orderId }, { headers: { 'Idempotency-Key': crypto.randomUUID() } });
+  }>('/payments/razorpay/order', { orderId }, { headers: { 'Idempotency-Key': uuid() } });
   return {
     razorpayOrderId: data.razorpayOrderId,
     amountPaisa: data.amount,
@@ -438,7 +439,7 @@ export async function verifyRazorpayPayment(payload: {
   const { data } = await api.post<{ ok: boolean; status: string }>(
     '/payments/razorpay/verify',
     payload,
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return data;
 }
@@ -452,7 +453,7 @@ export async function requestRefund(orderId: string): Promise<{ ok: boolean; ref
   const { data } = await api.post<{ ok: boolean; refundStatus: string }>(
     '/payments/razorpay/refund',
     { orderId },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return data;
 }
@@ -468,14 +469,14 @@ export async function addWishlistItem(productId: string): Promise<MarketplacePro
   const { data } = await api.post<{ data: MarketplaceProduct[]; total: number }>(
     '/wishlist/items',
     { productId },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return data.data;
 }
 
 export async function removeWishlistItem(productId: string): Promise<void> {
   await api.delete(`/wishlist/items/${productId}`, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
 }
 
@@ -518,7 +519,7 @@ export async function validateCoupon(
   }>(
     '/coupons/validate',
     { code, cartTotal: cartTotalLegacy },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return {
     valid: data.valid,
@@ -568,21 +569,21 @@ export async function listAddresses(): Promise<Address[]> {
 
 export async function createAddress(payload: AddressPayload): Promise<Address> {
   const { data } = await api.post<Address>('/addresses', payload, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return data;
 }
 
 export async function updateAddress(addressId: string, payload: AddressPayload): Promise<Address> {
   const { data } = await api.put<Address>(`/addresses/${addressId}`, payload, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return data;
 }
 
 export async function deleteAddress(addressId: string): Promise<void> {
   await api.delete(`/addresses/${addressId}`, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
 }
 
@@ -631,7 +632,7 @@ export async function writeReview(
   const { data } = await api.post<ProductReview>(
     `/products/${productId}/reviews`,
     { rating: payload.rating, comment: payload.comment ?? '' },
-    { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    { headers: { 'Idempotency-Key': uuid() } }
   );
   return data;
 }
@@ -663,7 +664,7 @@ export async function createSellerProduct(
   payload: SellerProductPayload
 ): Promise<MarketplaceProduct> {
   const { data } = await api.post<MarketplaceProduct>('/seller/products', payload, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return data;
 }
@@ -673,7 +674,7 @@ export async function updateSellerProduct(
   payload: Partial<SellerProductPayload>
 ): Promise<MarketplaceProduct> {
   const { data } = await api.put<MarketplaceProduct>(`/seller/products/${productId}`, payload, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return data;
 }
@@ -686,7 +687,7 @@ export async function listMyProducts(): Promise<MarketplaceProduct[]> {
 
 export async function createMyProduct(payload: SellerProductPayload): Promise<MarketplaceProduct> {
   const { data } = await api.post<MarketplaceProduct>('/my-products', payload, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return data;
 }
@@ -696,14 +697,14 @@ export async function updateMyProduct(
   payload: Partial<SellerProductPayload>
 ): Promise<MarketplaceProduct> {
   const { data } = await api.put<MarketplaceProduct>(`/my-products/${productId}`, payload, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
   return data;
 }
 
 export async function deleteMyProduct(productId: string): Promise<void> {
   await api.delete(`/my-products/${productId}`, {
-    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    headers: { 'Idempotency-Key': uuid() },
   });
 }
 

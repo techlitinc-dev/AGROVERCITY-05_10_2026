@@ -177,6 +177,11 @@ export interface TransportBooking {
   pickup: string;
   drop: string;
   date: string;
+  /** FT-1 Book Later */
+  pickupTime?: string | null;
+  timeWindowMinutes?: number | null;
+  /** FT-6 transit insurance cover, when opted in. */
+  insurance?: InsuranceBlock | null;
   lotId?: string | null;
   commodity?: string | null;
   weightQuintals?: number | null;
@@ -211,6 +216,12 @@ export interface BookingPayload {
   pickup: string;
   drop: string;
   date: string;
+  /** FT-1 Book Later: ISO pickup slot + loading window (15–720 min). */
+  pickupTime?: string;
+  timeWindowMinutes?: number;
+  /** FT-6 transit insurance: opt-in cover on the declared goods value (integer paisa). */
+  declaredValuePaisa?: number;
+  insuranceOptIn?: boolean;
   commodity?: string;
   weightQuintals?: number;
   packaging?: string;
@@ -303,6 +314,14 @@ export async function myBookings(status?: string, lotId?: string): Promise<MyBoo
 
 // ---------- Load board / auction ----------
 
+export interface InsuranceBlock {
+  optIn: boolean;
+  declaredValuePaisa: number;
+  coveragePaisa: number;
+  premiumPaisa: number;
+  ratePct: number;
+}
+
 export interface OpenLoad {
   id: string;
   userId: string;
@@ -314,6 +333,12 @@ export interface OpenLoad {
   perishable?: boolean;
   preferredVehicleType: string;
   pickupDate: string;
+  /** FT-1 Book Later: ISO pickup slot carried into the booking on accept-bid. */
+  pickupTime?: string;
+  /** FT-6 transit insurance on the load's declared goods value. */
+  declaredValuePaisa?: number;
+  insuranceOptIn?: boolean;
+  insurance?: InsuranceBlock | null;
   targetFare: number;
   notes?: string | null;
   status: 'open' | 'booked';
@@ -335,6 +360,8 @@ export interface LoadPayload {
   perishable?: boolean;
   preferredVehicleType: string;
   pickupDate: string;
+  /** FT-1 Book Later: ISO pickup slot carried into the booking on accept-bid. */
+  pickupTime?: string;
   targetFare: number;
   notes?: string;
 }
@@ -462,6 +489,9 @@ export interface TripExpense {
 
 export interface TripExpenses {
   grossFare: number;
+  /** FT-2 detention: farmer-paid waiting charge (₹ and integer paisa). */
+  detentionChargePaisa?: number;
+  detentionCharge?: number;
   totalExpenses: number;
   platformCommission: number;
   netProfit: number;
@@ -478,6 +508,233 @@ export async function addExpense(
 
 export async function tripExpenses(bookingId: string): Promise<TripExpenses> {
   const { data } = await api.get<TripExpenses>(`/transport/bookings/${bookingId}/expenses`);
+  return data;
+}
+
+// ---------- FT-2 detention / waiting charges ----------
+
+export interface WaitingEventPayload {
+  phase: 'pickup' | 'drop';
+  action: 'start' | 'stop';
+  /** ISO timestamp override — offline-tolerant sync. */
+  at?: string;
+}
+
+export interface WaitingEventResult {
+  id?: string;
+  phase?: string;
+  startedAt?: string;
+  event: {
+    id: string;
+    phase: string;
+    startedAt: string;
+    endedAt?: string;
+    minutes?: number;
+    billableMinutes?: number;
+    chargePaisa?: number;
+  };
+  detention: {
+    pickupChargePaisa: number;
+    dropChargePaisa: number;
+    totalChargePaisa: number;
+    totalMinutes: number;
+  };
+}
+
+export async function logWaiting(
+  bookingId: string,
+  payload: WaitingEventPayload
+): Promise<WaitingEventResult> {
+  const { data } = await api.post<WaitingEventResult>(
+    `/transport/bookings/${bookingId}/waiting`,
+    payload
+  );
+  return data;
+}
+
+// ---------- FT-3 two-way ratings ----------
+
+export const FARMER_RATING_TAGS = [
+  'load_ready_on_time',
+  'accurate_weight',
+  'good_communication',
+  'delayed_loading',
+  'load_not_as_described',
+] as const;
+
+export interface FarmerRatingPayload {
+  rating: number; // 1–5
+  review?: string;
+  tags?: string[];
+}
+
+export interface FarmerRatingStats {
+  count: number;
+  sum: number;
+  average: number | null;
+  tags: Record<string, number>;
+}
+
+export async function rateFarmer(
+  bookingId: string,
+  payload: FarmerRatingPayload
+): Promise<{ bookingId: string; rating: FarmerRatingPayload & { createdAt: string }; farmerRatingStats: FarmerRatingStats }> {
+  const { data } = await api.post(`/transport/bookings/${bookingId}/rate-farmer`, payload);
+  return data;
+}
+
+export async function farmerReputation(
+  farmerId: string
+): Promise<{ farmerId: string; name: string; farmerRatingStats: FarmerRatingStats }> {
+  const { data } = await api.get(`/transport/farmers/${farmerId}/reputation`);
+  return data;
+}
+
+// ---------- FT-4 favorites & rebook ----------
+
+export interface FavoriteTransporter {
+  transporterId: string;
+  name: string;
+  createdAt: string;
+}
+
+export async function toggleFavoriteTransporter(
+  transporterId: string,
+  favorited: boolean
+): Promise<{ favorited: boolean; favorite?: FavoriteTransporter }> {
+  const { data } = await api.post(`/transport/favorites/${transporterId}`, { favorited });
+  return data;
+}
+
+export async function listFavoriteTransporters(): Promise<{ data: FavoriteTransporter[]; total: number }> {
+  const { data } = await api.get('/transport/favorites');
+  return data;
+}
+
+export interface RebookPayload {
+  date: string;
+  pickupTime?: string;
+  timeWindowMinutes?: number;
+  notes?: string;
+}
+
+/** Clone a delivered/cancelled trip into a fresh requested booking. */
+export async function rebookTrip(bookingId: string, payload: RebookPayload): Promise<TransportBooking> {
+  const { data } = await api.post<TransportBooking>(`/transport/bookings/${bookingId}/rebook`, payload);
+  return data;
+}
+
+// ---------- FT-5 load templates & repeat bookings ----------
+
+export interface LoadTemplatePayload {
+  name: string;
+  pickupLocation: string;
+  dropLocation: string;
+  crop: string;
+  quantityQuintals: number;
+  packaging?: string;
+  perishable?: boolean;
+  preferredVehicleType: string;
+  targetFare: number;
+  notes?: string;
+  /** FT-6: cover carried into each repeated load. */
+  declaredValuePaisa?: number;
+  insuranceOptIn?: boolean;
+  /** 0 = Monday … 6 = Sunday — the recurring weekday for this run. */
+  repeatWeekday?: number;
+}
+
+export interface LoadTemplate extends LoadTemplatePayload {
+  id: string;
+  userId: string;
+  useCount: number;
+  createdAt: string;
+}
+
+export async function createLoadTemplate(payload: LoadTemplatePayload): Promise<LoadTemplate> {
+  const { data } = await api.post<LoadTemplate>('/transport/load-templates', payload);
+  return data;
+}
+
+export async function listLoadTemplates(): Promise<{ data: LoadTemplate[]; total: number }> {
+  const { data } = await api.get('/transport/load-templates');
+  return data;
+}
+
+export async function deleteLoadTemplate(templateId: string): Promise<{ ok: boolean }> {
+  const { data } = await api.delete(`/transport/load-templates/${templateId}`);
+  return data;
+}
+
+/** Instantiate a template as a fresh open load (optional seasonal fare override). */
+export async function repeatLoadTemplate(
+  templateId: string,
+  payload: { pickupDate: string; pickupTime?: string; targetFare?: number }
+): Promise<OpenLoad> {
+  const { data } = await api.post<OpenLoad>(`/transport/load-templates/${templateId}/repeat`, payload);
+  return data;
+}
+
+// ---------- FT-7 trip sharing ----------
+
+export interface TripShare {
+  token: string;
+  url: string;
+  expiresAt: string;
+}
+
+export async function createTripShare(bookingId: string): Promise<TripShare> {
+  const { data } = await api.post<TripShare>(`/transport/bookings/${bookingId}/share`);
+  return data;
+}
+
+export async function revokeTripShare(bookingId: string): Promise<{ ok: boolean; revoked: number }> {
+  const { data } = await api.delete(`/transport/bookings/${bookingId}/share`);
+  return data;
+}
+
+/** Sanitized public view — safe to render without a login. */
+export interface SharedTripView {
+  bookingId: string;
+  status: string;
+  route: { pickup: string; drop: string };
+  commodity?: string | null;
+  vehicleType?: string;
+  vehicleNo?: string | null;
+  driverName?: string | null;
+  currentLocation?: { lat: number; lng: number; waypoint?: string; waypointLabel?: string; updatedAt: string } | null;
+  waypoints: { waypoint: string; label: string; time: string }[];
+  estimatedMinutesLeft: number | null;
+  expiresAt: string;
+}
+
+export async function viewSharedTrip(token: string): Promise<SharedTripView> {
+  const { data } = await api.get<SharedTripView>(`/transport/shared/${token}`);
+  return data;
+}
+
+// ---------- FT-8 farmer cancel penalties & credit ledger ----------
+
+export interface LedgerEntry {
+  id: string;
+  kind: 'farmer_cancel_penalty' | 'transporter_compensation';
+  bookingId: string;
+  userId: string;
+  amountPaisa: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface MyLedger {
+  data: LedgerEntry[];
+  total: number;
+  platformDuesPaisa: number;
+  compensationEarnedPaisa: number;
+  penaltiesChargedPaisa: number;
+}
+
+export async function myLedger(): Promise<MyLedger> {
+  const { data } = await api.get<MyLedger>('/transport/ledger/mine');
   return data;
 }
 

@@ -21,6 +21,8 @@ export interface LoanDocument {
   name: string;
   storagePath: string;
   uploadedAt: string;
+  /** phase-03 task 5.13 — set on officer-attached warehouse receipts. */
+  referenceNo?: string | null;
 }
 
 export interface LoanTimelineEntry {
@@ -223,6 +225,15 @@ export async function getSchedule(id: string): Promise<LoanScheduleEntry[]> {
 export async function uploadLoanDocument(id: string, files: File[]): Promise<Loan> {
   const form = new FormData();
   files.forEach((file) => form.append('files', file));
+  const { data } = await api.post<Loan>(`/loans/${id}/documents`, form);
+  return data;
+}
+
+/** phase-03 task 5.13 — bank officer attaches a warehouse receipt (by receipt
+ * number) to the loan file as a collateral reference document. */
+export async function attachWarehouseReceipt(id: string, receiptNo: string): Promise<Loan> {
+  const form = new FormData();
+  form.append('reference_no', receiptNo);
   const { data } = await api.post<Loan>(`/loans/${id}/documents`, form);
   return data;
 }

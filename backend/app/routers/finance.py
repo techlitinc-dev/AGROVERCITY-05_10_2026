@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -17,9 +18,15 @@ from app.models.finance import (
 from app.models.loans import LoanApplicationOut, LoanApplyIn
 from app.routers.users import require_role
 from app.services import loans as loans_service
+from app.services.ai.outcomes import record_outcome
 from app.services.users import get_user
 
 router = APIRouter(prefix="/finance", tags=["finance"])
+
+log = logging.getLogger(__name__)
+
+SHG_GROUPS = "shg_groups"
+SHG_READINESS = "shg_readiness"
 
 TIER_LIMITS = {"Bronze": 25000, "Silver": 50000, "Gold": 100000, "Platinum": 200000}
 FACTORS = ["Timely KCC repayment", "Crop insurance coverage", "3-season income history"]
@@ -89,6 +96,39 @@ async def kcc(uid: str = Depends(_farmer)):
     )
 
 
+async def _record_shg_loan_outcome(uid: str, application_id: str) -> None:
+    """WS-01 task 1.9 — SHG loan-application outcome hook.
+
+    When the applicant belongs to an SHG group (`women.shg_readiness.v1`),
+    link the submitted application back to the group's cached readiness
+    decision so weekly calibration can measure whether loan-ready groups
+    actually apply. Reads the CACHED readiness doc — never recomputes — and
+    skips silently when the group/readiness/decision is absent. Fire-and-
+    forget: any failure here must never fail the loan application.
+    """
+    try:
+        groups = await query(SHG_GROUPS, [("memberUid", "==", uid)], limit=1)
+        if not groups:
+            return
+        readiness = await get_doc(SHG_READINESS, str(groups[0]["id"]))
+        if not readiness:
+            return
+        decision_id = readiness.get("decisionId")
+        if not decision_id:
+            return
+        # Idempotency: the outcome store is keyed by decision id, so a second
+        # application from the same group would otherwise overwrite the first.
+        existing = await get_doc("ai_outcomes", str(decision_id))
+        if ((existing or {}).get("outcome") or {}).get("applicationId") == application_id:
+            return
+        await record_outcome(
+            str(decision_id),
+            {"kind": "loan_application_submitted", "applicationId": application_id},
+        )
+    except Exception:  # noqa: BLE001 — outcome hook must never fail the apply
+        log.warning("SHG loan outcome hook failed for uid=%s", uid, exc_info=True)
+
+
 @router.post("/loans/apply", status_code=201, response_model=LoanApplyOut)
 async def apply_loan(body: LoanApplyIn, uid: str = Depends(_farmer)):
     user = await get_user(uid)
@@ -139,6 +179,9 @@ async def apply_loan(body: LoanApplyIn, uid: str = Depends(_farmer)):
     # the queue.
     await loans_service.prescreen_application(loan)
     await set_doc("loan_applications", application_id, loan)
+    # WS-01 task 1.9 — when the applicant is in an SHG, link this application
+    # to the group's cached readiness decision (never blocks the apply).
+    await _record_shg_loan_outcome(uid, application_id)
     return LoanApplyOut(applicationId=application_id, status="submitted")
 
 

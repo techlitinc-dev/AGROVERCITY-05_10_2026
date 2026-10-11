@@ -13,15 +13,12 @@ from pydantic import BaseModel, Field
 
 from app.core.db import query, set_doc
 from app.core.deps import current_user_id
-from app.services import idempotency, search_index
-from app.services.ai import gateway, privacy
+from app.services import idempotency, search_index, support_ai
 from app.services.chatbot import create_expert_ticket
 
 router = APIRouter(prefix="/support", tags=["support"])
 
 FAQ_INDEX = "faq"
-SUPPORT_INTENT_MODULE = "support_intent"
-SUPPORT_ANSWER_MODULE = "support_answer"
 RETRIEVAL_CONFIDENCE_FLOOR = 0.5
 
 
@@ -99,9 +96,7 @@ async def ask_support(
     if stored is not None:
         return stored
 
-    state = privacy.sanitize_state({"question": body.question, "lang": body.lang})
-    decision = await gateway.decide(state, "support.intent.v1", module=SUPPORT_INTENT_MODULE)
-    answers = decision.answers or {}
+    answers = await support_ai.classify_intent(body.question, body.lang)
     category = str(answers.get("category") or "other")
     escalate = bool(answers.get("escalate")) or category in ("money", "account")
 
@@ -126,13 +121,7 @@ async def ask_support(
 
     sources = [hit["docId"] for hit in hits]
     grounded = "\n\n".join(hit.get("text", "") for hit in hits)
-    prompt = (
-        f"Answer the user's question in {body.lang} using ONLY the FAQ snippets below. "
-        f"Do not invent policy.\n\nFAQ:\n{grounded}\n\nQuestion: {body.question}"
-    )
-    answer = await gateway.generate(
-        prompt, {"module": SUPPORT_ANSWER_MODULE, "fallback_text": grounded, "language": body.lang}
-    )
+    answer = await support_ai.answer_question(body.question, body.lang, grounded)
     await _record(uid, body.question, "resolved", category, sources)
     result = {"kind": "answer", "answer": answer, "sources": sources}
     if idempotency_key:

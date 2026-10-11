@@ -10,7 +10,7 @@ from app.core.deps import current_user_id
 from app.core.ratelimit import hit
 from app.routers.purchases import TERMINAL_STATUSES
 from app.services import chat_moderation
-from app.services.ai import gateway, privacy
+from app.services.ai import privacy
 from app.services.chat import (
     contains_banned_content,
     ensure_batch_room,
@@ -179,16 +179,22 @@ class MessageIn(BaseModel):
 
 class DirectChatIn(BaseModel):
     """Open a simple direct chat scoped to a listing: the other party is the
-    lot's farmer or the demand's buyer. One stable room per user pair."""
+    lot's farmer, the demand's buyer, a vehicle's owner, an accepted booking's
+    transporter, a resale listing's seller, or an export quote's counterparty.
+    One stable room per user pair."""
 
     lotId: str = ""
     demandId: str = ""
+    vehicleId: str = ""
+    bookingId: str = ""
+    listingId: str = ""
+    quoteId: str = ""
 
 
 @router.post("/direct")
 async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_id)):
-    if not body.lotId and not body.demandId:
-        _error(422, "VALIDATION_ERROR", "lotId or demandId is required")
+    if not (body.lotId or body.demandId or body.vehicleId or body.bookingId or body.listingId or body.quoteId):
+        _error(422, "VALIDATION_ERROR", "lotId, demandId, vehicleId, bookingId, listingId or quoteId is required")
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
@@ -201,7 +207,7 @@ async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_i
         counterparty_id = lot["farmerId"]
         counterparty = await get_user(counterparty_id) or {}
         crop = lot.get("crop", "")
-    else:
+    elif body.demandId:
         demand = await get_doc("demands", body.demandId)
         if demand is None:
             _error(404, "DEMAND_NOT_FOUND", "demand not found")
@@ -210,6 +216,57 @@ async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_i
         counterparty_id = demand["buyerId"]
         counterparty = await get_user(counterparty_id) or {}
         crop = demand.get("crop", "")
+    elif body.vehicleId:
+        # Business inquiry to a vehicle owner (pre-booking). The booking-gated
+        # trip chat (ensure_transport_room) takes over once a booking is accepted.
+        vehicle = await get_doc("vehicles", body.vehicleId)
+        if vehicle is None:
+            _error(404, "VEHICLE_NOT_FOUND", "vehicle not found")
+        if vehicle.get("ownerId") == uid:
+            _error(400, "OWN_LISTING", "this is your own vehicle")
+        counterparty_id = vehicle["ownerId"]
+        counterparty = await get_user(counterparty_id) or {}
+        crop = vehicle.get("vehicleType", "")
+    elif body.listingId:
+        # Business inquiry to a resale listing's seller.
+        listing = await get_doc("resale_listings", body.listingId)
+        if listing is None:
+            _error(404, "LISTING_NOT_FOUND", "resale listing not found")
+        if listing.get("sellerId") == uid:
+            _error(400, "OWN_LISTING", "this is your own listing")
+        counterparty_id = listing["sellerId"]
+        counterparty = await get_user(counterparty_id) or {}
+        crop = listing.get("crop", "")
+    elif body.quoteId:
+        # Export negotiation: the exporter and the quoting seller.
+        quote = await get_doc("export_quotes", body.quoteId)
+        if quote is None:
+            _error(404, "QUOTE_NOT_FOUND", "export quote not found")
+        if uid not in (quote.get("exporterId"), quote.get("sellerId")):
+            _error(403, "QUOTE_FORBIDDEN", "you are not a party to this quote")
+        if quote.get("exporterId") == quote.get("sellerId"):
+            _error(400, "OWN_LISTING", "this is your own quote")
+        counterparty_id = (
+            quote["exporterId"] if uid == quote.get("sellerId") else quote["sellerId"]
+        )
+        counterparty = await get_user(counterparty_id) or {}
+        rfq = await get_doc("export_rfqs", quote.get("rfqId") or "") or {}
+        crop = rfq.get("crop", "")
+    else:
+        booking = await get_doc("transport_bookings", body.bookingId)
+        if booking is None:
+            _error(404, "BOOKING_NOT_FOUND", "booking not found")
+        if not booking.get("transporterId"):
+            _error(
+                409,
+                "BOOKING_NOT_ACCEPTED",
+                "this booking has no transporter yet — use the vehicle chat before acceptance",
+            )
+        if booking.get("transporterId") == uid:
+            _error(400, "OWN_LISTING", "this is your own booking")
+        counterparty_id = booking["transporterId"]
+        counterparty = await get_user(counterparty_id) or {}
+        crop = booking.get("commodity") or booking.get("vehicleType", "")
 
     # WS-02 task 2.37: farmers cannot DM each other (instructions §WS-02 step 7).
     if user.get("activeProfile") == "farmer" and counterparty.get("activeProfile") == "farmer":
@@ -354,14 +411,8 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
         if chat_moderation.needs_guardrail(text):
             state = privacy.build_chat_guardrail_state(text, uid)
             try:
-                decision = await gateway.decide(
-                    state, "chat.guardrail.v1", module=chat_moderation.GUARDRAIL_MODULE
-                )
-                answers = decision.answers or {}
-                if any(
-                    bool(answers.get(key))
-                    for key in ("shares_contact", "shares_payment_handle", "abuse")
-                ):
+                flagged = await chat_moderation.guardrail_check(state)
+                if flagged:
                     count = await chat_moderation.record_strike(uid, "guardrail", None, room_id)
                     _error(
                         422,
@@ -380,12 +431,7 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
     if body.imageUrl:
         image_url, image_bytes = await _clean_chat_image(uid, body.imageUrl)
         if image_bytes and await chat_moderation.guardrail_enabled():
-            ocr = await gateway.analyze_image(
-                image_bytes,
-                "Extract any visible text from this chat image.",
-                module=chat_moderation.GUARDRAIL_MODULE,
-            )
-            extracted = str(ocr.get("text") or ocr.get("extractedText") or "")
+            extracted = await chat_moderation.ocr_scan(image_bytes)
             if extracted:
                 ocr_result = chat_moderation.scan(extracted)
                 if ocr_result["violation"]:

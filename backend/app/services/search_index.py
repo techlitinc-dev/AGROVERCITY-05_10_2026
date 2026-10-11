@@ -9,9 +9,11 @@ import math
 from datetime import datetime, timezone
 
 from app.core.db import get_doc, query, set_doc
-from app.services.ai import gateway
+from app.services.ai import gateway, privacy
 
 COLLECTION = "search_index"
+
+SEARCH_INTENT_MODULE = "search_intent"
 
 # index -> source collection
 SOURCES: dict[str, str] = {
@@ -117,3 +119,10 @@ async def reindex(indexes: list[str] | None = None) -> dict:
         {"cursor": None, "updatedAt": datetime.now(timezone.utc).isoformat()},
     )
     return counts
+
+
+async def classify_intent(needle: str):
+    """Classify a global-search query via `search.intent.v1` (rule 10 — the
+    router validates the returned index against its own group list)."""
+    state = privacy.sanitize_state({"query": needle})
+    return await gateway.decide(state, "search.intent.v1", module=SEARCH_INTENT_MODULE)

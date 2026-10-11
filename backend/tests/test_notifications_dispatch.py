@@ -131,6 +131,7 @@ async def test_sms_provider_stub_no_network(client, monkeypatch):
 async def test_copy_shim_and_template_fallback(client, user_store, fake_redis, monkeypatch):
     seed_user(user_store, uid="uid-1", language="hi")
     pushes = _capture_pushes(monkeypatch)
+    _freeze_local(monkeypatch, 12, 0)  # outside quiet hours — send-now is deterministic
 
     await notify.notify_user("uid-1", type="offer_received", title="Title", body="Static body")
     assert pushes[-1]["body"] == SHIM_COPY  # hi copy from the shim

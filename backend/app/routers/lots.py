@@ -109,6 +109,69 @@ async def browse_lots(
     return {"data": enriched, "page": page, "pageSize": pageSize, "total": total}
 
 
+@router.get("/lots/{lot_id}/offers")
+async def lot_offer_board(lot_id: str, uid: str = Depends(current_user_id)):
+    """Farmer-only bid board with per-buyer trust summary and rate analytics."""
+    lot = await get_doc("market_lots", lot_id)
+    if lot is None:
+        _error(404, "LOT_NOT_FOUND", "lot not found")
+    if lot.get("farmerId") != uid:
+        _error(403, "LOT_FORBIDDEN", "only the lot owner can view the offer board")
+    offers = await query("offers", [("targetType", "==", "lot"), ("targetId", "==", lot_id)], limit=1000)
+    # Best rate first; ties broken by higher quantity.
+    offers.sort(key=lambda o: (o.get("pricePerUnit") or 0, o.get("quantity") or 0), reverse=True)
+    purchases = await query("purchases", [], limit=2000)
+    entries = []
+    verified_count = 0
+    for offer in offers:
+        buyer_id = offer.get("fromId") or ""
+        buyer = await get_user(buyer_id) or {}
+        completed = sum(
+            1 for p in purchases if p.get("buyerId") == buyer_id and p.get("status") == "completed"
+        )
+        rating_stats = buyer.get("ratingStats") or buyer.get("farmerRatingStats") or {}
+        verified = bool(buyer.get("vyapariVerified"))
+        if verified:
+            verified_count += 1
+        entries.append(
+            {
+                **offer,
+                "buyer": {
+                    "buyerId": buyer_id,
+                    "name": buyer.get("name", ""),
+                    "district": buyer.get("district", ""),
+                    "village": buyer.get("village", ""),
+                    "verified": verified,
+                    "completedPurchases": completed,
+                    "avgRating": rating_stats.get("average"),
+                    "offersOnThisLotCount": sum(
+                        1 for o in offers if o.get("fromId") == buyer_id
+                    ),
+                },
+            }
+        )
+    rates = [o.get("pricePerUnit") or 0 for o in offers]
+    quantities = [float(o.get("quantity") or 0) for o in offers]
+    best_rate = max(rates) if rates else 0
+    expected = lot.get("expectedRate") or 0
+    analytics = {
+        "totalOffers": len(offers),
+        "bestRate": best_rate,
+        "avgRate": round(sum(rates) / len(rates), 2) if rates else 0,
+        "avgQuantity": round(sum(quantities) / len(quantities), 2) if quantities else 0,
+        "totalOfferedQty": round(sum(quantities), 3),
+        "verifiedOffers": verified_count,
+        "bestOfferId": entries[0]["id"] if entries else None,
+        "rateVsExpected": {
+            "expected": expected,
+            "bestDeltaPct": (
+                round((best_rate - expected) / expected * 100, 2) if expected else None
+            ),
+        },
+    }
+    return {"data": entries, "analytics": analytics}
+
+
 @router.get("/lots/{lot_id}")
 async def get_lot(lot_id: str, uid: str = Depends(current_user_id)):
     doc = await get_doc("market_lots", lot_id)

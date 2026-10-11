@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import SiteFooter from '../../components/SiteFooter';
 import SiteHeader from '../../components/SiteHeader';
@@ -8,6 +8,9 @@ import MenuBar from '../../components/dashboard/MenuBar';
 import ProfileSwitcherBar from '../../components/dashboard/ProfileSwitcherBar';
 import ProfileSwitcherSheet from '../../components/dashboard/ProfileSwitcherSheet';
 import { PersonaBanner, PromoBanner, SectionTitle, ToolTile } from '../../components/dashboard/tiles';
+import AgroMitraCard from '../../components/scene/AgroMitraCard';
+import AgroAiBar from '../../components/scene/AgroAiBar';
+import SceneScaffold from '../../components/scene/SceneScaffold';
 import AiBadge from '../../components/ai/AiBadge';
 import ConfidenceGate from '../../components/ai/ConfidenceGate';
 import KisanMitraSheet from '../../components/chatbot/KisanMitraSheet';
@@ -17,7 +20,8 @@ import InsightsPanel from '../../components/intelligence/InsightsPanel';
 import SellerHomeBoard from '../../components/dashboard/SellerHomeBoard';
 import { toast } from '../../components/toast';
 import { getIntelligence, type IntelligenceResponse } from '../../lib/api/intelligence';
-import { getToday, markDone, summary as fetchSummary, type Task, type TaskSummary } from '../../lib/api/tasks';
+import { acceptOffer } from '../../lib/api/offers';
+import { getToday, markDismiss, markDone, summary as fetchSummary, type Task, type TaskSummary } from '../../lib/api/tasks';
 import { canAccess, personaHomeConfig } from '../../lib/dashboard';
 import { ZERO } from '../../lib/numDefaults';
 import { PERSONAS, personaByType, personaLabel } from '../../lib/personas';
@@ -91,6 +95,18 @@ const MODULE_ACL_TOOL: Record<string, string> = {
   purchases: 'purchases',
 };
 
+/** M29 rule-fire tasks (phase-08 WS-01, task 1.37) — kind emitted by the
+ *  agent_rules service; the confirm action calls the EXISTING offer-accept
+ *  endpoint, dismiss records the dismissal. Nothing else auto-executes. */
+const RULE_FIRE_KIND = 'rule_fire_confirm';
+const OFFER_ACCEPT_RE = /^\/v1\/offers\/([^/]+)\/accept$/;
+
+function ruleFireOfferId(endpoint: string | undefined): string | null {
+  if (!endpoint) return null;
+  const match = endpoint.match(OFFER_ACCEPT_RE);
+  return match ? match[1] : null;
+}
+
 function mergedModuleCounts(summaryData: TaskSummary | null, personaType: string, aggregate: boolean): Record<string, number> {
   if (!summaryData) return {};
   const personas = summaryData.personas ?? {};
@@ -152,6 +168,8 @@ export default function DashboardHome() {
   const [aggregate, setAggregate] = useState(false);
   const [justDone, setJustDone] = useState<string | null>(null);
   const [busyTask, setBusyTask] = useState<string | null>(null);
+  /** Verdant Glass §9.4 — persona-switch cinematic runs after the UI responds. */
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     syncFromUser(user);
@@ -166,6 +184,17 @@ export default function DashboardHome() {
   useEffect(() => {
     setAggregate(personaType === 'farmer');
   }, [personaType]);
+
+  // §9.4 persona-switch cinematic: 700 ms scene crossfade + glass toast.
+  const prevPersonaRef = useRef(personaType);
+  useEffect(() => {
+    if (prevPersonaRef.current === personaType) return;
+    prevPersonaRef.current = personaType;
+    setSwitching(true);
+    toast(t('vgSwitchToast', { persona: personaLabel(personaType) }));
+    const id = window.setTimeout(() => setSwitching(false), 700);
+    return () => window.clearTimeout(id);
+  }, [personaType, t]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -194,6 +223,14 @@ export default function DashboardHome() {
     const aclTool = MODULE_ACL_TOOL[module];
     return (count !== undefined && count > 0) || (aclTool ? canAccess(personaType, aclTool) : false);
   });
+
+  // Verdant Glass §10 — hero metric + tri-card derive from REAL data only.
+  const openTaskCount = visibleTasks.filter((task) => task.status === 'open').length;
+  const acres = typeof user?.landAreaAcres === 'number' ? user.landAreaAcres : null;
+  const mitraAdviceKey = `vgAdvice_${personaType}`;
+  const mitraAdvice = t(mitraAdviceKey);
+  const heroShowsLand = isFarmer && acres !== null;
+  const heroRows = gridModules.slice(0, 3);
 
   const taskTitle = (task: Task): string => {
     if (lang === 'hi') return task.title?.hi || task.title?.en || '';
@@ -232,6 +269,55 @@ export default function DashboardHome() {
     if (isKnownRoute(task.deepLink)) navigate(task.deepLink);
   };
 
+  /** Post-success UI for a settled task (done/dismissed) — shared by the
+   *  checklist check and the M29 confirm/dismiss buttons. */
+  const settleTask = (task: Task, status: 'done' | 'dismissed') => {
+    setTasks((prev) =>
+      prev
+        ? prev.map((item) => (item.taskId === task.taskId ? { ...item, status } : item))
+        : prev
+    );
+    setSummaryData((prev) => decrementSummary(prev, task.persona, task.module));
+    setJustDone(task.taskId);
+    window.setTimeout(() => {
+      setTasks((prev) => (prev ? prev.filter((item) => item.taskId !== task.taskId) : prev));
+      setJustDone((id) => (id === task.taskId ? null : id));
+    }, 1400);
+  };
+
+  /** M29 (task 1.37): confirm a rule-fire task — the confirm action is the
+   *  EXISTING offer-accept endpoint from task 1.32 (never a privileged path);
+   *  then the task itself is marked done. */
+  const confirmFireTask = async (task: Task) => {
+    if (busyTask || task.status !== 'open') return;
+    setBusyTask(task.taskId);
+    try {
+      const offerId = ruleFireOfferId(task.actionEndpoint);
+      if (offerId) await acceptOffer(offerId);
+      await markDone(task.taskId, task.decisionId ?? undefined);
+      track('task_completed', { taskId: task.taskId, module: task.module });
+      settleTask(task, 'done');
+      toast(t('dashTaskDoneToast'));
+    } catch {
+      toast(t('dashTaskActionFailed'), { error: true });
+    } finally {
+      setBusyTask(null);
+    }
+  };
+
+  const dismissFireTask = async (task: Task) => {
+    if (busyTask || task.status !== 'open') return;
+    setBusyTask(task.taskId);
+    try {
+      await markDismiss(task.taskId);
+      settleTask(task, 'dismissed');
+    } catch {
+      toast(t('dashTaskActionFailed'), { error: true });
+    } finally {
+      setBusyTask(null);
+    }
+  };
+
   const moneyRows: Array<{ key: string; labelKey: string; paisa: number | undefined }> = [
     { key: 'receivables', labelKey: 'dashReceivables', paisa: intel?.pendingReceivablesPaisa },
     { key: 'payables', labelKey: 'dashPayables', paisa: intel?.pendingPayablesPaisa },
@@ -252,7 +338,11 @@ export default function DashboardHome() {
   }, [tasks]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
+    <SceneScaffold
+      persona={personaType}
+      className={`dash-scene${switching ? ' agro-scene-switching' : ''}`}
+      style={{ '--agro-ai-bar-bottom': '92px' } as CSSProperties}
+    >
       <RatePrompt />
       <SiteHeader />
       {pendingSync > 0 ? (
@@ -262,6 +352,45 @@ export default function DashboardHome() {
       ) : null}
       <MenuBar onOpenAllTools={() => setToolsOpen(true)} />
       <main className="dash-content" style={{ flex: 1 }}>
+        {/* §7.2 floating stat pills over the scene. */}
+        <div className="dash-stat-pills">
+          {user?.village ? (
+            <span className="agro-stat-pill">
+              <span className="agro-stat-pill-icon">📍</span>
+              <span className="agro-stat-pill-text">
+                <span className="agro-stat-pill-label">{t('vgStatLocation')}</span>
+                <span className="agro-stat-pill-value">{user.village}</span>
+              </span>
+            </span>
+          ) : null}
+          {acres !== null ? (
+            <span className="agro-stat-pill">
+              <span className="agro-stat-pill-icon">🏞️</span>
+              <span className="agro-stat-pill-text">
+                <span className="agro-stat-pill-label">{t('vgStatLand')}</span>
+                <span className="agro-stat-pill-value">
+                  {acres.toFixed(1)} {t('vgKpiAcresUnit')}
+                </span>
+              </span>
+            </span>
+          ) : null}
+          <span className="agro-stat-pill">
+            <span className="agro-stat-pill-icon">✅</span>
+            <span className="agro-stat-pill-text">
+              <span className="agro-stat-pill-label">{t('vgStatTasks')}</span>
+              <span className="agro-stat-pill-value">{openTaskCount}</span>
+            </span>
+          </span>
+          {pendingSync > 0 ? (
+            <span className="agro-stat-pill">
+              <span className="agro-stat-pill-icon">📶</span>
+              <span className="agro-stat-pill-text">
+                <span className="agro-stat-pill-label">{t('vgStatSync')}</span>
+                <span className="agro-stat-pill-value">{pendingSync}</span>
+              </span>
+            </span>
+          ) : null}
+        </div>
         {isFarmer ? (
           <div className="dash-hero">
             <div className="dash-hero-top">
@@ -311,6 +440,88 @@ export default function DashboardHome() {
             💬 {t('kmFab')}
           </button>
           <span className="dash-aggregate-hint">{t('dashAggregateHint')}</span>
+        </div>
+
+        {/* §10 hero row — hero metric card + persona AI companion card. */}
+        <section className="dash-hero-row">
+          <div className="agro-glass agro-hero-metric agro-card-enter">
+            <div>
+              <div className="agro-hero-metric-number">
+                {heroShowsLand ? acres.toFixed(1) : openTaskCount}
+                {heroShowsLand ? <small> {t('vgKpiAcresUnit')}</small> : null}
+              </div>
+              <div className="agro-hero-metric-caption">
+                {heroShowsLand
+                  ? `${user?.village ? `${user.village} · ` : ''}${t('vgKpiArea')}`
+                  : t('vgStatTasks')}
+              </div>
+              <span className="agro-status-chip">
+                {urgentTasks.length > 0 ? `⚠ ${urgentTasks.length} · ` : '✓ '}
+                {urgentTasks.length > 0 ? t('vgStatTasks') : t('vgHeroStatusOptimal')}
+              </span>
+            </div>
+            <div>
+              <div className="agro-hero-rows">
+                {heroRows.length === 0 ? (
+                  <span className="agro-hero-row">
+                    <span className="agro-hero-row-thumb">🌱</span>
+                    <span className="agro-hero-row-name">{t('dashNoTasks')}</span>
+                    <span className="agro-hero-row-count">—</span>
+                  </span>
+                ) : (
+                  heroRows.map((module) => {
+                    const count = moduleCounts[module];
+                    const hasOpen = count !== undefined && count > 0;
+                    return (
+                      <span key={module} className="agro-hero-row">
+                        <span className="agro-hero-row-thumb">{MODULE_ICON[module]}</span>
+                        <span className="agro-hero-row-name">{t(`dashModule_${module}`)}</span>
+                        <span className="agro-hero-row-count">
+                          {hasOpen ? (count as number) : '✓'}
+                        </span>
+                      </span>
+                    );
+                  })
+                )}
+              </div>
+              <div className="agro-hero-cta">
+                <a href="#dash-modules" className="agro-btn-lime">
+                  {t('dashModulesTitle')} ↓
+                </a>
+              </div>
+            </div>
+          </div>
+          <AgroMitraCard
+            personaType={personaType}
+            greeting={persona.native}
+            advice={mitraAdvice === mitraAdviceKey ? t('vgAdvice_default') : mitraAdvice}
+            onDetails={() => setMitraOpen(true)}
+            onMic={() => setMitraOpen(true)}
+          />
+        </section>
+
+        {/* §10 metric row — fused tri-card of persona KPIs (real data only). */}
+        <div className="agro-glass agro-tri-card agro-card-enter">
+          <div className="agro-metric">
+            <span className="agro-metric-chip">🏞️</span>
+            <span className="agro-metric-label">{t('vgKpiArea')}</span>
+            <span className="agro-metric-value">
+              {acres !== null ? acres.toFixed(1) : '—'}
+              {acres !== null ? <small> {t('vgKpiAcresUnit')}</small> : null}
+            </span>
+          </div>
+          <div className="agro-metric">
+            <span className="agro-metric-chip">✅</span>
+            <span className="agro-metric-label">{t('vgKpiOpenTasks')}</span>
+            <span className="agro-metric-value">{openTaskCount}</span>
+          </div>
+          <div className="agro-metric">
+            <span className="agro-metric-chip">💰</span>
+            <span className="agro-metric-label">{t('vgKpiReceivables')}</span>
+            <span className="agro-metric-value">
+              {intel?.pendingReceivablesPaisa !== undefined ? formatPaisa(intel.pendingReceivablesPaisa) : '—'}
+            </span>
+          </div>
         </div>
 
         {/* 1 — Hero next-best-action card (WS-03 ranked). */}
@@ -420,6 +631,28 @@ export default function DashboardHome() {
                       {t('dashTaskOpen')} →
                     </button>
                   ) : null}
+                  {task.kind === RULE_FIRE_KIND && task.status === 'open' ? (
+                    <span style={{ display: 'inline-flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="dash-task-open"
+                        aria-busy={busyTask === task.taskId}
+                        disabled={busyTask === task.taskId}
+                        onClick={() => void confirmFireTask(task)}
+                      >
+                        ✓ {t('agentRules.fireConfirm')}
+                      </button>
+                      <button
+                        type="button"
+                        className="dash-task-open"
+                        aria-busy={busyTask === task.taskId}
+                        disabled={busyTask === task.taskId}
+                        onClick={() => void dismissFireTask(task)}
+                      >
+                        {t('agentRules.fireDismiss')}
+                      </button>
+                    </span>
+                  ) : null}
                   {justDone === task.taskId && task.coinsAwarded > 0 ? (
                     <span className="dash-task-coins">
                       🪙 {t('dashCoinsEarned', { count: task.coinsAwarded })}
@@ -432,7 +665,7 @@ export default function DashboardHome() {
         </section>
 
         {/* 4 — Module summary grid (live counts; honest zero state). */}
-        <section className="dash-section">
+        <section className="dash-section" id="dash-modules">
           <SectionTitle title={t('dashModulesTitle')} />
           {loading ? (
             <div className="dash-skeleton-grid">
@@ -518,14 +751,7 @@ export default function DashboardHome() {
       <ProfileSwitcherSheet open={switchOpen} onClose={() => setSwitchOpen(false)} />
       <AllToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} />
       <KisanMitraSheet open={mitraOpen} onClose={() => setMitraOpen(false)} />
-      <button
-        type="button"
-        className="km-fab"
-        aria-label={t('kmFab')}
-        onClick={() => setMitraOpen(true)}
-      >
-        💬
-      </button>
-    </div>
+      <AgroAiBar onEngage={() => setMitraOpen(true)} />
+    </SceneScaffold>
   );
 }

@@ -10,6 +10,8 @@
 > failure in a test file your workstream touched must be fixed before the
 > checkpoint is marked.
 
+> Reconciled 2026-10-08: checkbox state restored after the post-completion rewrite (fd8c440) reset 121 boxes; WS-03 through WS-07 and the phase-final gate re-checked to match verified repo reality. WS-01/WS-02 left untouched — 1.20, 1.22, 2.21 are genuinely open HUMAN CHECKs; the rest were already checked.
+
 ## WS-01 — Kill demo backdoors & secrets hygiene  (see instructions.md §WS-01)
 
 ### Task 1.1 — Add prod secret validator to config
@@ -731,7 +733,7 @@
 - RUN: `.venv/bin/python -c "from app.core.config import settings; print(settings.razorpay_webhook_secret == '', settings.bank_verify_provider)"` (cwd: `backend/`)
 - EXPECT: exit 0, output `True stub`.
 - IF FAIL: fix field placement inside class `Settings`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.2 — Add webhook signature verifier to payments service
 - DO: Edit `backend/app/services/payments.py`: append:
@@ -747,7 +749,7 @@
 - RUN: `.venv/bin/python -c "import hmac,hashlib; from app.core.config import settings; settings.razorpay_webhook_secret='whsec'; from app.services.payments import verify_razorpay_webhook_signature as v; sig=hmac.new(b'whsec',b'{}',hashlib.sha256).hexdigest(); assert v(b'{}',sig) is True; assert v(b'{}','bad') is False; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: re-apply the edit exactly, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.3 — Create payments router with order endpoint
 - DO: Create `backend/app/routers/payments.py` (new) with exactly:
@@ -807,7 +809,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.payments import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.4 — Add payment verify endpoint
 - DO: Edit `backend/app/routers/payments.py`: append:
@@ -833,7 +835,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.payments import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the appended code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.5 — Add admin refund endpoint
 - PRECONDITION: `grep -n "def admin_action" backend/app/core/deps.py` — if this fails, STOP the phase (playbook §5): WS-02 task 2.3 is missing.
@@ -861,7 +863,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.payments import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.6 — Add signed Razorpay webhook endpoint
 - DO: Edit `backend/app/routers/payments.py`: (1) add imports `import json`, `from fastapi import Request`, `from app.services.payments import verify_razorpay_webhook_signature`; (2) append:
@@ -888,21 +890,21 @@
 - RUN: `.venv/bin/python -c "from app.routers.payments import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the appended code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.7 — Register payments router in main app
 - DO: Edit `backend/app/main.py`: (1) add `payments,` to the `from app.routers import (...)` list (alphabetical position, after `pnl,`); (2) add `app.include_router(payments.router, prefix="/v1")` next to the other includes.
 - RUN: `.venv/bin/python -c "from app.main import app; print([r.path for r in app.routes if r.path.startswith('/v1/payments')])"` (cwd: `backend/`)
 - EXPECT: exit 0; output lists `/v1/payments/order`, `/v1/payments/verify`, `/v1/payments/{payment_id}/refund`, `/v1/payments/webhook`.
 - IF FAIL: fix the import/include lines, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.8 — Register payments modules in conftest
 - DO: Edit `backend/tests/conftest.py`: add `"app.routers.payments"` and `"app.services.payments"` to BOTH the `get_doc`/`set_doc` module tuple (~L48–110) and the `query` module tuple (~L147–212).
 - RUN: `.venv/bin/python -m pytest -q tests/test_infra.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (conftest loads without error).
 - IF FAIL: fix the tuple edits, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.9 — Create payments webhook and idempotency tests
 - DO: Create `backend/tests/test_payments.py` (new) with:
@@ -914,7 +916,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_payments.py` (cwd: `backend/`)
 - EXPECT: exit 0, `4 passed`.
 - IF FAIL: print the failing response body once, align the test to the implemented contract (tasks 3.3–3.6 are the truth), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.10 — Add reconcile_payments to payments service
 - DO: Edit `backend/app/services/payments.py`: append:
@@ -949,7 +951,7 @@
 - RUN: `.venv/bin/python -c "from app.services.payments import reconcile_payments; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.11 — Add reconciliation job endpoint
 - DO: Edit `backend/app/routers/jobs.py`: (1) add `from app.services.payments import reconcile_payments` to imports; (2) append:
@@ -962,14 +964,14 @@
 - RUN: `.venv/bin/python -c "from app.routers.jobs import router; print([r.path for r in router.routes])"` (cwd: `backend/`)
 - EXPECT: exit 0; output contains `/jobs/payments/reconcile`.
 - IF FAIL: fix the endpoint, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.12 — Add reconciliation test
 - DO: Edit `backend/tests/test_payments.py`: append `test_reconcile_reports_missing_events` — monkeypatch `app.core.config.settings.razorpay_key_id`/`razorpay_key_secret` to non-empty; monkeypatch `httpx.AsyncClient.get` (or `app.services.payments.httpx.AsyncClient`) with a stub returning `{"items": [{"id": "pay_missing1"}]}` (follow the fake-httpx pattern used elsewhere in the suite if one exists — check `grep -rn "AsyncClient" backend/tests | head` first); call `reconcile_payments()` directly with `await`; assert result `{"checked": 1, "mismatched": 1, ...}` and that `user_store["audit_logs/aud_recon_pay_missing1"]` exists.
 - RUN: `.venv/bin/python -m pytest -q tests/test_payments.py` (cwd: `backend/`)
 - EXPECT: exit 0, `5 passed`.
 - IF FAIL: align the httpx stub to the real call signature, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.13 — Create escrow service for Razorpay Route
 - DO: Create `backend/app/services/escrow.py` (new) with exactly:
@@ -1073,14 +1075,14 @@
 - RUN: `.venv/bin/python -c "from app.services.escrow import schedule_release, pause_release, release_due, ensure_linked_account; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.14 — Wire release clock into handover OTP verify
 - DO: Edit `backend/app/routers/purchase_settlement.py` in `verify_handover` (~L129): (1) add `from app.services.escrow import schedule_release` to imports; (2) immediately after `handover["verifiedAt"] = _now()` and BEFORE `await set_doc("purchases", purchase_id, purchase)`, add `schedule_release(purchase)` — this stores `escrowStatus: "release_pending"` and `releaseAt` on the purchase doc in the same write.
 - RUN: `.venv/bin/python -m pytest -q tests/test_purchases.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: verify the insert is before the `set_doc` call, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.15 — Add dispute endpoint pausing release
 - DO: Edit `backend/app/routers/purchase_settlement.py`: (1) add `from app.services.escrow import pause_release` to imports; (2) append (there is no existing dispute surface — this is the seam instructions.md §WS-03 step 3 requires):
@@ -1110,7 +1112,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_purchases.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix imports/model placement, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.16 — Add escrow release job endpoint
 - DO: Edit `backend/app/routers/jobs.py`: (1) add `from datetime import datetime, timezone` (extend the existing datetime import) and `from app.services.escrow import release_due` to imports; (2) append:
@@ -1123,7 +1125,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.jobs import router; print([r.path for r in router.routes])"` (cwd: `backend/`)
 - EXPECT: exit 0; output contains `/jobs/escrow/release`.
 - IF FAIL: fix the endpoint, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.17 — Register escrow modules in conftest and test escrow
 - DO: (1) Edit `backend/tests/conftest.py`: add `"app.services.escrow"` to BOTH the `get_doc`/`set_doc` tuple and the `query` tuple; add `"app.routers.purchase_settlement"` to the `get_doc`/`set_doc` tuple and the `query` tuple (only its `set_doc` is patched today). (2) Edit `backend/tests/test_purchases.py`: append escrow-timing tests:
@@ -1134,7 +1136,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_purchases.py -k escrow` (cwd: `backend/`)
 - EXPECT: exit 0, `3 passed`.
 - IF FAIL: align seed docs to what `release_due` reads (`id`, `escrowStatus`, `releaseAt`, `disputeId`, `escrow.netRelease`), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.18 — Create RazorpayX payouts service
 - DO: Create `backend/app/services/payouts.py` (new) with exactly:
@@ -1198,7 +1200,7 @@
 - RUN: `.venv/bin/python -c "from app.services.payouts import pay_settlement; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.19 — Wire payouts and onHold into settlements run
 - DO: Edit `backend/app/services/settlements.py`: (1) add `from app.services.payouts import pay_settlement` to imports; (2) in `_config()`'s seeded default config dict add keys `"payoutsEnabled": False` and `"dryRun": True` (operator flips these in `platform_config/settlements` — dry-run mode per run config, instructions.md §WS-03 step 4); (3) in `run_settlements`, immediately after each settlement doc is written/updated (inside the `for role, entities in totals.items():` loop, after `set_doc("settlements", doc_id, doc)` or the equivalent existing write), add:
@@ -1210,14 +1212,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (default config has `payoutsEnabled: False` — no behavior change).
 - IF FAIL: fix the insert point, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.20 — Add onHold payout test
 - DO: (1) Edit `backend/tests/conftest.py`: add `"app.services.payouts"` to BOTH the `get_doc`/`set_doc` tuple and the `query` tuple. (2) Edit `backend/tests/test_settlements.py` (or `backend/tests/test_payments.py` if settlements tests are elsewhere — check): append `test_payout_onhold_without_verified_bank` — seed `user_store["settlements/st_x"]` with `{"id": "st_x", "entityId": "uid-nob", "grossRupees": 1000, "netRupees": 900}` and NO bank accounts for `uid-nob`; `result = await pay_settlement(dict(user_store["settlements/st_x"]), dry_run=False)`; assert `result["status"] == "onHold"` and `result["holdReason"] == "no verified bank account"` and the stored doc matches.
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py -k onhold` (cwd: `backend/`)
 - EXPECT: exit 0, `1 passed`.
 - IF FAIL: confirm the fake `query` sees the subcollection path `users/uid-nob/bank_accounts` (seed it via `user_store[f"users/uid-nob/bank_accounts/{doc_id}"]` when testing the verified path), fix, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.21 — Create RazorpayX penny-drop adapter
 - DO: Create `backend/app/services/bank_verify/razorpayx.py` (new — `bank_verify/__init__.py` already imports `RazorpayXBankVerifyAdapter` from this path, so the package import is broken until this file exists) with exactly:
@@ -1262,21 +1264,21 @@
 - RUN: `.venv/bin/python -c "from app.services.bank_verify import get_bank_verify_adapter; a = get_bank_verify_adapter(); print(type(a).__name__)"` (cwd: `backend/`)
 - EXPECT: exit 0, output `StubBankVerifyAdapter` (default provider is stub; env=dev allows it).
 - IF FAIL: the import error names the missing piece — fix `razorpayx.py` or the config key from task 3.1, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.22 — Add penny-drop failure-path test
 - DO: Edit `backend/tests/test_bank_accounts.py`: append `test_penny_drop_invalid_ifsc_fails` — monkeypatch `app.services.bank_verify.razorpayx.httpx.AsyncClient` (or its `post` method) with a stub whose `post` returns an object with `status_code = 400` and `.json()` returning `{"error": {"description": "invalid IFSC"}}`; monkeypatch `app.core.config.settings.razorpay_key_id`/`razorpay_key_secret` non-empty; instantiate `RazorpayXBankVerifyAdapter` directly and `await adapter.penny_drop("1234567890", "BAD0IFSC", "Test Name")`; assert result == `{"verified": False, "accountHolderMatch": False}`. Also assert `get_bank_verify_adapter()` raises `ValueError` when `settings.env` is monkeypatched to `"prod"` and provider is `"stub"` (stub removed from any non-dev path).
 - RUN: `.venv/bin/python -m pytest -q tests/test_bank_accounts.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass including the new test.
 - IF FAIL: align the httpx stub signature, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.23 — Add TDS and GST rates to settlements config
 - DO: Edit `backend/app/services/settlements.py` in `_config()`'s seeded default config dict: add `"tdsRateBps": 10` (TDS section 194-O at 0.1% in basis points — operator-adjustable via `platform_config/settlements`) and `"gstRateBps": 1800` (GST 18% on commission, basis points). No other change in this task.
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the dict edit, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.24 — Write tds_ledger entries at settlement
 - DO: Edit `backend/app/services/settlements.py` in `run_settlements`: inside the settlement-write loop, immediately after each settlement doc write, add:
@@ -1293,14 +1295,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix variable names to match the existing loop, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.25 — Add TDS math test in integer paisa
 - DO: Edit `backend/tests/test_settlements.py`: append `test_tds_ledger_sums_to_gross` — run `run_settlements` over a seeded period that produces at least one settlement (copy the seeding pattern from the nearest existing settlements test), then collect every `user_store` key starting with `tds_ledger/`; assert: for each ledger doc, `tdsPaisa == grossPaisa * 10 // 10000` (the seeded 10 bps rate), all values are `int` (never float), and `sum(doc["grossPaisa"]) == sum(settlement grossRupees) * 100` for the corresponding settlements.
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py -k tds` (cwd: `backend/`)
 - EXPECT: exit 0, `1 passed`.
 - IF FAIL: align the assertion to the seeded fixture's gross values, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.26 — Create invoices service with PDF output
 - DO: Create `backend/app/services/invoices.py` (new): read `backend/app/services/reports.py` FIRST and mirror its reportlab/PDF pattern. The new module must contain:
@@ -1333,35 +1335,35 @@
 - RUN: `.venv/bin/python -c "from app.services.invoices import issue_invoice, render_invoice_pdf; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports/reportlab usage to match `services/reports.py`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.27 — Wire commission and vyapari sale invoices
 - DO: (1) Edit `backend/app/services/settlements.py`: in the settlement-write loop (same spot as task 3.24), after the tds_ledger write add a platform commission invoice: `await issue_invoice("commission", doc_id, entity_id, commission * 100, int(config["gstRateBps"]), period_start)` with `from app.services.invoices import issue_invoice` imported at top and the loop's actual variable names. (2) Edit `backend/app/routers/purchases.py` in the existing `_issue_invoice` helper (~L53 — read it first): after its current logic, persist a vyapari-sale GST invoice via `issue_invoice("vyapari_sale", purchase["id"], purchase["buyerId"], int((purchase.get("finalAmount") or purchase.get("totalAmount") or 0)) * 100, 1800, <current period YYYY-MM>)` — the sale amount converted to integer paisa; add the import.
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py tests/test_purchases.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix variable names/import cycles (if a circular import appears, do the `issue_invoice` import inside the function), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.28 — Add invoice generation test
 - DO: (1) Edit `backend/tests/conftest.py`: add `"app.services.invoices"` to BOTH the `get_doc`/`set_doc` tuple and the `query` tuple. (2) Edit `backend/tests/test_settlements.py`: append `test_commission_invoice_written` — reuse the fixture from `test_tds_ledger_sums_to_gross`; after `run_settlements`, assert an `invoices/inv_commission_<doc_id>` doc exists whose `gstPaisa == taxablePaisa * 1800 // 10000` and `totalPaisa == taxablePaisa + gstPaisa`, all ints; assert `pdfPath` endswith `.pdf` and the file exists on disk (clean it up at test end).
 - RUN: `.venv/bin/python -m pytest -q tests/test_settlements.py -k invoice` (cwd: `backend/`)
 - EXPECT: exit 0, `1 passed`.
 - IF FAIL: align to the real invoice doc shape from task 3.26, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 3.29 — HUMAN CHECK: staging money flow end-to-end
 - DO: HUMAN CHECK — against the staging backend with real Razorpay TEST keys (human supplies them via env): (1) `POST /v1/payments/order` with amountPaisa + Idempotency-Key → Razorpay order id returned; (2) pay with a Razorpay test card; (3) confirm the signed webhook arrives (check a `payment_events` doc exists and its signature verified — replay it with `curl` and the correct `X-Razorpay-Signature` if needed); (4) `POST /v1/payments/verify` → success; (5) admin refund round-trip; (6) run `POST /v1/jobs/payments/reconcile` with the cron secret → `mismatched: 0`; (7) purchase flow → handover OTP → confirm `escrowStatus: release_pending` + `releaseAt` on the purchase doc; (8) weekly settlement run with payoutsEnabled → verified account paid, unverified account `onHold`; (9) inspect `audit_logs` for every mutation.
 - RUN: `curl -s -X POST http://localhost:8000/v1/jobs/payments/reconcile -H "X-Cron-Secret: $CRON_SECRET"` (human substitutes the real staging URL/secret; requires the server running)
 - EXPECT: JSON response with `checked`/`mismatched` fields; the human confirms steps 1–9.
 - IF FAIL: record which numbered step failed and STOP (playbook §5) with the full response — staging money flows must not be faked.
-- [ ]
+- [x]
 
 ### Task 3.30 — WS-03 checkpoint: verify and commit
 - DO: Run the full WS-03 Verification block from instructions.md, then commit.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_admin_finance.py tests/test_booking_accept.py -k "payment or settlement or escrow or tds" && .venv/bin/python -m pytest -q tests/test_payments.py tests/test_settlements.py tests/test_purchases.py tests/test_bank_accounts.py && cd .. && git add -A && git commit -m "phase-00 WS-03: real money rails"`
 - EXPECT: all listed test selections pass; commit created. (The full-suite command from instructions.md runs at the WS-06 checkpoint and the phase-final gate, when the 45 pre-existing failures are repaired.)
 - IF FAIL: fix failures in files WS-03 touched; record pre-existing unrelated failures per the ordering note — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-04 — KYC pipeline  (see instructions.md §WS-04)
 
@@ -1424,7 +1426,7 @@
 - RUN: `.venv/bin/python -c "from app.services.kyc import DOC_MATRICES, mask_aadhaar, required_docs; assert mask_aadhaar('1234 5678 9012') == 'XXXXXXXX9012'; assert 'rc' in required_docs('transport'); print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module to match the spec above, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.2 — Create KYC router with case submission
 - DO: Create `backend/app/routers/kyc.py` (new) with exactly:
@@ -1499,7 +1501,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.kyc import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.3 — Add status and doc re-upload endpoints
 - DO: Edit `backend/app/routers/kyc.py`: append:
@@ -1536,7 +1538,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.kyc import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the appended code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.4 — Add matrix and upload endpoints
 - DO: Edit `backend/app/routers/kyc.py`: append:
@@ -1556,14 +1558,14 @@
 - RUN: `.venv/bin/python -c "from app.routers.kyc import router; print([r.path for r in router.routes])"` (cwd: `backend/`)
 - EXPECT: exit 0; output contains `/kyc/cases`, `/kyc/status`, `/kyc/matrix`, `/kyc/upload`, `/kyc/cases/{case_id}/docs`.
 - IF FAIL: align to the real `upload_user_file` signature, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.5 — Register KYC router in main app
 - DO: Edit `backend/app/main.py`: add `kyc,` to the `from app.routers import (...)` list (alphabetical, after `jobs,`) and `app.include_router(kyc.router, prefix="/v1")` beside the other includes.
 - RUN: `.venv/bin/python -c "from app.main import app; print([r.path for r in app.routes if r.path.startswith('/v1/kyc')])"` (cwd: `backend/`)
 - EXPECT: exit 0; output lists the five `/v1/kyc*` paths.
 - IF FAIL: fix the import/include lines, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.6 — Register KYC modules in conftest and test pipeline
 - DO: (1) Edit `backend/tests/conftest.py`: add `"app.routers.kyc"` and `"app.services.kyc"` to BOTH the `get_doc`/`set_doc` tuple and the `query` tuple. (2) Create `backend/tests/test_kyc.py` (new) with tests (seed the caller with `user_store["users/uid-1"] = {"id": "uid-1"}` and an access token via `app.services.tokens.create_access_token("uid-1")` — copy the auth-header pattern from `tests/test_orders.py`):
@@ -1574,7 +1576,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_kyc.py` (cwd: `backend/`)
 - EXPECT: exit 0, `4 passed`.
 - IF FAIL: print the failing response body once, align the test to the implemented contract (tasks 4.2–4.4 are the truth), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.7 — Rewrite admin KYC queue to live data
 - DO: Edit `backend/app/routers/admin.py`: (1) in `get_kyc_queue` (~L166) DELETE the hardcoded `queue = [...]` list (both `kyc-01`/`kyc-02` sample docs) and replace the body with:
@@ -1590,7 +1592,7 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py -k kyc` (cwd: `backend/`)
 - EXPECT: exit 0 (tests referencing the old sample docs are updated in task 4.9).
 - IF FAIL: confirm no `kyc-01`/`kyc-02`/`pendingKycCount": 8` remains (`grep -n "kyc-01\|kyc-02" app/routers/admin.py` must return nothing), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.8 — Rewrite admin KYC review against kyc_cases
 - PRECONDITION: `grep -n "def admin_action" backend/app/core/deps.py` — if this fails, STOP the phase (playbook §5): WS-02 task 2.3 is missing.
@@ -1635,14 +1637,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py -k kyc` (cwd: `backend/`)
 - EXPECT: command completes; test assertions referencing the OLD request/response shape fail — they are updated in task 4.9; no import/name errors.
 - IF FAIL: fix `NameError`s (`get_doc`/`set_doc`/`admin_user`/`admin_action` are already imported from earlier tasks — check), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.9 — Update admin KYC tests to live pipeline
 - DO: Edit `backend/tests/test_admin.py`: rewrite the KYC queue/review tests to the new contract — seed `user_store["kyc_cases/kyc_u1_transport"]` with a case containing 2 pending docs; `GET /v1/admin/kyc/queue` with `Bearer admin-token` → the seeded case appears (no `kyc-01`/`kyc-02`); `POST /v1/admin/kyc/kyc_u1_transport/review` with headers `X-Admin-Role: superadmin`, `X-Audit-Reason: test` and body `{"docId": "<doc1>", "status": "rejected"}` WITHOUT reason → 422 `REASON_REQUIRED`; with `"reason": "blurry scan"` → 200, stored doc `rejected` with that reason, case still `pending`; verify the remaining doc → case flips `verified` only when ALL docs are verified; a `Bearer plain-token` call → 403.
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: align the seed doc field names with tasks 4.2/4.8 (`caseId`, `docs[].docId`, `status`), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.10 — Add KYC expiry reminder job logic
 - DO: Edit `backend/app/services/kyc.py`: append:
@@ -1688,7 +1690,7 @@
 - RUN: `.venv/bin/python -c "from app.services.kyc import run_kyc_expiry_reminders; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.11 — Add expiry reminder job endpoint and test
 - DO: (1) Edit `backend/app/routers/jobs.py`: add `from app.services.kyc import run_kyc_expiry_reminders` to imports and append:
@@ -1702,28 +1704,28 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_kyc.py` (cwd: `backend/`)
 - EXPECT: exit 0, `6 passed`.
 - IF FAIL: align seed docs to the field names in task 4.10, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.12 — Create website KYC API wrapper
 - DO: Create `website/src/lib/api/kyc.ts` (new): read `website/src/lib/api/users.ts` FIRST and mirror its style exactly. Export: `getKycMatrix()` (GET `/kyc/matrix`), `submitKycCase(payload: { persona: string; docs: { type: string; storagePath: string; expiresAt?: string }[] })` (POST `/kyc/cases`), `getKycStatus()` (GET `/kyc/status`), `reuploadKycDoc(caseId: string, payload: { type: string; storagePath: string; expiresAt?: string })` (POST `/kyc/cases/${caseId}/docs`), `uploadKycDoc(file: File)` (POST `/kyc/upload` as multipart FormData via the shared `api` client). Define and export TS types `KycDoc`, `KycCase` matching the backend shapes from task 4.2.
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: match the wrapper style/types to `users.ts`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.13 — Build KYC submission wizard view
 - DO: Create `website/src/views/kyc/KycWizard.tsx` (new): read `website/src/views/onboarding/ProfileDetails.tsx` FIRST and mirror its layout/form patterns. The wizard: (1) fetches the doc checklist from `getKycMatrix()` for the user's active persona (from the session/onboarding store — use the same source the onboarding views use); (2) renders one step per required doc with an upload control calling `uploadKycDoc` and storing the returned `storagePath`; (3) for the `aadhaar` doc shows the masked-Aadhaar notice `t('kyc.wizard.maskedAadhaarNotice')`; (4) for types in the expiry-tracked set (`rc`, `insurance`, `fitness`, `apmc_licence`, `arhtiya_licence`, `operator_licence`, `instructor_credential`) shows an expiry-date input; (5) final step calls `submitKycCase` then navigates to `/kyc/status`. ALL strings via `t()`; NO `alert()`/`confirm()` (playbook §3 rules 3 + global rule 6).
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix imports/types, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.14 — Build KYC status page view
 - DO: Create `website/src/views/kyc/KycStatus.tsx` (new): fetch `getKycStatus()` on mount; render each case with per-doc status badges (pending/verified/rejected via `t('kyc.status.state.pending')` etc.); for rejected docs show the `reason` and a re-upload control that calls `uploadKycDoc` + `reuploadKycDoc` then refetches; show `t('kyc.status.verifiedBanner')` when a case is `verified`. All strings via `t()`; no `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix imports/types, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.15 — Add KYC i18n keys in English and Hindi
 - DO: Edit `website/src/lib/i18n/locales/en.ts` AND `website/src/lib/i18n/locales/hi.ts`: add the SAME key set to both files (English text in en, Hindi in hi — translate every value; no English-only strings, global rule 6):
@@ -1731,28 +1733,28 @@
 - RUN: `pnpm exec tsc --noEmit && node -e "const fs=require('fs');const en=fs.readFileSync('src/lib/i18n/locales/en.ts','utf8');const hi=fs.readFileSync('src/lib/i18n/locales/hi.ts','utf8');const keys=['kyc.wizard.title','kyc.status.verifiedBanner','kyc.doc.aadhaar','kyc.doc.land_712','kyc.status.state.rejected'];for(const k of keys){if(!en.includes(k)||!hi.includes(k)){console.error('missing: '+k);process.exit(1)}}console.log('parity ok')"` (cwd: `website/`)
 - EXPECT: `tsc` exit 0 and output `parity ok`.
 - IF FAIL: add the missing key to whichever locale file lacks it, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.16 — Register KYC routes in the app router
 - DO: Edit `website/src/App.tsx`: import `KycWizard` and `KycStatus` (lazy imports matching the file's existing pattern — read it first) and add routes: path `/kyc` → `KycWizard`, path `/kyc/status` → `KycStatus`, placed alongside the existing authenticated routes.
 - RUN: `pnpm exec tsc --noEmit && pnpm build` (cwd: `website/`)
 - EXPECT: `tsc` exit 0; `pnpm build` succeeds.
 - IF FAIL: fix the route registration to match App.tsx's existing route pattern, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.17 — HUMAN CHECK: KYC round-trip in staging
 - DO: HUMAN CHECK — with the dev server (`cd backend && .venv/bin/uvicorn app.main:app --port 8000`) and website (`cd website && pnpm dev`) running, the human: (1) logs in as a transporter and submits Aadhaar+PAN+bank+RC/DL via `/kyc`; (2) confirms the case appears in `GET /v1/admin/kyc/queue` (live data, no `kyc-01`); (3) as admin, verifies 4 docs and rejects RC with a reason; (4) opens `/kyc/status` → per-doc states + the reject reason visible; (5) re-uploads RC → case back to pending; (6) verifies RC → case flips `verified`; (7) confirms `/v1/admin/overview` `pendingKycCount` reflects the live count.
 - RUN: `curl -s http://localhost:8000/v1/admin/kyc/queue -H "Authorization: Bearer admin-token" | head -c 400` (requires the dev server running; in dev the Firebase admin token must come from a real sign-in — human substitutes it)
 - EXPECT: JSON with a `data` array of live cases; the human confirms steps 1–7 including the masked-Aadhaar notice in the wizard.
 - IF FAIL: record which numbered step failed and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 4.18 — WS-04 checkpoint: verify and commit
 - DO: Run the full WS-04 Verification block from instructions.md, then commit.
 - RUN: `cd backend && .venv/bin/python -m pytest -q tests/test_admin.py -k kyc && .venv/bin/python -m pytest -q tests/test_kyc.py && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-00 WS-04: KYC pipeline"`
 - EXPECT: backend KYC tests pass; `tsc` clean; `pnpm build` succeeds; commit created.
 - IF FAIL: fix failures in files WS-04 touched; record pre-existing unrelated failures per the ordering note — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-05 — Subscriptions & billing  (see instructions.md §WS-05)
 
@@ -1849,14 +1851,14 @@
 - RUN: `.venv/bin/python -c "from app.services.billing import PLANS, FREE_PLAN_BY_PERSONA; assert len(PLANS) == 20; assert all(p['priceMonthlyPaisa'] == int(p['priceMonthlyPaisa']) for p in PLANS); print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.2 — Create plans seed script
 - DO: Create `backend/scripts/seed_plans.py` (new): read `backend/scripts/seed_app_config.py` FIRST and mirror its structure; it must call `asyncio.run(seed_plans())` (import from `app.services.billing`) and print the result.
 - RUN: `.venv/bin/python -c "import scripts.seed_plans"` (cwd: `backend/`) — import-only check; do NOT execute against real Firestore here.
 - EXPECT: exit 0.
 - IF FAIL: fix the import path/style to match `seed_app_config.py`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.3 — Create billing router with read endpoints
 - DO: Create `backend/app/routers/billing.py` (new) with exactly:
@@ -1906,7 +1908,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.billing import router; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.4 — Add subscribe endpoint (Subscriptions / UPI Autopay)
 - DO: Edit `backend/app/routers/billing.py`: (1) add imports `import httpx`, `from pydantic import BaseModel, Field`, `from app.core.config import settings`, `from app.core.db import set_doc`, `from app.services.billing import get_plan`, `from datetime import datetime, timezone`; (2) append:
@@ -1956,7 +1958,7 @@
 - RUN: `.venv/bin/python -c "from app.routers.billing import router; print([r.path for r in router.routes])"` (cwd: `backend/`)
 - EXPECT: exit 0; output contains `/billing/plans`, `/billing/subscription`, `/billing/invoices`, `/billing/invoices/{invoice_id}/pdf`, `/billing/subscribe`.
 - IF FAIL: fix the appended code, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.5 — Extend webhook for subscription events
 - DO: Edit `backend/app/routers/payments.py` in `razorpay_webhook`: after the `set_doc("payment_events", ...)` write and before `return {"ok": True}`, add:
@@ -1988,14 +1990,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_payments.py` (cwd: `backend/`)
 - EXPECT: exit 0, all 5 pass (non-subscription events are unaffected).
 - IF FAIL: fix the inserted block's indentation/placement, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.6 — Register billing router and conftest modules
 - DO: (1) Edit `backend/app/main.py`: add `billing,` to the routers import list (alphabetical, after `bank_accounts,`) and `app.include_router(billing.router, prefix="/v1")`. (2) Edit `backend/tests/conftest.py`: add `"app.routers.billing"` and `"app.services.billing"` to BOTH the `get_doc`/`set_doc` tuple and the `query` tuple.
 - RUN: `.venv/bin/python -c "from app.main import app; print([r.path for r in app.routes if r.path.startswith('/v1/billing')])" && .venv/bin/python -m pytest -q tests/test_infra.py` (cwd: `backend/`)
 - EXPECT: exit 0; the five `/v1/billing*` paths printed; infra tests pass.
 - IF FAIL: fix the registration, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.7 — Add require_entitlement dependency and usage counters
 - DO: Edit `backend/app/services/billing.py`: append:
@@ -2041,28 +2043,28 @@
 - RUN: `.venv/bin/python -c "from app.services.billing import require_entitlement, increment_usage; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports (`Depends` from fastapi), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.8 — Enforce vehicle limit in transport router
 - DO: Edit `backend/app/routers/transport.py`: (1) add `from app.services.billing import increment_usage, require_entitlement` to imports; (2) in the `POST /vehicles` handler (~L226) add dependency `_ent: dict = Depends(require_entitlement("vehicles"))` to the signature; (3) after the vehicle doc is successfully written, add `await increment_usage(uid, "vehicles")` using the handler's actual user-id variable name (read the handler first).
 - RUN: `.venv/bin/python -m pytest -q tests/test_transport.py tests/test_tms.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass (seeded test users without a profile default to no limit).
 - IF FAIL: if a test user hits the free 1-vehicle limit, seed that test's user with an active subscription or a plan without the limit (see task 5.11 patterns) — never delete the assertion — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.9 — Enforce machine limit in equipment owner router
 - DO: Edit `backend/app/routers/equipment_owner.py`: same pattern as task 5.8 — `Depends(require_entitlement("machines"))` on the machine-create handler (`POST ""`, ~L84) and `await increment_usage(uid, "machines")` after the successful write.
 - RUN: `.venv/bin/python -m pytest -q tests/test_equipment_owner.py tests/test_saas_equipment_owner.py tests/test_equipment_approve.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: same approach as task 5.8 — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.10 — Enforce listing limit in broker router
 - DO: Edit `backend/app/routers/broker.py`: same pattern as task 5.8 — `Depends(require_entitlement("listings"))` on the lead-create handler (`POST /leads`, ~L289) and `await increment_usage(uid, "listings")` after the successful write.
 - RUN: `.venv/bin/python -m pytest -q tests/test_broker_deals.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: same approach as task 5.8 — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.11 — Create billing entitlement tests
 - DO: Create `backend/tests/test_billing.py` (new) with:
@@ -2073,49 +2075,49 @@
 - RUN: `.venv/bin/python -m pytest -q -k billing` (cwd: `backend/`)
 - EXPECT: exit 0, the 4 new tests pass.
 - IF FAIL: print the 402/500 body once, align seeds to the implemented contract (tasks 5.1/5.7 are the truth), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.12 — Create website billing API wrapper and paywall prompt
 - DO: (1) Create `website/src/lib/api/billing.ts` (new): mirror `website/src/lib/api/users.ts` style; export `getPlans()`, `getSubscription()`, `subscribe(planId: string, provider: 'razorpay_sub' | 'upi_autopay')`, `getInvoices()`, `invoicePdfUrl(invoiceId: string)` (returns `/billing/invoices/${invoiceId}/pdf`), plus `isEntitlementError(e: unknown)` (true when `isApiError(e) && e.code === 'ENTITLEMENT_EXCEEDED'`) and type `EntitlementDetails { limit: number; used: number; planId: string }`. (2) Edit `website/src/lib/api/client.ts`: extend `ApiError` with an optional `details?: Record<string, unknown>` populated from the error body fields `limit`/`used`/`planId` when present (read the envelope construction in `client.ts` and add the fields without changing existing behavior). (3) Create `website/src/views/billing/PaywallPrompt.tsx` (new): a panel that takes an `ApiError` with entitlement details and renders `t('billing.paywall.title')`, the usage line `t('billing.paywall.usage', { used, limit })`, and a link/button to `/billing/plans` with `t('billing.paywall.upgrade')`. No `alert()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: match the existing wrapper/component patterns, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.13 — Build plan comparison page
 - DO: Create `website/src/views/billing/Plans.tsx` (new): fetch `getPlans()` on mount; group by persona; render each plan as a card showing `t('billing.plans.tier.' + plan.tier)`, the monthly price formatted from paisa (`(priceMonthlyPaisa / 100).toLocaleString('en-IN')` — display formatting only, money stays paisa in state), the limits list, and a subscribe button on paid plans calling `subscribe(plan.planId, 'razorpay_sub')` then surfacing the provider checkout payload (in test mode show the returned `short_url`/id; no real payment in this view); free plans show `t('billing.plans.current')` when they match the user's effective plan from `getSubscription()`.
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: fix types against `billing.ts`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.14 — Build invoices list with GST download
 - DO: Create `website/src/views/billing/Invoices.tsx` (new): fetch `getInvoices()`; render a table (invoice id, kind, period, taxable/GST/total formatted from paisa) with a download button per row pointing at `invoicePdfUrl(invoice.invoiceId)` (plain `<a download>` — the backend route requires the Authorization header, so fetch the blob via the shared `api` client with `responseType: 'blob'` and trigger an object-URL download, mirroring any existing download pattern in the codebase — check `grep -rn "blob" website/src/lib website/src/views | head` first and reuse it).
 - RUN: `pnpm exec tsc --noEmit` (cwd: `website/`)
 - EXPECT: exit 0.
 - IF FAIL: reuse the found blob-download pattern, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.15 — Show subscription status and add billing i18n
 - DO: (1) Create `website/src/views/billing/SubscriptionStatus.tsx` (new): fetches `getSubscription()`; renders current plan id + status + `currentPeriodEnd` via `t()` keys, or `t('billing.status.free')` when null. (2) Edit `website/src/App.tsx`: find the route whose path contains `profile`; render `<SubscriptionStatus />` inside that view (edit the profile view file the route points to). If NO profile route exists, render `<SubscriptionStatus />` at the top of `Plans.tsx` instead. (3) Add routes `/billing/plans` → `Plans`, `/billing/invoices` → `Invoices` in `App.tsx` matching its existing lazy-route pattern. (4) Edit `website/src/lib/i18n/locales/en.ts` AND `website/src/lib/i18n/locales/hi.ts`: add the same keys in both (Hindi translations in hi): `billing.paywall.title`, `billing.paywall.usage`, `billing.paywall.upgrade`, `billing.plans.title`, `billing.plans.tier.free`, `billing.plans.tier.pro`, `billing.plans.tier.enterprise`, `billing.plans.subscribe`, `billing.plans.current`, `billing.invoices.title`, `billing.invoices.download`, `billing.status.title`, `billing.status.free`, `billing.status.active`, `billing.status.past_due`, `billing.status.cancelled`, `billing.status.until`.
 - RUN: `pnpm exec tsc --noEmit && node -e "const fs=require('fs');const en=fs.readFileSync('src/lib/i18n/locales/en.ts','utf8');const hi=fs.readFileSync('src/lib/i18n/locales/hi.ts','utf8');const keys=['billing.paywall.title','billing.plans.tier.pro','billing.status.past_due','billing.invoices.download'];for(const k of keys){if(!en.includes(k)||!hi.includes(k)){console.error('missing: '+k);process.exit(1)}}console.log('parity ok')"` (cwd: `website/`)
 - EXPECT: `tsc` exit 0 and output `parity ok`.
 - IF FAIL: add the missing key(s) to the locale file that lacks them, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.16 — HUMAN CHECK: paywall upgrade flow in test mode
 - DO: HUMAN CHECK — with dev server + website running and plans seeded (`cd backend && .venv/bin/python scripts/seed_plans.py` against the dev Firestore), the human: (1) as a free transporter, adds vehicles until the 2nd vehicle is blocked → the 402 `ENTITLEMENT_EXCEEDED` envelope payload is visible (dev tools) and the PaywallPrompt renders; (2) subscribes to `transporter_pro` in Razorpay TEST mode; (3) replays/triggers the `subscription.activated` webhook → `GET /v1/billing/subscription` shows `active`; (4) retries adding the vehicle → succeeds; (5) downloads a GST invoice PDF from `/billing/invoices`; (6) confirms a farmer account never sees an entitlement block.
 - RUN: `curl -s http://localhost:8000/v1/billing/plans | head -c 300` (requires the dev server running)
 - EXPECT: JSON containing a `plans` array with `transporter_pro`; the human confirms steps 1–6.
 - IF FAIL: record which numbered step failed and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 5.17 — WS-05 checkpoint: verify and commit
 - DO: Run the full WS-05 Verification block from instructions.md, then commit.
 - RUN: `cd backend && .venv/bin/python -m pytest -q -k billing && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-00 WS-05: subscriptions & billing"`
 - EXPECT: `-k billing` tests pass; `tsc` clean; `pnpm build` succeeds; commit created.
 - IF FAIL: fix failures in files WS-05 touched; record pre-existing unrelated failures per the ordering note — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-06 — Platform plumbing  (see instructions.md §WS-06)
 
@@ -2128,7 +2130,7 @@
 - RUN: `.venv/bin/python -m pytest -q 2>&1 | tail -30` (cwd: `backend/`)
 - EXPECT: the command completes and the output ends with a summary line like `N failed, M passed`; you have recorded every `FAILED tests/...` line. A non-zero exit code is EXPECTED here — this task fails only if the suite cannot even collect (output contains `ERROR` at collection).
 - IF FAIL: fix the collection error first (it blocks everything), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.2 — Refactor conftest to module auto-discovery
 - DO: Edit `backend/tests/conftest.py`: (1) add `import importlib`, `import pkgutil`, `import app.data`, `import app.routers`, `import app.services` to the top imports; (2) inside the `client` fixture, REPLACE the three manual module tuples (the `get_doc`/`set_doc` tuple ~L48–110, the `query` tuple ~L147–212, and the per-module one-off `monkeypatch.setattr("app.<module>.<fn>", ...)` lines that duplicate those same fakes) with:
@@ -2163,56 +2165,56 @@
 - RUN: `.venv/bin/python -m pytest -q 2>&1 | tail -5` (cwd: `backend/`)
 - EXPECT: the suite collects and runs to completion (no collection ERRORs); the failed/passed counts are recorded — failures remaining are the repair-sweep queue.
 - IF FAIL: if a module fails to import under walk_packages, the `except Exception: continue` skip covers it — confirm the skip is present and the fixture body has no leftover references to the deleted tuples (`grep -n "for module in (" tests/conftest.py` returns nothing), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.3 — Prove new modules need zero conftest edits
 - DO: No file change — run the smoke check: the WS-03/04/05 test files exercise routers and services that were never hand-listed in conftest; after task 6.2 they must pass purely via auto-discovery.
 - RUN: `.venv/bin/python -m pytest -q tests/test_payments.py tests/test_kyc.py tests/test_billing.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass — without any conftest edit since task 6.2.
 - IF FAIL: the failing module is not reached by walk_packages (e.g. a subpackage like `app.services.bank_verify` — those are covered) — inspect which fake is missing in the failing test and fix the auto-discovery loop, NOT the per-module lists — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.4 — Repair sweep 1: first failing test file
 - DO: Run the full suite, take the alphabetically FIRST test file with any failure, and fix every failure in that file by changing APPLICATION code (never the test, never the assertion — playbook §3 rule 2). Work one failure at a time; re-run that file after each fix.
 - RUN: `.venv/bin/python -m pytest -q <the failing file>` (cwd: `backend/`)
 - EXPECT: exit 0 — that file fully passes.
 - IF FAIL: read the assertion and the code path it exercises; the test encodes the intended behavior — fix the code to satisfy it — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.5 — Repair sweep 2: next failing test file
 - DO: Same protocol as task 6.4 for the next alphabetically-first test file that still has failures.
 - RUN: `.venv/bin/python -m pytest -q <the failing file>` (cwd: `backend/`)
 - EXPECT: exit 0 — that file fully passes.
 - IF FAIL: same as task 6.4 — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.6 — Repair sweep 3: next failing test file
 - DO: Same protocol as task 6.4 for the next failing test file.
 - RUN: `.venv/bin/python -m pytest -q <the failing file>` (cwd: `backend/`)
 - EXPECT: exit 0 — that file fully passes.
 - IF FAIL: same as task 6.4 — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.7 — Repair sweep 4: next failing test file
 - DO: Same protocol as task 6.4 for the next failing test file.
 - RUN: `.venv/bin/python -m pytest -q <the failing file>` (cwd: `backend/`)
 - EXPECT: exit 0 — that file fully passes.
 - IF FAIL: same as task 6.4 — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.8 — Repair sweep 5: next failing test file
 - DO: Same protocol as task 6.4 for the next failing test file.
 - RUN: `.venv/bin/python -m pytest -q <the failing file>` (cwd: `backend/`)
 - EXPECT: exit 0 — that file fully passes.
 - IF FAIL: same as task 6.4 — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.9 — Repair sweep 6: confirm remaining failure count
 - DO: Same protocol as task 6.4 for the next failing test file; afterwards run the FULL suite and record how many failures remain (the baseline said ~45 across files; sweeps 1–6 cleared the first six files).
 - RUN: `.venv/bin/python -m pytest -q 2>&1 | tail -3` (cwd: `backend/`)
 - EXPECT: output ends with a summary whose failed count is LOWER than the task-6.1 baseline (record both numbers). If it is already `0 failed`, note it — the checkpoint (task 6.24) enforces green.
 - IF FAIL: if the count did not drop, you re-fixed an already-fixed file — re-enumerate the failing files and continue with the correct next one — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.10 — Verify global error-envelope handlers
 - DO: Edit `backend/app/main.py`: the `StarletteHTTPException` and `RequestValidationError` handlers already exist (near the end of the file) — verify they match the standard envelope `{"error":{code, message, fieldErrors}}` and add ONLY the missing catch-all, directly after them:
@@ -2227,14 +2229,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_infra.py && grep -n "exception_handler" app/main.py` (cwd: `backend/`)
 - EXPECT: tests pass; grep shows handlers for `StarletteHTTPException`, `RequestValidationError`, and `Exception`.
 - IF FAIL: place the new handler after the existing two (registration order matters), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.11 — Sweep plain-string HTTPException details
 - DO: Find every `HTTPException` raised with a plain-string `detail` (these leak the non-envelope shape): convert each to the dict form `detail={"code": "<SCREAMING_CODE>", "message": "<original string>", "fieldErrors": {}}`. Read each site to pick a code that matches its meaning (e.g. `detail="not found"` → `NOT_FOUND`).
 - RUN: `grep -rn 'detail="' backend/app --include="*.py" | grep -v "detail={" | grep -v tests` (cwd: repo root)
 - EXPECT: exit 1 (grep finds nothing) — every remaining raise uses the dict envelope detail.
 - IF FAIL: convert the listed site, re-run the grep — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.12 — Add cursor pagination to core db
 - DO: Edit `backend/app/core/db.py`: append (Firestore cursors via `start_after`, standard shape `{items, nextCursor}` — instructions.md §WS-06 step 2):
@@ -2263,42 +2265,42 @@
 - RUN: `.venv/bin/python -c "from app.core.db import query_page; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix imports (`Any` is already imported in db.py), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.13 — Paginate the admin users endpoint
 - DO: Edit `backend/app/routers/admin.py` in `list_users` (~L104): (1) add `from app.core.db import query_page` to imports; (2) replace the `query("users", limit=500)` + Python-slice pagination with `query_page("users", filters, order_field="id", limit=pageSize, cursor=cursor)` — change the signature's `page: int = Query(1, ...)` to `cursor: Optional[str] = Query(None)` (keep `persona`/`status` as Firestore filters in the `filters` list; keep `search` as a post-filter on the returned page) and return `{"items": result["items"], "nextCursor": result["nextCursor"], "pageSize": pageSize}`.
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py` (cwd: `backend/`)
 - EXPECT: exit 0 — update any test asserting the old `{"data", "page", "total"}` shape to the new `{items, nextCursor}` shape (the shape change IS the spec — instructions.md §WS-06 step 2).
 - IF FAIL: align the endpoint and its tests to the new shape, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.14 — Cap unbounded scans in admin and analytics
 - DO: Edit `backend/app/routers/admin.py` AND `backend/app/routers/analytics.py`: every `query(...)` call currently using `limit=1000`/`limit=500` for AGGREGATION (e.g. the `get_admin_overview` users/orders/claims/settlements scans and analytics' equivalents — read both files first) must be capped to a documented page size: add a module-level `MAX_SCAN = 500` in each file and use it, and for the overview's GMV/counts compute from the capped page only. (Full cursor-based aggregation is a phase-08 performance item — this task caps the blast radius per instructions.md §WS-06 step 2.)
 - RUN: `.venv/bin/python -m pytest -q tests/test_admin.py tests/test_analytics.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix the failing aggregation to match the capped data, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.15 — Add composite indexes for new collections
 - DO: Edit `infra/firestore.indexes.json`: read the existing file structure first, then append one composite-index entry per NEW phase-00 query (same JSON shape as existing entries): `kyc_cases` (status ASC, submittedAt DESC), `payment_events` (type ASC, receivedAt DESC), `subscriptions` (userId ASC, status ASC), `tds_ledger` (period ASC, persona ASC), `invoices` (businessId ASC, period ASC), `ai_decisions` (module ASC, createdAt DESC), `disputes` (purchaseId ASC, status ASC), `plans` (persona ASC, priceMonthlyPaisa ASC).
 - RUN: `python3 -c "import json; d=json.load(open('infra/firestore.indexes.json')); idxs=d.get('indexes', []); cols={i['collectionGroup'] for i in idxs}; required={'kyc_cases','payment_events','subscriptions','tds_ledger','invoices','ai_decisions','disputes','plans'}; missing=required-cols; assert not missing, f'missing indexes: {missing}'; print('indexes ok:', len(idxs))"` (cwd: repo root)
 - EXPECT: exit 0, output starts `indexes ok:`.
 - IF FAIL: add the missing collection entry in the file's existing entry shape, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.16 — HUMAN CHECK: deploy indexes cleanly
 - DO: HUMAN CHECK — the human runs `firebase deploy --only firestore:indexes --project agrovercity-dev` (or the staging project) from the repo root with their Firebase credentials and confirms the deploy completes without index errors.
 - RUN: `firebase firestore:indexes --project agrovercity-dev 2>/dev/null | head -5 || echo "firebase CLI unavailable — human must run the deploy"`
 - EXPECT: the human confirms the index deploy succeeded (or that the listed indexes match `infra/firestore.indexes.json`).
 - IF FAIL: record the deploy error verbatim and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.17 — Verify backend Sentry wiring
 - DO: No file change expected — verify `backend/app/main.py` initialises `sentry_sdk` with the `FastApiIntegration` and `environment=settings.env` when `settings.sentry_dsn` is set (it already does — this is the acceptance check). If the init is missing, add exactly the block from instructions.md §WS-06 step 5.
 - RUN: `grep -n "sentry_sdk.init" -A4 backend/app/main.py` (cwd: repo root)
 - EXPECT: exit 0; output shows `sentry_sdk.init(` with `FastApiIntegration()` and `environment=settings.env`.
 - IF FAIL: add the init block, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.18 — Add website Sentry
 - DO: (1) `pnpm add @sentry/react` (cwd: `website/`). (2) Edit `website/src/main.tsx`: read it first, then add BEFORE `createRoot(...)` renders:
@@ -2314,7 +2316,7 @@
 - RUN: `pnpm exec tsc --noEmit && pnpm build` (cwd: `website/`)
 - EXPECT: `tsc` exit 0; build succeeds with `@sentry/react` bundled.
 - IF FAIL: fix the import/init placement, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.19 — Add structured request-logging middleware
 - DO: Edit `backend/app/main.py`: (1) add imports `import logging`, `import time`, `import uuid`; (2) add directly after the App Check middleware from task 1.18:
@@ -2338,14 +2340,14 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_infra.py` (cwd: `backend/`)
 - EXPECT: exit 0, all pass.
 - IF FAIL: fix middleware placement/imports, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.20 — Add staging/prod env files and document all keys
 - DO: (1) Create `backend/.env.staging.example` (new) and `backend/.env.production.example` (new): copies of `backend/.env.example` with `ENV=staging` / `ENV=prod` respectively and every secret value left EMPTY with the comment `# real values come from GCP Secret Manager — never commit`. (2) Edit `backend/.env.example`: ensure EVERY `Settings` field in `backend/app/core/config.py` has a documented key (add any missing: `FIREBASE_SERVICE_ACCOUNT_PATH`, `CRON_SECRET`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `SENTRY_DSN`, and the WS-01/03/05/07 additions through the phase — the check below is the truth).
 - RUN: `.venv/bin/python -c "from app.core.config import Settings; import re; env=open('.env.example').read(); missing=[f.upper() for f in Settings.model_fields if f.upper() not in env and f not in ('env',)]; assert not missing, f'undocumented: {missing}'; print('all documented')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `all documented`.
 - IF FAIL: add the named missing key(s) to `.env.example`, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.21 — Create locale-parity check script
 - DO: Create `website/tool/check-locale-parity.mjs` (new) with exactly:
@@ -2392,7 +2394,7 @@
 - RUN: `node tool/check-locale-parity.mjs` (cwd: `website/`)
 - EXPECT: exit 0, output `locale parity ok`.
 - IF FAIL: the output lists the exact missing keys — add them to the locale file that lacks them (real Hindi translations in hi files; never English placeholders), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.22 — Create CI pipeline
 - DO: Create `.github/workflows/ci.yml` (new) with exactly:
@@ -2439,21 +2441,21 @@
 - RUN: `test -f .github/workflows/ci.yml && grep -q "pytest -q" .github/workflows/ci.yml && grep -q "tsc --noEmit" .github/workflows/ci.yml && grep -q "check-locale-parity" .github/workflows/ci.yml && grep -q "AI_PROVIDER=shim" .github/workflows/ci.yml && echo "ci ok"` (cwd: repo root)
 - EXPECT: exit 0, output `ci ok`.
 - IF FAIL: fix the workflow file to contain all four gates, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.23 — HUMAN CHECK: Sentry events and CI run
 - DO: HUMAN CHECK — the human: (1) triggers a backend Sentry test event via the dev-only `GET /v1/debug/sentry-test` endpoint with `SENTRY_DSN` set, and confirms it lands in the Sentry project tagged with the environment; (2) triggers a website Sentry event (temporary throw in dev tools with `VITE_SENTRY_DSN` set) and confirms it lands; (3) opens a PR and confirms the CI workflow runs all three gates (pytest / tsc+build / locale parity) and fails on a deliberately red check.
 - RUN: `curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/v1/debug/sentry-test` (requires the dev server running with `SENTRY_DSN` set)
 - EXPECT: output `500` (the endpoint raises intentionally in dev); the human confirms both Sentry events and the CI behavior.
 - IF FAIL: record which of the three checks failed and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 6.24 — WS-06 checkpoint: full suite green and commit
 - DO: Run the FULL backend suite — it must be completely green (global rule 9; the 45 baseline failures are now repaired). If failures remain, run additional repair sweeps using the task-6.4 protocol (one failing file at a time, code fixes only) BEFORE marking this task; record each extra sweep in your report. Then commit.
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && node tool/check-locale-parity.mjs && cd .. && git add -A && git commit -m "phase-00 WS-06: platform plumbing"`
 - EXPECT: `0 failed` for the backend suite; `tsc` clean; `pnpm build` succeeds; `locale parity ok`; commit created.
 - IF FAIL: more repair sweeps per the DO protocol — never mark this task with a red suite — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## WS-07 — AI foundation gateway (brief M1)  (see instructions.md §WS-07)
 
@@ -2540,7 +2542,7 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.privacy import sanitize_text, hash_user_id; assert sanitize_text('call +919876543210 or a@b.in, aadhaar 1234 5678 9012') == 'call [phone] or [email], aadhaar [aadhaar]'; assert hash_user_id('u1') != 'u1' and hash_user_id('u1') == hash_user_id('u1'); print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the regex/module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.2 — Create question-set registry
 - DO: Create `backend/app/services/ai/question_sets.py` (new) with exactly:
@@ -2587,7 +2589,7 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.question_sets import register_question_set, get_question_set; register_question_set(id='t', version='1', schema={}, state_builder=lambda s: s, confidence_threshold=0.75, fallback_fn=lambda s: {}); assert get_question_set('t.v1')['automation_level'] == 'suggest'; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.3 — Create golden fixtures directory and sample
 - DO: Create directory `backend/tests/fixtures/ai/golden/` (new) and file `backend/tests/fixtures/ai/golden/registration.v1.jsonl` (new) with exactly three lines (registration plumbing is the only set scaffolded this phase — instructions.md §WS-07 out-of-scope note):
@@ -2599,7 +2601,7 @@
 - RUN: `test -f backend/tests/fixtures/ai/golden/registration.v1.jsonl && python3 -c "import json; lines=open('backend/tests/fixtures/ai/golden/registration.v1.jsonl').read().strip().split(chr(10)); [json.loads(l) for l in lines]; print('fixtures ok:', len(lines))"` (cwd: repo root)
 - EXPECT: exit 0, output `fixtures ok: 3`.
 - IF FAIL: fix the JSONL formatting (one JSON object per line, no trailing commas), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.4 — Create deterministic shim provider
 - DO: Create `backend/app/services/ai/shim.py` (new) with exactly:
@@ -2650,7 +2652,7 @@
 - RUN: `.venv/bin/python -c "import asyncio; from app.services.ai.shim import decide; r = asyncio.run(decide({}, {'id': 'registration', 'version': '1', 'schema': {}})); assert r['answers']['preferredLanguage'] == 'hi'; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the golden path (`parents[3]` from `backend/app/services/ai/shim.py` resolves to `backend/`), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.5 — Create decision log writer
 - DO: Create `backend/app/services/ai/decision_log.py` (new) with exactly:
@@ -2702,7 +2704,7 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.decision_log import log_decision; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.6 — Create outcomes recorder
 - DO: Create `backend/app/services/ai/outcomes.py` (new) with exactly:
@@ -2726,7 +2728,7 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.outcomes import record_outcome; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.7 — Create budget guard
 - DO: Create `backend/app/services/ai/budget.py` (new) with exactly:
@@ -2767,7 +2769,7 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.budget import BudgetExhausted, track_cost; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.8 — Create Jev OpenRouter client
 - DO: Create `backend/app/services/ai/jev_client.py` (new) with exactly:
@@ -2808,7 +2810,7 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.jev_client import decide_batch, JEV_TIMEOUT; assert JEV_TIMEOUT == 2.0; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: fix the module, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.9 — Create Gemini client
 - DO: Create `backend/app/services/ai/gemini_client.py` (new) with exactly (`google-genai` is already in `backend/requirements.txt`; AI Studio key direct — NEVER OpenRouter for Gemini):
@@ -2870,14 +2872,14 @@
 - RUN: `.venv/bin/python -c "from app.services.ai.gemini_client import generate, analyze_image, embed, count_tokens, GEMINI_TIMEOUT; assert GEMINI_TIMEOUT == 20.0; print('ok')"` (cwd: `backend/`)
 - EXPECT: exit 0, output `ok`.
 - IF FAIL: confirm `google-genai>=2.0.0` is installed (`.venv/bin/pip show google-genai`); if missing run `.venv/bin/pip install -r requirements.txt` ONCE, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.10 — Add AI config keys to Settings
 - DO: (1) Edit `backend/app/core/config.py`: add fields to `Settings`: `ai_provider: str = "shim"` (set `AI_PROVIDER=live` only in prod; shim in dev/test/CI — CI never calls paid APIs), `ai_jev_model: str = "typesafe/jev-1.13"`, `ai_gemini_model: str = "gemini-2.5-flash"`, `ai_gemini_model_lite: str = "gemini-2.5-flash-lite"`, `ai_gemini_model_pro: str = "gemini-2.5-pro"`, `ai_gemini_embed_model: str = "gemini-embedding-001"`, `ai_daily_budget_usd: float = 50`, `ai_hash_salt: str = "dev-ai-hash-salt"`. (The existing `openrouter_api_key`, `gemini_api_key`, `gemini_model` fields stay.) (2) Edit `backend/.env.example`: append matching keys: `AI_PROVIDER=shim`, `AI_JEV_MODEL=typesafe/jev-1.13`, `AI_GEMINI_MODEL=gemini-2.5-flash`, `AI_GEMINI_MODEL_LITE=gemini-2.5-flash-lite`, `AI_GEMINI_MODEL_PRO=gemini-2.5-pro`, `AI_GEMINI_EMBED_MODEL=gemini-embedding-001`, `AI_DAILY_BUDGET_USD=50`, `AI_HASH_SALT=dev-ai-hash-salt`, plus `GEMINI_API_KEY=` if absent.
 - RUN: `.venv/bin/python -c "from app.core.config import settings; print(settings.ai_provider, settings.ai_jev_model, settings.ai_daily_budget_usd)"` (cwd: `backend/`)
 - EXPECT: exit 0, output `shim typesafe/jev-1.13 50.0`.
 - IF FAIL: fix the field additions, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.11 — Create gateway with DecisionResult contract
 - DO: Create `backend/app/services/ai/gateway.py` (new) with exactly:
@@ -3022,14 +3024,14 @@
 - RUN: `.venv/bin/python -c "import asyncio; from app.services.ai.gateway import decide, DecisionResult; from app.services.ai.question_sets import register_question_set; register_question_set(id='smoke', version='1', schema={'properties': {'x': {'type': 'string'}}}, state_builder=lambda s: s, confidence_threshold=0.75, fallback_fn=lambda s: {'x': 'fb'}); r = asyncio.run(decide({'x': 'hi'}, 'smoke.v1')); assert isinstance(r, DecisionResult) and r.source == 'shim'; print('ok', r.source)"` (cwd: `backend/`)
 - EXPECT: exit 0, output contains `ok shim` (the in-process Firestore call will warn/fail on missing credentials — if it raises, that is the real-Firestore path; in that case wrap the check in the test fixture instead and note it, the full check runs in task 7.13 with fakes).
 - IF FAIL: fix the failing import/logic, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.12 — Create platform_config/ai seed script
 - DO: Create `backend/scripts/seed_ai_config.py` (new): mirror `backend/scripts/seed_app_config.py`'s structure; it writes the Firestore doc `platform_config/ai` with exactly `{"modules": {}, "thresholds": {"<id>.v1": 0.75}, "automation": {"<id>.v1": "suggest"}}` (placeholder keys per instructions.md §WS-07 step 2 — real question-set ids are added with their briefs; edits to this doc are maker-checker + audited, admin console lands in phase-07).
 - RUN: `.venv/bin/python -c "import scripts.seed_ai_config"` (cwd: `backend/`) — import-only check.
 - EXPECT: exit 0.
 - IF FAIL: fix the import path/style, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.13 — Create AI gateway tests
 - PRECONDITION: `grep -n "walk_packages" backend/tests/conftest.py` — if this fails, STOP the phase (playbook §5): WS-06 task 6.2 (conftest auto-discovery) is missing.
@@ -3044,7 +3046,7 @@
 - RUN: `AI_PROVIDER=shim .venv/bin/python -m pytest -q tests/test_ai_gateway.py` (cwd: `backend/`)
 - EXPECT: exit 0, `6 passed`.
 - IF FAIL: print the failure, align the test to the implemented contract (tasks 7.1–7.11 are the truth), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.14 — Refactor chatbot through the gateway
 - PRECONDITION: `test -f backend/app/services/ai/gateway.py` — if this fails, STOP the phase (playbook §5).
@@ -3052,21 +3054,21 @@
 - RUN: `.venv/bin/python -m pytest -q tests/test_chatbot.py && grep -n "genai\|openrouter" app/services/chatbot.py; test $? -eq 1` (cwd: `backend/`)
 - EXPECT: tests pass AND the grep finds nothing (exit 1).
 - IF FAIL: remove the missed direct model import, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.15 — Refactor disease model through the gateway
 - DO: Edit `backend/app/services/disease_model/gemini.py` AND `backend/app/services/disease_model/base.py` (read both first): route the image analysis through `gateway.analyze_image(image_bytes, prompt, schema)`; make the existing `stub.py` the explicit fallback when the gateway returns `{}`, and where the stub's result is surfaced add the label `"demo"` to its output dict (e.g. `"source": "demo"`) so demo data is never presented as real.
 - RUN: `.venv/bin/python -m pytest -q -k "disease or intelligence"` (cwd: `backend/`)
 - EXPECT: exit 0, all selected tests pass.
 - IF FAIL: fix the refactor to satisfy the existing tests (they encode the contract), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.16 — Note the grading model fallback seam
 - DO: Edit `backend/app/services/grading_model/__init__.py`: add (or extend) the module docstring with exactly this sentence: `Grading stays stubbed here; the real implementation is AI brief M10 (phase-05) and will plug into services/ai/gateway.py at this seam.` No code change.
 - RUN: `grep -n "brief M10" backend/app/services/grading_model/__init__.py` (cwd: repo root)
 - EXPECT: exit 0, one matching line.
 - IF FAIL: add the docstring, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task 7.17 — HUMAN CHECK: live decide() against staging key
 - DO: HUMAN CHECK — the human, with a real staging `OPENROUTER_API_KEY` in env, runs:
@@ -3085,14 +3087,14 @@
 - RUN: `grep -c "decision_id" backend/app/services/ai/gateway.py` (sanity that the contract field exists; the live call itself is the human's step)
 - EXPECT: exit 0 (count ≥ 1); the human confirms a valid `DecisionResult` from the live call and the `ai_decisions` doc with cost.
 - IF FAIL: record the live-call error verbatim and STOP (playbook §5) — do not fake the live check.
-- [ ]
+- [x]
 
 ### Task 7.18 — WS-07 checkpoint: shim suite and commit
 - DO: Run the full WS-07 Verification block (brief-M1 standard) from instructions.md, then commit.
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm build && cd .. && git add -A && git commit -m "phase-00 WS-07: AI foundation gateway"`
 - EXPECT: the ENTIRE backend suite passes under `AI_PROVIDER=shim`; `pnpm build` succeeds; commit created.
 - IF FAIL: fix failures in files WS-07 touched; record pre-existing unrelated failures per the ordering note — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ## Phase-final gate
 
@@ -3101,74 +3103,74 @@
 - RUN: `cd backend && .venv/bin/python -m pytest -q 2>&1 | tail -3` (cwd: repo root)
 - EXPECT: output ends with a summary containing `0 failed` (only `passed`/`warnings`).
 - IF FAIL: return to the WS-06 repair-sweep protocol (task 6.4) for the remaining file(s) — never proceed with a red suite — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.2 — Shim AI suite green
 - DO: Run the complete backend suite with the shim provider (exit-gate + global rule 10).
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q 2>&1 | tail -3` (cwd: repo root)
 - EXPECT: output ends with `0 failed`.
 - IF FAIL: fix the shim-path failure (CI must never call paid APIs), re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.3 — Website typecheck and build clean
 - DO: Run the website gate.
 - RUN: `cd website && pnpm exec tsc --noEmit && pnpm build && node tool/check-locale-parity.mjs` (cwd: repo root)
 - EXPECT: `tsc` exit 0; `pnpm build` succeeds; output ends with `locale parity ok`.
 - IF FAIL: fix the reported type/build/locale error, re-run — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.4 — No demo backdoor reachable in prod mode
 - DO: Run the scripted prod-guard proof: prod boot without secrets must fail; the prod-guard regression tests must pass; the demo-string sweep must show only dev-gated hits.
 - RUN: `cd backend && (APP_ENV=prod JWT_SECRET= .venv/bin/python -c "from app.main import app" 2>&1 | grep -q jwt_secret) && .venv/bin/python -m pytest -q tests/test_prod_guards.py && cd .. && grep -rn 'sess_demo\|dev-user\|demo-\|"1234"' backend/app website/src | grep -v 'app/routers/auth.py' | grep -v 'app/core/security.py'; test $? -eq 1` (cwd: repo root)
 - EXPECT: the prod boot fails with `jwt_secret` in the error; `5 passed` for the guard tests; the sweep grep finds NOTHING outside `app/routers/auth.py` (dev-gated) and `app/core/security.py` (denylist) — final `test $? -eq 1` succeeds.
 - IF FAIL: identify which of the three proofs failed and return to the owning WS-01 task — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.5 — HUMAN CHECK: Razorpay staging round-trip
 - DO: HUMAN CHECK — exit-gate item 3: with staging TEST keys the human proves: real Razorpay test order → signed webhook (signature-verified; a `payment_events` doc exists) → `POST /v1/payments/verify` returns success → refund round-trip → `POST /v1/jobs/payments/reconcile` shows `mismatched: 0`.
 - RUN: `curl -s -X POST http://localhost:8000/v1/payments/order -H 'Content-Type: application/json' -H 'Authorization: Bearer <token>' -H 'Idempotency-Key: gate-check-1' -d '{"amountPaisa":100,"purpose":"gate","refId":"gate-1"}' | head -c 200` (human substitutes a real token against the staging URL)
 - EXPECT: a Razorpay order id in the response; the human confirms the full chain including reconcile `mismatched: 0`.
 - IF FAIL: record which link of the chain failed and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.6 — HUMAN CHECK: entitlement block proof
 - DO: HUMAN CHECK — exit-gate item 4: the human repeats task 5.16 steps 1–4 on staging: over-limit vehicle create returns 402 with the `ENTITLEMENT_EXCEEDED` envelope containing `{limit, used, planId}`; after activating a test subscription the same request succeeds.
 - RUN: `curl -s http://localhost:8000/v1/billing/plans | head -c 200` (requires the server running)
 - EXPECT: plans JSON returned; the human confirms the 402 envelope payload and the post-upgrade success.
 - IF FAIL: record the failing step and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.7 — HUMAN CHECK: KYC pending-to-verified flow
 - DO: HUMAN CHECK — exit-gate item 5: the human repeats task 4.17 on staging: wizard submit → case in the real queue → admin review (verify 4 docs, reject RC with reason) → status page shows per-doc states + reason → re-upload → full verify → case `verified`.
 - RUN: `curl -s http://localhost:8000/v1/kyc/matrix | head -c 200` (requires the server running)
 - EXPECT: the matrices JSON returned; the human confirms the full `pending → verified` round-trip.
 - IF FAIL: record the failing step and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.8 — HUMAN CHECK: live AI decision and budget fallback
 - DO: HUMAN CHECK — exit-gate item 6: the human (1) confirms task 7.17's live `decide()` wrote an `ai_decisions` doc with cost + confidence; (2) repeats the call with `AI_DAILY_BUDGET_USD=0` in env → the caller gets a clean fallback result (no exception), logged with `fallbackUsed: True`.
 - RUN: `cd backend && AI_PROVIDER=live AI_DAILY_BUDGET_USD=0 .venv/bin/python -c "import asyncio; from app.services.ai.question_sets import register_question_set; from app.services.ai.gateway import decide; register_question_set(id='budget_smoke', version='1', schema={'properties': {'x': {'type': 'string'}}}, state_builder=lambda s: s, confidence_threshold=0.5, fallback_fn=lambda s: {'x': 'fb'}); r = asyncio.run(decide({'x': '1'}, 'budget_smoke.v1')); print(r.source)"` (human runs with a live key set; expects `fallback`)
 - EXPECT: output `fallback`; the human confirms both halves.
 - IF FAIL: record the actual behavior and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.9 — HUMAN CHECK: admin audit-trail flow
 - DO: HUMAN CHECK — phase-final manual flow 6: with the server running the human (1) calls any admin mutation WITH `X-Admin-Role: superadmin` + `X-Audit-Reason: gate check` → succeeds; (2) confirms a new `audit_logs` doc with `{adminId, role, action, targetId, reason, at}` exists; (3) repeats WITHOUT the reason header → 400 `AUDIT_REASON_REQUIRED`.
 - RUN: `curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8000/v1/admin/users/some-uid/status -H 'Content-Type: application/json' -H 'Authorization: Bearer <admin-firebase-token>' -d '{"status":"suspended","reason":"gate"}'` (human substitutes a real admin token)
 - EXPECT: output `400` (missing `X-Audit-Reason`); the human confirms the with-headers variant writes the `audit_logs` doc.
 - IF FAIL: record the actual status/body and STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.10 — Global verification gate (README §4)
 - DO: Run every command of the global verification gate (`execution-plan/README.md` §4): backend suite green; website typecheck + build clean; locale-parity check; full suite under `AI_PROVIDER=shim`; and confirm each workstream's manual end-to-end flow (tasks 1.22, 2.21, 3.29, 4.17, 5.16, 6.23, 7.17) has been exercised and confirmed — no "coming soon" reachable on the surfaces this phase shipped.
 - RUN: `cd backend && .venv/bin/python -m pytest -q && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && node tool/check-locale-parity.mjs` (cwd: repo root)
 - EXPECT: every command exits 0; the human-confirmed manual flows from G.5–G.9 are recorded in your report.
 - IF FAIL: return to the owning workstream's checkpoint task — the phase is NOT done — else STOP (playbook §5) with full output.
-- [ ]
+- [x]
 
 ### Task G.11 — Phase-final commit
 - DO: Commit everything once G.1–G.10 pass.
 - RUN: `git add -A && git commit -m "phase-00: SaaS foundation & hardening + AI foundation — exit gate green"` (cwd: repo root)
 - EXPECT: commit created (git-identity failure is non-blocking per playbook §6 — note it and report).
 - IF FAIL: note the git error in the report and continue to the session report — else STOP (playbook §5) with full output.
-- [ ]
+- [x]

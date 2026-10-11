@@ -18,8 +18,7 @@ from app.models.broker import (
     VAULT_KINDS,
 )
 from app.routers.users import require_role
-from app.services import storage
-from app.services.ai import gateway
+from app.services import broker_ai, storage
 from app.services.ai.privacy import build_broker_deadlock_state, build_broker_lead_score_state
 from app.services.billing import entitlement_guard, record_usage
 from app.services.notify import notify_user
@@ -296,21 +295,13 @@ async def _evaluate_round_two_deadlock(deal_id: str, deal: dict, amount_offer: f
             ttl_hours_remaining=ttl_left,
             broker_id=broker_id,
         )
-        try:
-            d_decision = await gateway.decide(
-                deadlock_state,
-                "broker.lead_score.v1",
-                ctx=broker_id,
-                module="broker_lead_score",
-            )
-            deadlock_risk = float(d_decision.answers.get("deadlock_risk", 0.0))
+        deadlock_risk = await broker_ai.predict_deadlock(deadlock_state, broker_id)
+        if deadlock_risk is not None:
             deal["deadlockRisk"] = deadlock_risk
             if deadlock_risk >= 0.5:
                 deal["suggestMediator"] = True
                 deal["suggestedAction"] = "mediator"
             await set_doc("broker_deals", deal_id, deal)
-        except Exception:
-            pass
 
 
 @router.post("/deals/{deal_id}/messages", status_code=201)
@@ -411,14 +402,9 @@ async def create_lead(body: LeadCreate, ctx: tuple = Depends(_broker_user)):
     }
     try:
         lead_state = build_broker_lead_score_state(doc, broker_id=uid)
-        decision = await gateway.decide(
-            lead_state,
-            "broker.lead_score.v1",
-            ctx=uid,
-            module="broker_lead_score",
-        )
-        doc["score"] = float(decision.answers.get("quality", 0.5))
-        doc["deadlockRisk"] = float(decision.answers.get("deadlock_risk", 0.0))
+        scores = await broker_ai.score_lead(lead_state, uid, default_quality=0.5)
+        doc["score"] = scores["score"]
+        doc["deadlockRisk"] = scores["deadlockRisk"]
     except Exception:
         doc["score"] = 0.5
         doc["deadlockRisk"] = 0.0
@@ -663,14 +649,9 @@ async def respond_to_requirement(requirement_id: str, ctx: tuple = Depends(_brok
     }
     try:
         lead_state = build_broker_lead_score_state(lead, demand_fit=True, broker_id=uid)
-        decision = await gateway.decide(
-            lead_state,
-            "broker.lead_score.v1",
-            ctx=uid,
-            module="broker_lead_score",
-        )
-        lead["score"] = float(decision.answers.get("quality", 0.8))
-        lead["deadlockRisk"] = float(decision.answers.get("deadlock_risk", 0.0))
+        scores = await broker_ai.score_lead(lead_state, uid, default_quality=0.8)
+        lead["score"] = scores["score"]
+        lead["deadlockRisk"] = scores["deadlockRisk"]
     except Exception:
         lead["score"] = 0.8
         lead["deadlockRisk"] = 0.0

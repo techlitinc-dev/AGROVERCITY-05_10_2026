@@ -42,16 +42,17 @@
 - Flutter apps; B2B API (R7); anything listed in plan/direct_buyer_plan.md §11 "no backend".
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] Bank manager clears a daily queue fully in-app; every approve/reject/info-request decision has an `audit_logs` entry with reason
-- [ ] An insurance claim is trackable farmer-side like a courier package (intimated→surveyorAssigned→fieldAssessed→dbtApproved→disbursed) and cycle time is measurable from `insurance.py` stats
-- [ ] Cold storage runs a digital chamber register (inward/release) and a farmer holds a verifiable warehouse receipt retrievable via `/post-harvest/receipts/{receipt_number}` and attachable as loan collateral in CreditDesk
-- [ ] A dairy member farmer sees his own milk-money ledger (slips + payments + net) in his dashboard; batch mark-paid executes through the real payout rail
-- [ ] Direct buyer runs QC with measured parameters + photos and sliding per-parameter settlement computes to the rupee on both parties' screens — no spreadsheet step
-- [ ] 3-round counter cap enforced (`NEGOTIATION_CLOSED` past cap); org role gates return 403 `ORG_ROLE_REQUIRED`
-- [ ] AI never auto-approves credit/insurance: `loans.prescreen.v1` and `insurance.triage.v1` annotate only (status mutations unchanged), `fraud_signal > 0.8` flags but never rejects; `require_confirm` cap respected
-- [ ] No tier gate bypassed: dairy 25-member Free cap, directBuyer 1-contract Free cap, vet ₹299 Pro, cold-storage ₹1,999 Pro per facility all enforced server-side
-- [ ] Global verification gate (execution-plan/README.md §4) green
+- [x] Bank manager clears a daily queue fully in-app; every approve/reject/info-request decision has an `audit_logs` entry with reason
+- [x] An insurance claim is trackable farmer-side like a courier package (intimated→surveyorAssigned→fieldAssessed→dbtApproved→disbursed) and cycle time is measurable from `insurance.py` stats
+- [x] Cold storage runs a digital chamber register (inward/release) and a farmer holds a verifiable warehouse receipt retrievable via `/post-harvest/receipts/{receipt_number}` and attachable as loan collateral in CreditDesk
+- [x] A dairy member farmer sees his own milk-money ledger (slips + payments + net) in his dashboard; batch mark-paid executes through the real payout rail
+- [x] Direct buyer runs QC with measured parameters + photos and sliding per-parameter settlement computes to the rupee on both parties' screens — no spreadsheet step
+- [x] 3-round counter cap enforced (`NEGOTIATION_CLOSED` past cap); org role gates return 403 `ORG_ROLE_REQUIRED`
+- [x] AI never auto-approves credit/insurance: `loans.prescreen.v1` and `insurance.triage.v1` annotate only (status mutations unchanged), `fraud_signal > 0.8` flags but never rejects; `require_confirm` cap respected
+- [x] No tier gate bypassed: dairy 25-member Free cap, directBuyer 1-contract Free cap, vet ₹299 Pro, cold-storage ₹1,999 Pro per facility all enforced server-side
+- [x] Global verification gate (execution-plan/README.md §4) green
 
 ## Estimated effort
 

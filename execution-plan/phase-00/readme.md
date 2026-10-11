@@ -42,14 +42,15 @@ Nothing — this phase blocks everything (phases 01–08 all assume its gates pa
 - Weekly calibration job and "AI Health" page (phase-08 standing requirement).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] Backend suite fully green — the 45 failing tests are fixed (`cd backend && .venv/bin/python -m pytest -q`).
-- [ ] No demo backdoor reachable with `APP_ENV=prod` (MPIN 1234, `dev-`/`demo-` tokens, `/auth/quick-login`, Razorpay `"dev"` signature all rejected/absent); app refuses to start in prod without a real `jwt_secret`.
-- [ ] Real Razorpay test order → webhook (signature-verified) → verify flow proven in staging.
-- [ ] Entitlement middleware demonstrably blocks an over-limit request (429/402 with the standard error envelope).
-- [ ] A KYC case flows `pending → verified` end-to-end in staging (wizard submit → queue → review → status page).
-- [ ] `AI_PROVIDER=shim` full suite green; one live `decide()` against a staging key returns a valid `DecisionResult` and writes an `ai_decisions` doc with cost.
-- [ ] Global verification gate (execution-plan/README.md §4) green.
+- [x] Backend suite fully green — the 45 failing tests are fixed (`cd backend && .venv/bin/python -m pytest -q`).
+- [x] No demo backdoor reachable with `APP_ENV=prod` (MPIN 1234, `dev-`/`demo-` tokens, `/auth/quick-login`, Razorpay `"dev"` signature all rejected/absent); app refuses to start in prod without a real `jwt_secret`.
+- [ ] Real Razorpay test order → webhook (signature-verified) → verify flow proven in staging. (pending operator — 2026-10-08)
+- [x] Entitlement middleware demonstrably blocks an over-limit request (429/402 with the standard error envelope).
+- [ ] A KYC case flows `pending → verified` end-to-end in staging (wizard submit → queue → review → status page). (pending operator — 2026-10-08)
+- [ ] `AI_PROVIDER=shim` full suite green; one live `decide()` against a staging key returns a valid `DecisionResult` and writes an `ai_decisions` doc with cost. (pending operator — 2026-10-08)
+- [x] Global verification gate (execution-plan/README.md §4) green.
 
 ## Estimated effort
 

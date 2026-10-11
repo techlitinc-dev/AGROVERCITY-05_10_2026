@@ -37,6 +37,16 @@ class OfferCreate(BaseModel):
     pricePerUnit: int = Field(gt=0)
     quantity: float = Field(gt=0)
     message: str = ""
+    # Richer bid terms (optional, backward compatible).
+    pickupDate: str = ""  # YYYY-MM-DD
+    paymentTermsDays: int = Field(default=0, ge=0, le=120)
+    transportMode: Literal["buyerArranges", "farmerDelivers", "buyerPickup"] = "buyerArranges"
+
+
+class OfferAccept(BaseModel):
+    """Optional accept body: accept a partial quantity of the offered lot."""
+
+    quantity: float | None = Field(default=None, gt=0)
 
 
 class OfferCounter(BaseModel):

@@ -22,8 +22,15 @@ log = logging.getLogger(__name__)
 RETRY_ATTEMPTS = 2
 RETRY_BASE_DELAY_SECONDS = 0.05
 
-# Rough USD per 1k tokens for budget accounting (conservative placeholders).
-_COST_PER_1K_TOKENS = {"jev": 0.0002, "gemini": 0.0005, "gemini_lite": 0.0001}
+# USD per 1M tokens — published list input rates (spend-review doc):
+# jev $0.042/M (envelope anchor), Gemini 2.5 Flash $0.30/M in, Flash-Lite
+# $0.10/M in. Operators track live pricing via AI_COST_*_PER_1M env vars.
+_COST_PER_1M_TOKENS = {
+    "jev": settings.ai_cost_jev_per_1m,
+    "gemini": settings.ai_cost_gemini_per_1m,
+    "gemini_lite": settings.ai_cost_gemini_lite_per_1m,
+}
+_DEFAULT_COST_PER_1M = settings.ai_cost_gemini_per_1m
 
 
 class DecisionResult(BaseModel):
@@ -75,7 +82,7 @@ def _questions_for(question_set_id: str) -> list[dict]:
 
 
 def _estimate_cost(kind: str, text: str) -> float:
-    return privacy.estimate_tokens(text) / 1000 * _COST_PER_1K_TOKENS.get(kind, 0.0005)
+    return privacy.estimate_tokens(text) / 1_000_000 * _COST_PER_1M_TOKENS.get(kind, _DEFAULT_COST_PER_1M)
 
 
 async def _finish(

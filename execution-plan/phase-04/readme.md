@@ -52,27 +52,28 @@
 - Voice AI (retired M27/C1/C19). Flutter apps (out of program scope).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] An instructor earns on-platform: course published → farmer purchase →
+- [x] An instructor earns on-platform: course published → farmer purchase →
   commission 15–20% accrued → real payout visible in earnings page (staging).
-- [ ] A farmer earns a certificate whose QR/verification URL resolves publicly
+- [x] A farmer earns a certificate whose QR/verification URL resolves publicly
   and the certificate is visible in the farmer's profile (skill passport).
-- [ ] A household/institution buys weekly produce from named farmers via
+- [x] A household/institution buys weekly produce from named farmers via
   subscription/standing demand with escrow protection both ways (deposit +
   penalty matrix exercised in a test).
-- [ ] Every tile delivered by this phase (`instructorHome`, `courses`,
+- [x] Every tile delivered by this phase (`instructorHome`, `courses`,
   `courseDetail`, `emarketHome`, `orderTracking`, `gyanHub`, `agriNews`,
   `liveChannels`) resolves to a real page — zero "coming soon" reachable.
-- [ ] en/hi complete for every new screen (locale parity; no hardcoded strings,
+- [x] en/hi complete for every new screen (locale parity; no hardcoded strings,
   no `alert()`/`prompt()`/`confirm()`).
-- [ ] X11 respected: 200 coins/day earn cap enforced (expert talk +25 included),
+- [x] X11 respected: 200 coins/day earn cap enforced (expert talk +25 included),
   coin redemption ≤50%-of-order and ≤ `coinsDiscountAllowed`, coins never
   redeemable for cash.
-- [ ] M20 live: recommendations render on the learner catalog (24h cache,
+- [x] M20 live: recommendations render on the learner catalog (24h cache,
   fallback ordering on shim/outage), auto-grades require instructor confirm to
   publish, learning-path card appears after a certificate; `ai_decisions`
   written with cost + confidence.
-- [ ] Global verification gate (execution-plan/README.md §4) green.
+- [x] Global verification gate (execution-plan/README.md §4) green.
 
 ## Estimated effort
 

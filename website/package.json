@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
     "build": "pnpm locales:check && tsc --noEmit && vite build",
+    "bundle:check": "node scripts/check-bundle-size.mjs",
     "locales:check": "node scripts/check_locales.mjs",
     "preview": "vite preview"
   },
@@ -30,6 +32,7 @@
     "typescript": "~5.5.3",
     "vite": "^5.4.7",
     "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^3.2.7",
     "workbox-window": "^7.4.1"
   }
 }

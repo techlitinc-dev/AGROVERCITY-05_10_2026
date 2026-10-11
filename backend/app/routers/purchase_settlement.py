@@ -482,14 +482,17 @@ async def rate_counterparty(purchase_id: str, body: RateIn, uid: str = Depends(c
     if body.target == "farmer":
         if uid != purchase.get("buyerId") or user is None:
             _error(403, "FORBIDDEN", "only the buyer can rate the farmer")
-        require_role(user, "directBuyer", "seller")
+        require_role(user, "directBuyer", "seller", "exporter")
         if ratings.get("buyerToFarmer") is not None:
             _error(409, "ALREADY_RATED", "farmer already rated for this purchase")
         ratings["buyerToFarmer"] = rating_doc
     else:
-        if uid != purchase.get("farmerId") or user is None:
-            _error(403, "FORBIDDEN", "only the farmer can rate the buyer")
-        require_role(user, "farmer")
+        # Resale purchases: the supplier may be a seller (not a farmer) — gate
+        # on participation, not on the active profile.
+        if uid not in (purchase.get("farmerId"), purchase.get("buyerId")):
+            _error(403, "PURCHASE_FORBIDDEN", "not a purchase participant")
+        if uid != purchase.get("farmerId"):
+            _error(403, "PURCHASE_FORBIDDEN", "only the supplier can rate the buyer")
         if ratings.get("farmerToBuyer") is not None:
             _error(409, "ALREADY_RATED", "buyer already rated for this purchase")
         ratings["farmerToBuyer"] = rating_doc

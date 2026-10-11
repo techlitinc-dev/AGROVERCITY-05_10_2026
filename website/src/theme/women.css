@@ -18,7 +18,7 @@
 
 .women-hub .women-tab {
   border: 1.5px solid var(--av-border-grey-soft);
-  background: #fff;
+  background: var(--av-glass-fill);
   color: var(--av-slate-1);
   border-radius: 999px;
   padding: 8px 14px;
@@ -36,7 +36,7 @@
 }
 
 .women-hub .women-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-left: 4px solid var(--women-rose);
   border-radius: var(--av-radius-card);

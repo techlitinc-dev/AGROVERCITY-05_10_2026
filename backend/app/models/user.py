@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-VALID_PROFILES = {"farmer", "farmLandlord", "transport", "transporter", "seller", "equipmentRental", "broker", "instructor", "dairyManager", "customer", "directBuyer", "bankManager", "insuranceProvider", "coldStorageProvider"}
+VALID_PROFILES = {"farmer", "farmLandlord", "transport", "transporter", "seller", "equipmentRental", "broker", "instructor", "dairyManager", "milkSeller", "customer", "directBuyer", "exporter", "bankManager", "insuranceProvider", "coldStorageProvider"}
 
 
 class FarmBoundaryPoint(BaseModel):

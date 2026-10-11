@@ -41,6 +41,22 @@ export async function fetchStates(): Promise<StatesResponse> {
   return data;
 }
 
+/**
+ * M33 (phase-08 WS-01, task 1.39) — reverse geocode a GPS fix into a district
+ * plus the languages suggested for that region. Public endpoint (no auth).
+ */
+export interface GeoReverseResponse {
+  state: string;
+  district: string;
+  region: string;
+  suggestedLanguages: string[];
+}
+
+export async function fetchGeoReverse(lat: number, lng: number): Promise<GeoReverseResponse> {
+  const { data } = await api.get<GeoReverseResponse>('/geo/reverse', { params: { lat, lng } });
+  return data;
+}
+
 /** One MSP reference row — price is integer paisa. (WS-01 task 1.26) */
 export interface MspEntry {
   crop: string;

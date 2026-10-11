@@ -63,7 +63,7 @@
 }
 
 .animals-stat {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -128,7 +128,7 @@
 }
 
 .animals-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -215,13 +215,13 @@ a.animals-card:active {
 .animals-flag-warn {
   background: var(--av-gold-bg);
   color: var(--av-gold-text);
-  border: 1px solid #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.4);
 }
 
 .animals-flag-bad {
-  background: #fee2e2;
+  background: rgba(242, 109, 91, 0.14);
   color: var(--av-error);
-  border: 1px solid #fecaca;
+  border: 1px solid rgba(242, 109, 91, 0.4);
 }
 
 .animals-flag-ok {
@@ -256,7 +256,7 @@ a.animals-card:active {
 
 /* ---- Yield chart ---- */
 .animals-yield-chart {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);

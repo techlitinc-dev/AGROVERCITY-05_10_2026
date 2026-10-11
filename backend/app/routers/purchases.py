@@ -327,12 +327,20 @@ async def _new_purchase(
     return purchase
 
 
-async def create_purchase_from_offer(offer: dict) -> dict:
+async def create_purchase_from_offer(offer: dict, quantity: float | None = None) -> dict:
+    """Booking from an accepted offer.
+
+    `quantity` (optional) books a partial amount of a lot at the offer rate —
+    the lot is decremented and stays open until drained. Without it the legacy
+    full-accept semantics apply (lot flips to `sold`).
+    """
     price = offer["counter"]["pricePerUnit"] if offer.get("counter") else offer["pricePerUnit"]
     if offer["targetType"] == "demand":
         target = await get_doc("demands", offer["targetId"])
         if target is None:
             _error(404, "DEMAND_NOT_FOUND", "demand not found")
+        if target.get("status") != "open":
+            _error(409, "DEMAND_CLOSED", "demand is closed")
         purchase = await _new_purchase(
             buyer_id=target["buyerId"],
             buyer_name=target["buyerName"],
@@ -352,7 +360,10 @@ async def create_purchase_from_offer(offer: dict) -> dict:
         target = await get_doc("market_lots", offer["targetId"])
         if target is None:
             _error(404, "LOT_NOT_FOUND", "lot not found")
+        if target.get("status") != "open":
+            _error(409, "LOT_NOT_OPEN", "lot is not open for offers")
         farmer = await get_user(target["farmerId"]) or {}
+        qty = float(quantity) if quantity is not None else float(offer["quantity"])
         purchase = await _new_purchase(
             buyer_id=offer["fromId"],
             buyer_name=offer["fromName"],
@@ -361,11 +372,18 @@ async def create_purchase_from_offer(offer: dict) -> dict:
             source={"type": "offer", "refId": offer["id"]},
             crop=target["crop"],
             variety=target.get("variety", ""),
-            quantity=offer["quantity"],
+            quantity=qty,
             unit="quintal",
             price=price,
         )
-        target["status"] = "sold"
+        if quantity is None:
+            # Legacy full accept: the lot is consumed regardless of the offered qty.
+            target["status"] = "sold"
+        else:
+            remaining = round(float(target.get("quantityQuintals") or 0) - qty, 3)
+            target["quantityQuintals"] = remaining
+            if remaining <= 0:
+                target["status"] = "sold"
         await set_doc("market_lots", target["id"], target)
     await set_doc("purchases", purchase["id"], purchase)
     await _record_lot_sale(purchase)

@@ -2,6 +2,7 @@ import axios, { AxiosError, AxiosRequestConfig, AxiosRequestHeaders } from 'axio
 import { getAppCheckToken } from '../firebase';
 import { useOnboardingStore } from '../../stores/onboarding';
 import { useSessionStore } from '../../stores/session';
+import { uuid } from '../uuid';
 import type { ApiErrorBody, RefreshResponse } from './types';
 
 /**
@@ -89,7 +90,7 @@ api.interceptors.request.use(async (config) => {
   const appCheckToken = await getAppCheckToken();
   if (appCheckToken) config.headers['X-Firebase-AppCheck'] = appCheckToken;
   if (config.method && config.method !== 'get') {
-    config.headers['Idempotency-Key'] = crypto.randomUUID();
+    config.headers['Idempotency-Key'] = uuid();
   }
   return config;
 });

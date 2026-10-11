@@ -52,17 +52,18 @@ parity gate is part of the global gate for every later phase.
 - Voice/STT/TTS — descoped program-wide (M27, C1/C19 retired).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] Red-team chat-evasion set ("nine 8 two... call karna" class) ≥90% caught in golden test; regex-only mode works with the AI flag off; chat latency regression <300ms
-- [ ] Digest mode demonstrably batches notifications; vernacular copy renders in hi; zero notifications lost with `AI_PROVIDER=shim` / AI disabled
-- [ ] Seeded fraud ring in test data is caught by `trust.fraud.v1`; legitimate settlements unaffected; every hold carries AI reason + `decision_id`
-- [ ] Consent center toggles persist; DPDP export downloads a complete user archive; account deletion works end-to-end from the website
-- [ ] Support agent answers app-help questions citing FAQ source doc ids; money/account questions always escalate to a human ticket
-- [ ] App installs as a PWA; offline form draft created with network off syncs via `/v1/sync` when reconnected; first-load bundle <400 KB
-- [ ] `ta` locale reaches 436/436 keys as approved; glossary terms (mandi, khasra, 7/12…) never translated; CI parity gate fails the build on a regression
-- [ ] "pyaz ka bhav" returns mandi/lots results first; search index rebuild job runs; shim mode returns keyword-only results
-- [ ] North-star dashboard renders all six metrics from real `analytics_events`
-- [ ] Global verification gate (execution-plan/README.md §4) green — `cd backend && .venv/bin/python -m pytest -q`; `cd website && pnpm exec tsc --noEmit && pnpm build`; full suite green with `AI_PROVIDER=shim`; one manual end-to-end flow per workstream from dashboard task deep-link to completion
+- [x] Red-team chat-evasion set ("nine 8 two... call karna" class) ≥90% caught in golden test; regex-only mode works with the AI flag off; chat latency regression <300ms
+- [x] Digest mode demonstrably batches notifications; vernacular copy renders in hi; zero notifications lost with `AI_PROVIDER=shim` / AI disabled
+- [x] Seeded fraud ring in test data is caught by `trust.fraud.v1`; legitimate settlements unaffected; every hold carries AI reason + `decision_id`
+- [x] Consent center toggles persist; DPDP export downloads a complete user archive; account deletion works end-to-end from the website
+- [x] Support agent answers app-help questions citing FAQ source doc ids; money/account questions always escalate to a human ticket
+- [x] App installs as a PWA; offline form draft created with network off syncs via `/v1/sync` when reconnected; first-load bundle <400 KB
+- [x] `ta` locale reaches 436/436 keys as approved; glossary terms (mandi, khasra, 7/12…) never translated; CI parity gate fails the build on a regression
+- [x] "pyaz ka bhav" returns mandi/lots results first; search index rebuild job runs; shim mode returns keyword-only results
+- [x] North-star dashboard renders all six metrics from real `analytics_events`
+- [ ] Global verification gate (execution-plan/README.md §4) green — `cd backend && .venv/bin/python -m pytest -q`; `cd website && pnpm exec tsc --noEmit && pnpm build`; full suite green with `AI_PROVIDER=shim`; one manual end-to-end flow per workstream from dashboard task deep-link to completion (pending operator — 2026-10-08)
 
 ## Estimated effort
 

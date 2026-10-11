@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
@@ -18,9 +18,8 @@ from app.models.contracts import (
     DeliveryCreate,
 )
 from app.routers.users import require_role
-from app.services.ai import config_store, decision_log, gateway, question_sets
+from app.services import contracts_ai
 from app.services.ai import outcomes as ai_outcomes
-from app.services.ai.privacy import build_contract_attractiveness_state
 from app.services.notify import notify_user
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
@@ -31,15 +30,8 @@ router = APIRouter(prefix="/contracts", tags=["contracts"])
 
 TERMINAL_STATUSES = ("cancelled", "declined")
 
-# --- WS-07 M18 — contract attractiveness -----------------------------------
-# Scores the contract's expected income vs the 12-week mandi trend + agronomy
-# risk flags for the farmer grow-for-us card. The explanation is cached per
-# `decisionId` on the contract doc: a second read makes NO new gateway call and
-# writes no new `ai_decisions` row. Automation stays at `suggest`, and the e-sign
-# flow is untouched (hook calls only).
-CONTRACT_ATTRACTIVENESS_MODULE = "contracts_attractiveness"
-CONTRACT_ATTRACTIVENESS_QUESTION_SET = "contracts.attractiveness.v1"
-CONTRACT_ATTRACTIVENESS_WINDOW_DAYS = 84  # ≈12 weeks
+# WS-07 M18 contract attractiveness (the AI call + annotation) lives in
+# services/contracts_ai.py; the helpers below stay as router-level hook calls.
 
 
 # WS-02 step 7 — corporate-buyer KYC gate. Food businesses need FSSAI,
@@ -173,114 +165,9 @@ async def _enrich_with_current_price(contracts: list[dict]) -> list[dict]:
     return [{**c, "currentPrice": _price_from_docs(c, mandi_docs)} for c in contracts]
 
 
-async def _build_mandi_trend(crop: str, mandi_name: str) -> list[dict]:
-    """12-week mandi trend series for the contract crop (M18 state input).
-
-    Reads `mandi_price_history` when present; falls back to the current
-    `mandi_prices` modal as a single-point series so the score still computes."""
-    crop_l = (crop or "").lower()
-    mandi_l = (mandi_name or "").lower()
-
-    def _matches(doc: dict) -> bool:
-        if crop_l and crop_l not in (doc.get("commodity") or "").lower():
-            return False
-        if mandi_l and mandi_l not in (doc.get("mandiName") or doc.get("mandi") or "").lower():
-            return False
-        return True
-
-    points: list[dict] = []
-    for doc in await query("mandi_price_history", [], limit=10000):
-        if not _matches(doc):
-            continue
-        modal = float(doc.get("modalPrice") or 0.0)
-        if modal > 0:
-            points.append({"date": str(doc.get("date") or ""), "modalPrice": modal})
-    points.sort(key=lambda p: p["date"])
-    if points:
-        latest = points[-1]["date"]
-        try:
-            cutoff = (
-                datetime.fromisoformat(latest) - timedelta(days=CONTRACT_ATTRACTIVENESS_WINDOW_DAYS)
-            ).date().isoformat()
-            points = [p for p in points if not p["date"] or p["date"] >= cutoff]
-        except (TypeError, ValueError):
-            pass
-        return points[-12:]
-
-    mandi_docs = [d for d in await query("mandi_prices", [], limit=1000) if _matches(d)]
-    if mandi_docs:
-        modal = round(
-            sum(float(d.get("modalPrice") or 0.0) for d in mandi_docs) / len(mandi_docs), 2
-        )
-        return [{"date": "", "modalPrice": modal}]
-    return []
-
-
-async def _farmer_crop_history(farmer_id: str, exclude_contract_id: str | None) -> list[dict]:
-    if not farmer_id:
-        return []
-    docs = await query("contracts", [("farmerId", "==", farmer_id)], limit=200)
-    return [{"crop": d.get("crop")} for d in docs if d.get("id") != exclude_contract_id]
-
-
-async def attach_contract_attractiveness(contract: dict, *, persist: bool = True) -> dict | None:
-    """M18 — compute/attach the `attractiveness` annotation on a contract.
-
-    Returns the annotation, or None when the `contracts_attractiveness` flag is
-    off (the contract is unchanged). The explanation is cached per `decisionId`
-    stored on the doc: a second read is a pure cache hit (no gateway call, no new
-    `ai_decisions` row). Provider failures degrade to the deterministic fallback,
-    logged with `fallbackUsed`. This never touches status or the e-sign flow.
-    """
-    if not await config_store.module_enabled(CONTRACT_ATTRACTIVENESS_MODULE):
-        return None
-
-    cached = contract.get("attractiveness")
-    if isinstance(cached, dict) and cached.get("decisionId"):
-        return cached
-
-    mandi_trend = await _build_mandi_trend(contract.get("crop"), contract.get("mandiName"))
-    crop_history = await _farmer_crop_history(contract.get("farmerId"), contract.get("id"))
-    state = build_contract_attractiveness_state(contract, mandi_trend, crop_history)
-    try:
-        decision = await gateway.decide(
-            state,
-            CONTRACT_ATTRACTIVENESS_QUESTION_SET,
-            ctx=contract.get("farmerId"),
-            module=CONTRACT_ATTRACTIVENESS_MODULE,
-        )
-        answers = dict(decision.answers or {})
-        confidence = float(decision.confidence or 0.0)
-        decision_id = decision.decision_id
-    except Exception as exc:  # noqa: BLE001 — degrade, never break the contract flow
-        log.warning("contract attractiveness decide failed (%s) — degrading to fallback", exc)
-        answers = question_sets.fallback_answers(CONTRACT_ATTRACTIVENESS_QUESTION_SET, state)
-        confidence = 0.0
-        decision_id = await decision_log.log_decision(
-            module=CONTRACT_ATTRACTIVENESS_MODULE,
-            question_set_id=CONTRACT_ATTRACTIVENESS_QUESTION_SET,
-            version="v1",
-            state=state,
-            answers=answers,
-            confidence=0.0,
-            latency_ms=0,
-            cost_usd=0.0,
-            model="none",
-            source="fallback",
-            fallback_used=True,
-        )
-
-    annotation = {
-        "incomeVsMandi": round(float(answers.get("incomeVsMandi") or 0.0), 2),
-        "riskFlags": [str(flag) for flag in (answers.get("riskFlags") or [])],
-        "explanation": str(answers.get("explanation") or ""),
-        "confidence": round(confidence, 3),
-        "decisionId": decision_id,
-    }
-    contract["attractiveness"] = annotation
-    if persist and contract.get("id"):
-        await set_doc("contracts", contract["id"], contract)
-    return annotation
+# M18 attractiveness annotation is computed in services/contracts_ai.py (rule 10);
+# the router keeps only the hook call sites.
+attach_contract_attractiveness = contracts_ai.attach_contract_attractiveness
 
 
 async def _enrich_with_attractiveness(contracts: list[dict]) -> list[dict]:
@@ -352,7 +239,7 @@ async def _contract_buyer(uid: str = Depends(current_user_id)) -> dict:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    require_role(user, "directBuyer", "seller")
+    require_role(user, "directBuyer", "seller", "exporter")
     return user
 
 
@@ -500,7 +387,7 @@ async def my_contracts(
 ):
     uid = user["id"]
     if role == "buyer":
-        require_role(user, "directBuyer", "seller")
+        require_role(user, "directBuyer", "seller", "exporter")
         docs = await query("contracts", [("buyerId", "==", uid)], limit=1000)
     elif role == "farmer":
         require_role(user, "farmer")

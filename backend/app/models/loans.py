@@ -28,6 +28,9 @@ class LoanDocument(BaseModel):
     name: str
     storagePath: str
     uploadedAt: str
+    # phase-03 task 5.13 — collateral reference (e.g. warehouse receipt number)
+    # attached by a bank officer; absent on applicant file uploads.
+    referenceNo: str | None = None
 
 
 class LoanApplicationOut(BaseModel):

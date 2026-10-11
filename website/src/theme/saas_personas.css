@@ -48,7 +48,7 @@
 .saas-hero-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--color-text-primary, rgba(255, 255, 255, 0.07));
   margin: 0;
   line-height: 1.2;
 }
@@ -70,7 +70,7 @@
   align-items: center;
   gap: 0.5rem;
   background: var(--color-primary, #10b981);
-  color: #ffffff;
+  color: #16240f;
   border: none;
   border-radius: 0.5rem;
   padding: 0.5rem 1rem;
@@ -90,8 +90,8 @@
   align-items: center;
   gap: 0.5rem;
   background: rgba(255, 255, 255, 0.08);
-  color: var(--color-text-primary, #f8fafc);
-  border: 1px solid var(--color-border, #475569);
+  color: var(--color-text-primary, rgba(255, 255, 255, 0.07));
+  border: 1px solid var(--color-border, #a8bfae);
   border-radius: 0.5rem;
   padding: 0.5rem 0.875rem;
   font-size: 0.875rem;
@@ -132,7 +132,7 @@
 .saas-metric-value {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--color-text-primary, rgba(255, 255, 255, 0.07));
 }
 
 .saas-metric-sub {
@@ -170,14 +170,14 @@
 }
 
 .saas-tab-btn:hover {
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--color-text-primary, rgba(255, 255, 255, 0.07));
   background: rgba(255, 255, 255, 0.04);
 }
 
 .saas-tab-btn.active {
-  color: #ffffff;
-  background: rgba(16, 185, 129, 0.2);
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: var(--av-primary);
+  background: var(--av-accent-tint);
+  border: 1px solid var(--av-primary);
 }
 
 .saas-tab-badge {
@@ -190,7 +190,7 @@
 
 .saas-tab-btn.active .saas-tab-badge {
   background: var(--color-primary, #10b981);
-  color: #ffffff;
+  color: #16240f;
 }
 
 /* Content cards and lists */
@@ -204,7 +204,7 @@
 .saas-panel-title {
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--color-text-primary, rgba(255, 255, 255, 0.07));
   margin-top: 0;
   margin-bottom: 1rem;
   display: flex;
@@ -236,7 +236,7 @@
 .saas-table td {
   padding: 0.875rem 1rem;
   border-bottom: 1px solid rgba(51, 65, 85, 0.5);
-  color: var(--color-text-primary, #f8fafc);
+  color: var(--color-text-primary, rgba(255, 255, 255, 0.07));
 }
 
 .saas-table tr:hover td {
@@ -319,7 +319,7 @@
 .saas-input, .saas-select, .saas-textarea {
   background: #1e293b;
   border: 1px solid #334155;
-  color: #f8fafc;
+  color: rgba(255, 255, 255, 0.07);
   padding: 0.625rem 0.875rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;

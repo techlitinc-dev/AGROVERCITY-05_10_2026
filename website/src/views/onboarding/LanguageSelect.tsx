@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SiteFooter from '../../components/SiteFooter';
 import SiteHeader from '../../components/SiteHeader';
-import { fetchLanguages } from '../../lib/api/reference';
+import { fetchGeoReverse, fetchLanguages } from '../../lib/api/reference';
 import type { LanguageInfo } from '../../lib/api/types';
 import { updateProfile } from '../../lib/api/users';
 import { enqueueOp, pendingCount } from '../../lib/offline/outbox';
@@ -11,6 +11,7 @@ import { useT } from '../../lib/i18n';
 import { LANGUAGE_CATALOGUE } from '../../lib/languages';
 import { useOnboardingStore } from '../../stores/onboarding';
 import { useSessionStore } from '../../stores/session';
+import { uuid } from '../../lib/uuid';
 import '../../theme/views.css';
 
 const FEATURED = [
@@ -44,6 +45,11 @@ export default function LanguageSelect() {
   const isOnboarded = useOnboardingStore((s) => s.isOnboarded);
   const [otherLanguages, setOtherLanguages] = useState<LanguageInfo[]>(catalogueOptions);
   const [query, setQuery] = useState('');
+  /** M33 (task 1.39): the region a GPS fix resolved to + the applied suggestion. */
+  const [locating, setLocating] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ district: string; code: string } | null>(null);
+  /** Once the user picks a language by hand, their choice always wins. */
+  const userPickedRef = useRef(false);
 
   /** Logged-in users arrive here from the header switcher / dashboard. */
   const laterMode = hasToken && isOnboarded;
@@ -113,6 +119,36 @@ export default function LanguageSelect() {
     return label === key ? region : label;
   };
 
+  /**
+   * M33 (task 1.39): grant GPS → reverse geocode via /v1/geo/reverse →
+   * pre-select the region's suggested language. The pre-selection stays
+   * user-overridable: it never applies over a manual pick, and any later
+   * manual tap wins.
+   */
+  const detectByGps = () => {
+    if (locating || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        fetchGeoReverse(position.coords.latitude, position.coords.longitude)
+          .then((geo) => {
+            const code = geo.suggestedLanguages[0];
+            setSuggestion({ district: geo.district, code: code ?? '' });
+            if (code && !userPickedRef.current) setLanguage(code);
+          })
+          .catch(() => undefined) // suggestions are optional — silent fail
+          .finally(() => setLocating(false));
+      },
+      () => setLocating(false),
+      { timeout: 10000 }
+    );
+  };
+
+  const pickLanguage = (code: string) => {
+    userPickedRef.current = true;
+    setLanguage(code);
+  };
+
   const selectedName = LANGUAGE_CATALOGUE.find((l) => l.code === language)?.name ?? '';
   const totalCount = otherLanguages.length + FEATURED.length;
 
@@ -122,7 +158,7 @@ export default function LanguageSelect() {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         // WS-06 X20: offline profile edit → outbox (PUT /v1/users/me).
         enqueueOp({
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: uuid(),
           method: 'PUT',
           path: '/v1/users/me',
           body: patch,
@@ -159,7 +195,7 @@ export default function LanguageSelect() {
                       key={lang.code}
                       type="button"
                       className={`lang-card${language === lang.code ? ' selected' : ''}`}
-                      onClick={() => setLanguage(lang.code)}
+                      onClick={() => pickLanguage(lang.code)}
                     >
                       <span className="lang-check">✓</span>
                       <span className="lang-card-avatar">{lang.initials}</span>
@@ -169,6 +205,21 @@ export default function LanguageSelect() {
                     </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className="av-btn av-btn-ghost"
+                  style={{ marginTop: 8 }}
+                  onClick={detectByGps}
+                  disabled={locating}
+                >
+                  {locating ? <span className="av-spinner" aria-hidden /> : '📍'}{' '}
+                  {locating ? t('commonLoading') : t('findByGps')}
+                </button>
+                {suggestion && suggestion.code ? (
+                  <p style={{ marginTop: 6, marginBottom: 0, fontSize: 12, color: '#6B7280' }}>
+                    {t('languageSuggest.hint', { district: suggestion.district })}
+                  </p>
+                ) : null}
               </div>
 
               <div className="lang-search">
@@ -195,7 +246,7 @@ export default function LanguageSelect() {
                           key={`${group.region}-${lang.code}`}
                           type="button"
                           className={`lang-tile${language === lang.code ? ' selected' : ''}`}
-                          onClick={() => setLanguage(lang.code)}
+                          onClick={() => pickLanguage(lang.code)}
                         >
                           <span className="lang-tile-check">✓</span>
                           <span className="lang-tile-name">{lang.name}</span>

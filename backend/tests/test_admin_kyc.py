@@ -87,6 +87,7 @@ async def test_no_unmasked_aadhaar_anywhere(client, user_store, monkeypatch):
     import re
 
     _fake_storage(monkeypatch)
+    before = set(user_store.keys())  # shared store: assert only on docs this test creates
     token = seed_user(user_store, uid="u-mask")
     await client.post(
         "/v1/vault/documents",
@@ -97,6 +98,8 @@ async def test_no_unmasked_aadhaar_anywhere(client, user_store, monkeypatch):
     # Vault docs (all fields) + the AI *answers* (not hex decision ids/hashes,
     # which can coincidentally contain digit runs).
     for key, doc in user_store.items():
+        if key in before:
+            continue
         if "vault_documents" in key:
             assert not re.search(r"\d{12}", json.dumps(doc)), doc
         if key.startswith("ai_decisions/"):
@@ -105,7 +108,7 @@ async def test_no_unmasked_aadhaar_anywhere(client, user_store, monkeypatch):
     masked = [
         d
         for k, d in user_store.items()
-        if "vault_documents" in k
+        if "vault_documents" in k and k not in before
     ]
     assert masked and masked[0]["extracted"]["maskedAadhaar"] == "XXXX-XXXX-1234"
 

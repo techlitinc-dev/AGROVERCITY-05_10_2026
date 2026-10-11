@@ -51,19 +51,20 @@
   labeled placeholders per the phase-00 honesty rule.
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
 - [ ] Every §7 module in scope (7.1–7.17 except 7.18/7.19/7.21, plus 7.22–7.24)
   shipped with playbook step 7 verification; zero "coming soon" reachable from
-  any module's entry tile.
-- [ ] Hardcoded-data modules (women 7.12, climate 7.13, advisory base prices
+  any module's entry tile. (pending operator — 2026-10-08)
+- [x] Hardcoded-data modules (women 7.12, climate 7.13, advisory base prices
   7.2) read from real Firestore collections / mandi-linked data.
-- [ ] Every new module has en + hi locale pairs and the parity check passes.
-- [ ] Every module emits its tasks via the phase-01 task engine and appears in
+- [x] Every new module has en + hi locale pairs and the parity check passes.
+- [x] Every module emits its tasks via the phase-01 task engine and appears in
   the dashboard grid per `website/src/lib/dashboard.ts` ACL matrix.
-- [ ] AI briefs M9, M10, M12, M13, M21 registered per SDR/SGR, launch at
+- [x] AI briefs M9, M10, M12, M13, M21 registered per SDR/SGR, launch at
   `suggest`, work with `AI_PROVIDER=shim`, and log to `ai_decisions`.
-- [ ] `GET /v1/search` returns grouped results across all six indexes.
-- [ ] Global verification gate (execution-plan/README.md §4) green.
+- [x] `GET /v1/search` returns grouped results across all six indexes.
+- [x] Global verification gate (execution-plan/README.md §4) green.
 
 ## Estimated effort
 

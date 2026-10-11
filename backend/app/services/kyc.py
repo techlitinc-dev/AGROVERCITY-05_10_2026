@@ -64,6 +64,19 @@ INSTRUCTOR_ALLOWED_DOCS = (
 CASE_STATUS_APPROVED = "verified"
 CASE_STATUS_NEEDS_REVERIFY = "needs_reverification"
 
+# WS-03 step 7 (task 3.37): business e-market buyers. Quoting stays disabled
+# until gstin + pan are verified; udyam / trade_licence / apmc_mandi_licence /
+# fssai are conditional on the buyer's category; constitution docs route to
+# manual review (the phase-00 pending → admin review_doc path).
+EMARKET_BUSINESS_REQUIRED_DOCS = ("gstin", "pan")
+EMARKET_BUSINESS_CONDITIONAL_DOCS = ("udyam", "trade_licence", "apmc_mandi_licence", "fssai")
+EMARKET_BUSINESS_CONSTITUTION_DOCS = ("partnership_deed", "llp_agreement", "moa_aoa")
+EMARKET_BUSINESS_DOCS = (
+    *EMARKET_BUSINESS_REQUIRED_DOCS,
+    *EMARKET_BUSINESS_CONDITIONAL_DOCS,
+    *EMARKET_BUSINESS_CONSTITUTION_DOCS,
+)
+
 PERSONA_DOC_MATRIX: dict[str, tuple[str, ...]] = {
     "farmer": (),
     "farmLandlord": ("land_712", "land_tax_receipt"),
@@ -73,10 +86,12 @@ PERSONA_DOC_MATRIX: dict[str, tuple[str, ...]] = {
     "equipmentRental": ("equipment_rc", "equipment_insurance", "operator_licence"),
     "dairyManager": ("fssai",),
     "directBuyer": ("fssai", "iec", "apeda", "gst"),
+    "exporter": ("iec", "apeda", "gst"),
     "instructor": INSTRUCTOR_ALLOWED_DOCS,
     "bankManager": ("bank_authorisation",),
     "insuranceProvider": ("irdai_licence",),
     "coldStorageProvider": ("wdra_certificate",),
+    "emarket_business": EMARKET_BUSINESS_DOCS,
 }
 
 # Documents that must be re-verified periodically (instructor licences etc.).
@@ -96,6 +111,25 @@ def _now() -> str:
 
 def doc_matrix_for(persona: str) -> list[str]:
     return list(BASE_DOCS) + list(PERSONA_DOC_MATRIX.get(persona, ()))
+
+
+def emarket_business_requires_manual_review(case: dict | None) -> bool:
+    """Task 3.37: constitution docs (partnership/LLP/company) can never clear
+    without a human — they stay `pending` until an admin reviews them via the
+    phase-00 review_doc path (the matrix's manual_review routing)."""
+    if not case:
+        return False
+    declared = {doc.get("type") for doc in case.get("docs") or []}
+    return bool(declared & set(EMARKET_BUSINESS_CONSTITUTION_DOCS))
+
+
+def emarket_business_verified_docs(case: dict | None) -> set[str]:
+    """Doc types with status verified on the buyer's latest business case."""
+    if not case:
+        return set()
+    return {
+        doc.get("type") for doc in case.get("docs") or [] if doc.get("status") == "verified"
+    }
 
 
 def instructor_required_specialization_docs(case: dict) -> list[str]:

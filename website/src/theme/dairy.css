@@ -56,7 +56,7 @@
 }
 
 .dairy-stat {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -101,7 +101,7 @@
 }
 
 .dairy-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -150,7 +150,7 @@ a.dairy-card:active {
 
 /* ---- Slip card ---- */
 .dairy-slip {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-left: 4px solid var(--av-primary);
   border-radius: var(--av-radius-card);
@@ -305,7 +305,7 @@ a.dairy-card:active {
   margin-top: 12px;
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
-  background: #fff;
+  background: var(--av-glass-fill);
 }
 
 .dairy-table {
@@ -393,7 +393,7 @@ a.dairy-card:active {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -472,7 +472,7 @@ a.dairy-card:active {
   align-items: center;
   gap: 10px;
   background: var(--av-gold-bg);
-  border: 1.5px solid #fde68a;
+  border: 1.5px solid rgba(251, 191, 36, 0.4);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 13px;

@@ -21,6 +21,15 @@ DEFAULT_CONFIG = {
     # effective-dated + versioned, optional per-category override map).
     "courseGMVPct": 15,
     "courseGMVPctByCategory": {},
+    # WS-03 FarmGate (tasks 3.14/3.18/3.20/3.33): e-market customer guardrails,
+    # effective-dated + versioned like every other key (admin edits via
+    # maker-checker; services only consume).
+    "emarketDepositPct": 20,
+    "emarketHighValueThresholdPaisa": 1000000,
+    "emarketPriceLockMinutes": 30,
+    "emarketMaxQtyPerCrop": {},
+    "emarketSurgeMode": False,
+    "emarketProducePct": 5,
     "version": 1,
     "effectiveFrom": "2026-10-01T00:00:00+00:00",
 }
@@ -29,6 +38,8 @@ PCT_KEYS = {
     "equipmentRental": "equipmentRentalPct",
     "broker": "brokerPct",
     "instructor": "courseGMVPct",
+    # WS-03 task 3.33: 5% seller-side commission on delivered e-market orders.
+    "emarket_seller": "emarketProducePct",
 }
 
 # Instructor course commission stays inside the plan's allowed band (§6.8).
@@ -134,6 +145,23 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
         bucket["gross"] += gross
         bucket["commission"] += gross * pct // 100
         bucket["sourceIds"].append(purchase["id"])
+
+    # WS-03 task 3.33: delivered e-market customer orders accrue the seller-side
+    # commission (5% of gross, keyed by farmerId). Parent (multi-farmer cart
+    # container) orders are excluded — only child orders carry real value.
+    orders = await query("customer_orders", [("status", "==", "delivered")], limit=5000)
+    for order in orders:
+        if order.get("isParent"):
+            continue
+        if not _in_period(order.get("deliveredAt"), period_start, period_end):
+            continue
+        farmer_id = order.get("farmerId")
+        if not farmer_id:
+            continue
+        paisa = int(order.get("orderValuePaisa") or 0)
+        bucket = totals["emarket_seller"].setdefault(farmer_id, {"gross": 0, "sourceIds": []})
+        bucket["gross"] += paisa // 100
+        bucket["sourceIds"].append(order["id"])
 
     created = updated = 0
     now = datetime.now(timezone.utc).isoformat()

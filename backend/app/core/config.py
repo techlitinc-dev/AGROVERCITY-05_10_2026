@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     ai_gemini_embed_model: str = "gemini-embedding-001"
     ai_daily_budget_usd: float = 50.0
     ai_hash_salt: str = "dev-ai-salt"
+    # USD per 1M tokens (published list input rates; operators override with
+    # AI_COST_JEV_PER_1M / AI_COST_GEMINI_PER_1M / AI_COST_GEMINI_LITE_PER_1M).
+    ai_cost_jev_per_1m: float = 0.042
+    ai_cost_gemini_per_1m: float = 0.30
+    ai_cost_gemini_lite_per_1m: float = 0.10
     web_origins: list[str] = ["http://localhost:5173"]
 
     @model_validator(mode="after")

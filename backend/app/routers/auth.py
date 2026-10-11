@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from firebase_admin import auth as firebase_auth
@@ -22,6 +23,7 @@ from app.models.auth import (
 )
 from app.models.role_profiles import ROLE_PROFILE_MODELS
 from app.models.user import RegisterRequest, VALID_PROFILES
+from app.services import onboarding_seed
 from app.services.tokens import (
     create_access_token,
     create_refresh_token,
@@ -35,6 +37,8 @@ from app.services.tokens import (
 from app.services.users import upsert_user_from_firebase
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 
 def _error(status_code: int, code: str, message: str):
@@ -266,6 +270,15 @@ async def register(body: RegisterRequest, user_agent: str | None = Header(None))
                 "createdAt": now,
             },
         )
+    # WS-01 tasks 1.44 + 1.45 — seed the first dashboard (scheme matches +
+    # starter course + KYC checklist tasks) for the chosen personas. Runs
+    # after the user doc is final; resilient by design — registration must
+    # never fail because seeding did.
+    if body.profiles:
+        try:
+            await onboarding_seed.seed_dashboard(uid, body.profiles)
+        except Exception:  # noqa: BLE001 — seeding must never fail registration
+            logger.warning("post-registration seeding failed for uid=%s", uid, exc_info=True)
     pair = await _issue_session(uid, user_agent)
     return AuthResponse(
         accessToken=pair["accessToken"],

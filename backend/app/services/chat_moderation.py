@@ -12,12 +12,17 @@ worth making. `strip_exif` removes image metadata before an image message is
 stored.
 """
 import io
+import logging
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from app.core.db import get_doc, query, set_doc
-from app.services.ai import config_store
+from app.services.ai import config_store, gateway, privacy
+
+log = logging.getLogger(__name__)
+
+CONTENT_MODERATION_MODULE = "content_moderation"
 
 # Indian mobile: optional +91 / space / dash separators around [6-9]\d{9}, with
 # optional single separators between the remaining digits so grouped numbers
@@ -74,6 +79,62 @@ def needs_guardrail(text: str) -> bool:
 async def guardrail_enabled() -> bool:
     """Feature-flag gate for the M6 guardrail / image OCR paths."""
     return await config_store.module_enabled(GUARDRAIL_MODULE)
+
+
+async def guardrail_check(state: dict) -> bool:
+    """M6 guardrail for messages the regex missed; takes the prebuilt
+    `chat.guardrail.v1` state. True when the model flags contact sharing /
+    payment handle / abuse. Never raises for provider problems — the caller
+    fail-open path stays in the router."""
+    decision = await gateway.decide(
+        state, "chat.guardrail.v1", module=GUARDRAIL_MODULE
+    )
+    answers = decision.answers or {}
+    return any(
+        bool(answers.get(key))
+        for key in ("shares_contact", "shares_payment_handle", "abuse")
+    )
+
+
+async def ocr_scan(image_bytes: bytes) -> str:
+    """Visible text in a chat image (vision OCR through the gateway)."""
+    ocr = await gateway.analyze_image(
+        image_bytes,
+        "Extract any visible text from this chat image.",
+        module=GUARDRAIL_MODULE,
+    )
+    return str(ocr.get("text") or ocr.get("extractedText") or "")
+
+
+async def moderate_ugc(content_type: str, content_id: str, text: str, uid: str) -> None:
+    """WS-01 task 1.16 — post-write UGC moderation (suggest level).
+
+    Flagged items are queued for human review; content is never deleted here.
+    On any gateway failure the content simply stays un-flagged."""
+    state = privacy.build_ugc_moderation_state(text, uid)
+    try:
+        decision = await gateway.decide(
+            state, "content.moderation.v1", module=CONTENT_MODERATION_MODULE
+        )
+    except Exception as exc:  # noqa: BLE001 — moderation never breaks a write
+        log.warning("content moderation unavailable (%s) — content stays", exc)
+        return
+    answers = decision.answers or {}
+    if not answers.get("flag"):
+        return
+    await set_doc(
+        "moderation_queue",
+        f"mod_{content_type}_{content_id}",
+        {
+            "contentType": content_type,
+            "contentId": content_id,
+            "flag": True,
+            "reason": str(answers.get("reason") or "none"),
+            "decisionId": decision.decision_id,
+            "status": "open",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
 
 async def record_strike(uid: str, kind: str, message_id: str | None, room_id: str | None) -> int:

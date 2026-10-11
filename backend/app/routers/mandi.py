@@ -8,21 +8,18 @@ from app.core.cache import cache_get, cache_set
 from app.core.db import get_doc, query
 from app.core.deps import current_user_id
 from app.routers.users import require_role
-from app.services.ai import gateway
 from app.services.mandi_forecast import CACHE_COLLECTION as FORECAST_COLLECTION
 from app.services.mandi_forecast import forecast_doc_id
-from app.services.mandi_smart import build_smart_select_state
+from app.services.mandi_smart import build_smart_select_state, decide_smart_select
 from app.services.users import get_user
 
 router = APIRouter(prefix="/mandi", tags=["mandi"])
 
 MANDI_ROLES = ("farmer", "seller", "broker", "directBuyer")
 
-# Smart mandi selection (brief M12, SDR) — question set / AI-feature tag / cache.
-SMART_SELECT_QUESTION_SET = "mandi.smart_select.v1"
-SMART_SELECT_MODULE = "mandi_smart_select"
-# 15-minute server-side cache keyed by (crop, district, mandi set) — the AI
-# call is never triggered by a page view (task 1.12).
+# Smart mandi selection (brief M12, SDR) — question set / AI-feature tag / cache
+# live in services/mandi_smart.py (rule 10); the AI call is never triggered by a
+# page view (task 1.12).
 SMART_SELECT_CACHE_TTL_SECONDS = 900
 
 
@@ -252,9 +249,7 @@ async def smart_select(body: SmartSelectRequest, user: dict = Depends(_mandi_use
         except ValueError:
             decision = None
     if decision is None:
-        result = await gateway.decide(
-            state, SMART_SELECT_QUESTION_SET, ctx=str(user.get("id") or ""), module=SMART_SELECT_MODULE
-        )
+        result = await decide_smart_select(state, str(user.get("id") or ""))
         decision = {
             "ranking": list((result.answers or {}).get("ranking") or []),
             "explainKey": (result.answers or {}).get("explain_key"),

@@ -1,44 +1,63 @@
-/* AGROVERCITY design tokens — extracted from apps/mobile (lib/core/theme.dart + onboarding views) */
+/* AGROVERCITY design tokens — Verdant Glass v2.0 (§3–§5).
+   The v1 variable names are kept so every existing view flips to the dark
+   agri-glass palette without a rewrite; values now resolve to the
+   verdant-glass tokens (see verdant-glass.css for the canonical set). */
 :root {
-  --av-primary: #43a047;
-  --av-green-dark: #2e7d32;
-  --av-green-deep: #1b5e20;
-  --av-green-ink: #112a1f;
-  --av-green-surface-dark: #1b4332;
-  --av-accent-tint: #e8f5e9;
-  --av-border-green: #a5d6a7;
-  --av-border-green-strong: #81c784;
-  --av-bg: #f5f7fa;
-  --av-border-grey: #e2e8f0;
-  --av-border-grey-soft: #eceff1;
-  --av-error: #dc2626;
-  --av-success: #16a34a;
-  --av-gold-bg: #fef3c7;
-  --av-gold-text: #b45309;
-  --av-slate-1: #64748b;
-  --av-slate-2: #94a3b8;
-  --av-slate-3: #475569;
-  --av-slate-4: #334155;
-  --av-slate-5: #1e293b;
-  --av-title: #263238;
-  --av-splash-bg: #0a1e14;
-  --av-women: #be123c;
-  --av-info-bg: #fdf2f8;
-  --av-info-border: #f9a8d4;
-  --av-info-text: #9d174d;
+  /* Brand / action — lime is the ONE action color (§3.1) */
+  --av-primary: #d9f45b;
+  --av-green-dark: #a8c22e;
+  --av-green-deep: #f1f7ee;
+  --av-green-ink: #16240f;
+  --av-green-surface-dark: #122017;
+  --av-accent-tint: rgba(217, 244, 91, 0.14);
+  --av-border-green: rgba(255, 255, 255, 0.14);
+  --av-border-green-strong: rgba(255, 255, 255, 0.35);
+
+  /* Base */
+  --av-bg: #0b140e;
+  --av-border-grey: rgba(255, 255, 255, 0.14);
+  --av-border-grey-soft: rgba(255, 255, 255, 0.08);
+  --av-error: #f26d5b;
+  --av-success: #5cd65c;
+  --av-gold-bg: rgba(251, 191, 36, 0.16);
+  --av-gold-text: #fbbf24;
+
+  /* Text ramp (dark glass) */
+  --av-slate-1: #a8bfae;
+  --av-slate-2: #8fa696;
+  --av-slate-3: #a8bfae;
+  --av-slate-4: #dceadf;
+  --av-slate-5: #f1f7ee;
+  --av-title: #f1f7ee;
+  --av-splash-bg: #0b140e;
+  --av-women: #f472b6;
+  --av-info-bg: rgba(244, 114, 182, 0.12);
+  --av-info-border: rgba(244, 114, 182, 0.4);
+  --av-info-text: #f9a8d4;
 
   --av-radius-input: 14px;
-  --av-radius-card: 16px;
+  --av-radius-card: 20px;
   --av-radius-chip: 12px;
-  --av-radius-pill: 28px;
+  --av-radius-pill: 999px;
 
   --av-font: 'Mukta', system-ui, sans-serif;
+  --av-font-display: 'Sora', 'Mukta', system-ui, sans-serif;
+  --av-font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  --av-shadow-glow: 0 6px 14px rgba(67, 160, 71, 0.3);
-  --av-shadow-card: 0 4px 14px rgba(0, 0, 0, 0.08);
-  --av-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.28);
+  --av-shadow-glow: 0 6px 20px rgba(217, 244, 91, 0.25);
+  --av-shadow-card: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --av-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.45);
 
   --av-shell-width: 480px;
+
+  /* Glass surfaces (§5.1 recipe) */
+  --av-glass-fill: rgba(255, 255, 255, 0.07);
+  --av-glass-fill-strong: rgba(255, 255, 255, 0.12);
+  --av-glass-stroke: rgba(255, 255, 255, 0.14);
+  --av-glass-stroke-bright: rgba(255, 255, 255, 0.35);
+  --av-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --av-glass-card-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  --av-scrim: rgba(11, 20, 14, 0.55);
 }
 
 * {
@@ -60,6 +79,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: rgba(217, 244, 91, 0.28);
+  color: #f1f7ee;
+}
+
 /* Website shell: full-width page (the previous 480px phone column was removed) */
 .av-shell {
   position: relative;
@@ -78,7 +102,8 @@ body {
 
 .av-page-title {
   font-size: 26px;
-  font-weight: 900;
+  font-weight: 700;
+  font-family: var(--av-font-display);
   color: var(--av-title);
   line-height: 1.25;
 }
@@ -104,7 +129,7 @@ body {
   flex: 1;
   height: 6px;
   border-radius: 3px;
-  background: var(--av-border-grey);
+  background: rgba(255, 255, 255, 0.1);
 }
 .av-progress-segment.filled {
   background: var(--av-primary);
@@ -126,17 +151,19 @@ body {
   height: 50px;
   padding: 0 14px;
   border-radius: var(--av-radius-input);
-  border: 1.5px solid var(--av-border-grey);
-  background: #fff;
+  border: 1px solid var(--av-glass-stroke);
+  background: var(--av-glass-fill);
+  color: var(--av-title);
   font-family: var(--av-font);
   font-size: 15px;
-  color: var(--av-title);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .av-input:focus {
   border-color: var(--av-primary);
-  box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.15);
+  box-shadow: 0 0 0 3px rgba(217, 244, 91, 0.18);
 }
 .av-input.invalid {
   border-color: var(--av-error);
@@ -150,13 +177,13 @@ body {
 }
 .av-input-prefix span {
   padding: 0 4px 0 14px;
-  color: var(--av-slate-3);
+  color: var(--av-slate-1);
   font-weight: 600;
-  background: #fff;
+  background: var(--av-glass-fill);
   height: 50px;
   display: flex;
   align-items: center;
-  border: 1.5px solid var(--av-border-grey);
+  border: 1px solid var(--av-glass-stroke);
   border-right: none;
   border-radius: var(--av-radius-input) 0 0 var(--av-radius-input);
 }
@@ -184,12 +211,15 @@ select.av-input {
   width: 100%;
   height: 50px;
   border: none;
-  border-radius: var(--av-radius-input);
+  border-radius: var(--av-radius-btn, 16px);
   font-family: var(--av-font);
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
-  transition: transform 0.12s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.12s ease,
+    opacity 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .av-btn:active {
   transform: scale(0.97);
@@ -199,18 +229,20 @@ select.av-input {
   cursor: not-allowed;
 }
 .av-btn-primary {
-  background: linear-gradient(135deg, #43a047, #2e7d32);
-  color: #fff;
-  box-shadow: var(--av-shadow-glow);
+  background: var(--av-primary);
+  color: var(--av-green-ink);
+  box-shadow:
+    var(--av-glass-highlight),
+    var(--av-shadow-glow);
 }
 .av-btn-plain {
   background: var(--av-primary);
-  color: #fff;
+  color: var(--av-green-ink);
 }
 .av-btn-ghost {
-  background: transparent;
-  color: var(--av-green-dark);
-  border: 1.5px solid var(--av-border-green);
+  background: var(--av-glass-fill);
+  color: var(--av-text-primary, #f1f7ee);
+  border: 1px solid var(--av-border-green);
 }
 .av-btn-pill {
   border-radius: var(--av-radius-pill);
@@ -218,10 +250,12 @@ select.av-input {
 
 /* ---- Cards ---- */
 .av-card {
-  background: #fff;
-  border: 1.5px solid var(--av-border-grey-soft);
+  background: var(--av-glass-card-bg);
+  border: 1px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
 }
 
 /* ---- Chips ---- */
@@ -231,19 +265,21 @@ select.av-input {
   gap: 6px;
   padding: 8px 14px;
   border-radius: var(--av-radius-chip);
-  border: 1.5px solid var(--av-border-green);
-  background: #fff;
+  border: 1px solid var(--av-border-green);
+  background: var(--av-glass-fill);
   color: var(--av-slate-4);
   font-family: var(--av-font);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 .av-chip.selected {
   background: var(--av-accent-tint);
   border-color: var(--av-primary);
-  color: var(--av-green-deep);
+  color: var(--av-primary);
 }
 .av-chip-row {
   display: flex;
@@ -258,7 +294,7 @@ select.av-input {
   font-family: var(--av-font);
   font-size: 13px;
   font-weight: 700;
-  color: var(--av-green-dark);
+  color: var(--av-primary);
   cursor: pointer;
   text-decoration: none;
 }
@@ -267,8 +303,9 @@ select.av-input {
   left: 50%;
   bottom: 28px;
   transform: translateX(-50%);
-  background: var(--av-green-dark);
-  color: #fff;
+  background: rgba(18, 32, 23, 0.92);
+  color: var(--av-title);
+  border: 1px solid var(--av-glass-stroke);
   padding: 10px 18px;
   border-radius: 12px;
   font-size: 13px;
@@ -277,14 +314,17 @@ select.av-input {
   z-index: 100;
   max-width: min(90vw, 420px);
   text-align: center;
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 .av-toast.error {
-  background: var(--av-error);
+  background: rgba(242, 109, 91, 0.92);
+  color: #1c0b08;
 }
 .av-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(10, 30, 20, 0.55);
+  background: rgba(4, 10, 7, 0.6);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -300,9 +340,12 @@ select.av-input {
   max-width: var(--av-shell-width);
   max-height: 86dvh;
   overflow-y: auto;
-  background: var(--av-bg);
+  background: rgba(18, 32, 23, 0.94);
+  border: 1px solid var(--av-glass-stroke);
+  color: var(--av-title);
   border-radius: 24px 24px 0 0;
   padding: 20px;
+  box-shadow: var(--av-shadow-modal);
   animation: av-sheet-up 0.22s ease;
 }
 @media (min-width: 900px) {

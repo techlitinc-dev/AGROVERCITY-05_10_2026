@@ -91,14 +91,22 @@ async def test_due_by_hours_emits_task(client, user_store):
     assert row["hoursSinceService"] == 12
 
     # the reminder landed as a dashboard task (dedupe-safe single task)
-    tasks = [d for k, d in user_store.items() if k.startswith("tasks/")]
+    tasks = [
+        d
+        for k, d in user_store.items()
+        if k.startswith("tasks/") and d.get("kind") == "service_due"
+    ]
     assert len(tasks) == 1
     assert tasks[0]["kind"] == "service_due"
     assert tasks[0]["priority"] == "high"
 
     # a repeat check does not duplicate the task
     await client.get("/v1/equipment/owner/maintenance", headers=_auth(token))
-    tasks = [d for k, d in user_store.items() if k.startswith("tasks/")]
+    tasks = [
+        d
+        for k, d in user_store.items()
+        if k.startswith("tasks/") and d.get("kind") == "service_due"
+    ]
     assert len(tasks) == 1
 
 

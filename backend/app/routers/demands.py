@@ -25,7 +25,7 @@ async def _direct_buyer(uid: str = Depends(current_user_id)) -> tuple[dict, str]
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    require_role(user, "directBuyer", "seller")
+    require_role(user, "directBuyer", "seller", "exporter")
     return user, uid
 
 
@@ -35,6 +35,9 @@ async def _company_of(uid: str) -> str:
     if not company:
         seller_profile = await get_doc(f"users/{uid}/role_profiles", "seller")
         company = (seller_profile or {}).get("shopName", "")
+    if not company:
+        exporter_profile = await get_doc(f"users/{uid}/role_profiles", "exporter")
+        company = (exporter_profile or {}).get("companyName", "")
     return company
 
 

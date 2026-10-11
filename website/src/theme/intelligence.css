@@ -14,7 +14,7 @@
   margin: 10px 0;
 }
 .intel-kpi {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -72,7 +72,7 @@
   display: flex;
   gap: 6px;
   align-items: flex-end;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -110,7 +110,7 @@
 
 /* Breakdowns — horizontal bars, width % of max */
 .intel-breakdown {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -162,7 +162,7 @@
 .intel-insight {
   border-radius: var(--av-radius-card);
   border: 1.5px solid var(--av-border-grey-soft);
-  background: #fff;
+  background: var(--av-glass-fill);
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
@@ -174,7 +174,7 @@
   color: var(--av-green-deep);
 }
 .intel-insight.warning {
-  border-color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.4);
   background: var(--av-gold-bg);
   color: var(--av-gold-text);
 }
@@ -184,7 +184,7 @@
 
 /* Collapsible load-error line */
 .intel-error details {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   padding: 10px 14px;
@@ -221,7 +221,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -272,7 +272,7 @@
   color: var(--av-error);
 }
 .intel-alert-form {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);

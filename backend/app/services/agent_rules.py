@@ -119,6 +119,13 @@ def _event_value_paisa(event: dict) -> int:
     return 0
 
 
+async def parse_rule(prompt: str, schema: dict) -> str:
+    """Parse vernacular rule text to structured JSON via one gateway.generate
+    call (rule 10 — routers never call the gateway; the deterministic regex
+    fallback lives in the router)."""
+    return await gateway.generate(prompt, {"module": MODULE, "json_schema": schema})
+
+
 async def evaluate_rules_for_event(user_id: str, module: str, event_payload: dict) -> list[dict]:
     """Evaluate the user's active rules for `module`; emit confirm tasks on fire.
 

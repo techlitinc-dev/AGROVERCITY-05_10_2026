@@ -9,7 +9,7 @@
 }
 
 .trade-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -162,7 +162,7 @@
   gap: 12px;
   border: 1.5px solid var(--av-border-grey);
   border-radius: var(--av-radius-input);
-  background: #fff;
+  background: var(--av-glass-fill);
   padding: 4px;
 }
 .trade-stepper-btn {
@@ -297,7 +297,7 @@
   margin: 12px 0;
 }
 .trade-detail-item {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: 12px;
   padding: 10px 12px;
@@ -371,7 +371,7 @@
   margin: 12px 0;
 }
 .trade-stat {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   padding: 12px 14px;
@@ -489,7 +489,7 @@
   grid-template-columns: 110px 1fr 32px;
   align-items: center;
   gap: 10px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: 12px;
   padding: 10px 12px;
@@ -517,7 +517,7 @@
   display: flex;
   gap: 6px;
   align-items: flex-end;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   padding: 14px 12px 8px;
@@ -596,12 +596,12 @@
 .chat-bubble.mine {
   align-self: flex-end;
   background: var(--av-primary);
-  color: #fff;
+  color: #16240f;
   border-bottom-right-radius: 4px;
 }
 .chat-bubble.theirs {
   align-self: flex-start;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   color: var(--av-title);
   border-bottom-left-radius: 4px;
@@ -641,7 +641,7 @@
   gap: 6px;
   align-items: flex-end;
   min-height: 160px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);

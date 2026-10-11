@@ -31,6 +31,7 @@ INBOX_DEEP_LINK = "/dashboard/p/notifications"
 DEEP_LINKS: dict[str, str] = {
     "booking_confirmed": "/dashboard/p/purchases",
     "booking_cancelled": "/dashboard/p/purchases",
+    "call_missed": "/calls/{id}",
     "chat_message": "/dashboard/p/chats",
     "chat_unlocked": "/dashboard/p/chats",
     "damage_dispute_opened": "/dashboard/p/equipment/claims",
@@ -46,6 +47,8 @@ DEEP_LINKS: dict[str, str] = {
     "dispute_resolved": "/dashboard/p/equipment/claims",
     "escrow_funded": "/dashboard/p/purchases",
     "handover_verified": "/dashboard/p/purchases",
+    "incoming_call": "/calls/{id}",
+    "instant_booking": "/dashboard/p/transport/trips/{id}",
     "kyc_expiring": "/dashboard/profile",
     "offer_countered": "/dashboard/p/myOffers",
     "offer_expired": "/dashboard/p/myOffers",
@@ -60,11 +63,17 @@ DEEP_LINKS: dict[str, str] = {
     "trip_delivered": "/dashboard/p/transport/trips",
     "trip_enroute": "/dashboard/p/transport/trips",
     "trip_milestone": "/dashboard/p/transport/trips",
+    "urgent_load_nearby": "/dashboard/p/transport/loads",
     "weighbridge_recorded": "/dashboard/p/purchases",
     "contract_offer_received": "/dashboard/p/myContracts",
     "contract_cancelled": "/dashboard/p/myContracts",
     "contract_declined": "/dashboard/p/myContracts",
     "contract_accepted": "/dashboard/p/myContracts",
+    "rfq_matched": "/dashboard/p/seller/export-rfqs",
+    "quote_received": "/dashboard/p/exporter/rfqs",
+    "quote_accepted": "/dashboard/p/purchases",
+    "quote_withdrawn": "/dashboard/p/seller/export-quotes",
+    "order_status": "/dashboard/p/seller/orders",
 }
 
 # Notification type -> preference category (task 2.9). Default "trade".

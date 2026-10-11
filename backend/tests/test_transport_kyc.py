@@ -87,5 +87,9 @@ async def test_doc_expiring_outside_reminder_days_no_task(client, user_store):
     in_20_days = (datetime.now(timezone.utc) + timedelta(days=20)).date().isoformat()
     await _add_vehicle(client, token, insuranceExpiry=in_20_days)
 
-    reminders = [key for key, doc in user_store.items() if key.startswith("tasks/")]
+    reminders = [
+        key
+        for key, doc in user_store.items()
+        if key.startswith("tasks/") and str(doc.get("kind") or "").startswith("vehicle_doc_expiry")
+    ]
     assert reminders == []

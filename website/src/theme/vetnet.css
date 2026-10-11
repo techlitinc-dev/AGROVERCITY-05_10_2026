@@ -48,14 +48,14 @@
   font-size: 13px;
   font-weight: 800;
   color: var(--av-slate-1);
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-pill);
   padding: 7px 14px;
 }
 
 .vetnet-tabs a.active {
-  color: #fff;
+  color: #16240f;
   background: var(--av-green-dark);
   border-color: var(--av-green-dark);
 }
@@ -92,7 +92,7 @@
 }
 
 .vetnet-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -154,33 +154,33 @@ a.vetnet-card:active {
 }
 
 .vetnet-pill-ok {
-  background: #eaf7ee;
-  color: #166534;
-  border-color: #bbe7c8;
+  background: rgba(92, 214, 92, 0.14);
+  color: #5cd65c;
+  border-color: rgba(92, 214, 92, 0.4);
 }
 
 .vetnet-pill-info {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border-color: #bfdbfe;
+  background: rgba(107, 199, 242, 0.14);
+  color: #6bc7f2;
+  border-color: rgba(107, 199, 242, 0.4);
 }
 
 .vetnet-pill-warn {
-  background: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.4);
 }
 
 .vetnet-pill-bad {
-  background: #fef2f2;
-  color: #b91c1c;
-  border-color: #fecaca;
+  background: rgba(242, 109, 91, 0.14);
+  color: #f26d5b;
+  border-color: rgba(242, 109, 91, 0.4);
 }
 
 .vetnet-pill-grey {
-  background: #f1f5f9;
-  color: #475569;
-  border-color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #a8bfae;
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 /* ---- Chip row (status filters / small tag chips) ---- */
@@ -208,9 +208,9 @@ a.vetnet-card:active {
   align-items: center;
   padding: 2px 8px;
   border-radius: var(--av-radius-pill);
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  color: #475569;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #a8bfae;
   font-size: 11px;
   font-weight: 700;
 }
@@ -259,7 +259,7 @@ a.vetnet-card:active {
 .vetnet-med-remove {
   border: none;
   background: none;
-  color: var(--av-error, #b91c1c);
+  color: var(--av-error, #f26d5b);
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;

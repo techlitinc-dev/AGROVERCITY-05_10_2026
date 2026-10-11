@@ -12,7 +12,11 @@ Phase-05 changes:
   deterministic fallback, cached per (district, season, profile-class). The
   endpoint never creates anything — confirm is a separate, explicit call.
 """
+import json
+import logging
 from datetime import date, timedelta
+
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.db import query
 from app.models.advisory import (
@@ -24,6 +28,84 @@ from app.models.advisory import (
     SaturationOut,
 )
 from app.services.ai import config_store, gateway
+
+log = logging.getLogger(__name__)
+
+DISEASE_GATE_MODULE = "advisory_disease_gate"
+
+GATE_PROMPT = (
+    "Decide whether this image is a usable crop-disease scan input. Return ONLY JSON "
+    '{"is_plant_leaf": true/false, "quality_ok": true/false}. is_plant_leaf is true only '
+    "when the frame is dominated by a single plant leaf; quality_ok is true only when the "
+    "photo is sharp and well lit."
+)
+
+
+async def disease_image_gate(image_bytes: bytes) -> dict:
+    """Gate a disease-scan image BEFORE diagnosis (M9). Returns
+    {is_plant_leaf, quality_ok}; never a model outside the gateway."""
+    result = await gateway.analyze_image(
+        image_bytes, GATE_PROMPT, schema={"is_plant_leaf": True, "quality_ok": True},
+        module=DISEASE_GATE_MODULE,
+    )
+    return {
+        "is_plant_leaf": bool(result.get("is_plant_leaf", True)),
+        "quality_ok": bool(result.get("quality_ok", True)),
+    }
+
+
+class CropPlanPayload(BaseModel):
+    options: list[CropPlanOption] = Field(min_length=2, max_length=5)
+
+
+def _clean_json_str(raw: str) -> str:
+    cleaned = (raw or "").strip()
+    if "```" in cleaned:
+        parts = cleaned.split("```")
+        if len(parts) >= 2:
+            cleaned = parts[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.strip()
+    return cleaned
+
+
+def _crop_plan_prompt(body: CropPlanIn) -> str:
+    language = "Hindi (Devanagari)" if body.lang == "hi" else "English"
+    history = ", ".join(body.cropHistory) or "none"
+    season = body.season or current_season()
+    return (
+        f"You are an Indian agronomy planner. Inputs — soil: {body.soil}; "
+        f"irrigation: {body.irrigation}; plot: {body.plotSizeAcres} acres; "
+        f"recent crops: {history}; district: {body.district}; season: {season}. "
+        "Recommend 2-3 rotating crops suited to these inputs. Output ONLY valid JSON "
+        'matching {"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0}]} '
+        f"with the rationale written in {language}."
+    )
+
+
+async def generate_crop_options(body: CropPlanIn) -> tuple[list[CropPlanOption], str]:
+    """One model call + exactly one repair retry; deterministic fallback."""
+    raw = await gateway.generate(
+        _crop_plan_prompt(body), {"module": CROP_PLAN_MODULE}
+    )
+    try:
+        parsed = CropPlanPayload.model_validate(json.loads(_clean_json_str(raw)))
+        return parsed.options, "ai"
+    except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
+        repair_prompt = (
+            "Rewrite the following as strictly valid JSON matching "
+            '{"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0}]}:\n'
+            f"{raw}\nValidation error: {first_error}"
+        )
+        repaired = await gateway.generate(
+            repair_prompt, {"module": CROP_PLAN_MODULE}
+        )
+        try:
+            parsed = CropPlanPayload.model_validate(json.loads(_clean_json_str(repaired)))
+            return parsed.options, "ai"
+        except (json.JSONDecodeError, ValidationError, ValueError):
+            return await crop_plan_fallback(body), "fallback"
 
 SATURATION_QUESTION_SET = "advisory.saturation.v1"
 SATURATION_MODULE = "advisory_saturation"

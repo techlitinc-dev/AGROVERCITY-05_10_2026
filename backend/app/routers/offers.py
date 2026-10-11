@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.models.direct import OfferCounter, OfferCreate
+from app.models.direct import OfferAccept, OfferCounter, OfferCreate
 from app.routers.purchases import create_purchase_from_offer
 from app.services import agent_rules
 from app.services.chat import ensure_offer_room
@@ -72,6 +72,16 @@ async def _expire_if_due(doc: dict) -> dict:
     return doc
 
 
+def _validate_pickup_date(pickup_date: str):
+    """Richer bids: YYYY-MM-DD, never in the past."""
+    try:
+        day = datetime.strptime(pickup_date, "%Y-%m-%d").date()
+    except ValueError:
+        _error(422, "VALIDATION_ERROR", "invalid pickup date", {"pickupDate": "must be YYYY-MM-DD"})
+    if day < datetime.now(timezone.utc).date():
+        _error(422, "VALIDATION_ERROR", "invalid pickup date", {"pickupDate": "must not be in the past"})
+
+
 async def _load_target(body: OfferCreate, uid: str) -> dict:
     if body.targetType == "demand":
         target = await get_doc("demands", body.targetId)
@@ -98,6 +108,8 @@ async def create_offer(body: OfferCreate, response: Response, uid: str = Depends
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
     target = await _load_target(body, uid)
+    if body.pickupDate:
+        _validate_pickup_date(body.pickupDate)
     existing = await query(
         "offers",
         [("fromId", "==", uid), ("targetType", "==", body.targetType), ("targetId", "==", body.targetId)],
@@ -122,6 +134,9 @@ async def create_offer(body: OfferCreate, response: Response, uid: str = Depends
         "quantity": body.quantity,
         "unit": target.get("unit", "quintal") if is_demand else "quintal",
         "message": body.message,
+        "pickupDate": body.pickupDate or None,
+        "paymentTermsDays": body.paymentTermsDays,
+        "transportMode": body.transportMode,
         "status": "pending",
         "counter": None,
         "rounds": 0,
@@ -231,7 +246,11 @@ async def get_offer(offer_id: str, uid: str = Depends(current_user_id)):
 
 
 @router.post("/{offer_id}/accept")
-async def accept_offer(offer_id: str, uid: str = Depends(current_user_id)):
+async def accept_offer(
+    offer_id: str,
+    body: OfferAccept | None = None,
+    uid: str = Depends(current_user_id),
+):
     offer = await _expire_if_due(await _participant_offer(offer_id, uid))
     if offer.get("status") == "expired":
         _error(400, "OFFER_EXPIRED", "offer has expired")
@@ -241,10 +260,74 @@ async def accept_offer(offer_id: str, uid: str = Depends(current_user_id)):
         _error(403, "FORBIDDEN", "only the target owner can accept a pending offer")
     if offer.get("status") == "countered" and uid == (offer.get("counter") or {}).get("by"):
         _error(403, "FORBIDDEN", "only the other party can accept the latest counter")
-    purchase = await create_purchase_from_offer(offer)
+    # Re-validate the target at accept time — a lot can sell (or be withdrawn)
+    # and a demand can close between offer creation and acceptance.
+    requested = body.quantity if body else None
+    is_demand = offer.get("targetType") == "demand"
+    target = await get_doc("demands" if is_demand else "market_lots", offer["targetId"])
+    if target is None:
+        _error(404, "DEMAND_NOT_FOUND" if is_demand else "LOT_NOT_FOUND", "target not found")
+    partial = False
+    if is_demand:
+        if target.get("status") != "open":
+            _error(409, "DEMAND_CLOSED", "demand is closed")
+        if requested is not None and requested > float(offer.get("quantity") or 0):
+            _error(
+                422,
+                "VALIDATION_ERROR",
+                "invalid quantity",
+                {"quantity": "must not exceed the offered quantity"},
+            )
+    else:
+        if target.get("status") != "open":
+            _error(409, "LOT_NOT_OPEN", "lot is not open for offers")
+        remaining = float(target.get("quantityQuintals") or 0)
+        if requested is not None:
+            if requested > float(offer.get("quantity") or 0):
+                _error(
+                    422,
+                    "VALIDATION_ERROR",
+                    "invalid quantity",
+                    {"quantity": "must not exceed the offered quantity"},
+                )
+            if requested > remaining:
+                _error(
+                    422,
+                    "VALIDATION_ERROR",
+                    "invalid quantity",
+                    {"quantity": "must not exceed the lot remaining quantity"},
+                )
+        # Partial = accepting less than the lot's remaining quantity; the lot
+        # stays open. Accepting the full remainder (or a legacy full accept)
+        # closes the lot and rejects every other live offer on it.
+        partial = requested is not None and requested < remaining
+    purchase = await create_purchase_from_offer(offer, quantity=requested)
     offer["status"] = "accepted"
     offer["updatedAt"] = _now_iso()
+    if partial:
+        offer["acceptedQuantity"] = requested
     await set_doc("offers", offer_id, offer)
+    if not is_demand and not partial:
+        siblings = await query(
+            "offers",
+            [("targetType", "==", "lot"), ("targetId", "==", offer["targetId"])],
+            limit=1000,
+        )
+        for sib in siblings:
+            if sib["id"] == offer_id or sib.get("status") not in NEGOTIABLE_STATUSES:
+                continue
+            sib["status"] = "rejected"
+            sib["rejectReason"] = "lot_fulfilled"
+            sib["updatedAt"] = _now_iso()
+            await set_doc("offers", sib["id"], sib)
+            await notify_user(
+                sib.get("fromId"),
+                type="offer_rejected",
+                title="Offer declined / ऑफर मना",
+                body=f"₹{sib.get('pricePerUnit')}/{sib.get('unit', 'quintal')} — "
+                f"{sib.get('quantity')} {sib.get('unit', 'quintal')} (lot fulfilled)",
+                deepLink=f"/dashboard/p/myOffers/{sib['id']}",
+            )
     await notify_user(
         purchase["farmerId"],
         type="booking_confirmed",

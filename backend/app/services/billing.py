@@ -47,6 +47,10 @@ TIER_MATRIX = [
     ("directBuyer", "pro", 4999, {"contracts_active": 5, "orgMembers": 0}),
     ("directBuyer", "enterprise", 24999, {}),
     ("emarketCustomer", "free", 0, {}),
+    # WS-03 step 7 (task 3.35): bulk/institutional e-market buyers — one
+    # consolidated GST invoice per period + credit_terms ledger (C9). Paid plan
+    # registered through the normal matrix (see the vet_free note above).
+    ("emarket", "business", 999, {"creditTermsDays": 30}),
     ("bankManager", "console", 2000, {"seats": 2}),
     # WS-03 step 6: partner-institution per-seat licensing (Enterprise only).
     ("bankManager", "enterprise", 2000, {"seats": 50, "perSeatPaisa": 200000}),
@@ -123,6 +127,7 @@ TIER_FEATURES = {
     ],
     "bankManager_enterprise": ["partnerBankSeats", "originationFee", "apiAccess"],
     "vet_pro": ["vetCampaigns", "vetScheduleEditor"],
+    "emarket_business": ["consolidated_gst_invoice", "credit_terms"],
 }
 
 

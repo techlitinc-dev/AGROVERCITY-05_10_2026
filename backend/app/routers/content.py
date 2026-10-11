@@ -18,7 +18,7 @@ from app.models.content import (
     PollVoteIn,
 )
 from app.services import blocks
-from app.services.ai import gateway, privacy
+from app.services import chat_moderation
 from app.services.chat import contains_banned_content, record_strike
 from app.services.tasks import emit_task
 from app.services.users import get_user
@@ -26,8 +26,6 @@ from app.services.users import get_user
 router = APIRouter(tags=["content"])
 
 log = logging.getLogger(__name__)
-
-CONTENT_MODERATION_MODULE = "content_moderation"
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -58,34 +56,9 @@ def _parse_ts(value) -> datetime | None:
 
 
 async def _moderate_ugc(content_type: str, content_id: str, text: str, uid: str) -> None:
-    """WS-01 task 1.16 — post-write UGC moderation (suggest level).
-
-    Flagged items are queued for human review; content is never deleted here.
-    On any gateway failure the content simply stays un-flagged."""
-    state = privacy.build_ugc_moderation_state(text, uid)
-    try:
-        decision = await gateway.decide(
-            state, "content.moderation.v1", module=CONTENT_MODERATION_MODULE
-        )
-    except Exception as exc:  # noqa: BLE001 — moderation never breaks a write
-        log.warning("content moderation unavailable (%s) — content stays", exc)
-        return
-    answers = decision.answers or {}
-    if not answers.get("flag"):
-        return
-    await set_doc(
-        "moderation_queue",
-        f"mod_{content_type}_{content_id}",
-        {
-            "contentType": content_type,
-            "contentId": content_id,
-            "flag": True,
-            "reason": str(answers.get("reason") or "none"),
-            "decisionId": decision.decision_id,
-            "status": "open",
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+    """WS-01 task 1.16 — post-write UGC moderation (suggest level); the AI
+    call itself lives in services/chat_moderation.py (rule 10)."""
+    await chat_moderation.moderate_ugc(content_type, content_id, text, uid)
 
 
 async def _emit_breaking_news_task(docs: list[dict], user: dict) -> None:

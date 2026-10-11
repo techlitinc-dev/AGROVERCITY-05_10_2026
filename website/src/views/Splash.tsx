@@ -4,6 +4,7 @@ import { fetchAppConfig } from '../lib/api/reference';
 import { useT } from '../lib/i18n';
 import { useOnboardingStore } from '../stores/onboarding';
 import { useSessionStore } from '../stores/session';
+import SceneScaffold from '../components/scene/SceneScaffold';
 import '../theme/views.css';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.agrovercity.kisansetu';
@@ -70,7 +71,8 @@ export default function Splash() {
   }, [phase, advance]);
 
   return (
-    <div className="splash" onClick={skip}>
+    <SceneScaffold persona="farmer" className="splash-scene">
+      <div className="splash splash-on-scene" onClick={skip}>
       {phase === 'logo' ? (
         <div className="splash-phase" key="logo">
           <div className="splash-logo-tile">🌾</div>
@@ -127,6 +129,7 @@ export default function Splash() {
           </div>
         </div>
       ) : null}
-    </div>
+      </div>
+    </SceneScaffold>
   );
 }

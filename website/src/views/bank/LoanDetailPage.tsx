@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import ToolShell from '../../components/trade/ToolShell';
 import {
   approveLoan,
+  attachWarehouseReceipt,
   disburseLoan,
   getLoan,
   getLoanFarmer360,
@@ -44,6 +45,10 @@ export default function LoanDetailPage() {
   const [interestRate, setInterestRate] = useState('12');
   const [tenureMonths, setTenureMonths] = useState('');
   const [disbursementRef, setDisbursementRef] = useState('');
+  const [receiptNo, setReceiptNo] = useState('');
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptAttached, setReceiptAttached] = useState(false);
 
   const reload = async () => {
     const loanData = await getLoan(applicationId);
@@ -137,6 +142,26 @@ export default function LoanDetailPage() {
       return;
     }
     void run(() => disburseLoan(loan.applicationId, { disbursementRef: disbursementRef.trim() }));
+  };
+
+  // phase-03 task 5.13 — officer attaches a warehouse receipt (collateral
+  // reference) to the loan file; the returned loan refreshes the documents list.
+  const submitReceipt = () => {
+    if (!loan || receiptNo.trim().length === 0 || receiptBusy) return;
+    setReceiptBusy(true);
+    setReceiptError(null);
+    setReceiptAttached(false);
+    attachWarehouseReceipt(loan.applicationId, receiptNo.trim())
+      .then((updated) => {
+        setLoan(updated);
+        setReceiptNo('');
+        setReceiptAttached(true);
+      })
+      .catch((err) => {
+        const message = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+        setReceiptError(message || t('bankActionFailed'));
+      })
+      .finally(() => setReceiptBusy(false));
   };
 
   const reasonMissing = reason.trim().length === 0;
@@ -373,13 +398,45 @@ export default function LoanDetailPage() {
           )}
 
           <Section title={t('bankSectionDocuments')}>
+            <div style={{ ...formBox, marginTop: 0, marginBottom: '0.75rem' }}>
+              <label style={{ ...labelStyle, flexBasis: '60%' }}>
+                {t('bankAttachReceiptLabel')}
+                <input
+                  value={receiptNo}
+                  onChange={(e) => {
+                    setReceiptNo(e.target.value);
+                    setReceiptAttached(false);
+                  }}
+                  placeholder={t('bankReceiptNumberPlaceholder')}
+                  style={input}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={receiptBusy || receiptNo.trim().length === 0}
+                style={primaryBtn(receiptBusy || receiptNo.trim().length === 0)}
+                onClick={submitReceipt}
+              >
+                {t('bankAttachReceipt')}
+              </button>
+            </div>
+            {receiptError && (
+              <div style={{ padding: '0.6rem', background: '#fee2e2', color: '#b91c1c', borderRadius: '6px', marginBottom: '0.6rem', fontSize: '0.85rem' }}>
+                {receiptError}
+              </div>
+            )}
+            {receiptAttached && !receiptError && (
+              <div style={{ padding: '0.6rem', background: '#dcfce7', color: '#15803d', borderRadius: '6px', marginBottom: '0.6rem', fontSize: '0.85rem' }}>
+                {t('bankReceiptAttached')}
+              </div>
+            )}
             {loan.documents.length === 0 ? (
               <p style={{ color: '#6b7280', margin: 0 }}>{t('bankDocumentsEmpty')}</p>
             ) : (
               <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
                 {loan.documents.map((doc) => (
                   <li key={doc.documentId} style={{ marginBottom: '0.25rem' }}>
-                    <span style={{ fontWeight: 600 }}>{doc.name}</span>
+                    <span style={{ fontWeight: 600 }}>{doc.referenceNo ? doc.referenceNo : doc.name}</span>
                     <span style={{ color: '#6b7280', fontSize: '0.8rem' }}> · {doc.uploadedAt}</span>
                   </li>
                 ))}

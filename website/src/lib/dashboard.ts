@@ -99,6 +99,9 @@ const TOOL_LIST: Tool[] = [
   { id: 'loanDashboard', icon: '🏦', color: '#334155' },
   { id: 'loanReview', icon: '🖋️', color: '#334155' },
   { id: 'loanTracking', icon: '🧮', color: '#8B5CF6' },
+  // Phase-08 WS-01 farmer standing-agent rules (deep-routed; appended after
+  // the 26 master modules so ALL_TOOLS_IDS is unchanged).
+  { id: 'agentRules', icon: '🤖', color: '#43A047' },
   { id: 'insuranceProviderHome', icon: '🛡️', color: '#0F766E' },
   { id: 'insurancePolicyReview', icon: '📋', color: '#0F766E' },
   { id: 'insuranceClaimReview', icon: '⚖️', color: '#0F766E' },
@@ -190,6 +193,7 @@ export const PROFILE_ROUTES: Record<string, string[]> = {
     'postHarvest', 'treePlantation', 'liveChannels', 'livestockDairy', 'farmDiary', 'cropInsurance',
     'insuranceHub', 'creditScore', 'loanMarketplace', 'emiCalculator', 'loanWizard', 'loanStatus',
     'myBookings', 'loadBoard', 'liveTracking', 'biltyView', 'buyDemands', 'myOffers', 'purchases',
+    'agentRules',
     ...COMMON,
   ],
   farmLandlord: [

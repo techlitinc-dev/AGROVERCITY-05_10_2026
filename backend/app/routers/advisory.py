@@ -5,7 +5,6 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
-from pydantic import BaseModel, Field, ValidationError
 
 from app.core.cache import cache_get, cache_set
 from app.core.config import settings
@@ -26,7 +25,6 @@ from app.models.advisory import (
 from app.routers.users import require_role
 from app.services import advisory as advisory_service
 from app.services import storage
-from app.services.ai import gateway
 from app.services.consents import ConsentRequiredError, require_data_sharing
 from app.services.disease_model import get_disease_adapter
 from app.services.tasks import emit_task
@@ -36,15 +34,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/advisory", tags=["advisory"])
 
-DISEASE_GATE_MODULE = "advisory_disease_gate"
 CROP_PLAN_CACHE_TTL_SECONDS = 6 * 60 * 60
-
-GATE_PROMPT = (
-    "Decide whether this image is a usable crop-disease scan input. Return ONLY JSON "
-    '{"is_plant_leaf": true/false, "quality_ok": true/false}. is_plant_leaf is true only '
-    "when the frame is dominated by a single plant leaf; quality_ok is true only when the "
-    "photo is sharp and well lit."
-)
 
 RETAKE_NOT_LEAF = {
     "en": "This does not look like a plant leaf — please photograph a single leaf filling the frame.",
@@ -151,18 +141,6 @@ async def sowing_intent(body: SowingIntentIn, user: dict = Depends(_farmer)):
 # ---------- Disease scan (M9, SDR + vision) ----------
 
 
-async def _run_gate(image_bytes: bytes) -> dict:
-    """Gate the image BEFORE diagnosis (M9). Never a model outside the gateway."""
-    result = await gateway.analyze_image(
-        image_bytes, GATE_PROMPT, schema={"is_plant_leaf": True, "quality_ok": True},
-        module=DISEASE_GATE_MODULE,
-    )
-    return {
-        "is_plant_leaf": bool(result.get("is_plant_leaf", True)),
-        "quality_ok": bool(result.get("quality_ok", True)),
-    }
-
-
 @router.post("/disease-scan")
 async def disease_scan(
     image: UploadFile = File(...),
@@ -175,7 +153,9 @@ async def disease_scan(
     )
     photo_url = storage.signed_download_url(blob_path)
 
-    gate = await _run_gate(data)
+    # Gate the image BEFORE diagnosis (M9); the gate model call lives in
+    # services/advisory.py (rule 10 — never a model outside the gateway).
+    gate = await advisory_service.disease_image_gate(data)
     if not gate["is_plant_leaf"] or not gate["quality_ok"]:
         retake = RETAKE_NOT_LEAF if not gate["is_plant_leaf"] else RETAKE_BLURRY
         return {
@@ -291,60 +271,6 @@ async def npk(body: NpkIn, user: dict = Depends(_farmer)):
 # ---------- Crop planner (M13, SGR) ----------
 
 
-class CropPlanPayload(BaseModel):
-    options: list[CropPlanOption] = Field(min_length=2, max_length=5)
-
-
-def _clean_json_str(raw: str) -> str:
-    cleaned = (raw or "").strip()
-    if "```" in cleaned:
-        parts = cleaned.split("```")
-        if len(parts) >= 2:
-            cleaned = parts[1]
-            if cleaned.startswith("json"):
-                cleaned = cleaned[4:]
-            cleaned = cleaned.strip()
-    return cleaned
-
-
-def _crop_plan_prompt(body: CropPlanIn) -> str:
-    language = "Hindi (Devanagari)" if body.lang == "hi" else "English"
-    history = ", ".join(body.cropHistory) or "none"
-    season = body.season or advisory_service.current_season()
-    return (
-        f"You are an Indian agronomy planner. Inputs — soil: {body.soil}; "
-        f"irrigation: {body.irrigation}; plot: {body.plotSizeAcres} acres; "
-        f"recent crops: {history}; district: {body.district}; season: {season}. "
-        "Recommend 2-3 rotating crops suited to these inputs. Output ONLY valid JSON "
-        'matching {"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0}]} '
-        f"with the rationale written in {language}."
-    )
-
-
-async def _generate_crop_options(body: CropPlanIn) -> tuple[list[CropPlanOption], str]:
-    """One model call + exactly one repair retry; deterministic fallback."""
-    raw = await gateway.generate(
-        _crop_plan_prompt(body), {"module": advisory_service.CROP_PLAN_MODULE}
-    )
-    try:
-        parsed = CropPlanPayload.model_validate(json.loads(_clean_json_str(raw)))
-        return parsed.options, "ai"
-    except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
-        repair_prompt = (
-            "Rewrite the following as strictly valid JSON matching "
-            '{"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0}]}:\n'
-            f"{raw}\nValidation error: {first_error}"
-        )
-        repaired = await gateway.generate(
-            repair_prompt, {"module": advisory_service.CROP_PLAN_MODULE}
-        )
-        try:
-            parsed = CropPlanPayload.model_validate(json.loads(_clean_json_str(repaired)))
-            return parsed.options, "ai"
-        except (json.JSONDecodeError, ValidationError, ValueError):
-            return await advisory_service.crop_plan_fallback(body), "fallback"
-
-
 @router.post("/crop-plan", response_model=CropPlanOut)
 async def crop_plan(body: CropPlanIn, user: dict = Depends(_farmer)):
     """Suggest 2-3 crops with rationale. Never creates a crop_cycle (`suggest`)."""
@@ -363,7 +289,7 @@ async def crop_plan(body: CropPlanIn, user: dict = Depends(_farmer)):
         except (KeyError, ValueError, TypeError):
             cached = None
 
-    options, source = await _generate_crop_options(body)
+    options, source = await advisory_service.generate_crop_options(body)
     await cache_set(
         cache_key,
         json.dumps({"options": [opt.model_dump() for opt in options], "source": source}),

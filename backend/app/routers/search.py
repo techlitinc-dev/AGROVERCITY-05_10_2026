@@ -31,11 +31,10 @@ from app.core.db import query
 from app.core.deps import current_user_id
 from app.core.pagination import InvalidCursor, decode_cursor, encode_cursor
 from app.services import search_index
-from app.services.ai import config_store, gateway, privacy
+from app.services.ai import config_store
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-SEARCH_INTENT_MODULE = "search_intent"
 SEARCH_EMBEDDINGS_MODULE = "search_embeddings"
 
 # The six indexes, in stable response order.
@@ -305,11 +304,10 @@ async def _semantic_enabled() -> bool:
 
 
 async def _intent_index(needle: str) -> str | None:
-    state = privacy.sanitize_state({"query": needle})
-    answers = (
-        await gateway.decide(state, "search.intent.v1", module=SEARCH_INTENT_MODULE)
-    ).answers
-    index = (answers or {}).get("index")
+    # The decide call lives in services/search_index.py (rule 10); the router
+    # validates the answer against its own group list.
+    index_answer = (await search_index.classify_intent(needle)).answers
+    index = (index_answer or {}).get("index")
     return index if index in GROUPS else None
 
 

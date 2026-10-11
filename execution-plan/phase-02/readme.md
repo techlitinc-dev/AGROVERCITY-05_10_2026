@@ -48,26 +48,27 @@
 - Voice AI (M27/C1/C19 retired program-wide).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 - [ ] Landlord: lists a plot, signs a lease, receives rent into a verified bank
-      account with zero offline steps (robust §6.2 Done-when).
+      account with zero offline steps (robust §6.2 Done-when). (pending operator — 2026-10-08)
 - [ ] Transporter: earns, tracks costs, and is paid out weekly end-to-end via
-      RazorpayX; a farmer watches his produce move in real time (§6.3 Done-when).
+      RazorpayX; a farmer watches his produce move in real time (§6.3 Done-when). (pending operator — 2026-10-08)
 - [ ] Vyapari: replaces the physical bahi-khata entirely; farmer-visible provable
-      payment tracking live (§6.4 Done-when).
+      payment tracking live (§6.4 Done-when). (pending operator — 2026-10-08)
 - [ ] Equipment owner: runs bookings → dispatch → damage → service → payout from
-      the dashboard; a farmer books a tractor slot in <60 s (§6.5 Done-when).
+      the dashboard; a farmer books a tractor slot in <60 s (§6.5 Done-when). (pending operator — 2026-10-08)
 - [ ] Broker: runs 50+ concurrent deals with provable commission accounting; no
-      phone number reachable in any surface (§6.6 Done-when).
-- [ ] Both monolith refactors routed via registries + `App.tsx`, zero
+      phone number reachable in any surface (§6.6 Done-when). (pending operator — 2026-10-08)
+- [x] Both monolith refactors routed via registries + `App.tsx`, zero
       `alert()`/`confirm()`, en+hi parity for every new key.
-- [ ] All five AI briefs live behind `platform_config/ai` flags at `suggest`; flags
+- [x] All five AI briefs live behind `platform_config/ai` flags at `suggest`; flags
       off → deterministic fallbacks work; `ai_decisions` rows written with cost +
       confidence; no PII (Aadhaar/phone/email) in any AI payload.
 - [ ] Global verification gate (execution-plan/README.md §4) green:
       `cd backend && .venv/bin/python -m pytest -q` green;
       `cd website && pnpm exec tsc --noEmit && pnpm build` clean; full suite green
       with `AI_PROVIDER=shim`; one end-to-end dashboard task → completion flow per
-      workstream exercised manually.
+      workstream exercised manually. (pending operator — 2026-10-08)
 
 ## Estimated effort
 Weeks 4–8 of the program (robust.md §11 phase 2A, runs after phases 00–01 land).

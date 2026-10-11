@@ -26,12 +26,14 @@ from app.routers import (
     ads,
     advisory,
     agent_rules,
+    ai_power,
     analytics,
     app_config,
     auth,
     bank_accounts,
     billing,
     broker,
+    calls,
     chat,
     chatbot,
     climate,
@@ -44,6 +46,7 @@ from app.routers import (
     diary,
     direct_buyer,
     emarket_customer,
+    exporter,
     equipment,
     equipment_owner,
     finance,
@@ -59,6 +62,7 @@ from app.routers import (
     jobs,
     kyc,
     land,
+    land_ops,
     land_records,
     livestock,
     livestock_dairy,
@@ -68,6 +72,7 @@ from app.routers import (
     lots,
     mandi,
     marketplace,
+    milk_seller,
     notifications,
     orders,
     order_tracking,
@@ -82,6 +87,7 @@ from app.routers import (
     ratings,
     reference,
     referrals,
+    resale,
     schemes,
     search,
     seller,
@@ -145,6 +151,8 @@ app.include_router(reference.router, prefix="/v1")
 app.include_router(weather.router, prefix="/v1")
 app.include_router(mandi.router, prefix="/v1")
 app.include_router(seller.router, prefix="/v1")
+app.include_router(resale.seller_router, prefix="/v1")
+app.include_router(resale.router, prefix="/v1")
 app.include_router(lots.router, prefix="/v1")
 app.include_router(marketplace.router, prefix="/v1")
 app.include_router(notifications.router, prefix="/v1")
@@ -156,9 +164,12 @@ app.include_router(purchases.router, prefix="/v1")
 app.include_router(purchase_settlement.router, prefix="/v1")
 app.include_router(payments.router, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
+app.include_router(calls.router, prefix="/v1")
 app.include_router(direct_buyer.router, prefix="/v1")
 app.include_router(emarket_customer.router, prefix="/v1")
+app.include_router(exporter.router, prefix="/v1")
 app.include_router(dairy_manager.router, prefix="/v1")
+app.include_router(milk_seller.router, prefix="/v1")
 app.include_router(wishlist.router, prefix="/v1")
 app.include_router(coupons.router, prefix="/v1")
 app.include_router(analytics.router, prefix="/v1")
@@ -182,6 +193,7 @@ app.include_router(pnl.router, prefix="/v1")
 app.include_router(finance.router, prefix="/v1")
 app.include_router(loans.router, prefix="/v1")
 app.include_router(land.router, prefix="/v1")
+app.include_router(land_ops.router, prefix="/v1")
 app.include_router(bank_accounts.router, prefix="/v1")
 app.include_router(kyc.router, prefix="/v1")
 app.include_router(billing.router, prefix="/v1")
@@ -222,6 +234,7 @@ app.include_router(referrals.router, prefix="/v1")
 app.include_router(admin.router, prefix="/v1")
 app.include_router(admin_console.router, prefix="/v1")
 app.include_router(admin_copilot.router, prefix="/v1")
+app.include_router(ai_power.router, prefix="/v1")
 
 
 @app.exception_handler(StarletteHTTPException)

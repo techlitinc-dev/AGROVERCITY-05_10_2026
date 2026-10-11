@@ -17,7 +17,7 @@ from app.models.equipment import (
 )
 from app.routers.equipment import IST, promote_waitlist_head
 from app.routers.users import require_role
-from app.services.ai import gateway
+from app.services import equipment_ai
 from app.services.ai.privacy import build_equipment_booking_rec_state
 from app.services.billing import entitlement_guard, record_usage
 from app.services.notifications import send_fcm_to_user
@@ -227,9 +227,7 @@ async def pending_bookings(uid: str = Depends(_owner)):
                 slot=slot,
                 owner_id=uid,
             )
-            decision = await gateway.decide(state, "equipment.booking_rec.v1", ctx=uid, module="equipment_booking_rec")
-            if decision and decision.answers:
-                rec_score = float(decision.answers.get("score", 0.0))
+            rec_score = await equipment_ai.booking_rec_score(state, uid)
         except Exception:
             rec_score = None
 
@@ -458,30 +456,9 @@ async def create_damage_claim(body: DamageClaimIn, uid: str = Depends(_owner)):
     ai_estimate = None
     photos = body.afterPhotoUrls or body.photoEvidenceUrls or body.beforePhotoUrls or []
     if photos:
-        try:
-            prompt = f"Analyze equipment damage for {equipment.get('name', 'machinery')}: {body.description}. Provide severity estimate (minor, moderate, severe) and suggested deduction band."
-            schema = {
-                "severity": "moderate",
-                "suggestedDeductionBand": "₹3,000 - ₹8,000",
-                "suggestedDeductionPaisa": claim_paisa,
-                "confidence": 0.88,
-            }
-            analysis = await gateway.analyze_image(
-                image_bytes=b"equipment_damage_photo",
-                prompt=prompt,
-                schema=schema,
-                module="equipment_booking_rec",
-            )
-            if analysis:
-                ai_estimate = {
-                    "severity": analysis.get("severity", "moderate"),
-                    "suggestedDeductionBand": analysis.get("suggestedDeductionBand", "₹3,000 - ₹8,000"),
-                    "suggestedDeductionPaisa": analysis.get("suggestedDeductionPaisa", claim_paisa),
-                    "confidence": float(analysis.get("confidence", 0.85)),
-                    "confirmed": False,
-                }
-        except Exception:
-            ai_estimate = None
+        ai_estimate = await equipment_ai.damage_estimate(
+            equipment.get("name", "machinery"), body.description, claim_paisa
+        )
 
     doc = {
         "id": claim_id,

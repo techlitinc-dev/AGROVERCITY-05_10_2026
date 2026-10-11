@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.core.db import get_doc, query, set_doc
@@ -11,8 +11,9 @@ from app.models.seller import BuyerLedgerEntryCreate, ProcurementLotCreate, Sale
 from app.routers.users import require_role
 from app.services import idempotency
 from app.services import kyc as kyc_service
-from app.services import reports, seller_forecast
+from app.services import reports, seller_ai, seller_forecast
 from app.services import settlements as settlements_service
+from app.services.ai.privacy import build_seller_rate_check_state
 from app.services.billing import effective_plan
 from app.services.users import get_user
 
@@ -147,7 +148,6 @@ async def _assert_rate_in_band(crop: str, rate_per_kg: float, mandi_name: str):
     # No reference for the crop → accept; the coverage gap is handled by the admin moderation queue (Day 14 item A6).
 
 
-from app.services.ai import decision_log, gateway
 from app.services.ai.privacy import build_seller_rate_check_state
 
 
@@ -172,29 +172,7 @@ async def post_rate(body: SellerRateRequest, ctx: tuple = Depends(_seller_user))
         seller_id=uid,
     )
 
-    ai_answers = None
-    try:
-        decision = await gateway.decide(
-            state,
-            "seller.rate_check.v1",
-            ctx=uid,
-            module="seller_rate_check",
-        )
-        ai_answers = decision.answers
-    except Exception as exc:
-        await decision_log.log_decision(
-            module="seller_rate_check",
-            question_set_id="seller.rate_check.v1",
-            version="v1",
-            state=state,
-            answers={"within_fair_band": True, "manipulation_signal": 0.0},
-            confidence=0.0,
-            latency_ms=0,
-            cost_usd=0.0,
-            model="none",
-            source="fallback",
-            fallback_used=True,
-        )
+    ai_answers = await seller_ai.check_posted_rate(state, uid)
 
     if ai_answers is not None:
         if not ai_answers.get("within_fair_band", True):
@@ -893,6 +871,111 @@ async def seller_dashboard(ctx: tuple = Depends(_seller_user)):
         "udhaarOutstanding": udhaar_outstanding,
         "settlementEta": settlement_eta,
         "procurementForecast": forecast,
+    }
+
+
+@router.get("/cashflow")
+async def seller_cashflow(
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+    ctx: tuple = Depends(_seller_user),
+):
+    """Unified money-in/money-out view across the seller's real collections:
+    procurement payouts (out), marketplace purchase payments made as a buyer
+    (out), POS sales collected (in), and purchase payments received as a
+    supplier (in). Integer rupees, monthly buckets for the last 12 months."""
+    _, uid = ctx
+    for raw, label in ((date_from, "from"), (date_to, "to")):
+        if raw:
+            try:
+                datetime.strptime(raw, "%Y-%m-%d")
+            except ValueError:
+                _error(422, "INVALID_PERIOD", f"{label} must be YYYY-MM-DD")
+
+    def _in_range(day: str) -> bool:
+        day = (day or "")[:10]
+        if not day:
+            return False
+        if date_from and day < date_from:
+            return False
+        if date_to and day > date_to:
+            return False
+        return True
+
+    records: list[tuple[str, str, int]] = []  # (month, kind, rupees)
+
+    lots = await query(f"users/{uid}/seller_procurement", [], limit=1000)
+    for lot in lots:
+        if lot.get("paymentStatus") != "paid":
+            continue
+        day = lot.get("paidAt") or lot.get("createdAt") or ""
+        if not _in_range(day):
+            continue
+        records.append((day[:7], "procurementOut", int(round(float(lot.get("finalAmount") or 0)))))
+
+    sales = await query(f"users/{uid}/seller_sales", [], limit=1000)
+    for sale in sales:
+        day = sale.get("createdAt") or ""
+        if not _in_range(day):
+            continue
+        amount_paid = int(round(float(sale.get("amountPaid") or 0)))
+        if amount_paid > 0:
+            records.append((day[:7], "salesIn", amount_paid))
+
+    purchases = await query("purchases", [], limit=2000)
+    for purchase in purchases:
+        for payment in purchase.get("payments") or []:
+            day = payment.get("at") or ""
+            amount = int(round(float(payment.get("amount") or 0)))
+            if amount <= 0 or not _in_range(day):
+                continue
+            if purchase.get("buyerId") == uid:
+                records.append((day[:7], "purchasePaymentsOut", amount))
+            if purchase.get("farmerId") == uid:
+                records.append((day[:7], "purchaseCollectionsIn", amount))
+
+    breakdowns = {
+        "procurementOut": 0,
+        "purchasePaymentsOut": 0,
+        "salesIn": 0,
+        "purchaseCollectionsIn": 0,
+    }
+    for _month, kind, amount in records:
+        breakdowns[kind] += amount
+    inflow = breakdowns["salesIn"] + breakdowns["purchaseCollectionsIn"]
+    outflow = breakdowns["procurementOut"] + breakdowns["purchasePaymentsOut"]
+
+    # Last 12 months ending at `to` (or now), never starting before `from`.
+    end = datetime.strptime(date_to, "%Y-%m-%d") if date_to else datetime.now(timezone.utc)
+    year, month = end.year, end.month
+    months = []
+    for _ in range(12):
+        months.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month == 0:
+            month, year = 12, year - 1
+    months.reverse()
+    if date_from:
+        start_month = date_from[:7]
+        months = [m for m in months if m >= start_month]
+    buckets = {m: {"month": m, "inflow": 0, "outflow": 0, "net": 0} for m in months}
+    for month_key, kind, amount in records:
+        if month_key not in buckets:
+            continue
+        if kind.endswith("Out"):
+            buckets[month_key]["outflow"] += amount
+        else:
+            buckets[month_key]["inflow"] += amount
+    by_month = list(buckets.values())
+    for row in by_month:
+        row["net"] = row["inflow"] - row["outflow"]
+
+    return {
+        "from": date_from,
+        "to": date_to,
+        "totals": {"inflow": inflow, "outflow": outflow, "net": inflow - outflow},
+        "byMonth": by_month,
+        "breakdowns": breakdowns,
     }
 
 

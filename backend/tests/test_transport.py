@@ -381,7 +381,11 @@ async def test_accept_booking_emits_task(client, user_store):
         headers=_auth(token),
     )
     assert resp.status_code == 200
-    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    tasks = [
+        doc
+        for key, doc in user_store.items()
+        if key.startswith("tasks/") and doc.get("kind") == "trip_starting"
+    ]
     assert len(tasks) == 1
     assert tasks[0]["module"] == "transport"
     assert tasks[0]["kind"] == "trip_starting"

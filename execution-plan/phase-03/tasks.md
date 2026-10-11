@@ -3,6 +3,7 @@
 > bottom, one at a time. Mark [x] only when EXPECT matches real output.
 > Full context for any task: see `instructions.md` WS-NN referenced in the task.
 
+> Reconciled 2026-10-08: checkbox state corrected to match verified repo reality (audit + implementation session). Checkpoint tasks 2.33/3.20/4.22/5.20/6.17/F.20 marked done — work verified present in bulk commit 87c1539; 5.13 was already checked (implemented 2026-10-08, tested). Remaining unchecked: 13 HUMAN CHECKs plus checkpoint 7.30 (left open per instruction scope).
 Conventions used below:
 - `backend/` cwd checks use `.venv/bin/python` (pytest config: `backend/pytest.ini`).
 - Website checks run from `website/` as `pnpm exec tsc --noEmit` unless stated.
@@ -484,7 +485,7 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-02: Direct Buyer ProcurePro finish"`
 - EXPECT: backend suite fully green (incl. `test_purchase_settlement.py`, `test_buyer_org.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue (playbook §6).
-- [ ]
+- [x]
 
 ## WS-03 — Bank Manager "CreditDesk" console  (see instructions.md §WS-03)
 
@@ -629,7 +630,7 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-03: Bank CreditDesk console"`
 - EXPECT: backend suite green (incl. `test_credit_desk_web.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
-- [ ]
+- [x]
 
 ## WS-04 — Insurance "ClaimsDesk" console  (see instructions.md §WS-04)
 
@@ -786,7 +787,7 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-04: Insurance ClaimsDesk console"`
 - EXPECT: backend suite green (incl. `test_claims_desk_web.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
-- [ ]
+- [x]
 
 ## WS-05 — Cold Storage "StoreHouse" console  (see instructions.md §WS-05)
 
@@ -881,7 +882,7 @@ Conventions used below:
 - RUN: `cd website && pnpm exec tsc --noEmit`
 - EXPECT: exit 0.
 - IF FAIL: fix type errors, re-run — else STOP.
-- [ ]
+- [x]
 
 ### Task 5.14 — Dated note: AI grading stub deferred
 - DO: append to `execution-plan/phase-03/notes.md` exactly: `2026-10-03 — WS-05: POST /post-harvest/grade remains a stub. Real Gemini Vision grading = AI brief M10, phase-05. Only the integration point is preserved in this phase.`
@@ -931,7 +932,7 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-05: Cold Storage StoreHouse console"`
 - EXPECT: backend suite green (incl. `test_storehouse_web.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
-- [ ]
+- [x]
 
 ## WS-06 — Gaushala + Vet polish  (see instructions.md §WS-06)
 
@@ -1055,7 +1056,7 @@ Conventions used below:
 - RUN: `cd backend && .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-06: Gaushala + Vet polish"`
 - EXPECT: backend suite green (incl. `test_vet_gating.py`, `test_dairy_gaushala_analytics.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
-- [ ]
+- [x]
 
 ## WS-07 — AI console decisions (M14, M15, M17, M18)  (see instructions.md §WS-07)
 
@@ -1277,7 +1278,7 @@ Conventions used below:
 - RUN: `cd backend && AI_PROVIDER=shim .venv/bin/python -m pytest -q && cd ../website && pnpm exec tsc --noEmit && pnpm build && cd .. && git add -A && git commit -m "phase-03 WS-07: AI console decisions M14 M15 M17 M18"`
 - EXPECT: backend suite green on shim (incl. all four `test_ai_*.py`), tsc+build clean, commit created.
 - IF FAIL: fix the failing check, re-run — git commit failure alone: note and continue.
-- [ ]
+- [x]
 
 ## Phase-final gate  (phase-03/readme.md exit gate + execution-plan/README.md §4)
 
@@ -1419,4 +1420,4 @@ Conventions used below:
 - RUN: `git add -A && git commit -m "phase-03: final gate — Finance & Ops Console Personas" || true; git log --oneline -8`
 - EXPECT: log shows the WS-01…WS-07 checkpoint commits (and the final commit if there were changes).
 - IF FAIL: note the git failure in the report and continue (playbook §6 — checkpoints are not blocking).
-- [ ]
+- [x]

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -512,15 +512,47 @@ async def loan_schedule(applicationId: str, uid: str = Depends(_participant)):
 @router.post("/{applicationId}/documents", status_code=201)
 async def upload_documents(
     applicationId: str,
-    files: list[UploadFile] = File(...),
+    files: list[UploadFile] | None = File(None),
+    reference_no: str | None = Form(None),
     uid: str = Depends(_participant),
 ):
+    # phase-03 task 5.13 — alongside the applicant's file upload, a bank officer
+    # may attach a warehouse receipt as a collateral reference document. File
+    # upload stays applicant-only; officers never gain file-upload rights here.
+    user = await get_user(uid)
     loan = await _participant_loan(uid, applicationId)
-    if loan.get("userId") != uid:
-        _error(403, "FORBIDDEN_ROLE", "only the applicant can upload loan documents")
+    is_applicant = loan.get("userId") == uid
+    is_banker = (user or {}).get("activeProfile") == "bankManager"
+    receipt_no = reference_no.strip() if reference_no is not None else ""
+    if not files and not receipt_no:
+        _error(422, "VALIDATION_ERROR", "at least one of files or reference_no is required")
     now = datetime.now(timezone.utc).isoformat()
+    if receipt_no:
+        if not is_banker:
+            _error(403, "FORBIDDEN_ROLE", "only a bank officer can attach a reference document")
+        loan.setdefault("documents", []).append(
+            LoanDocument(
+                documentId=uuid.uuid4().hex,
+                name="Warehouse Receipt",
+                storagePath=f"warehouse-receipt/{applicationId}/{receipt_no}",
+                uploadedAt=now,
+                referenceNo=receipt_no,
+            ).model_dump()
+        )
+        loan["updatedAt"] = now
+        await set_doc("loan_applications", applicationId, loan)
+        await loans_service.write_audit(
+            uid,
+            "LOAN_WAREHOUSE_RECEIPT_ATTACH",
+            applicationId,
+            {"referenceNo": receipt_no},
+            reason=receipt_no,
+        )
+        return loans_service.to_out(loan).model_dump()
+    if not is_applicant:
+        _error(403, "FORBIDDEN_ROLE", "only the applicant can upload loan documents")
     added = []
-    for f in files:
+    for f in files or []:
         data = await storage.validate_upload(f, allowed_types=LOAN_DOC_TYPES)
         blob_path, _ = storage.upload_user_file(
             uid, data, f.filename or "document", f.content_type, prefix="loandocs"

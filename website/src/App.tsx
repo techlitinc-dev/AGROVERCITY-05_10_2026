@@ -93,6 +93,7 @@ const ContractFormPage = named(() => import('./views/directbuyer'), 'ContractFor
 const DemandDetailPage = named(() => import('./views/directbuyer'), 'DemandDetailPage');
 const TeamPage = named(() => import('./views/directbuyer'), 'TeamPage');
 const ColdStorageDirectoryPage = named(() => import('./views/farmer'), 'ColdStorageDirectoryPage');
+const AgentRulesPage = named(() => import('./views/farmer'), 'AgentRulesPage');
 const FarmerClaimIntimatePage = named(() => import('./views/farmer'), 'FarmerClaimIntimatePage');
 const FarmerClaimTrackerPage = named(() => import('./views/farmer'), 'FarmerClaimTrackerPage');
 const FarmerContractDetailPage = named(() => import('./views/farmer'), 'FarmerContractDetailPage');
@@ -625,8 +626,7 @@ export default function App() {
         <Route
           path="/dashboard/p/rewards"
           element={loggedIn ? <RewardsStorePage /> : <Navigate to="/auth" replace />}
-        />
-        <Route
+        />        <Route
           path="/dashboard/p/rewardsStore"
           element={loggedIn ? <RewardsStorePage /> : <Navigate to="/auth" replace />}
         />
@@ -755,6 +755,11 @@ export default function App() {
         <Route
           path="/dashboard/p/farmer/deals/:dealId"
           element={loggedIn ? <FarmerDealDetailPage /> : <Navigate to="/auth" replace />}
+        />
+        {/* M29 standing-agent rules management (phase-08 WS-01, task 1.35) */}
+        <Route
+          path="/dashboard/p/agentRules"
+          element={loggedIn ? <AgentRulesPage /> : <Navigate to="/auth" replace />}
         />
         {/* Direct-contract deep routes (buyer desk + farmer offer inbox) */}
         <Route

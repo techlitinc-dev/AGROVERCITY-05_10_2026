@@ -455,3 +455,90 @@ async def test_info_request_emits_farmer_task(client, user_store):
     assert task["userId"] == "uid-1"
     assert task["sourceId"] == application_id
     assert task["deepLink"].startswith("/dashboard/p/")
+
+
+# WS-01 task 1.9 — an SHG member's loan application records the outcome against
+# the group's cached readiness decision (women.shg_readiness.v1).
+
+SHG_GROUP = {
+    "id": "shg-1",
+    "name": "Savitri Bachat Gat",
+    "memberUid": "uid-1",
+    "memberCount": 8,
+    "corpusPaisa": 1200000,
+    "members": [{"memberUid": "uid-1", "role": "member"}],
+    "createdAt": "2026-09-20T00:00:00+00:00",
+}
+
+SHG_READINESS_DOC = {
+    "available": True,
+    "shgId": "shg-1",
+    "readiness": 0.82,
+    "gap": "record_keeping",
+    "factors": {
+        "savings_regularity": 0.9,
+        "meeting_attendance": 0.85,
+        "enterprise_income": 0.7,
+        "record_keeping": 0.6,
+    },
+    "loanMarketplaceLink": {"enabled": True, "deepLink": "/dashboard/p/loanMarketplace"},
+    "decisionId": "dec_shg_readiness_1",
+    "confidence": 0.9,
+    "source": "shim",
+}
+
+SHG_DECISION = {
+    "id": "dec_shg_readiness_1",
+    "module": "women_shg_readiness",
+    "questionSetId": "women.shg_readiness.v1",
+    "source": "shim",
+}
+
+
+async def test_shg_member_loan_records_readiness_outcome(client, user_store):
+    token = seed_user(user_store)
+    user_store["shg_groups/shg-1"] = dict(SHG_GROUP)
+    user_store["shg_readiness/shg-1"] = dict(SHG_READINESS_DOC)
+    user_store["ai_decisions/dec_shg_readiness_1"] = dict(SHG_DECISION)
+
+    resp = await _apply(client, token)
+    assert resp.status_code == 201
+    application_id = resp.json()["applicationId"]
+
+    outcome = user_store.get("ai_outcomes/dec_shg_readiness_1")
+    assert outcome is not None
+    assert outcome["decisionId"] == "dec_shg_readiness_1"
+    assert outcome["module"] == "women_shg_readiness"
+    assert outcome["outcome"]["kind"] == "loan_application_submitted"
+    assert outcome["outcome"]["applicationId"] == application_id
+
+
+async def test_shg_member_second_loan_refreshes_outcome_without_crash(client, user_store):
+    token = seed_user(user_store)
+    user_store["shg_groups/shg-1"] = dict(SHG_GROUP)
+    user_store["shg_readiness/shg-1"] = dict(SHG_READINESS_DOC)
+    user_store["ai_decisions/dec_shg_readiness_1"] = dict(SHG_DECISION)
+
+    first_id = (await _apply(client, token)).json()["applicationId"]
+    second_id = (await _apply(client, token)).json()["applicationId"]
+    assert first_id != second_id
+
+    outcome = user_store["ai_outcomes/dec_shg_readiness_1"]
+    assert outcome["outcome"]["applicationId"] == second_id
+
+
+async def test_shg_loan_apply_succeeds_when_readiness_doc_missing(client, user_store):
+    """Fire-and-forget: no cached readiness (or decision) must never fail apply."""
+    token = seed_user(user_store)
+    user_store["shg_groups/shg-1"] = dict(SHG_GROUP)
+
+    resp = await _apply(client, token)
+    assert resp.status_code == 201
+    assert not any(key.startswith("ai_outcomes/") for key in user_store)
+
+
+async def test_non_shg_farmer_loan_creates_no_outcome(client, user_store):
+    token = seed_user(user_store)
+    resp = await _apply(client, token)
+    assert resp.status_code == 201
+    assert not any(key.startswith("ai_outcomes/") for key in user_store)

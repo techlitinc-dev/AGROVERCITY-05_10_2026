@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
 
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -24,12 +25,15 @@ from app.models.user import (
     VALID_PROFILES,
 )
 from app.services import consents as consents_service
+from app.services import onboarding_seed
 from app.services.profile_routes import DEFAULT_HOME
 from app.services.purge import purge_user
 from app.services.users import get_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 devices_router = APIRouter(prefix="/devices", tags=["devices"])
+
+logger = logging.getLogger(__name__)
 
 _ME_DEFAULTS = {
     "village": "", "tehsil": "", "district": "", "state": "", "landAreaAcres": 0,
@@ -56,6 +60,7 @@ def require_role(user: dict, *roles: str):
         "equipment_owner": "equipmentRental",
         "equipmentRental": "equipmentRental",
         "dairy_manager": "dairyManager",
+        "milk_seller": "milkSeller",
         "teacher": "instructor",
     }
     if aliases.get(active) in roles:
@@ -150,6 +155,7 @@ async def persona_setup(body: PersonaSetupRequest, uid: str = Depends(current_us
         if ptype not in VALID_PROFILES:
             _error(422, "INVALID_PROFILE_TYPE", "profiles must be valid profile types")
     linked = list(user.get("linkedProfiles", []))
+    previously_linked = set(linked)
     for ptype in body.profiles:
         if ptype not in linked:
             linked.append(ptype)
@@ -201,6 +207,15 @@ async def persona_setup(body: PersonaSetupRequest, uid: str = Depends(current_us
     now = datetime.now(timezone.utc).isoformat()
     for ptype, variant in variants.items():
         await set_doc(f"users/{uid}/role_profiles", ptype, {**variant.model_dump(), "createdAt": now})
+    # WS-01 tasks 1.44 + 1.45 — deferred flow: personas chosen after register
+    # seed the same first-dashboard payload. Only newly added personas are
+    # passed; task emission is dedupe-safe on (user, module, kind, sourceId).
+    added_personas = [p for p in body.profiles if p not in previously_linked]
+    if added_personas:
+        try:
+            await onboarding_seed.seed_dashboard(uid, added_personas)
+        except Exception:  # noqa: BLE001 — seeding must never fail persona setup
+            logger.warning("persona-setup seeding failed for uid=%s", uid, exc_info=True)
     return await _with_role_profiles(user)
 
 

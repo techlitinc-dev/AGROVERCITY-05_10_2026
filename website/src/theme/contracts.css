@@ -18,7 +18,7 @@
   white-space: nowrap;
 }
 .ct-formula-chip.live {
-  border-color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.4);
   background: var(--av-gold-bg);
   color: var(--av-gold-text);
 }

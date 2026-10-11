@@ -1,0 +1,24 @@
+# gitleaks config (powerpacked.md §6.1) — extends the default rule set and
+# allowlists known-benign findings so the gate only fires on NEW secrets.
+#
+# Rationale for the path allowlists:
+# - Firebase **client** API keys (web/mobile app config) are not secrets — they
+#   ship inside public client bundles and are secured by App Check + Firestore
+#   rules, not by key secrecy. The backend service-account JSON IS a secret and
+#   must never be allowlisted (it is gitignored; rotation is tracked in
+#   powerpacked.md §3.1).
+# - execution-plan/plan markdown hits are literal example curl snippets in
+#   historical phase docs, not live credentials.
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''website/public/firebase-messaging-sw\.js''',
+  '''website/src/lib/firebase\.ts''',
+  '''website/src/views/legal/LegalPage\.tsx''',
+  '''apps/mobile/android/app/google-services\.json''',
+  '''apps/mobile/lib/firebase_options\.dart''',
+  '''execution-plan/phase-0\d/tasks\.md''',
+  '''plan/onboardoing_plan\.md''',
+]

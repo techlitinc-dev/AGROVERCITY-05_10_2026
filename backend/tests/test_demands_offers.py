@@ -342,7 +342,11 @@ async def test_offer_created_emits_task(client, user_store):
         headers=_auth(token),
     )
     assert resp.status_code == 201
-    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    tasks = [
+        doc
+        for key, doc in user_store.items()
+        if key.startswith("tasks/") and doc.get("kind") == "new_offers"
+    ]
     assert len(tasks) == 1
     task = tasks[0]
     assert task["userId"] == "uid-f1"

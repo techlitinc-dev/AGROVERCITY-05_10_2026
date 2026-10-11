@@ -6,7 +6,11 @@ ranking defined here is both the fallback when the model is off/failed AND the
 truth the AI ranking is checked against (golden fixture
 `backend/tests/fixtures/ai/golden/mandi.smart_select.v1.jsonl`).
 """
+from app.services.ai import gateway
 from app.services.ai.privacy import sanitize_state
+
+SMART_SELECT_QUESTION_SET = "mandi.smart_select.v1"
+SMART_SELECT_MODULE = "mandi_smart_select"
 
 # Bound the payload well inside the 1,500-token privacy budget.
 MAX_CANDIDATE_MANDIS = 12
@@ -150,3 +154,12 @@ def build_smart_select_state(
         "net_ranking": [item["mandi"] for item in candidates],
     }
     return sanitize_state(state)
+
+
+async def decide_smart_select(state: dict, user_id: str):
+    """Ranks candidate mandis for the smart-select endpoint via
+    `mandi.smart_select.v1` (rule 10 — routers never call the gateway). The
+    router owns the response cache and the deterministic re-validation."""
+    return await gateway.decide(
+        state, SMART_SELECT_QUESTION_SET, ctx=str(user_id or ""), module=SMART_SELECT_MODULE
+    )

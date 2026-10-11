@@ -24,6 +24,7 @@ import {
 } from '../../lib/api/women';
 import { useT } from '../../lib/i18n';
 import { rupeesFromPaisa } from '../bank/money';
+import ShgReadinessCard from './ShgReadinessCard';
 import '../../theme/trade.css';
 import '../../theme/women.css';
 
@@ -138,6 +139,8 @@ function ShgTab() {
 
   return (
     <>
+      {overview?.readiness ? <ShgReadinessCard readiness={overview.readiness} /> : null}
+
       <div className="women-card">
         <div className="trade-card-row">
           <span className="trade-card-title">{group.name}</span>

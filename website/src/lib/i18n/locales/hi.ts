@@ -593,6 +593,8 @@ const hi: Record<string, string> = {
 
   // ---- M29 standing-agent rules (phase-08 WS-01) ----
   'agentRules.title': 'मेरे स्थायी नियम',
+  'agentRules.sub':
+    'नियम अपने शब्दों में लिखें — हम उसे समझकर दिखाते हैं, और आपकी पुष्टि के बाद ही काम करता है। हर मेल पर पहले पूछा जाता है।',
   'agentRules.createTitle': 'नियम बनाएँ',
   'agentRules.example': 'उदाहरण: "₹1,800 या उससे अधिक का ऑफर आए तो स्वीकार करें"',
   'agentRules.reviewTitle': 'अपना नियम जाँचें',
@@ -605,6 +607,39 @@ const hi: Record<string, string> = {
   'agentRules.auditTitle': 'ऑडिट इतिहास',
   'agentRules.fireConfirm': 'पुष्टि करें',
   'agentRules.fireDismiss': 'खारिज करें',
+  // AgentRulesPage (कार्य 1.35/1.36) — फ़ॉर्म, समीक्षा, सूची और ऑडिट लेबल।
+  'agentRules.moduleLabel': 'कहाँ लागू',
+  'agentRules.module_offers': 'ऑफर',
+  'agentRules.module_mandi_prices': 'मंडी भाव',
+  'agentRules.module_rate_postings': 'रेट पोस्ट',
+  'agentRules.textLabel': 'आपका नियम — जैसे किसी दोस्त से कहें',
+  'agentRules.examplesTitle': 'उदाहरण आज़माएँ (भरने के लिए टैप करें):',
+  'agentRules.exampleEn': 'Accept any offer at or above ₹1,800',
+  'agentRules.exampleHi': '₹1,800 se upar offer aaye toh accept kar do',
+  'agentRules.parse': 'नियम जाँचें',
+  'agentRules.parsing': 'जाँच हो रही है…',
+  'agentRules.edit': 'बदलें',
+  'agentRules.conditionLabel': 'शर्त',
+  'agentRules.actionLabel': 'कार्रवाई',
+  'agentRules.maxValueLabel': 'अधिकतम रकम',
+  'agentRules.createdToast': 'नियम बन गया',
+  'agentRules.deletedToast': 'नियम हटा दिया गया',
+  'agentRules.pausedToast': 'नियम रोक दिया गया',
+  'agentRules.resumedToast': 'नियम फिर शुरू हो गया',
+  'agentRules.empty': 'अभी कोई स्थायी नियम नहीं',
+  'agentRules.emptyBody': 'ऊपर अपना पहला नियम बनाएँ — यह आपके ऑफर देखेगा और काम से पहले हमेशा पूछेगा।',
+  'agentRules.deleteConfirm': 'यह नियम हटाएं? यह तुरंत देखना बंद कर देगा।',
+  'agentRules.auditCreated': 'बनाया गया',
+  'agentRules.auditLastFired': 'आख़िरी बार चला',
+  'agentRules.auditNeverFired': 'कभी नहीं चला',
+  'agentRules.auditHint':
+    'नियम मेल खाने पर आपके डैशबोर्ड पर पुष्टि कार्ड आता है। पुष्टि करने पर कार्रवाई एक बार होती है; खारिज करने पर यह दर्ज होता है कि आपने मना कर दिया।',
+  tool_agentRules: 'स्थायी नियम',
+  tool_agentRules_sub: 'आपके AI एजेंट नियम',
+
+  // ---- M33 ऑनबोर्डिंग कोपायलट (phase-08 WS-01, कार्य 1.39/1.43) ----
+  'languageSuggest.hint': '{district} के लिए सुझाई गई भाषा — आप इसे कभी भी बदल सकते हैं।',
+  'districtCrops.hint': '{district} के लिए फसलें पहले से चुनी गई हैं — बदलने के लिए चिप पर टैप करें।',
 };
 
 registerLocale('hi', hi);

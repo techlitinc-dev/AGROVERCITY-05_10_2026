@@ -33,6 +33,13 @@ class CreateBookingRequest(BaseModel):
     pickup: str
     drop: str
     date: str
+    # Book Now / Book Later (FT-1): ISO datetime of the pickup slot plus an
+    # optional loading window. Drives reminders and the cancel-penalty window.
+    pickupTime: str | None = None
+    timeWindowMinutes: int | None = Field(default=None, ge=15, le=720)
+    # FT-6 transit insurance: opt-in cover on the declared goods value.
+    declaredValuePaisa: int | None = Field(default=None, gt=0)
+    insuranceOptIn: bool = False
     lotId: str | None = None
     commodity: str | None = None
     weightQuintals: float | None = None
@@ -61,6 +68,12 @@ class RejectBookingRequest(BaseModel):
     reason: str = Field(min_length=3)
 
 
+class GeoPoint(BaseModel):
+    lat: float
+    lng: float
+    address: str | None = None
+
+
 class OwnerVehicleRequest(BaseModel):
     vehicleType: str
     registrationNo: str
@@ -74,6 +87,63 @@ class OwnerVehicleRequest(BaseModel):
     driverName: str | None = None
     driverPhone: str | None = None
     driverLicense: str | None = None
+    # Geo + custom fare overrides + live availability (nearby/instant booking):
+    # baseFare/perKmRate, when set, replace the catalog rates at fare time.
+    homeLocation: GeoPoint | None = None
+    perKmRate: float | None = Field(default=None, gt=0)
+    baseFare: int | None = Field(default=None, gt=0)
+    availableNow: bool = False
+
+
+class VehicleLocationRequest(BaseModel):
+    lat: float
+    lng: float
+    availableNow: bool | None = None
+
+
+class OwnerVehicleUpdateRequest(BaseModel):
+    """Partial PUT: every field optional; absent fields stay unchanged."""
+
+    vehicleType: str | None = None
+    registrationNo: str | None = None
+    capacityTonnes: float | None = None
+    rcDocUrl: str | None = None
+    insuranceDocUrl: str | None = None
+    pucExpiry: str | None = None
+    fitnessExpiry: str | None = None
+    insuranceExpiry: str | None = None
+    permitType: str | None = None
+    driverName: str | None = None
+    driverPhone: str | None = None
+    driverLicense: str | None = None
+    homeLocation: GeoPoint | None = None
+    perKmRate: float | None = Field(default=None, gt=0)
+    baseFare: int | None = Field(default=None, gt=0)
+    availableNow: bool | None = None
+
+
+class InstantBookingPlace(BaseModel):
+    address: str
+    lat: float
+    lng: float
+
+
+class InstantBookingRequest(BaseModel):
+    vehicleId: str
+    pickup: InstantBookingPlace
+    drop: InstantBookingPlace
+    pickupDate: str
+    pickupTime: str | None = None
+    commodity: str | None = None
+    weightKg: float | None = None
+    # Client-routed road distance; drives the fare alongside the vehicle's rates.
+    distanceKm: float = Field(gt=0)
+    notes: str | None = None
+
+
+class AssignDriverRequest(BaseModel):
+    driverName: str
+    driverPhone: str
 
 
 class AvailabilityRequest(BaseModel):
@@ -107,8 +177,17 @@ class OpenLoadCreateRequest(BaseModel):
     perishable: bool = False
     preferredVehicleType: str = "Tata Ace"
     pickupDate: str
+    pickupTime: str | None = None  # FT-1: ISO datetime slot for the pickup
+    # FT-6 transit insurance on the load's declared goods value.
+    declaredValuePaisa: int | None = Field(default=None, gt=0)
+    insuranceOptIn: bool = False
     targetFare: float
     notes: str | None = None
+    # Urgent load: pinned first on the load board and pushed to verified
+    # vehicles near the pickup point when geo coordinates are present.
+    urgent: bool = False
+    pickupLat: float | None = None
+    pickupLng: float | None = None
 
 
 class LoadBidRequest(BaseModel):
@@ -144,3 +223,61 @@ class TripExpenseRequest(BaseModel):
     amount: float
     notes: str | None = None
     receiptPhotoUrl: str | None = None
+
+
+class WaitingEventRequest(BaseModel):
+    """FT-2 detention: transporter taps start/stop while the vehicle waits."""
+
+    phase: str  # "pickup" | "drop"
+    action: str  # "start" | "stop"
+    at: str | None = None  # ISO timestamp override (offline-tolerant sync)
+
+
+class FarmerRatingRequest(BaseModel):
+    """FT-3: transporter rates the farmer/shipper after a completed trip."""
+
+    rating: int = Field(ge=1, le=5)
+    review: str | None = Field(default=None, max_length=500)
+    tags: list[str] = []  # subset of FARMER_RATING_TAGS
+
+
+class FavoriteToggleRequest(BaseModel):
+    """FT-4: farmer pins/unpins a transporter for one-tap rebooking."""
+
+    favorited: bool = True
+
+
+class RebookRequest(BaseModel):
+    """FT-4: clone a finished trip into a new booking (rates re-evaluated)."""
+
+    date: str
+    pickupTime: str | None = None
+    timeWindowMinutes: int | None = Field(default=None, ge=15, le=720)
+    notes: str | None = None
+
+
+class LoadTemplateRequest(BaseModel):
+    """FT-5: farmer-saved load template (e.g. the weekly mandi run, F12)."""
+
+    name: str = Field(min_length=2, max_length=80)
+    pickupLocation: str
+    dropLocation: str
+    crop: str
+    quantityQuintals: float
+    packaging: str = "Gunny Bags"
+    perishable: bool = False
+    preferredVehicleType: str = "Tata Ace"
+    targetFare: float
+    notes: str | None = None
+    # FT-6: cover carried into each repeated load.
+    declaredValuePaisa: int | None = Field(default=None, gt=0)
+    insuranceOptIn: bool = False
+    repeatWeekday: int | None = Field(default=None, ge=0, le=6)  # 0 = Monday
+
+
+class LoadTemplateRepeatRequest(BaseModel):
+    """FT-5: instantiate the template as a fresh open load this season."""
+
+    pickupDate: str
+    pickupTime: str | None = None
+    targetFare: float | None = None  # seasonal override

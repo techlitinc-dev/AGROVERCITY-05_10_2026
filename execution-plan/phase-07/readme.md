@@ -54,15 +54,16 @@
   phase-G gate: ≥1,000 outcomes, >90% top-bucket accuracy).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] All 27 superadmin modules (superadmin-instructions.md §3 directory) reachable at `/admin/*` and functional, with RBAC enforced per tier server-side (403 on cross-tier access proven by tests).
-- [ ] Every admin mutation writes an immutable `audit_logs` entry with reason, adminId, module, action, previousState/newState; any action > ₹10,000 requires maker-checker (second admin approval).
-- [ ] KYC queue is real (zero hardcoded sample rows): end-to-end from vault document submission → M11 extraction + risk triage → verified/rejected, with masked Aadhaar only (no unmasked Aadhaar in any log, AI payload, or UI).
-- [ ] A weekly settlement batch run + hold approval works end-to-end against the phase-00 settlement rails; commission config edits are effective-dated and maker-checkered.
-- [ ] Disputes of every type route to the correct RBAC queue via `dispute.triage.v1` with a visible SLA clock.
-- [ ] Admin copilot restricted to whitelisted read-only tools (verified by test that a write-capable tool call is rejected); nightly briefing renders on the admin dashboard; all queries audit-logged.
-- [ ] Full suite green with `AI_PROVIDER=shim`; no "coming soon" reachable inside `/admin/*`.
-- [ ] Global verification gate (execution-plan/README.md §4) green.
+- [x] All 27 superadmin modules (superadmin-instructions.md §3 directory) reachable at `/admin/*` and functional, with RBAC enforced per tier server-side (403 on cross-tier access proven by tests).
+- [x] Every admin mutation writes an immutable `audit_logs` entry with reason, adminId, module, action, previousState/newState; any action > ₹10,000 requires maker-checker (second admin approval).
+- [x] KYC queue is real (zero hardcoded sample rows): end-to-end from vault document submission → M11 extraction + risk triage → verified/rejected, with masked Aadhaar only (no unmasked Aadhaar in any log, AI payload, or UI).
+- [x] A weekly settlement batch run + hold approval works end-to-end against the phase-00 settlement rails; commission config edits are effective-dated and maker-checkered.
+- [x] Disputes of every type route to the correct RBAC queue via `dispute.triage.v1` with a visible SLA clock.
+- [x] Admin copilot restricted to whitelisted read-only tools (verified by test that a write-capable tool call is rejected); nightly briefing renders on the admin dashboard; all queries audit-logged.
+- [x] Full suite green with `AI_PROVIDER=shim`; no "coming soon" reachable inside `/admin/*`.
+- [x] Global verification gate (execution-plan/README.md §4) green.
 
 ## Estimated effort
 

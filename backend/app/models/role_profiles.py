@@ -53,6 +53,16 @@ class DairyManagerRoleProfile(BaseModel):
     isVetPractitioner: bool = True
 
 
+class MilkSellerRoleProfile(BaseModel):
+    businessName: str = ""
+    deliveryArea: str = ""
+    milkTypesSold: list[str] = []
+    avgDailyLiters: float = 0.0
+    homeDelivery: bool = True
+    shopSales: bool = False
+    settlementUpi: str | None = None
+
+
 class CustomerRoleProfile(BaseModel):
     interests: list[str] = []
     preferredCategories: list[str] = []
@@ -69,6 +79,16 @@ class DirectBuyerRoleProfile(BaseModel):
     creditTermsDays: int = 0
 
 
+class ExporterRoleProfile(BaseModel):
+    companyName: str
+    iecNumber: str
+    gstNumber: str | None = None
+    apedaCertificateNo: str | None = None
+    exportMarkets: list[str] = []
+    preferredCrops: list[str] = []
+    portOfExport: str | None = None
+
+
 class BankManagerRoleProfile(BaseModel):
     bankName: str | None = None
     branch: str | None = None
@@ -83,7 +103,9 @@ ROLE_PROFILE_MODELS: dict[str, type[BaseModel]] = {
     "equipmentRental": EquipmentRentalRoleProfile,
     "instructor": InstructorRoleProfile,
     "dairyManager": DairyManagerRoleProfile,
+    "milkSeller": MilkSellerRoleProfile,
     "customer": CustomerRoleProfile,
     "directBuyer": DirectBuyerRoleProfile,
+    "exporter": ExporterRoleProfile,
     "bankManager": BankManagerRoleProfile,
 }

@@ -21,12 +21,10 @@ from app.models.cold_storage import (
     WarehouseReceipt,
 )
 from app.routers.users import require_role
-from app.services import storage
-from app.services.ai import gateway
+from app.services import grading_model, storage
 from app.services.billing import check_entitlement
 from app.services.fcm import send_fcm_to_user
 from app.services.grading_model import get_grading_adapter
-from app.services.grading_model.gemini import GRADING_MODULE
 from app.services.tasks import emit_task
 from app.services.users import get_user
 
@@ -1010,12 +1008,9 @@ async def grade_produce(
     recommended_paisa = int(assessment.get("recommendedPrice", 0)) * 100
 
     # M10 gate: a low-confidence grade (or an explicit gate verdict) is routed to
-    # the human-grader ops queue instead of being published as an AI grade.
-    gate = await gateway.decide(
-        {"confidence": confidence, "grade": assessment.get("grade")},
-        "grading.gate.v1",
-        module=GRADING_MODULE,
-    )
+    # the human-grader ops queue instead of being published as an AI grade. The
+    # gate decide lives in services/grading_model (rule 10).
+    gate = await grading_model.grading_gate(confidence, assessment.get("grade"))
     gate_answers = gate.answers or {}
     needs_human = confidence < GRADING_HUMAN_THRESHOLD or bool(gate_answers.get("needs_human"))
 

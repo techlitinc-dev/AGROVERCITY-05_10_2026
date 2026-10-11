@@ -224,7 +224,11 @@ async def test_booking_approval_emits_task(client, user_store):
     _verify_equipment_kyc(user_store)
     farmer_token = second_farmer_token(user_store)
     await _book_pending(client, farmer_token, "eq-own")
-    tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
+    tasks = [
+        doc
+        for key, doc in user_store.items()
+        if key.startswith("tasks/") and doc.get("kind") == "booking_approval_needed"
+    ]
     assert len(tasks) == 1
     task = tasks[0]
     assert task["userId"] == "uid-1"

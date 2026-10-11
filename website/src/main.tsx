@@ -28,6 +28,8 @@ import './lib/i18n/locales/en.intel';
 import './lib/i18n/locales/hi.intel';
 import './lib/i18n/locales/en.dashboard';
 import './lib/i18n/locales/hi.dashboard';
+import './lib/i18n/locales/en.verdant';
+import './lib/i18n/locales/hi.verdant';
 import './lib/i18n/locales/en.chatbot';
 import './lib/i18n/locales/hi.chatbot';
 import './lib/i18n/locales/en.landlord';
@@ -78,6 +80,7 @@ import { initSentry } from './lib/observability';
 import { initAnalytics } from './lib/analytics';
 import { registerSW } from 'virtual:pwa-register';
 import './theme/tokens.css';
+import './theme/verdant-glass.css';
 import './theme/layout.css';
 
 initSentry();

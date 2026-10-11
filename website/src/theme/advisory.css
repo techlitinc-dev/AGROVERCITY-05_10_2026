@@ -43,18 +43,18 @@
 }
 
 .advisory-pill.green {
-  background: #dcfce7;
-  color: #166534;
+  background: rgba(92, 214, 92, 0.16);
+  color: #5cd65c;
 }
 
 .advisory-pill.yellow {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
 }
 
 .advisory-pill.red {
-  background: #fee2e2;
-  color: #991b1b;
+  background: rgba(242, 109, 91, 0.14);
+  color: #f26d5b;
 }
 
 /* Data-basis citation under every saturation result (task 2.12). */
@@ -69,8 +69,8 @@
   display: inline-block;
   padding: 2px 8px;
   border-radius: 6px;
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;

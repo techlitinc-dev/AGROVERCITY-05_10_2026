@@ -4,6 +4,7 @@ Numbers live in /intelligence; this router never duplicates aggregates — it
 serves actionable tasks with the standard error envelope, cursor pagination,
 and Idempotency-Key-protected transitions.
 """
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -193,8 +194,11 @@ async def tasks_summary(
     uid: str = Depends(current_user_id),
 ):
     """Per-module open counts + top-3 urgent items per persona."""
-    rows = await query(
-        tasks_service.COLLECTION, [("userId", "==", uid), ("status", "==", "open")], limit=1000
+    from app.services.users import get_user
+
+    user, rows = await asyncio.gather(
+        get_user(uid),
+        query(tasks_service.COLLECTION, [("userId", "==", uid), ("status", "==", "open")], limit=1000),
     )
     if persona and persona != "all":
         rows = [task for task in rows if task.get("persona") == persona]
@@ -207,16 +211,70 @@ async def tasks_summary(
         bucket["moduleCounts"][module] = bucket["moduleCounts"].get(module, 0) + 1
         bucket["_all"].append(task)
 
-    for persona_key, bucket in grouped.items():
-        # WS-03: rank each persona's open tasks; topUrgent keeps its shape but
-        # ranked items carry decisionId and the per-persona headline marker.
-        ranked, _headline = await task_ranking.rank_tasks(uid, persona_key, bucket.pop("_all"))
-        urgent = [task for task in ranked if task.get("priority") == "urgent"]
-        bucket["topUrgent"] = urgent[:3]
+    if grouped:
+        # Persona rankings are independent — rank concurrently, then assemble.
+        ranked_results = await asyncio.gather(
+            *(
+                task_ranking.rank_tasks(uid, persona_key, bucket.pop("_all"))
+                for persona_key, bucket in grouped.items()
+            )
+        )
+        for (persona_key, bucket), (ranked, _headline) in zip(grouped.items(), ranked_results):
+            # WS-03: rank each persona's open tasks; topUrgent keeps its shape but
+            # ranked items carry decisionId and the per-persona headline marker.
+            urgent = [task for task in ranked if task.get("priority") == "urgent"]
+            bucket["topUrgent"] = urgent[:3]
+
+    # All summary-item queries below are independent of one another — fire them
+    # concurrently (WS-04 task 4.10: no sequential per-item fetch chains). On the
+    # aggregate view (no persona filter) only compute grids for personas the user
+    # actually has — farmer stays the default when the profile list is empty.
+    profiles = set((user or {}).get("linkedProfiles") or [])
+    active = (user or {}).get("activeProfile")
+    if active:
+        profiles.add(active)
+
+    def _wants(persona_id: str) -> bool:
+        if persona == persona_id:
+            return True  # explicit request always computes
+        if persona not in (None, "all"):
+            return False
+        if not profiles:
+            return persona_id == "farmer"
+        return persona_id in profiles
+
+    wants_farmer = _wants("farmer")
+    wants_instructor = _wants("instructor")
+    wants_customer = _wants("customer")
+
+    from app.services.settlements import _config, course_gmv_pct
+
+    jobs: list = []
+    if wants_farmer:
+        jobs.append(query("course_purchases", [("userId", "==", uid)], limit=1000))
+    if wants_instructor:
+        jobs += [
+            query("courses", [("instructorId", "==", uid)], limit=500),
+            query("course_purchases", [("instructorId", "==", uid)], limit=1000),
+            query("course_batches", [("instructorId", "==", uid)], limit=200),
+            query("course_assignments", [("instructorId", "==", uid)], limit=500),
+            query("course_enquiries", [("instructorId", "==", uid)], limit=500),
+            _config(),
+        ]
+    if wants_customer:
+        jobs += [
+            query("customer_demands", [("customerId", "==", uid)], limit=500),
+            query("customer_quotes", [("customerId", "==", uid)], limit=500),
+            query("customer_orders", [("customerId", "==", uid)], limit=500),
+            query("customer_favorite_suppliers", [("customerId", "==", uid)], limit=100),
+        ]
+    results = list(await asyncio.gather(*jobs)) if jobs else []
+    cursor = 0
 
     # WS-01: learner summary grid items for the farmer persona (deep-linked).
-    if persona in (None, "all", "farmer"):
-        purchases = await query("course_purchases", [("userId", "==", uid)], limit=1000)
+    if wants_farmer:
+        purchases = results[cursor]
+        cursor += 1
         in_progress = sum(
             1
             for p in purchases
@@ -231,29 +289,29 @@ async def tasks_summary(
 
     # WS-02 task 2.32: instructor summary grid items, computed from real
     # collections, plus actionable tasks (pending reviews / awaiting enquiries).
-    if persona in (None, "all", "instructor"):
-        from app.services.settlements import _config, course_gmv_pct
+    if wants_instructor:
+        my_courses = results[cursor]
+        instr_purchases = results[cursor + 1]
+        batches = results[cursor + 2]
+        assignments = results[cursor + 3]
+        enquiries = results[cursor + 4]
+        config = results[cursor + 5]
+        cursor += 6
 
         now = datetime.now(timezone.utc)
         week_ago = (now - timedelta(days=7)).isoformat()
         today = now.date().isoformat()
 
-        my_courses = await query("courses", [("instructorId", "==", uid)], limit=500)
-        purchases = await query("course_purchases", [("instructorId", "==", uid)], limit=1000)
-        paid = [p for p in purchases if p.get("status") == "paid"]
+        paid = [p for p in instr_purchases if p.get("status") == "paid"]
         enrollments_week = sum(1 for p in paid if (p.get("paidAt") or "") >= week_ago)
 
-        batches = await query("course_batches", [("instructorId", "==", uid)], limit=200)
         live_today = sum(1 for b in batches if _batch_active_on(b, today))
 
-        assignments = await query("course_assignments", [("instructorId", "==", uid)], limit=500)
         pending_reviews = sum(1 for a in assignments if a.get("status") == "submitted")
 
-        enquiries = await query("course_enquiries", [("instructorId", "==", uid)], limit=500)
         awaiting_reply = sum(1 for e in enquiries if e.get("status") == "pending")
 
         # Task-2.19 earnings computation: gross − config-driven commission.
-        config = await _config()
         pct = course_gmv_pct(config)
         gross_paisa = sum(int(round(float(p.get("amountRupees") or 0) * 100)) for p in paid)
         commission_paisa = gross_paisa * pct // 100
@@ -304,5 +362,102 @@ async def tasks_summary(
                 priority="today",
                 deep_link="/dashboard/p/enquiries",
                 source_id=f"{uid}:enquiries",
+            )
+
+    # WS-03 task 3.40: e-market customer summary grid items (real collections)
+    # + actionable tasks for quotes awaiting a response and pending inspections.
+    if wants_customer:
+        now = datetime.now(timezone.utc)
+        month_prefix = now.strftime("%Y-%m")
+        week_ago = (now - timedelta(days=7)).isoformat()
+
+        demands = results[cursor]
+        quotes = results[cursor + 1]
+        orders = results[cursor + 2]
+        favorites = results[cursor + 3]
+        cursor += 4
+
+        open_demands = sum(1 for d in demands if d.get("status", "open") == "open")
+
+        quotes_awaiting = sum(
+            1 for q in quotes if q.get("status") in ("pending", "countered", "quote_pending")
+        )
+
+        child_orders = [o for o in orders if not o.get("isParent")]
+        orders_in_transit = sum(
+            1
+            for o in child_orders
+            if o.get("status") not in ("delivered", "settled", "cancelled", "disputed")
+        )
+        inspections_pending = [
+            o
+            for o in child_orders
+            if o.get("status") == "delivered"
+            and o.get("deliveredAt")
+            and not o.get("inspection")
+        ]
+        spend_month_paisa = sum(
+            int(o.get("orderValuePaisa") or 0)
+            for o in child_orders
+            if (o.get("createdAt") or "")[:7] == month_prefix
+        )
+
+        favorite_farmers = {f.get("farmerId") for f in favorites if f.get("farmerId")}
+        new_lots = 0
+        if favorite_farmers:
+            lots = await query("market_lots", [("status", "==", "open")], limit=1000)
+            new_lots = sum(
+                1
+                for lot in lots
+                if lot.get("farmerId") in favorite_farmers
+                and (lot.get("createdAt") or "") >= week_ago
+            )
+
+        customer_bucket = grouped.setdefault("customer", {"moduleCounts": {}, "topUrgent": []})
+        customer_bucket["summaryItems"] = {
+            "openDemands": {"count": open_demands, "deepLink": "/dashboard/p/demands"},
+            "quotesAwaiting": {"count": quotes_awaiting, "deepLink": "/dashboard/p/quotes"},
+            "ordersInTransit": {"count": orders_in_transit, "deepLink": "/dashboard/p/orderTracking"},
+            "inspectionsPending": {
+                "count": len(inspections_pending),
+                "deepLink": "/dashboard/p/orderTracking",
+            },
+            "spendThisMonthPaisa": {
+                "paisa": spend_month_paisa,
+                "deepLink": "/dashboard/p/orderTracking",
+            },
+            "favoriteFarmersNewLots": {
+                "count": new_lots,
+                "deepLink": "/dashboard/p/favorites",
+            },
+        }
+        if quotes_awaiting:
+            await tasks_service.emit_task(
+                uid,
+                persona="customer",
+                module="emarket",
+                kind="quotes_awaiting",
+                title_en="Quotes awaiting your response",
+                title_hi="उद्धरण आपके उत्तर की प्रतीक्षा में हैं",
+                subtitle=f"{quotes_awaiting} quote(s) open for negotiation",
+                priority="today",
+                deep_link="/dashboard/p/quotes",
+                source_id=f"{uid}:emarket:quotes",
+            )
+        if inspections_pending:
+            first_pending = sorted(
+                inspections_pending, key=lambda o: o.get("deliveredAt") or ""
+            )[0]
+            await tasks_service.emit_task(
+                uid,
+                persona="customer",
+                module="emarket",
+                kind="inspection_pending",
+                title_en="Inspect your delivered order",
+                title_hi="अपनी डिलीवर हुई ऑर्डर की जांच करें",
+                subtitle="Delivery awaiting inspection within the 72h window",
+                priority="urgent",
+                deep_link=f"/dashboard/p/orders/{first_pending['id']}/inspect",
+                source_id=f"{uid}:emarket:inspection",
             )
     return {"personas": grouped}

@@ -47,7 +47,7 @@
 | ai.A2 | AI A2 (notify.timing.v1) | SHIPPED | question_sets.py registered; golden fixture present |
 | ai.A3 | AI A3 (notify.copy.v1) | SHIPPED | question_sets.py registered; golden fixture present |
 | ai.A4 | AI A4 (seller.rate_check.v1) | SHIPPED | question_sets.py registered; golden fixture present |
-| ai.A5 | AI A5 (trade.offer_score.v1) | DEFERRED | DEFERRED 2026-10-08 — offer-quality scoring not in v1 catalog; revisit post-beta |
+| ai.A5 | AI A5 (trade.offer_score.v1) | SHIPPED | phase-08; question_sets.py registered + golden fixture; services/offer_score.py + routers/ai_power.py + tests/test_offer_score.py |
 | ai.A6 | AI A6 (trust.fraud.v1) | SHIPPED | question_sets.py registered; golden fixture present |
 | ai.A7 | AI A7 (chat.guardrail.v1) | SHIPPED | question_sets.py registered; golden fixture present |
 | ai.A8 | AI A8 (kyc.extract.v1 + kyc.authenticity_risk.v1) | SHIPPED | question_sets.py registered; golden fixture present |
@@ -72,11 +72,11 @@
 | ai.B14 | AI B14 (courses.recommend.v1 + grade suggest) | SHIPPED | question_sets.py + golden fixture; shim-green |
 | ai.B15 | AI B15 (schemes.match.v1) | SHIPPED | question_sets.py + golden fixture; shim-green |
 | ai.B16 | AI B16 (women.shg_readiness.v1) | SHIPPED | phase-08 WS-01; services/shg_readiness.py + tests/test_shg_readiness.py |
-| ai.B17 | AI B17 (weather spray-window class) | DEFERRED | DEFERRED 2026-10-08 — weather spray-window class not in v1 AI catalog; revisit post-beta |
+| ai.B17 | AI B17 (weather spray-window class) | SHIPPED | phase-08; question_sets.py registered + golden fixture; services/spray_window.py + routers/ai_power.py + tests/test_spray_window.py |
 | ai.C1 | AI C1 (Voice AI assistant) | RETIRED | RETIRED 2026-10-08 — voice AI descoped (brief M27) |
 | ai.C2 | AI C2 (Receipt & weigh-slip scan) | SHIPPED | phase-08 WS-01; routers/diary.py receipt-scan + fixtures/receipt_scan |
 | ai.C3 | AI C3 (Mandi price forecast) | SHIPPED | phase-0X catalog brief shipped; service/router present |
-| ai.C4 | AI C4 (Demand forecast (vyapari/dairy)) | DEFERRED | DEFERRED 2026-10-08 — Demand forecast (vyapari/dairy) out of v1 beta scope |
+| ai.C4 | AI C4 (Demand forecast (vyapari/dairy)) | SHIPPED | phase-08; question_sets.py registered + golden fixture; services/demand_forecast.py + routers/ai_power.py + tests/test_demand_forecast.py |
 | ai.C5 | AI C5 (AI crop planner) | SHIPPED | phase-0X catalog brief shipped; service/router present |
 | ai.C6 | AI C6 (Negotiation coach) | SHIPPED | phase-0X catalog brief shipped; service/router present |
 | ai.C7 | AI C7 (Onboarding copilot) | SHIPPED | phase-08 WS-01; reference.district_crops + onboarding |

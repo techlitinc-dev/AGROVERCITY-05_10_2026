@@ -15,7 +15,7 @@
 
 .dairy-ops-warn {
   background: var(--av-gold-bg);
-  border: 1.5px solid #fde68a;
+  border: 1.5px solid rgba(251, 191, 36, 0.4);
   border-radius: var(--av-radius-card);
   padding: 10px 12px;
   margin-top: 12px;
@@ -25,7 +25,7 @@
 }
 
 .dairy-ops-note {
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.07);
   border: 1.5px dashed var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   padding: 10px 12px;

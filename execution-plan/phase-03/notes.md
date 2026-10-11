@@ -9,3 +9,5 @@
 2026-10-03 — WS-05: POST /post-harvest/grade remains a stub. Real Gemini Vision grading = AI brief M10, phase-05. Only the integration point is preserved in this phase.
 
 2026-10-03 — WS-06: Vet credential verification queue UI deferred to phase-07 (superadmin module 19). Backend flag, filtered list endpoint, and status-mutation endpoint with audit_logs shipped in this phase.
+
+2026-10-08 — Checkpoint tasks 2.33/3.20/4.22/5.20/6.17/F.20 marked done retroactively: work verified present in bulk commit 87c1539 (per-WS commits were not made at pass time).

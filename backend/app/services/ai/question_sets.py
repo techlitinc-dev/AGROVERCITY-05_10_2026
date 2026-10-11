@@ -1164,6 +1164,291 @@ register(
 )
 
 
+# Brief A5 (phase-08) — trade offer-quality scoring (`trade.offer_score.v1`).
+# Grades/ranks procurement offers (vyapari offers on lots/demands) before the
+# farmer sees them: score + grade + accept/counter/wait recommendation with a
+# short explanation. `suggest` — the farmer always decides. Deterministic
+# fallback = price-vs-market-anchor (mandi modal moved by the 7-day trend),
+# buyer reliability and payment terms; honest when the offer trails the market.
+OFFER_SCORE_GRADES = ("A", "B", "C", "D")
+OFFER_SCORE_ACTIONS = ("accept_best", "counter", "wait")
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _offer_score_fallback(state: dict) -> dict:
+    """Deterministic offer-quality score (A5, SDR step 5).
+
+    price_score linearly maps the premium over the trend-adjusted mandi anchor
+    from 0 (-10% or worse) to 1 (+10% or better); reliability blends the buyer's
+    acceptance rate with deal volume plus a verified bonus; terms decay from
+    same/next-day payment (1.0) to a week or more (0.2). No AI involved."""
+    offer = _as_int(state.get("offer_price_paisa"))
+    modal = _as_int(state.get("mandi_modal_paisa"))
+    trend = _as_float(state.get("mandi_trend_7d_pct"))
+    terms = _as_int(state.get("payment_terms_days"))
+    acceptance = _clamp(_as_float(state.get("acceptance_rate")), 0.0, 1.0)
+    deals = _as_int(state.get("deals_completed"))
+    verified = bool(state.get("buyer_verified"))
+
+    anchor = modal * (1.0 + trend / 100.0)
+    if modal > 0 and anchor > 0:
+        premium_pct = round((offer - anchor) / anchor * 100.0, 1)
+    else:
+        premium_pct = 0.0
+    price_score = _clamp(round((premium_pct + 10.0) / 20.0, 2), 0.0, 1.0)
+
+    reliability = acceptance * min(1.0, deals / 10.0)
+    if verified:
+        reliability = min(1.0, reliability + 0.1)
+    reliability = round(reliability, 2)
+
+    if terms <= 1:
+        terms_score = 1.0
+    elif terms >= 7:
+        terms_score = 0.2
+    else:
+        terms_score = round(1.0 - (terms - 1) * 0.8 / 6.0, 2)
+
+    score = round(0.6 * price_score + 0.25 * reliability + 0.15 * terms_score, 2)
+    if score >= 0.85:
+        grade = "A"
+    elif score >= 0.7:
+        grade = "B"
+    elif score >= 0.5:
+        grade = "C"
+    else:
+        grade = "D"
+    if score >= 0.75:
+        action = "accept_best"
+    elif score >= 0.45:
+        action = "counter"
+    else:
+        action = "wait"
+
+    offer_rupees = offer / 100.0
+    if modal > 0:
+        if premium_pct >= 0:
+            price_note = f"{premium_pct:.0f}% above the market anchor"
+        else:
+            price_note = f"{abs(premium_pct):.0f}% below the market anchor"
+        explanation = (
+            f"At ₹{offer_rupees:,.0f}/quintal this offer is {price_note} "
+            f"(mandi ₹{modal / 100.0:,.0f}/quintal, 7-day trend {trend:+.0f}%). "
+            f"Buyer reliability {reliability:.0%}, payment terms {terms} day(s)."
+        )
+    else:
+        explanation = (
+            f"At ₹{offer_rupees:,.0f}/quintal this offer cannot be compared to the mandi "
+            "because no mandi modal is available for this crop. Check today's local "
+            "rate before deciding."
+        )
+    return {
+        "score": score,
+        "grade": grade,
+        "recommended_action": action,
+        "explanation": explanation,
+    }
+
+
+register(
+    QuestionSet(
+        id="trade.offer_score.v1",
+        version="v1",
+        schema={
+            "score": 0.5,
+            "grade": "C",
+            "recommended_action": "counter",
+            "explanation": "",
+        },
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_offer_score_fallback,
+    )
+)
+
+
+# Brief B17 (phase-08) — weather spray-window class (`weather.spray_window.v1`).
+# Farmer advisory: GO / CAUTION / NO-GO for spraying in the next ~48 hours from
+# the hourly forecast (rain, wind, humidity, temperature). `suggest` — the
+# farmer always decides. Deterministic fallback = rule scan of the windows:
+# a clean window needs <0.5mm rain, wind <=15 km/h, 40-85% humidity and <=35C;
+# a borderline window relaxes those limits; class = go when a clean window
+# exists within 24h, caution when one exists within the horizon, else no_go.
+SPRAY_WINDOW_CLASSES = ("go", "caution", "no_go")
+
+
+def _spray_window_ok(window: dict) -> bool:
+    return (
+        _as_float(window.get("rain_mm")) < 0.5
+        and _as_float(window.get("wind_kmph")) <= 15.0
+        and 40.0 <= _as_float(window.get("humidity_pct")) <= 85.0
+        and _as_float(window.get("temp_celsius")) <= 35.0
+    )
+
+
+def _spray_window_marginal(window: dict) -> bool:
+    return (
+        _as_float(window.get("rain_mm")) < 2.0
+        and _as_float(window.get("wind_kmph")) <= 20.0
+        and 30.0 <= _as_float(window.get("humidity_pct")) <= 92.0
+        and _as_float(window.get("temp_celsius")) <= 38.0
+    )
+
+
+def _spray_window_fallback(state: dict) -> dict:
+    """Deterministic spray-window classification (B17, SDR step 5)."""
+    windows = [w for w in (state.get("windows") or []) if isinstance(w, dict)]
+    if not windows:
+        return {
+            "window_class": "no_go",
+            "best_window_hours": None,
+            "reasons": ["no forecast windows provided"],
+        }
+
+    best = next((w for w in windows if _spray_window_ok(w)), None)
+    marginal = next((w for w in windows if _spray_window_marginal(w)), None)
+    best_hours = _as_int(best.get("hours_from_now")) if best is not None else None
+
+    reasons: list[str] = []
+    if best is not None:
+        if best_hours <= 0:
+            reasons.append("conditions are sprayable right now (no rain, wind within limits)")
+        else:
+            reasons.append(f"first clean window in {best_hours}h — no rain, wind within limits")
+    now = windows[0]
+    now_rain = _as_float(now.get("rain_mm"))
+    now_wind = _as_float(now.get("wind_kmph"))
+    if now_rain >= 0.5:
+        reasons.append(f"rain {now_rain:g}mm expected now — spraying now would wash off")
+    if now_wind > 15.0:
+        reasons.append(f"wind {now_wind:.0f} km/h now is above the 15 km/h drift limit")
+    if best is None and marginal is not None:
+        marginal_hours = _as_int(marginal.get("hours_from_now"))
+        reasons.append(f"no fully clean window — the nearest borderline window is in {marginal_hours}h")
+    if best is None and marginal is None:
+        reasons.append("rain or strong wind across the whole forecast — wait for a clear window")
+
+    if best is not None and best_hours <= 24:
+        window_class = "go"
+    elif best is not None or marginal is not None:
+        window_class = "caution"
+    else:
+        window_class = "no_go"
+    return {
+        "window_class": window_class,
+        "best_window_hours": best_hours,
+        "reasons": reasons,
+    }
+
+
+register(
+    QuestionSet(
+        id="weather.spray_window.v1",
+        version="v1",
+        schema={"window_class": "caution", "best_window_hours": None, "reasons": []},
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_spray_window_fallback,
+    )
+)
+
+
+# Brief C4 (phase-08) — demand forecast for vyapari/dairy (`demand.forecast.v1`).
+# Buying-signal forecast: expected demand for a crop/product over the next N
+# days from sales history + season + festival days, with a low/expected/high
+# band and a stock-up/hold/reduce suggestion. `suggest`, always labeled an
+# estimate (honesty rule). Deterministic fallback = last-7-day average moved by
+# a month seasonality factor and a capped festival bump; the band is ±15%;
+# recommendation compares stock coverage in days against the horizon.
+DEMAND_FORECAST_RECOMMENDATIONS = ("stock_up", "hold", "reduce")
+
+# Order: January (1) … December (12) — Indian agri/dairy demand seasonality.
+MONTH_SEASON_FACTOR = {
+    1: 0.95, 2: 0.90, 3: 0.95, 4: 1.00, 5: 1.05, 6: 1.00,
+    7: 0.95, 8: 1.00, 9: 1.05, 10: 1.15, 11: 1.10, 12: 1.05,
+}
+
+
+def _demand_forecast_fallback(state: dict) -> dict:
+    """Deterministic demand forecast (C4, SDR step 5).
+
+    baseline = mean of the last 7 daily observations; expected = baseline ×
+    season factor × (1 + capped festival bump); trend = last-7 vs previous-7
+    mean change. The band is ±15% around the expectation — an honest, labeled
+    estimate, never invented precision. No AI involved."""
+    history: list[float] = []
+    for value in state.get("history_units") or []:
+        units = _as_float(value)
+        if units >= 0:
+            history.append(units)
+    horizon = _as_int(state.get("horizon_days")) or 7
+    horizon = max(1, min(horizon, 60))
+    month = _as_int(state.get("month"))
+    festival_days = max(0, _as_int(state.get("festival_days")))
+    stock = max(0.0, _as_float(state.get("current_stock_units")))
+
+    recent = history[-7:] if len(history) >= 7 else list(history)
+    baseline_daily = round(_series_mean(recent), 2)
+
+    if len(history) >= 14:
+        prev_mean = _series_mean(history[-14:-7])
+        trend_pct = round((baseline_daily - prev_mean) / prev_mean * 100.0, 1) if prev_mean > 0 else 0.0
+    else:
+        trend_pct = 0.0
+
+    season_factor = MONTH_SEASON_FACTOR.get(month, 1.0)
+    festival_bump = min(0.15, festival_days * 0.02)
+    expected_units = round(baseline_daily * season_factor * (1.0 + festival_bump) * horizon, 1)
+    low_units = round(expected_units * 0.85, 1)
+    high_units = round(expected_units * 1.15, 1)
+
+    expected_daily = expected_units / horizon
+    coverage_days = stock / expected_daily if expected_daily > 0 else 0.0
+    if coverage_days < horizon * 0.5:
+        recommendation = "stock_up"
+    elif coverage_days > horizon * 1.5:
+        recommendation = "reduce"
+    else:
+        recommendation = "hold"
+
+    explanation = (
+        f"Recent 7-day average is {baseline_daily:g} units/day with a {trend_pct:+.0f}% trend; "
+        f"season factor {season_factor:g} and {festival_days} festival day(s) give "
+        f"{expected_units:g} units expected over {horizon} days (band {low_units:g}-{high_units:g}). "
+        f"Current stock covers {coverage_days:.1f} days."
+    )
+    return {
+        "expected_units": expected_units,
+        "low_units": low_units,
+        "high_units": high_units,
+        "trend_pct": trend_pct,
+        "recommendation": recommendation,
+        "explanation": explanation,
+    }
+
+
+register(
+    QuestionSet(
+        id="demand.forecast.v1",
+        version="v1",
+        schema={
+            "expected_units": 0.0,
+            "low_units": 0.0,
+            "high_units": 0.0,
+            "trend_pct": 0.0,
+            "recommendation": "hold",
+            "explanation": "",
+        },
+        confidence_threshold=0.75,
+        automation_level="suggest",
+        fallback_fn=_demand_forecast_fallback,
+    )
+)
+
+
 
 
 

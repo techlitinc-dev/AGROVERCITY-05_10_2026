@@ -42,12 +42,13 @@
 - Flutter apps; voice AI (M27 retired).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] robust.md §4.3 verbatim: zero hardcoded metrics on any dashboard (grep for `?? <number>` returns nothing in `website/src/views`); every module emits ≥1 task type and appears in the summary grid; tapping any task lands on a working screen (no "coming soon" reachable from a task).
-- [ ] Every persona dashboard shows a working AI-ranked hero next-best-action card; ranking is deterministic/stable with `AI_PROVIDER=shim`; flag off → due-date order with no errors.
-- [ ] Marathi and Hindi chat round-trips work: persona-aware answers, red-team set (phone-sharing, loan advice) filtered by `chatbot.safety.v1`, and a handoff creates a visible `expert_tickets` thread in the UI.
-- [ ] `GET /v1/tasks/summary` returns per-module counts + top-3 urgent per persona; `done`/`dismiss` are idempotent; all endpoints use the error envelope + cursor pagination.
-- [ ] Global verification gate (execution-plan/README.md §4) green: `cd backend && .venv/bin/python -m pytest -q`; `cd website && pnpm exec tsc --noEmit && pnpm build`; full suite green with `AI_PROVIDER=shim`; one end-to-end flow per workstream from dashboard task deep-link to completion.
+- [ ] robust.md §4.3 verbatim: zero hardcoded metrics on any dashboard (grep for `?? <number>` returns nothing in `website/src/views`); every module emits ≥1 task type and appears in the summary grid; tapping any task lands on a working screen (no "coming soon" reachable from a task). (pending operator — 2026-10-08)
+- [ ] Every persona dashboard shows a working AI-ranked hero next-best-action card; ranking is deterministic/stable with `AI_PROVIDER=shim`; flag off → due-date order with no errors. (pending operator — 2026-10-08)
+- [ ] Marathi and Hindi chat round-trips work: persona-aware answers, red-team set (phone-sharing, loan advice) filtered by `chatbot.safety.v1`, and a handoff creates a visible `expert_tickets` thread in the UI. (pending operator — 2026-10-08)
+- [x] `GET /v1/tasks/summary` returns per-module counts + top-3 urgent per persona; `done`/`dismiss` are idempotent; all endpoints use the error envelope + cursor pagination.
+- [ ] Global verification gate (execution-plan/README.md §4) green: `cd backend && .venv/bin/python -m pytest -q`; `cd website && pnpm exec tsc --noEmit && pnpm build`; full suite green with `AI_PROVIDER=shim`; one end-to-end flow per workstream from dashboard task deep-link to completion. (pending operator — 2026-10-08)
 
 ## Estimated effort
 

@@ -7,7 +7,7 @@ import { t } from '../i18n';
  *   1. import { enqueueOp } from '../../lib/offline/outbox';
  *   2. on submit, catch network failures:
  *        if (!navigator.onLine) {
- *          enqueueOp({ idempotencyKey: crypto.randomUUID(), method: 'POST', path, body });
+ *          enqueueOp({ idempotencyKey: uuid(), method: 'POST', path, body });
  *          toast(t('offline.pendingSync', { count: pendingCount() }));
  *          return;
  *        }

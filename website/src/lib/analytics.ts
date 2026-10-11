@@ -1,5 +1,6 @@
 import { api } from './api/client';
 import { useDashboardStore } from '../stores/dashboard';
+import { uuid } from './uuid';
 
 /**
  * Analytics beacon (WS-09 X13) — a tiny queued emitter that batches events to
@@ -18,12 +19,12 @@ interface QueuedEvent {
   clientTs: string;
 }
 
-const sessionId = crypto.randomUUID();
+const sessionId = uuid();
 let queue: QueuedEvent[] = [];
 
 export function track(name: string, props: Props = {}): void {
   queue.push({
-    eventId: crypto.randomUUID(),
+    eventId: uuid(),
     persona: useDashboardStore.getState().activeProfile ?? undefined,
     name,
     props,

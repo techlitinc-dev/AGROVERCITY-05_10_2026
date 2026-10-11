@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ChipSelect from '../../components/ChipSelect';
 import LabeledTextField from '../../components/LabeledTextField';
 import MultiChipWithCustom from '../../components/MultiChipWithCustom';
 import { toast } from '../../components/toast';
-import { fetchRegionCrops } from '../../lib/api/reference';
+import { fetchDistrictCrops, fetchRegionCrops } from '../../lib/api/reference';
 import { useT } from '../../lib/i18n';
 import { personaByType, personaLabel, PERSONAS } from '../../lib/personas';
 import { INDIAN_STATES } from '../../lib/states';
@@ -189,6 +189,9 @@ export default function ProfileDetails({ fieldErrors, submitting, onBack, onSubm
 
   const farmOptions = localizedFarmOptions(language);
   const [suggestedCrops, setSuggestedCrops] = useState<string[]>([]);
+  /** M33 (task 1.43): district-crop pre-selection applies once per district,
+   *  and every pre-selected chip stays user-overridable afterwards. */
+  const preselectedDistrictRef = useRef<string | null>(null);
   const cropOptions = useMemo(() => {
     const merged = [...farmOptions.crops];
     for (const crop of suggestedCrops) {
@@ -201,12 +204,28 @@ export default function ProfileDetails({ fieldErrors, submitting, onBack, onSubm
   useEffect(() => {
     if (district.trim().length < 3) return;
     let cancelled = false;
-    fetchRegionCrops(district.trim())
+    const normalized = district.trim();
+    fetchRegionCrops(normalized)
       .then((res) => {
         if (cancelled) return;
         setSuggestedCrops(res.suggested ?? []);
       })
       .catch(() => undefined); // suggestions are optional — silent fail
+    // Admin-curated district crops (active rows only) are pre-selected into
+    // the farmer's crop list — exactly once per district, so removing a chip
+    // afterwards is never undone.
+    fetchDistrictCrops(normalized)
+      .then((res) => {
+        if (cancelled || preselectedDistrictRef.current === normalized) return;
+        preselectedDistrictRef.current = normalized;
+        const curated = res.crops ?? [];
+        if (curated.length > 0) {
+          setSuggestedCrops((prev) => Array.from(new Set([...prev, ...curated])));
+          const current = useOnboardingStore.getState().wizard.farm.crops;
+          updateFarm({ crops: Array.from(new Set([...current, ...curated])) });
+        }
+      })
+      .catch(() => undefined); // pre-selection is optional — silent fail
     return () => {
       cancelled = true;
     };
@@ -335,6 +354,11 @@ export default function ProfileDetails({ fieldErrors, submitting, onBack, onSubm
                     addLabel={t('addCrop')}
                     placeholder={t('cropNameHint')}
                   />
+                  {district.trim().length >= 3 ? (
+                    <p style={{ marginTop: 4, marginBottom: 0, fontSize: 12, color: '#6B7280' }}>
+                      {t('districtCrops.hint', { district: district.trim() })}
+                    </p>
+                  ) : null}
                 </div>
               </SectionCard>
             );

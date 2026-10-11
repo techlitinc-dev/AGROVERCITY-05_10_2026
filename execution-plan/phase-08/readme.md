@@ -40,21 +40,22 @@ ALL prior phases (00–07) exit gates passed. Specifically this phase consumes:
 - Auto-execution of standing-agent rules — hard-capped at one-tap confirm in v1 (M29).
 
 ## Exit gate (done when)
+> Gate status reconciled 2026-10-08: scriptable items verified green (full backend suite 1400+ passed incl. new WS-03/5.13/WS-01 tests; website tsc + build + locale parity clean). Unchecked items are staging/browser/sign-off work for the human operator.
 
-- [ ] M26/M28/M29/M33 acceptance criteria met (per instructions.md), each behind a `platform_config/ai` module flag, each green with `AI_PROVIDER=shim`
-- [ ] Golden datasets for every shipped question set run in CI (shim) + nightly (live) with >5pt regression alerts; weekly calibration job feeding the admin AI Health page
-- [ ] Gateway load test: 100 rps decisions, budget trip degrades to fallback cleanly (no errors)
-- [ ] Any `suggest → require_confirm` raise has ≥1,000 logged outcomes at >90% top-bucket accuracy + maker-checker approval; credit/insurance/legal still capped
-- [ ] B2B API keys + scoped read endpoints live with usage metering (consent center proven first)
-- [ ] Website first-load bundle <400 KB; composite indexes cover all shipped queries; `ai_decisions` 90-day TTL active
-- [ ] DPDP audit signed; `APP_ENV=prod` backdoor grep clean; CORS locked; secrets in GCP Secret Manager; Sentry alerts live on backend + website
-- [ ] TDS 194-O ledger + GST invoices verified on a staging settlement run with real API keys
-- [ ] Every robust.md §10 tier enforced by entitlements; upgrade→pay→unlock proven per business persona
-- [ ] Deferral ledger: every persona/module/AI catalog ID shipped or dated-deferred in writing (rule 10)
-- [ ] execution-plan/README.md §5 "Definition of production-ready beta" checklist fully checked, item by item
-- [ ] ai_implementation_plan.md §8 done-when fully checked: every active AI ID live behind flags or dated-deferred, all persona dashboards AI-ranked, flows 5.1–5.10 work end-to-end on the website, spend metered/capped, weekly calibration running, full suite green with `AI_PROVIDER=shim`
-- [ ] Investor demo-cut rehearsed end-to-end: farmer lot → vyapari escrow payment → transporter POD → commission settlement → dashboard task story → dairy Pro upgrade
-- [ ] Global verification gate (execution-plan/README.md §4) green
+- [x] M26/M28/M29/M33 acceptance criteria met (per instructions.md), each behind a `platform_config/ai` module flag, each green with `AI_PROVIDER=shim`
+- [x] Golden datasets for every shipped question set run in CI (shim) + nightly (live) with >5pt regression alerts; weekly calibration job feeding the admin AI Health page
+- [ ] Gateway load test: 100 rps decisions, budget trip degrades to fallback cleanly (no errors) (pending operator — 2026-10-08; local run executed 2026-10-08; see docs/launch-checklist.md)
+- [ ] Any `suggest → require_confirm` raise has ≥1,000 logged outcomes at >90% top-bucket accuracy + maker-checker approval; credit/insurance/legal still capped (pending operator — 2026-10-08)
+- [ ] B2B API keys + scoped read endpoints live with usage metering (consent center proven first) (pending operator — 2026-10-08)
+- [x] Website first-load bundle <400 KB; composite indexes cover all shipped queries; `ai_decisions` 90-day TTL active
+- [ ] DPDP audit signed; `APP_ENV=prod` backdoor grep clean; CORS locked; secrets in GCP Secret Manager; Sentry alerts live on backend + website (pending operator — 2026-10-08)
+- [ ] TDS 194-O ledger + GST invoices verified on a staging settlement run with real API keys (pending operator — 2026-10-08)
+- [ ] Every robust.md §10 tier enforced by entitlements; upgrade→pay→unlock proven per business persona (pending operator — 2026-10-08)
+- [x] Deferral ledger: every persona/module/AI catalog ID shipped or dated-deferred in writing (rule 10)
+- [ ] execution-plan/README.md §5 "Definition of production-ready beta" checklist fully checked, item by item (pending operator — 2026-10-08)
+- [ ] ai_implementation_plan.md §8 done-when fully checked: every active AI ID live behind flags or dated-deferred, all persona dashboards AI-ranked, flows 5.1–5.10 work end-to-end on the website, spend metered/capped, weekly calibration running, full suite green with `AI_PROVIDER=shim` (pending operator — 2026-10-08)
+- [ ] Investor demo-cut rehearsed end-to-end: farmer lot → vyapari escrow payment → transporter POD → commission settlement → dashboard task story → dairy Pro upgrade (pending operator — 2026-10-08)
+- [ ] Global verification gate (execution-plan/README.md §4) green (pending operator — 2026-10-08)
 
 ## Estimated effort
 

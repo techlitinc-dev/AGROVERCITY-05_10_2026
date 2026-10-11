@@ -13,6 +13,7 @@ import {
   signInWithPhoneNumber,
 } from 'firebase/auth';
 import { getMessaging, getToken as getMessagingToken, isSupported } from 'firebase/messaging';
+import { uuid } from './uuid';
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -124,10 +125,25 @@ const storage = getStorage(firebaseApp);
  * Path: trade/<uid>/<uuid>.jpg — Storage rules must allow authenticated writes.
  */
 export async function uploadTradeImage(uid: string, file: File | Blob): Promise<string> {
-  const path = `trade/${uid}/${crypto.randomUUID()}.jpg`;
+  const path = `trade/${uid}/${uuid()}.jpg`;
   const fileRef = ref(storage, path);
   await uploadBytes(fileRef, file, { contentType: 'image/jpeg' });
   return getDownloadURL(fileRef);
+}
+
+/**
+ * Upload a receipt photo for the diary receipt-scan endpoint (M28). The backend
+ * reads the object at the returned storage path, so both the path and the
+ * display URL are handed back. Path: diary/<uid>/<uuid>.jpg.
+ */
+export async function uploadDiaryReceiptImage(
+  uid: string,
+  file: File | Blob
+): Promise<{ path: string; url: string }> {
+  const path = `diary/${uid}/${uuid()}.jpg`;
+  const fileRef = ref(storage, path);
+  await uploadBytes(fileRef, file, { contentType: 'image/jpeg' });
+  return { path, url: await getDownloadURL(fileRef) };
 }
 
 /** Downscale + re-encode to JPEG for upload (target ≤ ~500 KB, spec §12 risk 5). */

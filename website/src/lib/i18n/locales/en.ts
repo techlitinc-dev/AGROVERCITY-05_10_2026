@@ -614,6 +614,8 @@ const en: Record<string, string> = {
 
   // ---- M29 standing-agent rules (phase-08 WS-01) ----
   'agentRules.title': 'My standing rules',
+  'agentRules.sub':
+    'Say a rule in your own words — we parse it, show it back to you, and act only after you confirm. A match always asks before it acts.',
   'agentRules.createTitle': 'Create a rule',
   'agentRules.example': 'Example: "Accept any offer at or above ₹1,800"',
   'agentRules.reviewTitle': 'Review your rule',
@@ -626,6 +628,39 @@ const en: Record<string, string> = {
   'agentRules.auditTitle': 'Audit history',
   'agentRules.fireConfirm': 'Confirm',
   'agentRules.fireDismiss': 'Dismiss',
+  // AgentRulesPage (tasks 1.35/1.36) — form, review, list and audit labels.
+  'agentRules.moduleLabel': 'Applies to',
+  'agentRules.module_offers': 'Offers',
+  'agentRules.module_mandi_prices': 'Mandi prices',
+  'agentRules.module_rate_postings': 'Rate postings',
+  'agentRules.textLabel': 'Your rule — say it like you would to a friend',
+  'agentRules.examplesTitle': 'Try an example (tap to use):',
+  'agentRules.exampleEn': 'Accept any offer at or above ₹1,800',
+  'agentRules.exampleHi': '₹1,800 se upar offer aaye toh accept kar do',
+  'agentRules.parse': 'Check this rule',
+  'agentRules.parsing': 'Checking…',
+  'agentRules.edit': 'Edit',
+  'agentRules.conditionLabel': 'Condition',
+  'agentRules.actionLabel': 'Action',
+  'agentRules.maxValueLabel': 'Maximum value',
+  'agentRules.createdToast': 'Rule created',
+  'agentRules.deletedToast': 'Rule deleted',
+  'agentRules.pausedToast': 'Rule paused',
+  'agentRules.resumedToast': 'Rule resumed',
+  'agentRules.empty': 'No standing rules yet',
+  'agentRules.emptyBody': 'Create your first rule above — it will watch offers for you and always ask before acting.',
+  'agentRules.deleteConfirm': 'Delete this rule? It stops watching immediately.',
+  'agentRules.auditCreated': 'Created',
+  'agentRules.auditLastFired': 'Last fired',
+  'agentRules.auditNeverFired': 'Never fired',
+  'agentRules.auditHint':
+    'When a rule matches, a confirm card appears on your dashboard. Confirm runs the action once; dismiss records that you declined.',
+  tool_agentRules: 'Standing rules',
+  tool_agentRules_sub: 'Your AI agent rules',
+
+  // ---- M33 onboarding copilot (phase-08 WS-01, tasks 1.39/1.43) ----
+  'languageSuggest.hint': 'Language suggested for {district} — you can change it any time.',
+  'districtCrops.hint': 'Crops pre-selected for {district} — tap a chip to change.',
 };
 
 registerLocale('en', en);

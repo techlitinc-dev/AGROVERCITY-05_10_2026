@@ -26,9 +26,9 @@ from app.models.land import (
     MilestoneUpdateIn,
 )
 from app.routers.users import require_role
-from app.services import billing, idempotency, reports
-from app.services.ai import gateway
+from app.services import billing, idempotency, land_ai, reports
 from app.services.ai.privacy import build_land_listing_quality_state
+from app.services.land_crm import convert_lead, promote_waitlist, upsert_lead
 from app.services.pnl_engine import record_auto_entry
 from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import DEEP_LINKS, emit_task
@@ -164,6 +164,22 @@ async def _require_lease(uid: str, lease_id: str) -> dict:
     return lease
 
 
+async def _on_lease_ended(uid: str, lease: dict) -> None:
+    """Lease reached a terminal state: reopen the marketplace listing, hand
+    first refusal to the waitlist and open the landlord→farmer rating prompt
+    (the farmer→landlord prompt was opened at accept time)."""
+    listing_id = lease.get("listingId")
+    if listing_id:
+        listing = await get_doc("land_listings", listing_id)
+        if listing is not None and listing.get("status") == "leased":
+            listing["status"] = "open"
+            await set_doc("land_listings", listing_id, listing)
+        await promote_waitlist(listing_id)
+    tenant = lease.get("tenantFarmerId")
+    if tenant:
+        await open_rating_prompt(uid, tenant, lease["id"], "land_lease")
+
+
 async def _set_plot_status(uid: str, plot_id: str, status: str):
     plot = await get_doc(f"users/{uid}/land_plots", plot_id)
     if plot is not None:
@@ -238,8 +254,9 @@ async def update_lease(lease_id: str, body: LeaseUpdate, uid: str = Depends(_own
     updates = body.model_dump(exclude_unset=True)
     lease.update(updates)
     await set_doc(f"users/{uid}/land_leases", lease_id, lease)
-    if updates.get("status") == "ended":
+    if updates.get("status") in ("ended", "terminated"):
         await _set_plot_status(uid, lease["plotId"], "vacant")
+        await _on_lease_ended(uid, lease)
     return LeaseOut(**lease)
 
 
@@ -392,14 +409,7 @@ async def create_listing(body: LandListingIn, uid: str = Depends(_landlord)):
             village_lease_stats=village_stats,
             landlord_id=uid,
         )
-        decision = await gateway.decide(state, "land.listing_quality.v1", ctx=uid, module="land_listing_quality")
-        if decision and decision.answers:
-            quality_assessment = {
-                "completeness": float(decision.answers.get("completeness", 0.8)),
-                "rentBandOk": bool(decision.answers.get("rent_band_ok", True)),
-                "tips": decision.answers.get("tips", []),
-                "bandSource": decision.answers.get("band_source", "district_benchmark_default"),
-            }
+        quality_assessment = await land_ai.assess_listing_quality(state, uid)
     except Exception:
         quality_assessment = None
 
@@ -458,14 +468,9 @@ async def update_listing(listing_id: str, body: LandListingUpdate, uid: str = De
             plot=plot,
             landlord_id=uid,
         )
-        decision = await gateway.decide(state, "land.listing_quality.v1", ctx=uid, module="land_listing_quality")
-        if decision and decision.answers:
-            listing["qualityAssessment"] = {
-                "completeness": float(decision.answers.get("completeness", 0.8)),
-                "rentBandOk": bool(decision.answers.get("rent_band_ok", True)),
-                "tips": decision.answers.get("tips", []),
-                "bandSource": decision.answers.get("band_source", "district_benchmark_default"),
-            }
+        assessment = await land_ai.assess_listing_quality(state, uid)
+        if assessment:
+            listing["qualityAssessment"] = assessment
     except Exception:
         pass
 
@@ -511,6 +516,9 @@ async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)
         **body.model_dump(),
     )
     await set_doc("lease_requests", request.id, request.model_dump())
+    await upsert_lead(
+        listing["landlordId"], listing["id"], uid, user.get("name", ""), "application"
+    )
     await emit_task(
         listing["landlordId"],
         persona="farmLandlord",
@@ -564,12 +572,15 @@ async def accept_lease_request(request_id: str, uid: str = Depends(_landlord)):
         endDate=_add_months(start, request["durationMonths"]).isoformat(),
         status="active",
         verified=False,
+        listingId=listing["id"],
+        tenantFarmerId=request["farmerId"],
     )
     await set_doc(
         f"users/{uid}/land_leases", lease.id, {**lease.model_dump(), "retainUntil": _retain_until()}
     )
     # WS-03: tenant rates the landlord once the lease is active.
     await open_rating_prompt(request.get("farmerId"), uid, lease.id, "land_lease")
+    await convert_lead(uid, listing["id"], request["farmerId"])
     if lease.plotId:
         await _set_plot_status(uid, lease.plotId, "leased")
     await emit_task(

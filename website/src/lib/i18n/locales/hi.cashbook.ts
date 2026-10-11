@@ -76,6 +76,9 @@ const hiCashbook: Record<string, string> = {
   cbWorstMonth: 'सबसे खराब महीना',
   cbActivityNote: 'गतिविधि एंट्री केवल रिकॉर्ड के लिए है — पैसे नहीं बदलतीं।',
   cbPhotos: 'फोटो (वैकल्पिक)',
+  // ---- M28 receipt scan (phase-08 WS-01, task 1.19) ----
+  cbReceiptScan: 'रसीद स्कैन करें',
+  cbReceiptScanning: 'रसीद पढ़ी जा रही है…',
 };
 
 registerLocale('hi', hiCashbook);

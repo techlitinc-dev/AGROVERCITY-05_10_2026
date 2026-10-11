@@ -1,5 +1,6 @@
 import { ZERO } from '../../lib/numDefaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AiDraftBanner from '../../components/ai/AiDraftBanner';
 import ChipSelect from '../../components/ChipSelect';
 import LabeledTextField from '../../components/LabeledTextField';
 import ModalSheet from '../../components/ModalSheet';
@@ -8,6 +9,7 @@ import EmptyState from '../../components/trade/EmptyState';
 import ToolShell from '../../components/trade/ToolShell';
 import { toast } from '../../components/toast';
 import { isApiError } from '../../lib/api/client';
+import { uuid } from '../../lib/uuid';
 import { enqueueOp, pendingCount } from '../../lib/offline/outbox';
 import {
   createDiaryEntry,
@@ -15,6 +17,7 @@ import {
   diaryAnalytics,
   diaryReport,
   listDiaryEntries,
+  scanDiaryReceipt,
   updateDiaryEntry,
   type DiaryAnalytics,
   type DiaryEntry,
@@ -24,7 +27,7 @@ import {
 import { inr } from '../../lib/api/trade';
 import { categoriesForRole, categoryLabel } from '../../lib/cashbook-catalog';
 import { csvDate, downloadCsv } from '../../lib/csv';
-import { compressImage, uploadTradeImage } from '../../lib/firebase';
+import { compressImage, uploadDiaryReceiptImage, uploadTradeImage } from '../../lib/firebase';
 import { useT } from '../../lib/i18n';
 import { useDashboardStore } from '../../stores/dashboard';
 import { useSessionStore } from '../../stores/session';
@@ -99,6 +102,10 @@ export default function CashbookPage() {
   const [fPhotos, setFPhotos] = useState<string[]>([]);
   const [fErrors, setFErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  /** M28: true while the current form values were prefilled from a receipt scan. */
+  const [aiDraft, setAiDraft] = useState(false);
+  const [receiptScanning, setReceiptScanning] = useState(false);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -177,6 +184,7 @@ export default function CashbookPage() {
     setFNotes('');
     setFPhotos([]);
     setFErrors({});
+    setAiDraft(false);
     setSheetOpen(true);
   };
 
@@ -193,6 +201,7 @@ export default function CashbookPage() {
     setFNotes(e.notes ?? '');
     setFPhotos(e.photos ?? []);
     setFErrors({});
+    setAiDraft(false);
     setSheetOpen(true);
   };
 
@@ -204,6 +213,64 @@ export default function CashbookPage() {
       );
       if (!stillValid) setFCategory('');
     }
+  };
+
+  const uid = useSessionStore((s) => s.user?.id ?? s.user?.uid ?? 'anon');
+
+  /**
+   * M28 receipt scan (task 1.19): upload the photo to Firebase Storage, ask the
+   * backend to extract the fields, then prefill the create-entry form. The scan
+   * never writes anything — totals stay untouched until the user taps save.
+   */
+  const scanReceipt = async (file: File) => {
+    if (receiptScanning) return;
+    setReceiptScanning(true);
+    try {
+      const blob = await compressImage(file);
+      const { path, url } = await uploadDiaryReceiptImage(uid, blob);
+      const { available, prefill } = await scanDiaryReceipt(path);
+      if (!available || !prefill) {
+        toast(t('receiptScan.failed'), { error: true });
+        return;
+      }
+      setEditing(null);
+      setFType(prefill.entry_type);
+      setFAmount(prefill.amount_paisa > 0 ? String(prefill.amount_paisa / 100) : '');
+      const known = categoriesForRole(role).find((c) => c.value === prefill.category);
+      setFCategory(known ? known.value : '');
+      setFCustom(known ? '' : prefill.category);
+      const scannedDate = prefill.date ? prefill.date.slice(0, 10) : '';
+      setFDate(/^\d{4}-\d{2}-\d{2}$/.test(scannedDate) ? scannedDate : new Date().toISOString().slice(0, 10));
+      setFParty(prefill.party);
+      setFTitle(prefill.party || (known ? categoryLabel(known.value) : prefill.category));
+      setFCrop('');
+      setFNotes('');
+      setFPhotos([url]);
+      setFErrors({});
+      setAiDraft(true);
+      setSheetOpen(true);
+    } catch (e) {
+      toast(isApiError(e) ? e.message : t('receiptScan.failed'), { error: true });
+    } finally {
+      setReceiptScanning(false);
+      if (receiptInputRef.current) receiptInputRef.current.value = '';
+    }
+  };
+
+  /** Discard the AI draft: reset the form to the blank create state. */
+  const discardReceiptDraft = () => {
+    setFTitle('');
+    setFType('expense');
+    setFCategory('');
+    setFCustom('');
+    setFAmount('');
+    setFDate(new Date().toISOString().slice(0, 10));
+    setFParty('');
+    setFCrop('');
+    setFNotes('');
+    setFPhotos([]);
+    setFErrors({});
+    setAiDraft(false);
   };
 
   const validate = (): boolean => {
@@ -234,7 +301,7 @@ export default function CashbookPage() {
       if (!editing && (typeof navigator === 'undefined' || !navigator.onLine)) {
         // WS-06 X20: offline draft → outbox, replayed via /v1/sync when online.
         enqueueOp({
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: uuid(),
           method: 'POST',
           path: '/v1/diary/entries',
           body: payload,
@@ -531,6 +598,25 @@ export default function CashbookPage() {
       >
         <p className="trade-section-title" style={{ margin: 0 }}>{t('cbLedgerTitle')}</p>
         <div className="trade-actions-row" style={{ marginTop: 0, flexWrap: 'wrap' }}>
+          <input
+            ref={receiptInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void scanReceipt(file);
+            }}
+          />
+          <button
+            type="button"
+            className="av-btn av-btn-ghost"
+            onClick={() => receiptInputRef.current?.click()}
+            disabled={receiptScanning}
+          >
+            {receiptScanning ? <span className="av-spinner" aria-hidden /> : '📷'}{' '}
+            {receiptScanning ? t('cbReceiptScanning') : t('cbReceiptScan')}
+          </button>
           <button
             type="button"
             className="av-btn av-btn-ghost"
@@ -653,6 +739,9 @@ export default function CashbookPage() {
         onClose={() => setSheetOpen(false)}
         title={t(editing ? 'cbEditEntry' : 'cbAddEntry')}
       >
+        {aiDraft && !editing ? (
+          <AiDraftBanner labelKey="receiptScan.banner" onDiscard={discardReceiptDraft} />
+        ) : null}
         <LabeledTextField
           label={t('cbEntryTitle')}
           value={fTitle}

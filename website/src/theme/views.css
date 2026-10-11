@@ -1,11 +1,11 @@
 /* View + component styles for the onboarding screens. Uses tokens.css vars/classes;
    nothing here overrides the design system, only extends it. */
 
-/* ---------- Splash ---------- */
+/* ---------- Splash (Verdant Glass §11 marketing hero) ---------- */
 .splash {
   position: relative;
   min-height: 100dvh;
-  background: var(--av-splash-bg);
+  background: transparent; /* the scene (aerial + contours + grade) sits behind */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -33,12 +33,15 @@
 .splash-logo-tile {
   width: 140px;
   height: 140px;
-  border-radius: 32px;
-  background: #fff;
-  border: 2.5px solid var(--av-border-green-strong);
+  border-radius: 50%;
+  background: var(--av-glass-bg-hero);
+  border: 1px solid var(--av-glass-stroke-bright);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+  backdrop-filter: blur(32px) saturate(140%);
   box-shadow:
-    0 4px 36px 6px rgba(67, 160, 71, 0.55),
-    0 8px 18px rgba(0, 0, 0, 0.35);
+    var(--av-glass-highlight),
+    0 0 0 6px rgba(217, 244, 91, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,9 +69,10 @@
 .splash-brand {
   margin-top: 28px;
   font-size: 30px;
-  font-weight: 900;
+  font-weight: 700;
+  font-family: var(--av-font-display);
   letter-spacing: 4.5px;
-  background: linear-gradient(135deg, #0f5132, #198754, #20c997, #198754, #0f5132);
+  background: linear-gradient(135deg, #f1f7ee 20%, #d9f45b 55%, #f1f7ee 90%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -79,8 +83,8 @@
 .splash-subtitle {
   margin-top: 6px;
   font-size: 14px;
-  font-weight: 800;
-  color: var(--av-green-dark);
+  font-weight: 600;
+  color: var(--av-slate-1);
   letter-spacing: 0.8px;
   text-align: center;
   animation: splash-rise 0.5s ease both;
@@ -103,20 +107,28 @@
   gap: 8px;
   padding: 12px 28px;
   border-radius: var(--av-radius-pill);
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
-  background: linear-gradient(135deg, #43a047, #2e7d32);
-  color: #fff;
+  border: none;
+  background: var(--av-primary);
+  color: var(--av-green-ink);
   font-family: var(--av-font);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.3px;
   cursor: pointer;
-  box-shadow: 0 4px 18px rgba(46, 125, 50, 0.5);
+  box-shadow:
+    var(--av-glass-highlight),
+    0 6px 20px rgba(217, 244, 91, 0.3);
   animation: splash-rise 0.5s ease both;
   animation-delay: 0.25s;
 }
 .splash-cta:active {
   transform: scale(0.96);
+}
+.splash-on-scene .splash-phase,
+.splash-on-scene .splash-legal,
+.splash-on-scene .splash-dialog {
+  position: relative;
+  z-index: 4; /* float above the scene layers */
 }
 .splash-dialog {
   position: absolute;
@@ -130,7 +142,10 @@
   cursor: default;
 }
 .splash-dialog-card {
-  background: #fff;
+  background: rgba(18, 32, 23, 0.94);
+  border: 1px solid var(--av-glass-stroke);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
   border-radius: 20px;
   padding: 24px 20px;
   width: 100%;
@@ -202,7 +217,7 @@
   padding: 20px 10px 16px;
   border-radius: 18px;
   border: 2px solid var(--av-border-grey-soft);
-  background: #fff;
+  background: var(--av-glass-fill);
   cursor: pointer;
   font-family: var(--av-font);
   text-align: center;
@@ -258,7 +273,7 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 900;
-  color: #fff;
+  color: #16240f;
   background: var(--av-primary);
   opacity: 0;
   transform: scale(0.5);
@@ -275,7 +290,7 @@
 }
 .lang-card.selected .lang-card-avatar {
   background: var(--av-primary);
-  color: #fff;
+  color: #16240f;
   border-color: var(--av-primary);
 }
 .lang-card.selected .lang-card-name {
@@ -300,7 +315,7 @@
   padding: 12px 16px 12px 42px;
   border-radius: 14px;
   border: 1.5px solid var(--av-border-grey);
-  background: #fff;
+  background: var(--av-glass-fill);
   font-family: var(--av-font);
   font-size: 14px;
   color: var(--av-title);
@@ -356,7 +371,7 @@
   padding: 12px 14px;
   border-radius: 14px;
   border: 1.5px solid var(--av-border-grey-soft);
-  background: #fff;
+  background: var(--av-glass-fill);
   cursor: pointer;
   font-family: var(--av-font);
   text-align: left;
@@ -389,7 +404,7 @@
   justify-content: center;
   font-size: 11px;
   font-weight: 900;
-  color: #fff;
+  color: #16240f;
   background: var(--av-primary);
   opacity: 0;
   transform: scale(0.5);
@@ -413,7 +428,7 @@
   color: var(--av-slate-1);
   font-size: 14px;
   font-weight: 600;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px dashed var(--av-border-grey);
   border-radius: 14px;
 }
@@ -442,7 +457,7 @@
   position: relative;
   border-radius: 20px;
   border: 2.2px solid transparent;
-  background: #fff;
+  background: var(--av-glass-fill);
   border-color: var(--av-border-grey-soft);
   padding: 16px 14px 14px;
   text-align: left;
@@ -470,7 +485,7 @@
   height: 26px;
   border-radius: 50%;
   border: 1.5px solid var(--av-border-green);
-  background: #fff;
+  background: var(--av-glass-fill);
   cursor: pointer;
   font-size: 14px;
   color: var(--av-slate-1);
@@ -537,7 +552,7 @@
 }
 .av-segmented-item.active {
   background: var(--av-primary);
-  color: #fff;
+  color: #16240f;
   box-shadow: 0 2px 8px rgba(67, 160, 71, 0.35);
 }
 
@@ -550,7 +565,7 @@
   height: 56px;
   border-radius: var(--av-radius-input);
   border: 1.5px solid var(--av-border-grey);
-  background: #fff;
+  background: var(--av-glass-fill);
   text-align: center;
   font-family: var(--av-font);
   font-size: 22px;
@@ -598,7 +613,7 @@
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-green-strong);
   display: flex;
   align-items: center;
@@ -682,7 +697,7 @@
 
 /* ---------- Farm details (step 3) ---------- */
 .section-card {
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: var(--av-radius-card);
   box-shadow: var(--av-shadow-card);
@@ -813,7 +828,7 @@ input[type='range'].av-slider {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #fff;
+  background: #f1f7ee;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   transition: transform 0.15s ease;
 }
@@ -874,7 +889,7 @@ input[type='range'].av-slider {
   padding: 0 14px;
   border-radius: 19px;
   font-size: 12.5px;
-  background: #fff;
+  background: var(--av-glass-fill);
   color: var(--av-green-deep);
   border: 1.5px solid var(--av-border-green);
   box-shadow: var(--av-shadow-card);
@@ -886,7 +901,7 @@ input[type='range'].av-slider {
 }
 .map-stat {
   flex: 1;
-  background: #fff;
+  background: var(--av-glass-fill);
   border: 1.5px solid var(--av-border-grey-soft);
   border-radius: 14px;
   padding: 10px 8px;
@@ -942,4 +957,8 @@ input[type='range'].av-slider {
 }
 .flex-spacer {
   flex: 1;
+}
+
+.splash-scene {
+  min-height: 100dvh;
 }
