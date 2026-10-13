@@ -111,3 +111,37 @@ class RateIn(BaseModel):
 
 class SavedFarmerIn(BaseModel):
     farmerId: str
+
+
+class StandingOrderCreate(BaseModel):
+    """Standing (recurring) demand order with a price band and calendar window."""
+
+    crop: str
+    variety: str = ""
+    minPrice: int = Field(ge=0)
+    maxPrice: int = Field(gt=0)
+    quantityPerSlot: float = Field(gt=0)
+    unit: str = "quintal"
+    frequency: Literal["daily", "weekly", "monthly"] = "weekly"
+    startDate: str  # YYYY-MM-DD
+    endDate: str  # YYYY-MM-DD
+    serviceArea: dict = Field(default_factory=dict)  # {address, lat?, lng?, radiusKm?}
+    deliveryLocation: str = ""
+    qualityGrade: Literal["A", "B", "C"] = "A"
+    notes: str = ""
+
+
+class StandingOrderUpdate(BaseModel):
+    crop: str | None = None
+    variety: str | None = None
+    minPrice: int | None = Field(default=None, ge=0)
+    maxPrice: int | None = Field(default=None, gt=0)
+    quantityPerSlot: float | None = Field(default=None, gt=0)
+    unit: str | None = None
+    frequency: Literal["daily", "weekly", "monthly"] | None = None
+    startDate: str | None = None
+    endDate: str | None = None
+    serviceArea: dict | None = None
+    deliveryLocation: str | None = None
+    qualityGrade: Literal["A", "B", "C"] | None = None
+    notes: str | None = None

@@ -42,6 +42,7 @@ from app.routers import (
     courses,
     coupons,
     dairy_manager,
+    dairy_hub,
     demands,
     diary,
     direct_buyer,
@@ -49,6 +50,7 @@ from app.routers import (
     exporter,
     equipment,
     equipment_owner,
+    equipment_rental,
     finance,
     farmer_deals,
     faq,
@@ -169,6 +171,7 @@ app.include_router(direct_buyer.router, prefix="/v1")
 app.include_router(emarket_customer.router, prefix="/v1")
 app.include_router(exporter.router, prefix="/v1")
 app.include_router(dairy_manager.router, prefix="/v1")
+app.include_router(dairy_hub.router, prefix="/v1")
 app.include_router(milk_seller.router, prefix="/v1")
 app.include_router(wishlist.router, prefix="/v1")
 app.include_router(coupons.router, prefix="/v1")
@@ -187,6 +190,8 @@ app.include_router(farmer_deals.router, prefix="/v1")
 app.include_router(transport.router, prefix="/v1")
 app.include_router(equipment.router, prefix="/v1")
 app.include_router(equipment_owner.router, prefix="/v1")
+app.include_router(equipment_rental.router, prefix="/v1")
+app.include_router(equipment_rental.owner_router, prefix="/v1")
 app.include_router(fpo.router, prefix="/v1")
 app.include_router(diary.router, prefix="/v1")
 app.include_router(pnl.router, prefix="/v1")

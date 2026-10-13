@@ -51,6 +51,8 @@ class DairyManagerRoleProfile(BaseModel):
     dailyCapacityLiters: float = 1000.0
     isGaushalaOperator: bool = True
     isVetPractitioner: bool = True
+    serviceRadiusKm: int = 0
+    products: list[str] = []
 
 
 class MilkSellerRoleProfile(BaseModel):
@@ -77,6 +79,10 @@ class DirectBuyerRoleProfile(BaseModel):
     categories: list[str] = []
     operatingStates: list[str] = []
     creditTermsDays: int = 0
+    serviceRadiusKm: int = 0
+    capacityPerDay: float = 0.0
+    products: list[str] = []
+    serviceAreaAddress: str = ""
 
 
 class ExporterRoleProfile(BaseModel):

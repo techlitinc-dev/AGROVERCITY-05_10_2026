@@ -318,6 +318,16 @@ async def process_payouts(period_start: str, period_end: str) -> dict:
         settlement["payoutRef"] = payout.get("id")
         settlement["paidAt"] = now
         await set_doc("settlements", settlement["id"], settlement)
+        # Payout released: the beneficiary is told their money is on the way.
+        from app.services.notify import notify_user
+
+        await notify_user(
+            settlement["entityId"],
+            type="payout_released",
+            title="Payout released / भुगतान जारी",
+            body=f"₹{settlement.get('netRupees', 0)} for {settlement.get('periodStart')}–{settlement.get('periodEnd')} released (ref {payout.get('id')})",
+            deepLink="/dashboard/p/earnings",
+        )
         # WS-09: money truth emitted server-side (never trust the client for GMV).
         # Money is integer paisa; eventId is deterministic so retries dedupe.
         await set_doc(

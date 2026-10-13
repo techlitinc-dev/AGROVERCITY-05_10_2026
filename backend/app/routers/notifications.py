@@ -39,9 +39,21 @@ def _shape(doc: dict) -> dict:
 
 @router.get("")
 async def list_notifications(
-    page: int = 1, pageSize: int = 20, uid: str = Depends(current_user_id)
+    type: str | None = None,
+    unread: bool = False,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(current_user_id),
 ):
+    """Own notifications, newest first. ?type= filters by one or more
+    comma-separated types (e.g. request_accepted,payment_successful);
+    ?unread=true filters unread only."""
     docs = await query("notifications", [("userId", "==", uid)], limit=1000)
+    if type:
+        wanted = {t.strip() for t in type.split(",") if t.strip()}
+        docs = [d for d in docs if (d.get("type") or "general") in wanted]
+    if unread:
+        docs = [d for d in docs if not d.get("read")]
     docs.sort(key=lambda d: d.get("createdAt") or "", reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize

@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -84,6 +86,8 @@ class CourseCreateIn(BaseModel):
     modules: list[CourseModule] = []
     tags: list[str] = []
     autoPublish: bool = False
+    mode: Literal["on-farm", "centre-based", "hybrid"] = "hybrid"
+    materialsList: list[str] = []
 
 
 class CourseUpdateIn(BaseModel):
@@ -109,6 +113,8 @@ class CourseUpdateIn(BaseModel):
     modules: list[CourseModule] | None = None
     tags: list[str] | None = None
     status: CourseStatus | None = None
+    mode: Literal["on-farm", "centre-based", "hybrid"] | None = None
+    materialsList: list[str] | None = None
 
 
 class CoursePurchaseVerifyIn(BaseModel):

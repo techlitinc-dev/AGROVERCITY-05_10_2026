@@ -263,6 +263,17 @@ async def approve_booking(booking_id: str, uid: str = Depends(_owner)):
         f"{equipment['name']} की आपकी बुकिंग स्वीकार कर ली गई है",
         {"type": "equipment_booking_approved", "bookingId": booking_id},
     )
+    # SMS alert (best-effort, DLT-stubbed) — the in-app notification is the
+    # doc persisted by send_fcm_to_user above.
+    from app.services.sms import send_sms
+
+    farmer_user = await get_user(booking["userId"])
+    if farmer_user and farmer_user.get("phone"):
+        await send_sms(
+            farmer_user["phone"],
+            "equipment_booking_approved",
+            {"machine": equipment["name"], "date": booking.get("date", "")},
+        )
     return booking
 
 

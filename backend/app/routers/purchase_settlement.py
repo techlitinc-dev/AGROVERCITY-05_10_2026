@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Header, UploadFile
 from pydantic import BaseModel, Field
 
-from app.core.db import get_doc, set_doc
+from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.direct import PayIn, QcIn, RateIn, ResolveIn
 from app.routers.purchases import (
@@ -20,6 +20,7 @@ from app.routers.purchases import (
     _participant,
     _redact,
     _release_escrow,
+    commission_for,
     maybe_award_vyapari_verified,
     probation_gate_escrow,
 )
@@ -27,6 +28,7 @@ from app.services.rating_prompts import open_rating_prompt
 from app.routers.users import require_role
 from app.services import idempotency, storage
 from app.services.billing import check_entitlement
+from app.services.chat import ensure_chat_room
 from app.services.notify import notify_user
 from app.services.users import get_user
 
@@ -468,6 +470,13 @@ async def record_payment(purchase_id: str, body: PayIn, uid: str = Depends(curre
         body=f"₹{body.amount} for {purchase['crop']}",
         deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
+    await notify_user(
+        uid,
+        type="payment_successful",
+        title="Payment successful / भुगतान सफल",
+        body=f"₹{body.amount} paid for {purchase['crop']} — receipt ready",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
+    )
     return _redact(purchase, uid)
 
 
@@ -516,3 +525,87 @@ async def get_invoice(purchase_id: str, uid: str = Depends(current_user_id)):
     if invoice is None:
         _error(404, "INVOICE_NOT_FOUND", "invoice not issued yet")
     return {"purchaseId": purchase_id, **invoice}
+
+
+# ---------------- Customer receipt (direct-buyer trade) ----------------
+
+
+def _receipt_party(user: dict | None) -> dict:
+    user = user or {}
+    return {
+        "id": user.get("id", ""),
+        "name": user.get("name", ""),
+        "village": user.get("village", ""),
+        "district": user.get("district", ""),
+        "state": user.get("state", ""),
+        "addressLine": user.get("addressLine", ""),
+        "pincode": user.get("pincode", ""),
+        "phone": user.get("phone", ""),
+    }
+
+
+@router.get("/{purchase_id}/receipt")
+async def get_receipt(purchase_id: str, uid: str = Depends(current_user_id)):
+    """Customer receipt for a direct trade: calendar date, product info,
+    quantity, agreed (daily) rate, amounts, the platform commission charged on
+    the buyer side and the farmer payout. Available to both parties."""
+    purchase = await _participant(purchase_id, uid)
+    if purchase.get("status") == "cancelled":
+        _error(409, "PURCHASE_CANCELLED", "cancelled purchases have no receipt")
+    billable = purchase.get("finalAmount") or purchase.get("totalAmount") or 0
+    commission = await commission_for(billable)
+    buyer = await get_user(purchase.get("buyerId", ""))
+    farmer = await get_user(purchase.get("farmerId", ""))
+    from app.services import settlements as settlements_service
+
+    config = await settlements_service._config()
+    pct = float(config.get("sellerPct", 2))
+    ym = datetime.now(timezone.utc).strftime("%y%m")
+    pickup = purchase.get("pickup") or {}
+    return {
+        "receiptNo": f"RCP-{purchase['id'][-8:].upper()}-{ym}",
+        "purchaseId": purchase_id,
+        "issuedAt": _now(),
+        "tradeDate": (purchase.get("createdAt") or "")[:10],
+        "pickupDate": pickup.get("date", ""),
+        "status": purchase.get("status", ""),
+        "product": {
+            "crop": purchase.get("crop", ""),
+            "variety": purchase.get("variety", ""),
+            "quantity": purchase.get("quantity", 0),
+            "unit": purchase.get("unit", "quintal"),
+            "qualityGrade": (purchase.get("qc") or {}).get("grade", ""),
+        },
+        "ratePerUnit": purchase.get("agreedPricePerUnit", 0),
+        "amounts": {
+            "tradeTotal": purchase.get("totalAmount", 0),
+            "finalAmount": billable,
+            "paid": sum(p.get("amount", 0) for p in purchase.get("payments") or []),
+            "due": _amount_due(purchase),
+        },
+        "commission": {
+            "percent": pct,
+            "amount": commission,
+            "chargedFrom": "buyer",
+            "farmerPayout": billable - commission,
+        },
+        "invoiceNumber": (purchase.get("invoice") or {}).get("number"),
+        "buyer": _receipt_party(buyer),
+        "farmer": _receipt_party(farmer),
+        "payments": purchase.get("payments") or [],
+    }
+
+
+# ---------------- Purchase chat room (opens after acceptance) ----------------
+
+
+@router.get("/{purchase_id}/chat-room")
+async def purchase_chat_room(purchase_id: str, uid: str = Depends(current_user_id)):
+    """The in-app chat thread for a confirmed purchase. A purchase only exists
+    once a request/offer is accepted, so the room is inherently post-acceptance;
+    cancelled deals lose chat access."""
+    purchase = await _participant(purchase_id, uid)
+    if purchase.get("status") == "cancelled":
+        _error(409, "CHAT_NOT_AVAILABLE", "chat is closed for cancelled deals")
+    room = await ensure_chat_room(purchase)
+    return {"purchaseId": purchase_id, "roomId": room["id"], "room": room}

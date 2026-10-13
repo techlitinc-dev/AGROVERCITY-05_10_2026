@@ -158,6 +158,8 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
         "whatYouWillLearn": body.whatYouWillLearn,
         "requirements": body.requirements,
         "targetAudience": body.targetAudience,
+        "mode": body.mode,
+        "materialsList": body.materialsList,
         "certificateEnabled": body.certificateEnabled,
         "certificateTitle": body.certificateTitle or f"Certificate of Completion in {body.title}",
         "modules": modules_data,
@@ -574,7 +576,20 @@ async def verify_purchase(body: CoursePurchaseVerifyIn, user: dict = Depends(_us
     from app.services import academy_ai
 
     await academy_ai.record_purchase_outcome_if_recommended(user["id"], course["id"])
-    return {"purchased": True, "courseId": course["id"]}
+
+    # Booking confirmation: generate the e-contract (fee + curriculum scope +
+    # refund policy) and notify the instructor of the new booking.
+    contract = await _contract_for_purchase(purchase)
+    from app.services.notify import notify_user
+
+    await notify_user(
+        purchase["instructorId"],
+        type="course_booking",
+        title="New course booking / नया बुकिंग",
+        body=f"{purchase.get('studentName') or user.get('name')} enrolled in {purchase.get('courseTitle') or course.get('title')} (₹{purchase.get('amountRupees', 0)})",
+        deepLink=f"/dashboard/p/instructor/courses/{course['id']}/students",
+    )
+    return {"purchased": True, "courseId": course["id"], "contractNo": contract["contractNo"]}
 
 
 # ---------------------------------------------------------------------------
@@ -895,3 +910,212 @@ async def delete_module(course_id: str, module_id: str, user: dict = Depends(_us
     course["modules"] = modules
     course["updatedAt"] = _now()
     await set_doc("courses", course_id, course)
+
+
+# ---------------------------------------------------------------------------
+# Curriculum, learner progress, instructor chat & e-contracts
+# (extension-2026-10-12 — instructor persona gap closure)
+# ---------------------------------------------------------------------------
+
+
+def _lesson_count(modules: list[dict]) -> int:
+    return sum(len(m.get("lessons") or []) for m in modules or [])
+
+
+def _duration_minutes(modules: list[dict]) -> int:
+    return sum(
+        int(l.get("durationMinutes") or 0)
+        for m in modules or []
+        for l in (m.get("lessons") or [])
+    )
+
+
+def _materials_from_course(course: dict) -> list[str]:
+    materials = list(course.get("materialsList") or [])
+    for m in course.get("modules") or []:
+        for lesson in m.get("lessons") or []:
+            for res in lesson.get("resources") or []:
+                title = res.get("title")
+                if title and title not in materials:
+                    materials.append(title)
+    return materials
+
+
+@router.get("/courses/{course_id}/curriculum")
+async def course_curriculum(course_id: str, user: dict = Depends(_user)):
+    """Full public curriculum: language, session plan (modules + lessons),
+    duration, session count, mode, prerequisites, required materials, fee and
+    verified instructor credentials — all from the real course + KYC docs."""
+    course = await _require_course(course_id)
+    is_owner = course["instructorId"] == user["id"]
+    if course["status"] != "published" and not is_owner:
+        _error(404, "COURSE_NOT_FOUND", "course not found")
+    modules = course.get("modules") or []
+    from app.services.kyc import latest_instructor_case, verified_credential_types
+
+    case = await latest_instructor_case(course["instructorId"])
+    return {
+        "courseId": course_id,
+        "title": course.get("title", ""),
+        "language": course.get("language", ""),
+        "level": course.get("level", ""),
+        "mode": course.get("mode") or "hybrid",
+        "category": course.get("category", ""),
+        "feeRupees": course.get("priceRupees", 0),
+        "currency": "INR",
+        "durationMinutes": _duration_minutes(modules),
+        "sessionCount": _lesson_count(modules),
+        "syllabus": [m.get("title", "") for m in modules],
+        "sessionPlan": [
+            {
+                "moduleId": m.get("id"),
+                "title": m.get("title", ""),
+                "order": m.get("order", 1),
+                "lessons": [
+                    {
+                        "lessonId": l.get("id"),
+                        "title": l.get("title", ""),
+                        "kind": l.get("kind", ""),
+                        "durationMinutes": l.get("durationMinutes", 0),
+                        "order": l.get("order", 1),
+                        "isPreviewFree": l.get("isPreviewFree", False),
+                    }
+                    for l in (m.get("lessons") or [])
+                ],
+            }
+            for m in modules
+        ],
+        "prerequisites": course.get("requirements") or [],
+        "materialsList": _materials_from_course(course),
+        "whatYouWillLearn": course.get("whatYouWillLearn") or [],
+        "instructor": {
+            "instructorId": course["instructorId"],
+            "name": course.get("instructorName", ""),
+            "headline": course.get("instructorHeadline", ""),
+            "credentials": verified_credential_types(case),
+        },
+        "reviews": {
+            "count": course.get("ratingCount", 0),
+            "average": course.get("ratingAverage") if course.get("ratingCount", 0) > 0 else None,
+        },
+    }
+
+
+@router.get("/courses/{course_id}/progress")
+async def course_progress(course_id: str, user: dict = Depends(_user)):
+    """The enrolled farmer's per-course status: completed vs total lessons,
+    modules done/remaining (e.g. \"2 modules remaining\"), percent and the
+    certificate id once issued."""
+    course = await _require_course(course_id)
+    purchase = await _paid_purchase(user["id"], course_id)
+    if course["instructorId"] != user["id"] and purchase is None:
+        _error(403, "NOT_ENROLLED", "enroll in the course to view progress")
+    modules = course.get("modules") or []
+    total_lessons = _lesson_count(modules)
+    completed = list((purchase or {}).get("completedLessonIds") or [])
+    modules_done = 0
+    for m in modules:
+        lesson_ids = {l.get("id") for l in (m.get("lessons") or [])}
+        if lesson_ids and lesson_ids.issubset(set(completed)):
+            modules_done += 1
+    total_modules = len(modules)
+    return {
+        "courseId": course_id,
+        "completedLessons": len(completed),
+        "totalLessons": total_lessons,
+        "modulesDone": modules_done,
+        "modulesRemaining": max(0, total_modules - modules_done),
+        "progressPercent": (purchase or {}).get("progressPercent", 0),
+        "isCompleted": (purchase or {}).get("isCompleted", False),
+        "certificateId": (purchase or {}).get("certificateId"),
+        "lastAccessedAt": _now(),
+    }
+
+
+@router.post("/courses/{course_id}/chat")
+async def open_course_instructor_chat(course_id: str, user: dict = Depends(_user)):
+    """1:1 doubt-solving chat with the course instructor. The window unlocks
+    only after purchasing the course (403 NOT_ENROLLED before that)."""
+    course = await _require_course(course_id)
+    if course["instructorId"] == user["id"]:
+        _error(400, "OWN_COURSE", "this is your own course")
+    purchase = await _paid_purchase(user["id"], course_id)
+    if purchase is None:
+        _error(403, "NOT_ENROLLED", "chat with the instructor unlocks after purchasing the course")
+    from app.services.chat import ensure_direct_room
+
+    instructor = await get_user(course["instructorId"]) or {}
+    room = await ensure_direct_room(
+        course["instructorId"],
+        instructor.get("name", ""),
+        user["id"],
+        user.get("name", ""),
+        crop=course.get("title", ""),
+    )
+    return {
+        "roomId": room["id"],
+        "courseId": course_id,
+        "instructorId": course["instructorId"],
+        "unlockedByPurchaseId": purchase["id"],
+    }
+
+
+async def _contract_for_purchase(purchase: dict) -> dict:
+    """Lazy e-contract generation (idempotent): the booking confirmation
+    contract carrying fee, curriculum scope and the refund policy."""
+    existing = await get_doc("course_contracts", purchase["id"])
+    if existing is not None:
+        return existing
+    course = await get_doc("courses", purchase.get("courseId") or "") or {}
+    modules = course.get("modules") or []
+    refund_cfg = await get_doc("platform_config", "course_refund") or {}
+    instructor = await get_user(purchase.get("instructorId") or "") or {}
+    student = await get_user(purchase.get("userId") or "") or {}
+    now = _now()
+    doc = {
+        "contractNo": f"CTC-{purchase['id'][-12:].upper()}",
+        "purchaseId": purchase["id"],
+        "status": "active",
+        "course": {
+            "courseId": purchase.get("courseId"),
+            "title": purchase.get("courseTitle") or course.get("title", ""),
+        },
+        "student": {
+            "userId": purchase.get("userId"),
+            "name": purchase.get("studentName") or student.get("name", ""),
+            "phone": purchase.get("studentPhone") or student.get("phone", ""),
+        },
+        "instructor": {
+            "instructorId": purchase.get("instructorId"),
+            "name": instructor.get("name", ""),
+        },
+        "feeRupees": purchase.get("amountRupees", 0),
+        "currency": "INR",
+        "commissionPercent": purchase.get("commissionPercent", 0),
+        "curriculumScope": {
+            "modules": [m.get("title", "") for m in modules],
+            "moduleCount": len(modules),
+            "sessionCount": _lesson_count(modules),
+            "durationMinutes": _duration_minutes(modules),
+            "mode": course.get("mode") or "hybrid",
+        },
+        "refundPolicy": refund_cfg.get("policy") or None,
+        "signedAt": purchase.get("paidAt") or now,
+        "generatedAt": now,
+    }
+    await set_doc("course_contracts", purchase["id"], doc)
+    return doc
+
+
+@router.get("/courses/purchases/{purchase_id}/contract")
+async def get_purchase_contract(purchase_id: str, user: dict = Depends(_user)):
+    """The e-contract for a confirmed course booking (fee, curriculum scope,
+    refund policy). Student or the course instructor only."""
+    purchase = await get_doc("course_purchases", purchase_id)
+    if purchase is None:
+        _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
+    if user["id"] not in (purchase.get("userId"), purchase.get("instructorId")) and not user.get("isAdmin"):
+        _error(403, "FORBIDDEN", "not your booking")
+    if purchase.get("status") != "paid":
+        _error(409, "BOOKING_NOT_CONFIRMED", "e-contract is issued on booking confirmation")
+    return await _contract_for_purchase(purchase)

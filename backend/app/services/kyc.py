@@ -46,6 +46,10 @@ INSTRUCTOR_SPECIALIZATION_DOCS: dict[str, dict] = {
 INSTRUCTOR_CREDENTIAL_DOCS = tuple(
     entry["docType"] for entry in INSTRUCTOR_SPECIALIZATION_DOCS.values()
 )
+# Teacher career letters surfaced on the teacher card (extension-2026-10-12):
+# experience letter (employer/institution issued) and qualification
+# certificate (degree/diploma). Verified copies render as card credentials.
+TEACHER_LETTER_DOCS = ("experience_letter", "qualification_certificate")
 # docType -> the `expiresAt`-capable licence field the re-verification job reads.
 CREDENTIAL_EXPIRY_FIELD = {
     entry["docType"]: entry["licenceExpiryField"]
@@ -55,6 +59,7 @@ INSTRUCTOR_ALLOWED_DOCS = (
     *INSTRUCTOR_IDENTITY_DOCS,
     *INSTRUCTOR_MANDATORY_DOCS,
     *INSTRUCTOR_CREDENTIAL_DOCS,
+    *TEACHER_LETTER_DOCS,
     "instructor_credential",
 )
 
@@ -83,7 +88,7 @@ PERSONA_DOC_MATRIX: dict[str, tuple[str, ...]] = {
     "transport": ("rc", "dl"),
     "seller": ("apmc_licence", "gst"),
     "broker": ("arhtiya_licence",),
-    "equipmentRental": ("equipment_rc", "equipment_insurance", "operator_licence"),
+    "equipmentRental": ("equipment_rc", "equipment_insurance", "operator_licence", "pan", "digilocker_pan"),
     "dairyManager": ("fssai",),
     "directBuyer": ("fssai", "iec", "apeda", "gst"),
     "exporter": ("iec", "apeda", "gst"),

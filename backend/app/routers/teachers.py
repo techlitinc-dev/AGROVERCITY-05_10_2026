@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +17,7 @@ from app.models.teachers import (
     FeeQuoteIn,
     TeacherAnnouncementIn,
     TeacherCertificateIssueIn,
+    TeacherCredentialUploadIn,
     TeacherProfileUpdateIn,
 )
 from app.services.users import get_user
@@ -182,6 +184,15 @@ async def issue_student_certificate(
         await academy_ai.apply_learning_path(purchase)
 
     await set_doc("course_purchases", pid, purchase)
+    from app.services.notify import notify_user
+
+    await notify_user(
+        purchase.get("userId"),
+        type="certificate_issued",
+        title="Certificate issued / प्रमाणपत्र जारी 🎓",
+        body=f"Your completion certificate for {purchase.get('courseTitle')} is ready (QR-verifiable)",
+        deepLink=f"/dashboard/p/courses/{course_id}/certificate",
+    )
     return {
         "success": True,
         "certificateId": cert_id,
@@ -539,6 +550,439 @@ async def get_instructor_earnings(user: dict = Depends(_user)):
         "byCourse": by_course_list,
         "nextPayoutDate": next_payout.isoformat(),
         "onHold": not await _has_verified_bank_account(user["id"]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Instructor hub: card, credentials, home, payments, feedback, student detail,
+# per-student doubt chat, certificate download (extension-2026-10-12).
+# Everything is computed from real collections — no synthetic fallbacks.
+# ---------------------------------------------------------------------------
+
+
+def _is_instructor_or_404(user: dict) -> None:
+    if not _is_instructor(user):
+        _error(403, "NOT_INSTRUCTOR", "only instructors can access this")
+
+
+def _languages_taught(courses: list[dict]) -> list[str]:
+    langs = sorted({c.get("language", "") for c in courses if c.get("language")})
+    return [l for l in langs if l]
+
+
+@router.get("/home")
+async def teacher_home(user: dict = Depends(_user)):
+    """Instructor dashboard: identity header (name, qualification, languages,
+    domain, verified letters), latest uploaded course, all courses, rated
+    courses, level-wise lists and the 'other courses' discovery section."""
+    _is_instructor_or_404(user)
+    profile = await get_doc("teacher_profiles", user["id"]) or {}
+    from app.services.kyc import latest_instructor_case
+
+    case = await latest_instructor_case(user["id"])
+    letters = [
+        {"type": d.get("type"), "status": d.get("status"), "verifiedAt": d.get("reviewedAt")}
+        for d in (case or {}).get("docs") or []
+        if d.get("type") in ("experience_letter", "qualification_certificate")
+    ]
+    courses = await query("courses", [("instructorId", "==", user["id"])], limit=500)
+    courses.sort(key=lambda c: c.get("createdAt", ""), reverse=True)
+    published = [c for c in courses if c.get("status") == "published"]
+    rated = sorted(
+        [c for c in published if c.get("ratingCount", 0) > 0],
+        key=lambda c: c.get("ratingAverage", 0),
+        reverse=True,
+    )
+    level_wise: dict[str, list] = {}
+    for c in published:
+        level_wise.setdefault(c.get("level") or "all_levels", []).append(c)
+    others = [
+        c for c in await query("courses", [("status", "==", "published")], limit=1000)
+        if c.get("instructorId") != user["id"]
+    ]
+    others.sort(key=lambda c: (c.get("ratingAverage", 0), c.get("salesCount", 0)), reverse=True)
+    purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+    paid = [p for p in purchases if p.get("status") == "paid"]
+    ratings = [c.get("ratingAverage") for c in published if c.get("ratingCount", 0) > 0]
+    unread = len(
+        [n for n in await query("notifications", [("userId", "==", user["id"])], limit=1000) if not n.get("read")]
+    )
+    return {
+        "profile": {
+            "instructorId": user["id"],
+            "name": profile.get("name") or user.get("name", ""),
+            "headline": profile.get("headline", ""),
+            "qualification": profile.get("qualification", ""),
+            "experienceYears": profile.get("experienceYears"),
+            "domain": profile.get("expertise") or [],
+            "languages": _languages_taught(published),
+            "letters": letters,
+            "isVerified": bool(profile.get("isVerified")),
+        },
+        "latestCourse": courses[0] if courses else None,
+        "allCourses": courses,
+        "ratedCourses": rated,
+        "levelWise": level_wise,
+        "otherCourses": others[:10],
+        "stats": {
+            "totalCourses": len(courses),
+            "publishedCourses": len(published),
+            "totalStudents": len(paid),
+            "completedStudents": sum(1 for p in paid if p.get("isCompleted")),
+            "totalEarningsRupees": round(
+                sum(float(c.get("instructorEarningsRupees", 0)) for c in courses), 2
+            ),
+            "averageRating": round(sum(ratings) / len(ratings), 1) if ratings else None,
+            "unreadNotifications": unread,
+        },
+    }
+
+
+@router.post("/me/credentials", status_code=201)
+async def upload_teacher_credential(body: TeacherCredentialUploadIn, user: dict = Depends(_user)):
+    """Experience letter / qualification certificate upload. The document is
+    stored on the instructor's real KYC case as pending and renders on the
+    teacher card once admin-verified."""
+    from app.services import kyc as kyc_service
+
+    _is_instructor_or_404(user)
+    payload = body
+    case_id = kyc_service.case_id_for(user["id"], "instructor")
+    case = await kyc_service.get_case(case_id)
+    doc_entry = {
+        "docId": f"{case_id}:{payload.docType}",
+        "type": payload.docType,
+        "storagePath": payload.fileUrl,
+        "status": "pending",
+        "reason": None,
+        "issuer": payload.issuer,
+        "referenceNo": payload.referenceNo,
+        "issuedAt": payload.issuedAt,
+        "reverifyRequired": False,
+        "updatedAt": _now(),
+    }
+    if case is None:
+        case = {
+            "caseId": case_id,
+            "userId": user["id"],
+            "persona": "instructor",
+            "docs": [doc_entry],
+            "status": "pending",
+            "submittedAt": _now(),
+            "reviewedBy": None,
+            "reviewedAt": None,
+        }
+    else:
+        docs = case.setdefault("docs", [])
+        existing = next((d for d in docs if d.get("type") == payload.docType), None)
+        if existing is not None:
+            existing.update(doc_entry)
+        else:
+            docs.append(doc_entry)
+        case["status"] = kyc_service._recompute_case_status(case)
+    await set_doc("kyc_cases", case_id, case)
+    return {"case": case, "document": doc_entry}
+
+
+@router.get("/payments/history")
+async def teacher_payment_history(user: dict = Depends(_user)):
+    """Per-booking payment ledger: every paid course purchase with the admin
+    commission split, plus totals (fees collected, commission, net)."""
+    from app.services.settlements import _config, _has_verified_bank_account, course_gmv_pct
+
+    _is_instructor_or_404(user)
+    config = await _config()
+    purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+    paid = [p for p in purchases if p.get("status") == "paid"]
+    paid.sort(key=lambda p: p.get("paidAt") or "", reverse=True)
+    data = []
+    for p in paid:
+        course = await get_doc("courses", p.get("courseId") or "") or {}
+        pct = course_gmv_pct(config, course.get("category"))
+        amount = float(p.get("amountRupees") or 0)
+        commission = round(amount * pct / 100, 2)
+        data.append(
+            {
+                "purchaseId": p.get("id"),
+                "studentId": p.get("userId"),
+                "studentName": p.get("studentName", ""),
+                "courseId": p.get("courseId"),
+                "courseTitle": p.get("courseTitle", ""),
+                "amountRupees": amount,
+                "commissionPercent": pct,
+                "commissionRupees": commission,
+                "netRupees": round(amount - commission, 2),
+                "paidAt": p.get("paidAt"),
+                "payoutStatus": "onHold" if not await _has_verified_bank_account(user["id"]) else "scheduled",
+            }
+        )
+    gross = round(sum(d["amountRupees"] for d in data), 2)
+    commission_total = round(sum(d["commissionRupees"] for d in data), 2)
+    today = datetime.now(timezone.utc).date()
+    next_payout = today + timedelta(days=(7 - today.weekday()) % 7 or 7)
+    return {
+        "data": data,
+        "total": len(data),
+        "feesCollectedRupees": gross,
+        "adminCommissionRupees": commission_total,
+        "netEarningsRupees": round(gross - commission_total, 2),
+        "commissionPercent": course_gmv_pct(config),
+        "nextPayoutDate": next_payout.isoformat(),
+        "onHold": not await _has_verified_bank_account(user["id"]),
+    }
+
+
+@router.get("/commission-structure")
+async def teacher_commission_structure(user: dict = Depends(_user)):
+    """Admin commission visibility for course trade: config-driven GMV percent
+    (15–20 band) charged from the instructor side of each booking."""
+    from app.services.settlements import _config, course_gmv_pct
+
+    _is_instructor_or_404(user)
+    config = await _config()
+    pct = course_gmv_pct(config)
+    return {
+        "trade": "instructorCourses",
+        "commissionPercent": pct,
+        "bandPercent": [15, 20],
+        "chargedFrom": "instructor",
+        "configSource": "platform_config/settlements courseGMVPct",
+    }
+
+
+@router.get("/feedback")
+async def teacher_feedback(user: dict = Depends(_user)):
+    """All feedback received from farmers/students across my courses: real
+    course reviews + course_enrollment ratings, newest first, with averages."""
+    _is_instructor_or_404(user)
+    courses = await query("courses", [("instructorId", "==", user["id"])], limit=500)
+    feedback = []
+    for course in courses:
+        reviews = await query(f"courses/{course['id']}/reviews", [], limit=200)
+        for r in reviews:
+            feedback.append(
+                {
+                    "source": "course_review",
+                    "courseId": course["id"],
+                    "courseTitle": course.get("title", ""),
+                    "fromName": r.get("userName", ""),
+                    "rating": r.get("rating"),
+                    "text": r.get("reviewText", ""),
+                    "at": r.get("createdAt", ""),
+                }
+            )
+    ratings = await query(
+        "ratings", [("providerId", "==", user["id"]), ("bookingKind", "==", "course_enrollment")], limit=1000
+    )
+    for r in ratings:
+        purchase = await get_doc("course_purchases", r.get("bookingId") or "") or {}
+        feedback.append(
+            {
+                "source": "course_enrollment_rating",
+                "courseId": purchase.get("courseId"),
+                "courseTitle": purchase.get("courseTitle", ""),
+                "fromName": "",
+                "rating": r.get("stars"),
+                "text": r.get("comment", ""),
+                "at": r.get("createdAt", ""),
+            }
+        )
+    feedback.sort(key=lambda f: f.get("at") or "", reverse=True)
+    stars = [f["rating"] for f in feedback if f.get("rating")]
+    return {
+        "average": round(sum(stars) / len(stars), 1) if stars else None,
+        "count": len(stars),
+        "total": len(feedback),
+        "data": feedback[:50],
+    }
+
+
+@router.get("/students/{student_id}")
+async def teacher_student_detail(student_id: str, user: dict = Depends(_user)):
+    """One enrolled farmer's full detail for the instructor: identity, address,
+    real-time product info (active crops + open market lots) and every course
+    they bought from this instructor with the learning record."""
+    _is_instructor_or_404(user)
+    purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+    purchases = [p for p in purchases if p.get("userId") == student_id and p.get("status") == "paid"]
+    if not purchases:
+        _error(404, "STUDENT_NOT_FOUND", "no enrolled student with this id")
+    student = await get_user(student_id) or {}
+    lots = await query("market_lots", [("farmerId", "==", student_id)], limit=200)
+    open_lots = [l for l in lots if l.get("status") == "open"]
+    purchases.sort(key=lambda p: p.get("paidAt") or "", reverse=True)
+    return {
+        "studentId": student_id,
+        "name": student.get("name") or purchases[0].get("studentName", ""),
+        "phone": student.get("phone") or purchases[0].get("studentPhone", ""),
+        "address": {
+            "village": student.get("village", ""),
+            "district": student.get("district", ""),
+            "state": student.get("state", ""),
+        },
+        "products": sorted(
+            {c for c in (student.get("activeCrops") or []) if c}
+            | {l.get("crop", "") for l in open_lots if l.get("crop")}
+        ),
+        "openLots": [
+            {"crop": l.get("crop", ""), "quantityQuintals": l.get("quantityQuintals", 0)}
+            for l in open_lots
+        ],
+        "courses": [
+            {
+                "purchaseId": p.get("id"),
+                "courseId": p.get("courseId"),
+                "courseTitle": p.get("courseTitle", ""),
+                "amountRupees": p.get("amountRupees", 0),
+                "enrolledAt": p.get("paidAt"),
+                "progressPercent": p.get("progressPercent", 0),
+                "isCompleted": p.get("isCompleted", False),
+                "certificateId": p.get("certificateId"),
+            }
+            for p in purchases
+        ],
+    }
+
+
+@router.post("/chat/open", status_code=201)
+async def open_student_chat(body: dict, user: dict = Depends(_user)):
+    """Open the dedicated doubt-solving window with one enrolled student.
+    One stable 1:1 room per instructor-student pair; the student must hold a
+    paid purchase with this instructor."""
+    _is_instructor_or_404(user)
+    student_id = str(body.get("studentId") or "")
+    if not student_id:
+        _error(422, "VALIDATION_ERROR", "studentId is required", {"studentId": "required"})
+    if student_id == user["id"]:
+        _error(400, "SELF_CHAT", "cannot open a chat with yourself")
+    purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+    purchase = next(
+        (p for p in purchases if p.get("userId") == student_id and p.get("status") == "paid"), None
+    )
+    if purchase is None:
+        _error(403, "CHAT_LOCKED_FOR_ENROLLMENT", "chat unlocks only with enrolled students")
+    from app.services.chat import ensure_direct_room
+
+    student = await get_user(student_id) or {}
+    course = await get_doc("courses", purchase.get("courseId") or "") or {}
+    room = await ensure_direct_room(
+        student_id,
+        student.get("name", ""),
+        user["id"],
+        user.get("name", ""),
+        crop=course.get("title", ""),
+    )
+    return {"roomId": room["id"], "studentId": student_id, "courseId": purchase.get("courseId")}
+
+
+@router.get("/chat/rooms")
+async def list_student_chat_rooms(user: dict = Depends(_user)):
+    """Every doubt-solving window of this instructor: the enrolled student,
+    the course the chat belongs to, and unread state — one row per student."""
+    _is_instructor_or_404(user)
+    purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
+    enrolled = {p.get("userId"): p for p in purchases if p.get("status") == "paid"}
+    rooms = await query("chat_rooms", [("buyerId", "==", user["id"])], limit=500)
+    rooms += await query("chat_rooms", [("farmerId", "==", user["id"])], limit=500)
+    seen: dict[str, dict] = {}
+    for room in rooms:
+        other = room.get("farmerId") if room.get("buyerId") == user["id"] else room.get("buyerId")
+        if other not in enrolled or other in seen:
+            continue
+        purchase = enrolled[other]
+        seen[other] = {
+            "roomId": room.get("id"),
+            "studentId": other,
+            "studentName": (await get_user(other) or {}).get("name", ""),
+            "courseId": purchase.get("courseId"),
+            "courseTitle": purchase.get("courseTitle", ""),
+            "lastMessageAt": room.get("lastMessageAt"),
+            "unreadByInstructor": not room.get("readByBuyer") if room.get("buyerId") == user["id"] else not room.get("readByFarmer"),
+        }
+    data = sorted(seen.values(), key=lambda r: r.get("lastMessageAt") or "", reverse=True)
+    return {"data": data, "total": len(data)}
+
+
+@router.get("/certificates/{certificate_id}/download")
+async def download_certificate(certificate_id: str):
+    """Downloadable completion certificate: platform co-branded payload with a
+    tamper-evident SHA-256 fingerprint and the verifiable QR content. Public
+    (only the learner's name is exposed)."""
+    import hashlib
+
+    purchases = await query("course_purchases", [("certificateId", "==", certificate_id)], limit=1)
+    if not purchases:
+        _error(404, "CERTIFICATE_NOT_FOUND", "certificate not found")
+    p = purchases[0]
+    course = await get_doc("courses", p.get("courseId") or "") or {}
+    issued_at = p.get("certificateIssuedAt") or _now()
+    institution = "GyanSetu Digital Krishi Gurukul"
+    payload = {
+        "certificateId": certificate_id,
+        "recipientName": p.get("studentName"),
+        "courseTitle": p.get("courseTitle") or course.get("title"),
+        "instructorName": course.get("instructorName", ""),
+        "issuedAt": issued_at,
+        "institution": institution,
+        "platform": "Agrovercity",
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    verification_url = f"https://agrovercity.com/verify/cert/{certificate_id}"
+    return {
+        **payload,
+        "certificateTitle": course.get("certificateTitle") or f"Certificate of Completion in {payload['courseTitle']}",
+        "fingerprintSha256": fingerprint,
+        "verificationUrl": verification_url,
+        "qrPayload": json.dumps(
+            {"v": verification_url, "cert": certificate_id, "sha256": fingerprint}, separators=(",", ":")
+        ),
+        "note": "Verify the QR at the verification URL; the SHA-256 fingerprint "
+        "must match the issued payload (tamper-evident).",
+    }
+
+
+@router.get("/{teacher_id}/card")
+async def teacher_card(teacher_id: str, user: dict = Depends(_user)):
+    """Public teacher card: name, experience/qualification letters (with
+    verification status), languages taught, domain, rating and course counts —
+    strictly from real teacher_profiles / kyc_cases / courses docs."""
+    from app.services.kyc import latest_instructor_case
+
+    teacher = await get_doc("teacher_profiles", teacher_id)
+    owner = await get_user(teacher_id)
+    if teacher is None and owner is None:
+        _error(404, "TEACHER_NOT_FOUND", "teacher not found")
+    courses = await query("courses", [("instructorId", "==", teacher_id), ("status", "==", "published")], limit=100)
+    case = await latest_instructor_case(teacher_id)
+    letters = [
+        {
+            "type": d.get("type"),
+            "status": d.get("status"),
+            "verifiedAt": d.get("reviewedAt"),
+            "issuer": d.get("issuer", ""),
+        }
+        for d in (case or {}).get("docs") or []
+        if d.get("type") in ("experience_letter", "qualification_certificate")
+    ]
+    ratings = [c.get("ratingAverage") for c in courses if c.get("ratingCount", 0) > 0]
+    review_count = sum(c.get("ratingCount", 0) for c in courses)
+    return {
+        "teacherId": teacher_id,
+        "name": (teacher or {}).get("name") or (owner or {}).get("name", ""),
+        "headline": (teacher or {}).get("headline", ""),
+        "qualification": (teacher or {}).get("qualification", ""),
+        "experienceYears": (teacher or {}).get("experienceYears"),
+        "institution": (teacher or {}).get("institution", ""),
+        "domain": (teacher or {}).get("expertise") or [],
+        "languages": _languages_taught(courses),
+        "letters": letters,
+        "isVerified": bool((teacher or {}).get("isVerified")),
+        "totalCourses": len(courses),
+        "totalStudents": sum(c.get("salesCount", 0) for c in courses),
+        "ratingAverage": round(sum(ratings) / len(ratings), 1) if ratings else None,
+        "reviewCount": review_count,
     }
 
 

@@ -496,6 +496,13 @@ async def pay_advance(purchase_id: str, body: AdvanceIn, uid: str = Depends(curr
         body=f"₹{body.amount} for {purchase['crop']}",
         deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
+    await notify_user(
+        uid,
+        type="payment_successful",
+        title="Payment successful / भुगतान सफल",
+        body=f"₹{body.amount} advance paid for {purchase['crop']}",
+        deepLink=f"/dashboard/p/purchases/{purchase_id}",
+    )
     return _redact(purchase, uid)
 
 

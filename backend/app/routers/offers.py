@@ -342,6 +342,15 @@ async def accept_offer(
         body=f"{purchase['crop']} — {purchase['quantity']} {purchase['unit']} @ ₹{purchase['agreedPricePerUnit']}",
         deepLink=f"/dashboard/p/purchases/{purchase['id']}",
     )
+    # The offer maker's "request accepted" signal — the chat window unlocks
+    # off the back of this event (purchase room is created at confirmation).
+    await notify_user(
+        offer.get("fromId"),
+        type="request_accepted",
+        title="Request accepted / मांग स्वीकार हुई",
+        body=f"Your offer of ₹{offer.get('pricePerUnit')}/{offer.get('unit', 'quintal')} for {purchase['crop']} was accepted — chat is now open",
+        deepLink=f"/dashboard/p/purchases/{purchase['id']}",
+    )
     return {"offer": offer, "purchase": purchase}
 
 

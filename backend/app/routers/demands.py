@@ -96,6 +96,91 @@ async def _own_demand(demand_id: str, uid: str) -> dict:
     return doc
 
 
+async def _buyer_summary(buyer_id: str) -> dict:
+    buyer = await get_user(buyer_id) or {}
+    role_profile = await get_doc(f"users/{buyer_id}/role_profiles", "directBuyer") or {}
+    purchases = await query("purchases", [("buyerId", "==", buyer_id)], limit=1000)
+    stars = [
+        (p.get("rating") or {}).get("farmerToBuyer", {}).get("rating")
+        for p in purchases
+        if (p.get("rating") or {}).get("farmerToBuyer")
+    ]
+    cases = await query("kyc_cases", [("userId", "==", buyer_id)], limit=50)
+    kyc_verified = any(
+        c.get("persona") == "directBuyer" and c.get("status") == "verified" for c in cases
+    )
+    return {
+        "buyerId": buyer_id,
+        "name": buyer.get("name", ""),
+        "companyName": role_profile.get("companyName", ""),
+        "buyerType": role_profile.get("buyerType", ""),
+        "verified": bool(buyer.get("vyapariVerified")) or kyc_verified,
+        "capacityPerMonth": role_profile.get("capacityPerMonth", 0),
+        "capacityPerDay": role_profile.get("capacityPerDay", 0),
+        "serviceRadiusKm": role_profile.get("serviceRadiusKm", 0),
+        "district": buyer.get("district", ""),
+        "state": buyer.get("state", ""),
+        "ratingAvg": round(sum(stars) / len(stars), 1) if stars else None,
+        "ratingCount": len(stars),
+    }
+
+
+@router.get("/browse")
+async def browse_demands(
+    crop: str | None = None,
+    state: str | None = None,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(current_user_id),
+):
+    """Live public feed of every open demand (buyer post) enriched with the
+    buyer card — used by farmers to watch all buyer posts/demands live."""
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    docs = await query("demands", [("status", "==", "open")], limit=1000)
+    if crop:
+        docs = [d for d in docs if crop.lower() in d.get("crop", "").lower()]
+    if state:
+        docs = [d for d in docs if d.get("state", "").lower() == state.lower()]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    total = len(docs)
+    start = (page - 1) * pageSize
+    data = []
+    for d in docs[start:start + pageSize]:
+        data.append({**d, "buyerSummary": await _buyer_summary(d.get("buyerId", ""))})
+    return {"data": data, "page": page, "pageSize": pageSize, "total": total}
+
+
+@router.get("/standing")
+async def browse_standing_orders(
+    crop: str | None = None,
+    state: str | None = None,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(current_user_id),
+):
+    """Live public feed of open standing demand orders (price band, calendar
+    window, per-slot quantity, service area) with the buyer card."""
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    docs = await query("standing_orders", [("status", "==", "open")], limit=1000)
+    if crop:
+        docs = [d for d in docs if crop.lower() in d.get("crop", "").lower()]
+    if state:
+        docs = [d for d in docs if d.get("state", "").lower() == state.lower()]
+    today = datetime.now(timezone.utc).date().isoformat()
+    docs = [d for d in docs if (d.get("endDate") or "") >= today]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    total = len(docs)
+    start = (page - 1) * pageSize
+    data = []
+    for d in docs[start:start + pageSize]:
+        data.append({**d, "buyerSummary": await _buyer_summary(d.get("buyerId", ""))})
+    return {"data": data, "page": page, "pageSize": pageSize, "total": total}
+
+
 @router.get("/{demand_id}")
 async def get_demand(demand_id: str, uid: str = Depends(current_user_id)):
     user = await get_user(uid)

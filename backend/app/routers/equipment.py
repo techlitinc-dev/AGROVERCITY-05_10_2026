@@ -296,6 +296,24 @@ async def book_slot(slot_id: str, body: BookSlotRequest, uid: str = Depends(_far
             source_id=booking.get("id", slot_id),
             due_at=slot.get("date"),
         )
+        # Owner booking notification + SMS alert (best-effort, DLT-stubbed).
+        from app.services.notify import notify_user
+        from app.services.sms import send_sms
+
+        await notify_user(
+            owner_uid,
+            type="equipment_booking",
+            title="New booking request / नई बुकिंग",
+            body=f"{body.farmerName} requested {equipment.get('name', '')} · {slot.get('date', '')} {slot.get('slotName', '')} (₹{slot.get('priceRupees', 0)})",
+            deepLink=f"/dashboard/p/equipment/bookings/{booking['id']}",
+        )
+        owner_user = await get_user(owner_uid)
+        if owner_user and owner_user.get("phone"):
+            await send_sms(
+                owner_user["phone"],
+                "equipment_booking_alert",
+                {"name": body.farmerName, "machine": equipment.get("name", ""), "date": slot.get("date", "")},
+            )
     user = await get_user(uid)
     user["agriCoins"] = user.get("agriCoins", 0) + BOOKING_COINS
     await set_doc("users", uid, user)

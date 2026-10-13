@@ -313,6 +313,20 @@ async def accept_dairy_bid(
     demand["updatedAt"] = datetime.now(timezone.utc).isoformat()
     await set_doc("dairy_demands", demand["id"], demand)
 
+    # Request accepted: open the deal chat room (chat unlocks only after
+    # acceptance) and notify the bidding farmer.
+    from app.services.chat import ensure_chat_room
+    from app.services.notify import notify_user
+
+    await ensure_chat_room(purchase)
+    await notify_user(
+        bid.get("farmerId"),
+        type="request_accepted",
+        title="Request accepted / मांग स्वीकार हुई",
+        body=f"{demand.get('managerName') or 'Dairy'} accepted your milk bid @ ₹{bid.get('offeredRatePerLiter')}/L — chat is now open",
+        deepLink=f"/dashboard/p/purchases/{purchase['id']}",
+    )
+
     response = {"bid": bid, "demand": demand, "purchase": purchase}
     if idempotency_key:
         await idempotency.store("dairy.bid.accept", idempotency_key, response)

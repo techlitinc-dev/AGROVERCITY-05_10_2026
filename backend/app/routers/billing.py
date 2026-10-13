@@ -51,6 +51,32 @@ async def my_subscription(uid: str = Depends(current_user_id)):
     }
 
 
+@router.get("/subscriptions")
+async def my_subscription_history(uid: str = Depends(current_user_id)):
+    """Full subscription history for the caller (newest first) — every
+    subscription doc ever created for this user, each with its plan snapshot
+    and a derived lifecycle status."""
+    docs = await query("subscriptions", [("userId", "==", uid)], limit=100)
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    data = []
+    for doc in docs:
+        plan = await billing.get_plan(doc.get("planId", "")) or billing._matrix_plan(doc.get("planId", ""))
+        data.append(
+            {
+                **doc,
+                "plan": plan,
+                "status": doc.get("status", "active"),
+            }
+        )
+    current = await billing.get_subscription(uid)
+    return {
+        "data": data,
+        "total": len(data),
+        "current": current,
+        "currentStatus": (current or {}).get("status", "none"),
+    }
+
+
 @router.post("/subscribe", status_code=201)
 async def subscribe(body: SubscribeIn, uid: str = Depends(current_user_id)):
     plan = await billing.get_plan(body.planId)

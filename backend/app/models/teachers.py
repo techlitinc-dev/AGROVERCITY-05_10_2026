@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -20,6 +22,17 @@ class TeacherProfileUpdateIn(BaseModel):
 
 class TeacherCertificateIssueIn(BaseModel):
     customNote: str | None = None
+
+
+class TeacherCredentialUploadIn(BaseModel):
+    """Experience letter / qualification certificate for the teacher card.
+    Stored on the instructor KYC case and admin-verified like any credential."""
+
+    docType: Literal["experience_letter", "qualification_certificate"]
+    fileUrl: str = Field(min_length=1)
+    issuer: str = ""
+    referenceNo: str = ""
+    issuedAt: str = ""
 
 
 class TeacherAnnouncementIn(BaseModel):

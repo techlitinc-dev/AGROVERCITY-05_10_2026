@@ -180,8 +180,9 @@ class MessageIn(BaseModel):
 class DirectChatIn(BaseModel):
     """Open a simple direct chat scoped to a listing: the other party is the
     lot's farmer, the demand's buyer, a vehicle's owner, an accepted booking's
-    transporter, a resale listing's seller, or an export quote's counterparty.
-    One stable room per user pair."""
+    transporter, a resale listing's seller, an export quote's counterparty, or
+    the counterparty of an accepted purchase (chat opens only after the
+    request is accepted). One stable room per user pair."""
 
     lotId: str = ""
     demandId: str = ""
@@ -189,15 +190,29 @@ class DirectChatIn(BaseModel):
     bookingId: str = ""
     listingId: str = ""
     quoteId: str = ""
+    purchaseId: str = ""
 
 
 @router.post("/direct")
 async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_id)):
-    if not (body.lotId or body.demandId or body.vehicleId or body.bookingId or body.listingId or body.quoteId):
-        _error(422, "VALIDATION_ERROR", "lotId, demandId, vehicleId, bookingId, listingId or quoteId is required")
+    if not (body.lotId or body.demandId or body.vehicleId or body.bookingId or body.listingId or body.quoteId or body.purchaseId):
+        _error(422, "VALIDATION_ERROR", "lotId, demandId, vehicleId, bookingId, listingId, quoteId or purchaseId is required")
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
+    if body.purchaseId:
+        # The chat window opens only after the request is accepted: a purchase
+        # exists solely because an offer/request was accepted, and a cancelled
+        # deal loses chat access again.
+        purchase = await get_doc("purchases", body.purchaseId)
+        if purchase is None:
+            _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
+        if uid not in (purchase.get("buyerId"), purchase.get("farmerId")):
+            _error(403, "PURCHASE_FORBIDDEN", "not a purchase participant")
+        if purchase.get("status") == "cancelled":
+            _error(409, "CHAT_NOT_AVAILABLE", "chat is closed for cancelled deals")
+        room = await ensure_chat_room(purchase)
+        return await _room_view(room, uid)
     if body.lotId:
         lot = await get_doc("market_lots", body.lotId)
         if lot is None:
