@@ -1,0 +1,340 @@
+import React from 'react';
+import { NavLink } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  TrendingUp,
+  Package,
+  Layers,
+  FileCheck,
+  Truck,
+  BookOpen,
+  Wrench,
+  Landmark,
+  ShieldAlert,
+  FileText,
+  Gift,
+  Droplets,
+  Building2,
+  Store,
+  DollarSign,
+  Milk,
+  GraduationCap,
+  Sparkles,
+  ShoppingBag,
+  HeartHandshake,
+  Bot,
+  ScanLine,
+  Radio,
+  FileSpreadsheet,
+  Award,
+  Users
+} from 'lucide-react';
+import { useAuthStore } from '../../stores/authStore';
+import { cn } from '../../lib/utils';
+
+export const Sidebar: React.FC = () => {
+  const { activePersona } = useAuthStore();
+
+  // Dynamic persona navigation mapping
+  const getNavSections = () => {
+    switch (activePersona) {
+      case 'farmer':
+        return [
+          {
+            title: 'Kisan Core Hub',
+            items: [
+              { to: '/farmer', label: 'Farmer Cockpit', icon: LayoutDashboard },
+              { to: '/farmer/mandi', label: 'Live Mandi Prices', icon: TrendingUp },
+              { to: '/farmer/lots', label: 'Sell Produce Lots', icon: Package },
+              { to: '/farmer/demands', label: 'Buyer Demands', icon: Layers },
+              { to: '/farmer/purchases', label: 'My B2B Orders', icon: FileCheck },
+              { to: '/farmer/contracts', label: 'Supply Contracts', icon: FileText },
+              { to: '/farmer/transport', label: 'Book Gadi / Transport', icon: Truck },
+              { to: '/farmer/diary', label: 'Farm Diary & P&L', icon: BookOpen },
+              { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
+            ],
+          },
+          {
+            title: 'Finance & Security',
+            items: [
+              { to: '/farmer/loans', label: 'KCC & Agri Loans', icon: Landmark },
+              { to: '/farmer/insurance', label: 'PMFBY Crop Insurance', icon: ShieldAlert },
+              { to: '/farmer/712', label: '7/12 Land Records', icon: FileSpreadsheet },
+              { to: '/farmer/schemes', label: 'Govt Schemes & Vault', icon: Gift },
+              { to: '/farmer/water', label: 'Water & Weather', icon: Droplets },
+              { to: '/farmer/dairy', label: 'My Dairy Slips', icon: Milk },
+            ],
+          },
+        ];
+
+      case 'landlord':
+        return [
+          {
+            title: 'Landlord Workspace',
+            items: [
+              { to: '/landlord', label: 'Landlord Cockpit', icon: LayoutDashboard },
+              { to: '/landlord/plots', label: 'My Plots & 7/12', icon: FileSpreadsheet },
+              { to: '/landlord/listings', label: 'Lease Listings', icon: Layers },
+              { to: '/landlord/inbox', label: 'Lease Inquiries', icon: FileCheck },
+              { to: '/landlord/rent', label: 'Rent Ledger & Escrow', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'transporter':
+        return [
+          {
+            title: 'Logistics Desk',
+            items: [
+              { to: '/transporter', label: 'Transporter Cockpit', icon: LayoutDashboard },
+              { to: '/transporter/loads', label: 'Freight Load Board', icon: Layers },
+              { to: '/transporter/trips', label: 'Live Trips & Tracking', icon: Truck },
+              { to: '/transporter/bilty', label: 'Bilty Generator', icon: FileText },
+              { to: '/transporter/settlements', label: 'Trip P&L & Commission', icon: DollarSign },
+              { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
+            ],
+          },
+        ];
+
+      case 'seller':
+        return [
+          {
+            title: 'Vyapari Suite',
+            items: [
+              { to: '/seller', label: 'Vyapari Cockpit', icon: LayoutDashboard },
+              { to: '/seller/catalog', label: 'Storefront Products', icon: Store },
+              { to: '/seller/orders', label: 'Mall Orders', icon: Package },
+              { to: '/seller/procure', label: 'Kisan Procurement & J-Form', icon: FileSpreadsheet },
+              { to: '/seller/demands', label: 'Post Crop Demands', icon: Layers },
+              { to: '/seller/pos', label: 'Khata Ledger & POS', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'equipmentOwner':
+        return [
+          {
+            title: 'Equipment Console',
+            items: [
+              { to: '/equipment', label: 'Fleet Overview', icon: LayoutDashboard },
+              { to: '/equipment/fleet', label: 'Machinery Registry', icon: Wrench },
+              { to: '/equipment/calendar', label: 'Hourly Slot Calendar', icon: BookOpen },
+              { to: '/equipment/bookings', label: 'Incoming Bookings', icon: FileCheck },
+              { to: '/equipment/roi', label: 'Maintenance & ROI', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'directBuyer':
+        return [
+          {
+            title: 'B2B Procurement',
+            items: [
+              { to: '/directbuyer', label: 'Buyer Dashboard', icon: LayoutDashboard },
+              { to: '/directbuyer/demands', label: 'Bulk Crop Demands', icon: Layers },
+              { to: '/directbuyer/qc', label: 'Produce QC Inspections', icon: Award },
+              { to: '/directbuyer/contracts', label: 'Institutional Contracts', icon: FileText },
+            ],
+          },
+        ];
+
+      case 'broker':
+        return [
+          {
+            title: 'Broker Desk',
+            items: [
+              { to: '/broker', label: 'Deal Desk', icon: LayoutDashboard },
+              { to: '/broker/matchmaker', label: 'Lot ↔ Demand Matcher', icon: HeartHandshake },
+              { to: '/broker/commissions', label: 'Commission Ledger', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'dairyManager':
+        return [
+          {
+            title: 'Dudh Dairy & Livestock',
+            items: [
+              { to: '/dairy', label: 'Milk Collection Desk', icon: Milk },
+              { to: '/dairy/members', label: 'Member Passbook', icon: Users },
+              { to: '/dairy/batches', label: 'Payout Batches', icon: DollarSign },
+              { to: '/dairy/gaushala', label: 'Gaushala & 80G Receipts', icon: Building2 },
+              { to: '/dairy/vets', label: 'VetNet & Vaccinations', icon: ShieldAlert },
+            ],
+          },
+        ];
+
+      case 'instructor':
+        return [
+          {
+            title: 'Gurukul Studio',
+            items: [
+              { to: '/instructor', label: 'Academy Studio', icon: GraduationCap },
+              { to: '/instructor/courses', label: 'Course Builder', icon: BookOpen },
+              { to: '/instructor/enquiries', label: 'Batches & Questions', icon: Users },
+            ],
+          },
+        ];
+
+      case 'bankManager':
+        return [
+          {
+            title: 'Credit Underwriting',
+            items: [
+              { to: '/bank', label: 'Loan Underwriting Queue', icon: Landmark },
+              { to: '/bank/appraisals', label: '7/12 & CIBIL Appraisal', icon: FileSpreadsheet },
+              { to: '/bank/portfolio', label: 'Disbursal & Recovery', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'insuranceProvider':
+        return [
+          {
+            title: 'PMFBY Desk',
+            items: [
+              { to: '/insurance', label: 'Claims Intimation Queue', icon: ShieldAlert },
+              { to: '/insurance/surveyors', label: 'Surveyor Assignment', icon: Users },
+              { to: '/insurance/dbt', label: 'Loss Assessment & DBT', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'superadmin':
+        return [
+          {
+            title: 'Platform Operations',
+            items: [
+              { to: '/admin', label: 'Master Ops Console (SOP 01-27)', icon: Sparkles },
+            ],
+          },
+        ];
+
+      default:
+        return [
+          {
+            title: 'Navigation',
+            items: [{ to: '/farmer', label: 'Dashboard', icon: LayoutDashboard }],
+          },
+        ];
+    }
+  };
+
+  const navSections = getNavSections();
+
+  return (
+    <aside className="hidden lg:flex lg:flex-col w-64 bg-white border-r border-slate-200/80 min-h-[calc(100vh-4rem)] p-4 space-y-6">
+      {/* Persona Dynamic Links */}
+      {navSections.map((sec, idx) => (
+        <div key={idx} className="space-y-1">
+          <h4 className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            {sec.title}
+          </h4>
+          <div className="space-y-1 mt-2">
+            {sec.items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === `/${activePersona}` || item.to === '/admin'}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all',
+                    isActive
+                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  )
+                }
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Universal Ecosystem Shortcuts */}
+      <div className="space-y-1 pt-2 border-t border-slate-100">
+        <h4 className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Ecosystem Hubs
+        </h4>
+        <div className="space-y-1 mt-2">
+          <NavLink
+            to="/mall"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <ShoppingBag className="w-4 h-4 text-emerald-600" />
+            <span>Krishi Shopping Mall</span>
+          </NavLink>
+
+          <NavLink
+            to="/academy"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <GraduationCap className="w-4 h-4 text-sky-600" />
+            <span>Krishi Gurukul Academy</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/ai"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Bot className="w-4 h-4 text-teal-600" />
+            <span>AI Agronomist (Kisan Mitra)</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/scan"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <ScanLine className="w-4 h-4 text-rose-500" />
+            <span>Leaf Disease Scanner</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/news"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Radio className="w-4 h-4 text-indigo-500" />
+            <span>Live Mandi News & Audio</span>
+          </NavLink>
+        </div>
+      </div>
+    </aside>
+  );
+};

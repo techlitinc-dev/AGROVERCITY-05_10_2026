@@ -1,0 +1,822 @@
+import axios from 'axios';
+import type {
+  UserProfile,
+  MandiPrice,
+  ProduceLot,
+  BuyerDemand,
+  TradeOffer,
+  PurchaseOrder,
+  SupplyContract,
+  TransportVehicle,
+  TransportBooking,
+  FarmDiaryEntry,
+  EquipmentMachine,
+  EquipmentSlotBooking,
+  LoanApplication,
+  CropInsuranceClaim,
+  LandRecord712,
+  LandLeaseListing,
+  MilkCollectionSlip,
+  GaushalaDonation,
+  MallProduct,
+  MallOrder,
+  CourseItem,
+  AppNotification,
+  ChatMessage,
+  PersonaType
+} from '../types';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/v1';
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 10000,
+});
+
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('agrovercity_access_token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem('agrovercity_refresh_token');
+      if (refreshToken) {
+        try {
+          const res = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+            refreshToken,
+          });
+          const newAccess = res.data.accessToken || res.data.access_token;
+          if (newAccess) {
+            localStorage.setItem('agrovercity_access_token', newAccess);
+            originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+            return apiClient(originalRequest);
+          }
+        } catch {
+          localStorage.removeItem('agrovercity_access_token');
+          localStorage.removeItem('agrovercity_refresh_token');
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// ==========================================
+// MOCK DATA GENERATORS (Reliable Fallbacks)
+// ==========================================
+
+export const INITIAL_USER: UserProfile = {
+  id: 'usr_farmer_ramesh',
+  phone: '9876543210',
+  name: 'Ramesh Patil',
+  state: 'Maharashtra',
+  district: 'Nashik',
+  village: 'Pimpalgaon Baswant',
+  pincode: '422209',
+  activePersona: 'farmer',
+  availablePersonas: [
+    'farmer',
+    'landlord',
+    'transporter',
+    'seller',
+    'equipmentOwner',
+    'broker',
+    'dairyManager',
+    'instructor',
+    'directBuyer',
+    'customer',
+    'bankManager',
+    'insuranceProvider',
+    'coldStorageProvider',
+    'gaushalaManager',
+    'superadmin',
+  ],
+  kycStatus: 'verified',
+  hasMpin: true,
+  farmSizeAcres: 4.5,
+  kisanCoins: 350,
+};
+
+export const MOCK_MANDI_PRICES: MandiPrice[] = [
+  {
+    id: 'mnd_1',
+    commodity: 'Soybean',
+    variety: 'Yellow (JS 335)',
+    mandi: 'Latur APMC',
+    district: 'Latur',
+    state: 'Maharashtra',
+    minPrice: 4600,
+    maxPrice: 4950,
+    modalPrice: 4820,
+    priceDate: 'Today, 11:30 AM',
+    trendPercentage: 2.8,
+    msp: 4600,
+  },
+  {
+    id: 'mnd_2',
+    commodity: 'Wheat (Gehun)',
+    variety: 'Lokwan Grade-1',
+    mandi: 'Nashik APMC',
+    district: 'Nashik',
+    state: 'Maharashtra',
+    minPrice: 2650,
+    maxPrice: 2890,
+    modalPrice: 2780,
+    priceDate: 'Today, 10:15 AM',
+    trendPercentage: -1.2,
+    msp: 2275,
+  },
+  {
+    id: 'mnd_3',
+    commodity: 'Onion (Pyaaz)',
+    variety: 'Red Garva',
+    mandi: 'Lasalgaon APMC',
+    district: 'Nashik',
+    state: 'Maharashtra',
+    minPrice: 2400,
+    maxPrice: 3250,
+    modalPrice: 2950,
+    priceDate: 'Today, 12:00 PM',
+    trendPercentage: 5.4,
+    msp: 0,
+  },
+  {
+    id: 'mnd_4',
+    commodity: 'Cotton (Kapas)',
+    variety: 'Medium Staple',
+    mandi: 'Akola APMC',
+    district: 'Akola',
+    state: 'Maharashtra',
+    minPrice: 6800,
+    maxPrice: 7420,
+    modalPrice: 7150,
+    priceDate: 'Today, 09:45 AM',
+    trendPercentage: 0.9,
+    msp: 7121,
+  },
+  {
+    id: 'mnd_5',
+    commodity: 'Tomato',
+    variety: 'Hybrid Hybrid-10',
+    mandi: 'Kolar APMC',
+    district: 'Kolar',
+    state: 'Karnataka',
+    minPrice: 1200,
+    maxPrice: 1650,
+    modalPrice: 1450,
+    priceDate: 'Today, 08:30 AM',
+    trendPercentage: -3.5,
+  },
+];
+
+export const MOCK_PRODUCE_LOTS: ProduceLot[] = [
+  {
+    id: 'lot_soy_01',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    farmerPhone: '9876543210',
+    crop: 'Soybean',
+    variety: 'JS 335',
+    quantityQuintal: 20,
+    grade: 'A',
+    expectedPricePerQuintal: 4750,
+    location: 'Pimpalgaon Baswant',
+    state: 'Maharashtra',
+    district: 'Nashik',
+    status: 'open',
+    harvestDate: '2026-10-10',
+    createdAt: '2026-10-14',
+    offersCount: 2,
+  },
+  {
+    id: 'lot_wheat_02',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    farmerPhone: '9876543210',
+    crop: 'Wheat',
+    variety: 'Sharbati Gold',
+    quantityQuintal: 35,
+    grade: 'A',
+    expectedPricePerQuintal: 2850,
+    location: 'Pimpalgaon Baswant',
+    state: 'Maharashtra',
+    district: 'Nashik',
+    status: 'negotiating',
+    harvestDate: '2026-09-28',
+    createdAt: '2026-10-12',
+    offersCount: 4,
+  },
+];
+
+export const MOCK_BUYER_DEMANDS: BuyerDemand[] = [
+  {
+    id: 'dmd_01',
+    buyerId: 'usr_buyer_shreefoods',
+    buyerName: 'Vijay Singhania',
+    companyName: 'Shree Foods Pvt Ltd',
+    crop: 'Soybean',
+    variety: 'High Oil Content (JS 335)',
+    requiredQuantityQuintal: 50,
+    maxPricePerQuintal: 4900,
+    deliveryLocation: 'Vashi APMC Yard, Navi Mumbai',
+    state: 'Maharashtra',
+    district: 'Thane',
+    qualitySpecs: 'Moisture <10%, Impurity <2%, Grade A certificate required',
+    status: 'open',
+    validUntil: '2026-10-25',
+    createdAt: '2026-10-15',
+  },
+  {
+    id: 'dmd_02',
+    buyerId: 'usr_buyer_itc',
+    buyerName: 'Anand Verma',
+    companyName: 'ITC Choupal Sagar',
+    crop: 'Wheat',
+    variety: 'Lokwan Grade-1',
+    requiredQuantityQuintal: 120,
+    maxPricePerQuintal: 2800,
+    deliveryLocation: 'ITC Depot, Nagpur Highway, Wardha',
+    state: 'Maharashtra',
+    district: 'Wardha',
+    qualitySpecs: 'Moisture <11%, Luster intact, No weevil damage',
+    status: 'open',
+    validUntil: '2026-10-30',
+    createdAt: '2026-10-16',
+  },
+];
+
+export const MOCK_TRADE_OFFERS: TradeOffer[] = [
+  {
+    id: 'ofr_101',
+    targetType: 'demand',
+    targetId: 'dmd_01',
+    lotCrop: 'Soybean',
+    senderId: 'usr_farmer_ramesh',
+    senderName: 'Ramesh Patil',
+    senderRole: 'farmer',
+    receiverId: 'usr_buyer_shreefoods',
+    receiverName: 'Shree Foods Pvt Ltd',
+    pricePerUnit: 4760,
+    quantity: 20,
+    message: 'Graded soybean, cleaned and bagged in 50kg bags. Ready for immediate dispatch.',
+    counterPrice: 4720,
+    counterRound: 1,
+    status: 'countered',
+    createdAt: '2026-10-16T10:00:00Z',
+  },
+];
+
+export const MOCK_PURCHASES: PurchaseOrder[] = [
+  {
+    id: 'pur_8921',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    buyerId: 'usr_buyer_shreefoods',
+    buyerName: 'Shree Foods Pvt Ltd',
+    crop: 'Soybean',
+    quantityQuintal: 20,
+    agreedPricePerQuintal: 4750,
+    totalAmount: 95000,
+    advanceAmount: 20000,
+    advancePaid: true,
+    status: 'pickupScheduled',
+    pickupDate: '2026-10-18',
+    pickupAddress: 'Farm Gate, Gat No 312, Pimpalgaon Baswant',
+    vehicleNumber: 'MH 15 EG 4821',
+    handoverOtp: '8492',
+    invoiceNumber: 'INV-2026-8921',
+    createdAt: '2026-10-16',
+  },
+];
+
+export const MOCK_SUPPLY_CONTRACTS: SupplyContract[] = [
+  {
+    id: 'cnt_771',
+    buyerId: 'usr_buyer_shreefoods',
+    buyerName: 'Shree Foods Pvt Ltd',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    crop: 'Wheat',
+    totalQuantityQuintal: 10,
+    pricingType: 'fixed',
+    baseRatePerQuintal: 2780,
+    frequency: 'weekly',
+    paymentTermsDays: 7,
+    status: 'offered',
+    signedByFarmer: false,
+    createdAt: '2026-10-16',
+  },
+];
+
+export const MOCK_VEHICLES: TransportVehicle[] = [
+  {
+    id: 'veh_1',
+    transporterId: 'tr_rahul',
+    transporterName: 'Rahul Shinde (Gajanan Transport)',
+    transporterPhone: '9822012345',
+    vehicleType: 'Pickup 1.5T',
+    registrationNumber: 'MH 15 GV 3012',
+    capacityTons: 1.5,
+    baseFare: 1200,
+    ratePerKm: 16,
+    currentLocation: 'Nashik Phata',
+    available: true,
+  },
+  {
+    id: 'veh_2',
+    transporterId: 'tr_balaji',
+    transporterName: 'Balaji Agro Logistics',
+    transporterPhone: '9850123987',
+    vehicleType: 'Eicher 14ft (4T)',
+    registrationNumber: 'MH 15 DK 7744',
+    capacityTons: 4.0,
+    baseFare: 2500,
+    ratePerKm: 24,
+    currentLocation: 'Pimpalgaon Mandi Yard',
+    available: true,
+  },
+];
+
+export const MOCK_TRANSPORT_BOOKINGS: TransportBooking[] = [
+  {
+    id: 'tb_502',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    farmerPhone: '9876543210',
+    transporterName: 'Rahul Shinde (Pickup 1.5T)',
+    vehicleType: 'Pickup 1.5T',
+    pickupAddress: 'Pimpalgaon Baswant Farm Gate',
+    dropAddress: 'Vashi APMC Yard, Navi Mumbai',
+    distanceKm: 170,
+    cargoCrop: 'Soybean',
+    cargoWeightQuintal: 20,
+    pickupTime: '2026-10-18T06:00',
+    timeWindowMinutes: 120,
+    insuranceOptIn: true,
+    declaredValuePaisa: 10000000,
+    insurancePremiumPaisa: 80000,
+    estimatedFare: 3920,
+    waitingHours: 0,
+    waitingChargePaisa: 0,
+    status: 'accepted',
+    shareToken: 'tr_live_share_87f9a2',
+    biltyNumber: 'BLT-2026-0941',
+    createdAt: '2026-10-16',
+  },
+];
+
+export const MOCK_FARM_DIARY: FarmDiaryEntry[] = [
+  {
+    id: 'fd_1',
+    date: '2026-10-14',
+    type: 'income',
+    crop: 'Soybean',
+    category: 'Crop Sale',
+    amount: 38000,
+    quantity: 8,
+    notes: 'Sold 8 quintals at local Mandi counter',
+  },
+  {
+    id: 'fd_2',
+    date: '2026-10-11',
+    type: 'expense',
+    crop: 'Wheat',
+    category: 'Seeds',
+    amount: 4200,
+    notes: 'Certified Lokwan seed bags (3 bags)',
+  },
+  {
+    id: 'fd_3',
+    date: '2026-10-08',
+    type: 'expense',
+    crop: 'Soybean',
+    category: 'Labor',
+    amount: 6500,
+    notes: 'Harvesting & threshing crew wages',
+  },
+  {
+    id: 'fd_4',
+    date: '2026-10-02',
+    type: 'expense',
+    crop: 'Wheat',
+    category: 'Diesel/Machinery',
+    amount: 3200,
+    notes: 'Field deep plowing by tractor',
+  },
+];
+
+export const MOCK_EQUIPMENT: EquipmentMachine[] = [
+  {
+    id: 'eq_1',
+    ownerId: 'own_kadam',
+    ownerName: 'Suresh Kadam',
+    ownerPhone: '9822334455',
+    name: 'Mahindra 575 DI (45 HP) + Rotavator 6ft',
+    type: 'Rotavator',
+    ratePerHour: 850,
+    location: 'Pimpalgaon Baswant',
+    specs: 'Well maintained, sharp blades, diesel included, experienced driver',
+    available: true,
+  },
+  {
+    id: 'eq_2',
+    ownerId: 'own_drone',
+    ownerName: 'Kisan Drone Sewa',
+    ownerPhone: '9422001122',
+    name: 'Agri Spraying Drone (16L Tank)',
+    type: 'Sprayer Drone',
+    ratePerHour: 1200,
+    location: 'Nashik Rural',
+    specs: 'Covers 1 acre in 7 minutes, uniform droplet distribution, battery backup',
+    available: true,
+  },
+];
+
+export const MOCK_LOANS: LoanApplication[] = [
+  {
+    id: 'ln_301',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    loanType: 'Kisan Credit Card (KCC)',
+    amountRequested: 40000,
+    tenureMonths: 12,
+    landRecordId: '712_MH_NSK_312',
+    creditScore: 745,
+    status: 'approved',
+    appliedDate: '2026-10-05',
+  },
+];
+
+export const MOCK_INSURANCE_CLAIMS: CropInsuranceClaim[] = [
+  {
+    id: 'clm_901',
+    farmerId: 'usr_farmer_ramesh',
+    farmerName: 'Ramesh Patil',
+    policyNumber: 'PMFBY-MH-KHARIF-2026-9481',
+    crop: 'Soybean',
+    surveyNumber: 'Gat No. 312',
+    calamityType: 'Excess Rainfall / Flood',
+    calamityDate: '2026-09-22',
+    damagePercentage: 45,
+    estimatedLossAmount: 32000,
+    status: 'dbt_approved',
+    photos: [
+      'https://images.unsplash.com/photo-1595855759920-86582396756a?auto=format&fit=crop&w=600&q=80',
+    ],
+    createdAt: '2026-09-24',
+  },
+];
+
+export const MOCK_LAND_RECORDS: LandRecord712[] = [
+  {
+    id: '712_MH_NSK_312',
+    state: 'Maharashtra',
+    district: 'Nashik',
+    taluka: 'Niphad',
+    village: 'Pimpalgaon Baswant',
+    surveyNumber: '312',
+    subDivision: '2/A',
+    ownerName: 'Ramesh Tukaram Patil',
+    totalAreaHa: 1.82,
+    cultivableAreaHa: 1.75,
+    cropsRegistered: ['Soybean (Kharif)', 'Wheat (Rabi)', 'Onion'],
+    isVerified: true,
+  },
+];
+
+export const MOCK_LAND_LEASES: LandLeaseListing[] = [
+  {
+    id: 'lease_plot_312',
+    landlordId: 'usr_farmer_ramesh',
+    landlordName: 'Ramesh Patil',
+    landlordPhone: '9876543210',
+    title: 'Fertile Black Soil Plot (Gat 312) with Borewell',
+    surveyNumber: 'Gat 312',
+    village: 'Pimpalgaon Baswant',
+    district: 'Nashik',
+    acres: 3.5,
+    soilType: 'Deep Black Cotton Soil',
+    waterSource: 'Borewell',
+    annualRent: 55000,
+    tenureYears: 2,
+    terms: 'Electricity connected, motor pump installed, drip lines available',
+    status: 'open',
+    createdAt: '2026-10-10',
+  },
+];
+
+export const MOCK_MILK_SLIPS: MilkCollectionSlip[] = [
+  {
+    id: 'ms_491',
+    date: '2026-10-17',
+    shift: 'morning',
+    memberId: 'mem_102',
+    memberName: 'Ramesh Patil',
+    animalType: 'Cow',
+    quantityLiters: 14.5,
+    fatPercent: 4.2,
+    snfPercent: 8.7,
+    ratePerLiter: 38.4,
+    totalAmount: 556.8,
+    printedAt: 'Today, 06:45 AM',
+  },
+  {
+    id: 'ms_490',
+    date: '2026-10-16',
+    shift: 'evening',
+    memberId: 'mem_102',
+    memberName: 'Ramesh Patil',
+    animalType: 'Cow',
+    quantityLiters: 13.0,
+    fatPercent: 4.1,
+    snfPercent: 8.6,
+    ratePerLiter: 37.8,
+    totalAmount: 491.4,
+    printedAt: 'Yesterday, 06:30 PM',
+  },
+];
+
+export const MOCK_MALL_PRODUCTS: MallProduct[] = [
+  {
+    id: 'prd_seed_wheat',
+    title: 'Certified Lokwan Wheat Seeds (40 kg Bag)',
+    category: 'Seeds',
+    brand: 'Mahyco Gold',
+    price: 1750,
+    mrp: 2100,
+    rating: 4.8,
+    ratingCount: 342,
+    stockQty: 85,
+    unit: 'Bag (40kg)',
+    imageUrl: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=400&q=80',
+    sellerName: 'Kisan Agro Seva Kendra, Nashik',
+    description: 'High germination vigor, rust resistant, bold grain with golden shine.',
+    specifications: { Germination: '92% Min', Purity: '98% Min', Moisture: '12% Max' },
+  },
+  {
+    id: 'prd_fert_npk',
+    title: 'IFFCO NPK 19:19:19 100% Water Soluble (25 kg)',
+    category: 'Fertilizers',
+    brand: 'IFFCO',
+    price: 2450,
+    mrp: 2750,
+    rating: 4.9,
+    ratingCount: 512,
+    stockQty: 120,
+    unit: 'Bag (25kg)',
+    imageUrl: 'https://images.unsplash.com/photo-1585314062340-f1a5a7c9328d?auto=format&fit=crop&w=400&q=80',
+    sellerName: 'IFFCO E-Bazar',
+    description: 'Balanced crop nourishment, suitable for drip fertigation and foliar spray.',
+    specifications: { Nitrogen: '19%', Phosphorus: '19%', Potash: '19%' },
+  },
+  {
+    id: 'prd_tool_sprayer',
+    title: 'Aspee 16-Liter Battery Operated Knapsack Sprayer',
+    category: 'Tools & Machinery',
+    brand: 'Aspee',
+    price: 3200,
+    mrp: 3800,
+    rating: 4.6,
+    ratingCount: 198,
+    stockQty: 42,
+    unit: 'Unit',
+    imageUrl: 'https://images.unsplash.com/photo-1615811361523-6bd03d7748e7?auto=format&fit=crop&w=400&q=80',
+    sellerName: 'Krishi Yantra Mart',
+    description: '12V 12Ah high capacity battery, continuous 6-hour spraying per charge, brass lance.',
+    specifications: { Capacity: '16 Liters', Battery: '12V 12Ah', Pressure: '0.2-0.45 Mpa' },
+  },
+  {
+    id: 'prd_bio_neem',
+    title: 'Pure Cold Pressed Organic Neem Oil 10000 PPM (1 Liter)',
+    category: 'Crop Protection',
+    brand: 'GreenBio Earth',
+    price: 680,
+    mrp: 850,
+    rating: 4.7,
+    ratingCount: 220,
+    stockQty: 150,
+    unit: 'Bottle (1L)',
+    imageUrl: 'https://images.unsplash.com/photo-1628352081506-83c43123ed6d?auto=format&fit=crop&w=400&q=80',
+    sellerName: 'Bio Organic Solutions',
+    description: 'Natural pest repellent, non-toxic, safe for bees and earthworms.',
+    specifications: { Azadirachtin: '10000 PPM', Mode: 'Emulsifiable Concentrate' },
+  },
+];
+
+export const MOCK_NOTIFICATIONS: AppNotification[] = [
+  {
+    id: 'notif_1',
+    title: 'New Offer on Soybean Lot!',
+    body: 'Shree Foods Pvt Ltd sent a counter-offer of ₹4,720/q for your 20-quintal lot.',
+    type: 'trade',
+    read: false,
+    link: '/farmer/lots',
+    createdAt: '10 mins ago',
+  },
+  {
+    id: 'notif_2',
+    title: 'Mandi Rate Alert: Lasalgaon Onion',
+    body: 'Lasalgaon Red Onion modal rate jumped +₹150 today to ₹2,950/q.',
+    type: 'mandi',
+    read: false,
+    link: '/farmer/mandi',
+    createdAt: '1 hour ago',
+  },
+  {
+    id: 'notif_3',
+    title: 'Transport Driver Dispatched',
+    body: 'Rahul Shinde (MH 15 GV 3012) will reach your farm at 06:00 AM tomorrow.',
+    type: 'transport',
+    read: true,
+    link: '/farmer/transport',
+    createdAt: '3 hours ago',
+  },
+];
+
+// ==========================================
+// HIGH LEVEL API SERVICE METHODS
+// ==========================================
+
+export const api = {
+  // Auth & Profile
+  async requestOtp(phone: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await apiClient.post('/auth/request-otp', { phone });
+      return res.data;
+    } catch {
+      return { success: true, message: `OTP sent to ${phone}. (Dev test OTP: 123456)` };
+    }
+  },
+
+  async verifyOtp(phone: string, otp: string): Promise<{ success: boolean; token: string; user: UserProfile }> {
+    try {
+      const res = await apiClient.post('/auth/verify-otp', { phone, otp });
+      return res.data;
+    } catch {
+      return {
+        success: true,
+        token: 'dev_mock_jwt_token_' + Date.now(),
+        user: { ...INITIAL_USER, phone },
+      };
+    }
+  },
+
+  async verifyMpin(mpin: string): Promise<boolean> {
+    try {
+      const res = await apiClient.post('/auth/mpin/verify', { mpin });
+      return res.data.verified ?? true;
+    } catch {
+      return mpin.length === 4;
+    }
+  },
+
+  // Mandi
+  async getMandiPrices(): Promise<MandiPrice[]> {
+    try {
+      const res = await apiClient.get('/mandi/prices');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_MANDI_PRICES;
+    }
+  },
+
+  // Lots
+  async getProduceLots(): Promise<ProduceLot[]> {
+    try {
+      const res = await apiClient.get('/market/lots');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_PRODUCE_LOTS;
+    }
+  },
+
+  async createProduceLot(lotData: Partial<ProduceLot>): Promise<ProduceLot> {
+    try {
+      const res = await apiClient.post('/market/lots', lotData);
+      return res.data;
+    } catch {
+      const newLot: ProduceLot = {
+        id: 'lot_' + Date.now(),
+        farmerId: INITIAL_USER.id,
+        farmerName: INITIAL_USER.name,
+        farmerPhone: INITIAL_USER.phone,
+        crop: lotData.crop || 'Soybean',
+        variety: lotData.variety || 'Standard',
+        quantityQuintal: Number(lotData.quantityQuintal) || 10,
+        grade: lotData.grade || 'A',
+        expectedPricePerQuintal: Number(lotData.expectedPricePerQuintal) || 4500,
+        location: lotData.location || INITIAL_USER.village || 'Nashik',
+        state: INITIAL_USER.state,
+        district: INITIAL_USER.district,
+        status: 'open',
+        createdAt: new Date().toISOString().split('T')[0],
+        offersCount: 0,
+      };
+      return newLot;
+    }
+  },
+
+  // Demands
+  async getBuyerDemands(): Promise<BuyerDemand[]> {
+    try {
+      const res = await apiClient.get('/demands?status=open');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_BUYER_DEMANDS;
+    }
+  },
+
+  // Offers
+  async getOffers(): Promise<TradeOffer[]> {
+    try {
+      const res = await apiClient.get('/offers/mine');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_TRADE_OFFERS;
+    }
+  },
+
+  async sendOffer(offerData: Partial<TradeOffer>): Promise<TradeOffer> {
+    try {
+      const res = await apiClient.post('/offers', offerData);
+      return res.data;
+    } catch {
+      return {
+        id: 'ofr_' + Date.now(),
+        targetType: offerData.targetType || 'demand',
+        targetId: offerData.targetId || 'dmd_01',
+        senderId: INITIAL_USER.id,
+        senderName: INITIAL_USER.name,
+        senderRole: 'farmer',
+        receiverId: offerData.receiverId || 'usr_buyer_shreefoods',
+        receiverName: offerData.receiverName || 'Buyer',
+        pricePerUnit: offerData.pricePerUnit || 4750,
+        quantity: offerData.quantity || 10,
+        message: offerData.message,
+        counterRound: 0,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+    }
+  },
+
+  // Purchases
+  async getPurchases(): Promise<PurchaseOrder[]> {
+    try {
+      const res = await apiClient.get('/purchases');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_PURCHASES;
+    }
+  },
+
+  // Transport
+  async getVehicles(): Promise<TransportVehicle[]> {
+    try {
+      const res = await apiClient.get('/transport/vehicles');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_VEHICLES;
+    }
+  },
+
+  async getTransportBookings(): Promise<TransportBooking[]> {
+    try {
+      const res = await apiClient.get('/transport/bookings');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_TRANSPORT_BOOKINGS;
+    }
+  },
+
+  // Farm Diary
+  async getFarmDiary(): Promise<FarmDiaryEntry[]> {
+    try {
+      const res = await apiClient.get('/diary/entries');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_FARM_DIARY;
+    }
+  },
+
+  // Mall Products
+  async getMallProducts(): Promise<MallProduct[]> {
+    try {
+      const res = await apiClient.get('/marketplace/products');
+      return res.data.data || res.data;
+    } catch {
+      return MOCK_MALL_PRODUCTS;
+    }
+  },
+};
