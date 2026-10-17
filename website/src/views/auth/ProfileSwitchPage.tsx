@@ -1,34 +1,102 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, ShieldCheck, UserPlus, ArrowRight } from 'lucide-react';
+import { Check, ArrowRight, AlertCircle, Loader2, UserPlus } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
-import type { PersonaType } from '../../types';
+import { apiErrorMessage, users } from '../../lib/api';
+import type { PersonaType, UserProfile } from '../../types';
+
+/** Persona → home route mapping. */
+const PERSONA_HOME: Record<PersonaType, string> = {
+  farmer: '/farmer',
+  landlord: '/landlord',
+  transporter: '/transporter',
+  seller: '/seller',
+  equipmentOwner: '/equipmentOwner',
+  broker: '/broker',
+  dairyManager: '/dairyManager',
+  instructor: '/instructor',
+  directBuyer: '/directBuyer',
+  customer: '/customer',
+  bankManager: '/bankManager',
+  insuranceProvider: '/insuranceProvider',
+  coldStorageProvider: '/coldStorageProvider',
+  gaushalaManager: '/gaushalaManager',
+  superadmin: '/superadmin',
+};
+
+const personaHome = (persona: PersonaType): string => PERSONA_HOME[persona] || '/farmer';
+
+const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: string }[] = [
+  { id: 'farmer', title: 'Farmer / Kisan', category: 'Agriculture Core', icon: '🌾' },
+  { id: 'landlord', title: 'Farm Landlord', category: 'Land & Leases', icon: '🏡' },
+  { id: 'transporter', title: 'Transporter / Gadi', category: 'Logistics', icon: '🚚' },
+  { id: 'seller', title: 'Agri Vyapari', category: 'Commerce & Inputs', icon: '🏪' },
+  { id: 'equipmentOwner', title: 'Equipment Owner', category: 'Machinery Services', icon: '🚜' },
+  { id: 'directBuyer', title: 'Direct Buyer', category: 'B2B Procurement', icon: '🏢' },
+  { id: 'broker', title: 'Agri Broker / Dalal', category: 'Trade Matchmaking', icon: '🤝' },
+  { id: 'dairyManager', title: 'Dudh Dairy Manager', category: 'Livestock & Milk', icon: '🥛' },
+  { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
+  { id: 'bankManager', title: 'Bank Loan Manager', category: 'Fintech & Credit', icon: '🏦' },
+  { id: 'insuranceProvider', title: 'Crop Insurance Desk', category: 'Risk Mitigation', icon: '📑' },
+  { id: 'coldStorageProvider', title: 'Cold Storage Owner', category: 'Post-Harvest Warehousing', icon: '❄️' },
+  { id: 'gaushalaManager', title: 'Gaushala & VetNet', category: 'Cattle Welfare & 80G', icon: '🐄' },
+  { id: 'customer', title: 'E-Market Customer', category: 'Consumer Shopping', icon: '🛍️' },
+  { id: 'superadmin', title: 'Superadmin Platform Ops', category: 'System Governance', icon: '⚡' },
+];
+
+type MeWithProfiles = UserProfile & { linkedProfiles?: PersonaType[] };
 
 export const ProfileSwitchPage: React.FC = () => {
-  const { user, activePersona, switchPersona } = useAuthStore();
+  const { user, activePersona, login, switchPersona } = useAuthStore();
   const navigate = useNavigate();
+  const [linked, setLinked] = useState<PersonaType[]>(user?.availablePersonas ?? []);
+  const [busyId, setBusyId] = useState<PersonaType | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const allPersonas: { id: PersonaType; title: string; category: string; icon: string }[] = [
-    { id: 'farmer', title: 'Farmer / Kisan', category: 'Agriculture Core', icon: '🌾' },
-    { id: 'landlord', title: 'Farm Landlord', category: 'Land & Leases', icon: '🏡' },
-    { id: 'transporter', title: 'Transporter / Gadi', category: 'Logistics', icon: '🚚' },
-    { id: 'seller', title: 'Agri Vyapari', category: 'Commerce & Inputs', icon: '🏪' },
-    { id: 'equipmentOwner', title: 'Equipment Owner', category: 'Machinery Services', icon: '🚜' },
-    { id: 'directBuyer', title: 'Direct Buyer', category: 'B2B Procurement', icon: '🏢' },
-    { id: 'broker', title: 'Agri Broker / Dalal', category: 'Trade Matchmaking', icon: '🤝' },
-    { id: 'dairyManager', title: 'Dudh Dairy Manager', category: 'Livestock & Milk', icon: '🥛' },
-    { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
-    { id: 'bankManager', title: 'Bank Loan Manager', category: 'Fintech & Credit', icon: '🏦' },
-    { id: 'insuranceProvider', title: 'Crop Insurance Desk', category: 'Risk Mitigation', icon: '📑' },
-    { id: 'coldStorageProvider', title: 'Cold Storage Owner', category: 'Post-Harvest Warehousing', icon: '❄️' },
-    { id: 'gaushalaManager', title: 'Gaushala & VetNet', category: 'Cattle Welfare & 80G', icon: '🐄' },
-    { id: 'customer', title: 'E-Market Customer', category: 'Consumer Shopping', icon: '🛍️' },
-    { id: 'superadmin', title: 'Superadmin Platform Ops', category: 'System Governance', icon: '⚡' },
-  ];
+  // Refresh linked profiles from the server (GET /users/me → linkedProfiles).
+  useEffect(() => {
+    let cancelled = false;
+    users
+      .getMe()
+      .then((me) => {
+        if (cancelled) return;
+        const meProfiles = (me as MeWithProfiles).linkedProfiles;
+        setLinked(meProfiles?.length ? meProfiles : me.availablePersonas);
+        login(me);
+      })
+      .catch(() => {
+        // Offline / unauthenticated: keep locally cached personas.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [login]);
 
-  const handleSwitch = (p: PersonaType) => {
-    switchPersona(p);
-    navigate(`/${p}`);
+  const handleSwitch = async (p: PersonaType) => {
+    setBusyId(p);
+    setError(null);
+    try {
+      const updated = await users.activateProfile(p); // POST /users/me/profiles/{type}/activate
+      login(updated);
+      navigate(personaHome(p));
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleLink = async (p: PersonaType) => {
+    setBusyId(p);
+    setError(null);
+    try {
+      await users.linkProfile(p); // POST /users/me/profiles
+      setLinked((prev) => (prev.includes(p) ? prev : [...prev, p]));
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -40,13 +108,22 @@ export const ProfileSwitchPage: React.FC = () => {
         </p>
       </div>
 
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-800 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {allPersonas.map((p) => {
+        {ALL_PERSONAS.map((p) => {
           const isActive = activePersona === p.id;
+          const isLinked = linked.includes(p.id) || isActive;
+          const busy = busyId === p.id;
           return (
             <div
               key={p.id}
-              onClick={() => handleSwitch(p.id)}
+              onClick={() => !busy && (isLinked ? handleSwitch(p.id) : handleLink(p.id))}
               className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
                 isActive
                   ? 'border-emerald-600 bg-emerald-50/70 shadow-md ring-2 ring-emerald-500/20'
@@ -60,9 +137,13 @@ export const ProfileSwitchPage: React.FC = () => {
                     <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center gap-1">
                       <Check className="w-3 h-3" /> Active Now
                     </span>
-                  ) : (
-                    <span className="text-xs text-slate-400 group-hover:text-slate-600">
+                  ) : isLinked ? (
+                    <span className="text-xs text-slate-400">
                       Switch <ArrowRight className="w-3 h-3 inline ml-0.5" />
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold flex items-center gap-1">
+                      <UserPlus className="w-3 h-3" /> Link
                     </span>
                   )}
                 </div>
@@ -71,8 +152,16 @@ export const ProfileSwitchPage: React.FC = () => {
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                <span className="text-slate-500 font-medium">Single Sign-On</span>
-                <span className="font-bold text-emerald-700">Enter Role</span>
+                <span className="text-slate-500 font-medium">
+                  {isLinked ? 'Single Sign-On' : 'Not linked yet'}
+                </span>
+                {busy ? (
+                  <Loader2 className="w-3.5 h-3.5 text-emerald-700 animate-spin" />
+                ) : (
+                  <span className="font-bold text-emerald-700">
+                    {isLinked ? 'Enter Role' : 'Activate'}
+                  </span>
+                )}
               </div>
             </div>
           );

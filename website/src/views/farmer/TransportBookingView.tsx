@@ -1,30 +1,36 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Truck,
   MapPin,
-  Calendar,
   Clock,
   ShieldCheck,
   Share2,
   Check,
   Copy,
-  AlertCircle,
-  FileText,
   DollarSign,
-  ArrowRight,
+  XCircle,
 } from 'lucide-react';
-import { MOCK_VEHICLES, MOCK_TRANSPORT_BOOKINGS, api } from '../../lib/api';
+import { transport, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
 import type { TransportVehicle, TransportBooking } from '../../types';
 
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+const asNum = (v: unknown, fallback = 0): number => (typeof v === 'number' && !Number.isNaN(v) ? v : fallback);
+
 export const TransportBookingView: React.FC = () => {
-  const [vehicles, setVehicles] = useState<TransportVehicle[]>(MOCK_VEHICLES);
-  const [bookings, setBookings] = useState<TransportBooking[]>(MOCK_TRANSPORT_BOOKINGS);
+  const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
+  const [bookings, setBookings] = useState<TransportBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [bookModalOpen, setBookModalOpen] = useState(false);
   const [shareModalBooking, setShareModalBooking] = useState<TransportBooking | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [bookingBusy, setBookingBusy] = useState(false);
+  const [busyBookingId, setBusyBookingId] = useState<string | null>(null);
 
   // Booking Form State
   const [selectedVehicle, setSelectedVehicle] = useState('Pickup 1.5T');
@@ -38,41 +44,95 @@ export const TransportBookingView: React.FC = () => {
   const [insuranceOptIn, setInsuranceOptIn] = useState(true);
   const [declaredValue, setDeclaredValue] = useState(100000); // ₹1,00,000
 
-  // Calculation for Fare & FT-6 Transit Insurance
-  // Premium = ceil(declaredValue * 0.8%) = ₹800
-  const insurancePremium = insuranceOptIn ? Math.ceil(declaredValue * 0.008) : 0;
-  const estimatedBaseFare = 1200 + distanceKm * 16;
-  const totalEstimatedCost = estimatedBaseFare + insurancePremium;
+  // Server fare estimate (paise or rupees — rendered defensively)
+  const [fareEstimate, setFareEstimate] = useState<Record<string, unknown> | null>(null);
 
-  const handleCreateBooking = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newBooking: TransportBooking = {
-      id: 'tb_' + Date.now().toString().slice(-4),
-      farmerId: 'usr_farmer_ramesh',
-      farmerName: 'Ramesh Patil',
-      farmerPhone: '9876543210',
-      transporterName: 'Rahul Shinde (Gajanan Transport)',
-      vehicleType: selectedVehicle,
-      pickupAddress: pickupAddr,
-      dropAddress: dropAddr,
-      distanceKm,
-      cargoCrop,
-      cargoWeightQuintal: cargoWeight,
-      pickupTime,
-      timeWindowMinutes: timeWindow,
-      insuranceOptIn,
-      declaredValuePaisa: declaredValue * 100,
-      insurancePremiumPaisa: insurancePremium * 100,
-      estimatedFare: estimatedBaseFare,
-      waitingHours: 0,
-      waitingChargePaisa: 0,
-      status: 'pending',
-      shareToken: 'tr_live_' + Math.random().toString(36).substring(2, 9),
-      biltyNumber: 'BLT-' + Math.floor(1000 + Math.random() * 9000),
-      createdAt: new Date().toISOString(),
+  const insurancePremium = insuranceOptIn ? Math.ceil(declaredValue * 0.008) : 0;
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([transport.vehicles(), transport.bookings({ scope: 'mine' })])
+      .then(([v, b]) => {
+        if (!active) return;
+        setVehicles(v);
+        setBookings(b);
+      })
+      .catch((e) => active && setError(apiErrorMessage(e)))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
     };
-    setBookings([newBooking, ...bookings]);
-    setBookModalOpen(false);
+  }, []);
+
+  const estimateFare = async () => {
+    setError(null);
+    try {
+      const res = await transport.fareEstimate({
+        vehicleType: selectedVehicle,
+        distanceKm,
+        cargoWeightQuintal: cargoWeight,
+        insuranceOptIn,
+        declaredValue,
+      });
+      setFareEstimate(asRecord(res));
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  };
+
+  const estimatedFareTotal = (() => {
+    const r = fareEstimate;
+    if (!r) return null;
+    const totalPaisa = asNum(r.totalPaisa ?? r.total ?? r.farePaisa, 0);
+    const totalRupees = asNum(r.totalRupees ?? r.estimatedFare ?? r.totalFare, 0);
+    const base = asNum(r.baseFare ?? r.fare, 0);
+    if (totalPaisa > 0) return totalPaisa / 100;
+    if (totalRupees > 0) return totalRupees;
+    if (base > 0) return base + (insuranceOptIn ? insurancePremium : 0);
+    return null;
+  })();
+
+  const handleCreateBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBookingBusy(true);
+    setError(null);
+    try {
+      const created = await transport.createBooking({
+        vehicleType: selectedVehicle,
+        pickupAddress: pickupAddr,
+        dropAddress: dropAddr,
+        distanceKm,
+        cargoCrop,
+        cargoWeightQuintal: cargoWeight,
+        pickupTime,
+        timeWindowMinutes: timeWindow,
+        insuranceOptIn,
+        declaredValue,
+      });
+      setBookings((prev) => [created, ...prev]);
+      setBookModalOpen(false);
+      setFareEstimate(null);
+      setNotice(`Transport booking #${created.id} confirmed and broadcast to transporters.`);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBookingBusy(false);
+    }
+  };
+
+  const handleCancelBooking = async (id: string) => {
+    setError(null);
+    setBusyBookingId(id);
+    try {
+      const updated = await transport.cancelBooking(id, 'Cancelled by farmer');
+      setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, ...updated } : b)));
+      setNotice('Booking cancelled.');
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyBookingId(null);
+    }
   };
 
   const copyShareLink = (token: string) => {
@@ -104,138 +164,176 @@ export const TransportBookingView: React.FC = () => {
         </button>
       </div>
 
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center justify-between">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="font-bold hover:underline">Dismiss</button>
+        </div>
+      )}
+
       {/* Available Vehicles Grid */}
       <div className="space-y-3">
         <h3 className="font-bold text-sm text-slate-900">Standard Vehicle Fleets & Rates</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {vehicles.map((v) => (
-            <div
-              key={v.id}
-              className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-sky-50 text-sky-700">
-                  <Truck className="w-6 h-6" />
+        {loading ? (
+          <div className="py-8 text-center text-xs font-bold text-slate-400 animate-pulse">
+            Loading vehicles…
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {vehicles.map((v) => (
+              <div
+                key={v.id}
+                className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-sky-50 text-sky-700">
+                    <Truck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-900">{v.vehicleType}</h4>
+                    <p className="text-xs text-slate-500">{v.transporterName}</p>
+                    <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md mt-1 inline-block">
+                      {v.registrationNumber} • {v.capacityTons}T Payload
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-sm text-slate-900">{v.vehicleType}</h4>
-                  <p className="text-xs text-slate-500">{v.transporterName}</p>
-                  <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md mt-1 inline-block">
-                    {v.registrationNumber} • {v.capacityTons}T Payload
-                  </span>
-                </div>
-              </div>
 
-              <div className="text-right">
-                <span className="text-xs text-slate-400 block font-semibold">Standard Rate</span>
-                <span className="text-sm font-extrabold text-slate-900">
-                  ₹{v.baseFare} base + ₹{v.ratePerKm}/km
-                </span>
-                <button
-                  onClick={() => {
-                    setSelectedVehicle(v.vehicleType);
-                    setBookModalOpen(true);
-                  }}
-                  className="mt-2 block px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-colors"
-                >
-                  Book This
-                </button>
+                <div className="text-right">
+                  <span className="text-xs text-slate-400 block font-semibold">Standard Rate</span>
+                  <span className="text-sm font-extrabold text-slate-900">
+                    ₹{v.baseFare} base + ₹{v.ratePerKm}/km
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSelectedVehicle(v.vehicleType);
+                      setBookModalOpen(true);
+                    }}
+                    className="mt-2 block px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Book This
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Active & Scheduled Bookings */}
       <div className="space-y-3 pt-4 border-t border-slate-200">
-        <h3 className="font-bold text-sm text-slate-900">My Transport Trips</h3>
+        <h3 className="font-bold text-sm text-slate-900">My Transport Trips ({bookings.length})</h3>
 
-        <div className="space-y-4">
-          {bookings.map((booking) => (
-            <div
-              key={booking.id}
-              className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700">
-                    <Truck className="w-6 h-6" />
+        {bookings.length === 0 ? (
+          <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No transport bookings yet. Book a gadi to move your produce safely.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {bookings.map((booking) => (
+              <div
+                key={booking.id}
+                className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700">
+                      <Truck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900">
+                        {booking.cargoCrop} ({formatWeight(booking.cargoWeightQuintal)}) • {booking.vehicleType}
+                      </h4>
+                      <p className="text-xs text-slate-500">
+                        Transporter: <strong>{booking.transporterName || 'Awaiting assignment'}</strong>
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">
-                      {booking.cargoCrop} ({formatWeight(booking.cargoWeightQuintal)}) • {booking.vehicleType}
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      Transporter: <strong>{booking.transporterName}</strong>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <StatusBadge status={booking.status} />
+                    <span className="text-xs font-mono text-slate-400">#{booking.id}</span>
+                  </div>
+                </div>
+
+                {/* Route & Details */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Route & Distance
+                    </span>
+                    <p className="font-bold text-slate-900">{booking.pickupAddress.split(',')[0]} → {booking.dropAddress.split(',')[0]}</p>
+                    <p className="text-slate-500">{booking.distanceKm} km</p>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-sky-600" /> Pickup Window (FT-1)
+                    </span>
+                    <p className="font-bold text-slate-900">
+                      {new Date(booking.pickupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
+                    <p className="text-slate-500">±{booking.timeWindowMinutes} mins window</p>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
+                      <DollarSign className="w-3.5 h-3.5 text-amber-600" /> Fare & Insurance (FT-6)
+                    </span>
+                    <p className="font-bold text-slate-900">
+                      {formatCurrency(booking.estimatedFare)}
+                      {booking.insuranceOptIn && (
+                        <span className="text-[10px] text-emerald-700 ml-1 font-semibold">
+                          (+{formatCurrency(booking.insurancePremiumPaisa ? booking.insurancePremiumPaisa / 100 : 800)} Ins.)
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-slate-500">60m free loading, then ₹150/slab</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <StatusBadge status={booking.status} />
-                  <span className="text-xs font-mono text-slate-400">#{booking.id}</span>
-                </div>
-              </div>
+                {/* Bottom Actions: Share Trip (FT-7), Bilty & Cancel */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {booking.shareToken && (
+                      <button
+                        onClick={() => setShareModalBooking(booking)}
+                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Share Live Trip (48h Token)</span>
+                      </button>
+                    )}
 
-              {/* Route & Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                  <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Route & Distance
-                  </span>
-                  <p className="font-bold text-slate-900">{booking.pickupAddress.split(',')[0]} → {booking.dropAddress.split(',')[0]}</p>
-                  <p className="text-slate-500">{booking.distanceKm} km</p>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                  <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-sky-600" /> Pickup Window (FT-1)
-                  </span>
-                  <p className="font-bold text-slate-900">
-                    {new Date(booking.pickupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                  <p className="text-slate-500">±{booking.timeWindowMinutes} mins window</p>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                  <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
-                    <DollarSign className="w-3.5 h-3.5 text-amber-600" /> Fare & Insurance (FT-6)
-                  </span>
-                  <p className="font-bold text-slate-900">
-                    {formatCurrency(booking.estimatedFare)}
-                    {booking.insuranceOptIn && (
-                      <span className="text-[10px] text-emerald-700 ml-1 font-semibold">
-                        (+{formatCurrency(booking.insurancePremiumPaisa ? booking.insurancePremiumPaisa / 100 : 800)} Ins.)
+                    {booking.biltyNumber && (
+                      <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                        Bilty: {booking.biltyNumber}
                       </span>
                     )}
-                  </p>
-                  <p className="text-slate-500">60m free loading, then ₹150/slab</p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {['pending', 'accepted'].includes(booking.status) && (
+                      <button
+                        onClick={() => handleCancelBooking(booking.id)}
+                        disabled={busyBookingId === booking.id}
+                        className="px-3.5 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        Cancel
+                      </button>
+                    )}
+                    <span className="text-xs font-semibold text-slate-400">Driver Contact unlocked on trip start</span>
+                  </div>
                 </div>
               </div>
-
-              {/* Bottom Actions: Share Trip (FT-7) & View Bilty */}
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShareModalBooking(booking)}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>Share Live Trip (48h Token)</span>
-                  </button>
-
-                  {booking.biltyNumber && (
-                    <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-                      Bilty: {booking.biltyNumber}
-                    </span>
-                  )}
-                </div>
-
-                <span className="text-xs font-semibold text-slate-400">Driver Contact unlocked on trip start</span>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Book Gadi Modal */}
@@ -348,26 +446,47 @@ export const TransportBookingView: React.FC = () => {
             </div>
 
             {insuranceOptIn && (
-              <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
-                <span>Declared Cargo Value: ₹{declaredValue.toLocaleString()}</span>
-                <span className="font-bold text-emerald-800">
-                  Premium: {formatCurrency(insurancePremium)} (0.8%)
-                </span>
+              <div className="pt-2 border-t border-emerald-200/60 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span>Declared Cargo Value:</span>
+                  <input
+                    type="number"
+                    value={declaredValue}
+                    onChange={(e) => setDeclaredValue(Number(e.target.value))}
+                    className="w-32 px-2 py-1 text-xs rounded-lg border border-emerald-300 font-bold"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Estimated Premium (0.8%):</span>
+                  <span className="font-bold text-emerald-800">{formatCurrency(insurancePremium)}</span>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Summary Box */}
+          {/* Fare estimate box */}
           <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs font-bold text-slate-800">
             <span>Estimated Total:</span>
-            <span className="text-base font-black text-emerald-700">{formatCurrency(totalEstimatedCost)}</span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={estimateFare}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-[10px]"
+              >
+                Get Live Fare Estimate
+              </button>
+              <span className="text-base font-black text-emerald-700">
+                {estimatedFareTotal !== null ? formatCurrency(estimatedFareTotal) : '—'}
+              </span>
+            </div>
           </div>
 
           <button
             type="submit"
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all"
+            disabled={bookingBusy}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-60"
           >
-            Confirm Transport Booking
+            {bookingBusy ? 'Confirming Booking…' : 'Confirm Transport Booking'}
           </button>
         </form>
       </ModalSheet>

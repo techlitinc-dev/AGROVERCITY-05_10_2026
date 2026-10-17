@@ -1,34 +1,37 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Package,
   Plus,
-  TrendingUp,
   MapPin,
-  Clock,
-  ArrowRight,
   CheckCircle2,
-  XCircle,
-  HelpCircle,
-  AlertCircle,
-  Check,
   Building2,
   Trash2,
+  Pencil,
+  Check,
 } from 'lucide-react';
-import { MOCK_PRODUCE_LOTS, MOCK_TRADE_OFFERS, api } from '../../lib/api';
+import { lots, offers, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
 import type { ProduceLot, TradeOffer } from '../../types';
 
+type OfferFilter = 'received' | 'sent';
+
 export const ProduceLotsView: React.FC = () => {
-  const [lots, setLots] = useState<ProduceLot[]>(MOCK_PRODUCE_LOTS);
-  const [offers, setOffers] = useState<TradeOffer[]>(MOCK_TRADE_OFFERS);
+  const [lotsList, setLotsList] = useState<ProduceLot[]>([]);
+  const [offersList, setOffersList] = useState<TradeOffer[]>([]);
+  const [offerFilter, setOfferFilter] = useState<OfferFilter>('received');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editingLot, setEditingLot] = useState<ProduceLot | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<TradeOffer | null>(null);
   const [counterPrice, setCounterPrice] = useState<number>(4750);
-  const [purchaseCreatedAlert, setPurchaseCreatedAlert] = useState<string | null>(null);
 
-  // New lot form state
+  // Lot form state
   const [newCrop, setNewCrop] = useState('Soybean');
   const [newVariety, setNewVariety] = useState('JS 335');
   const [newQuantity, setNewQuantity] = useState(20);
@@ -36,47 +39,155 @@ export const ProduceLotsView: React.FC = () => {
   const [newPrice, setNewPrice] = useState(4750);
   const [newLocation, setNewLocation] = useState('Pimpalgaon Baswant, Nashik');
 
-  const handleCreateLot = async (e: React.FormEvent) => {
+  const reload = async () => {
+    const [l, o] = await Promise.all([lots.list(), offers.mine()]);
+    setLotsList(l);
+    setOffersList(o);
+  };
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    reload()
+      .catch((e) => active && setError(apiErrorMessage(e)))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const visibleOffers = offersList.filter((o) =>
+    offerFilter === 'received' ? o.senderRole !== 'farmer' : o.senderRole === 'farmer'
+  );
+
+  const openEditModal = (lot: ProduceLot) => {
+    setEditingLot(lot);
+    setNewCrop(lot.crop);
+    setNewVariety(lot.variety);
+    setNewQuantity(lot.quantityQuintal);
+    setNewGrade(lot.grade);
+    setNewPrice(lot.expectedPricePerQuintal);
+    setNewLocation(lot.location);
+    setCreateModalOpen(true);
+  };
+
+  const resetForm = () => {
+    setEditingLot(null);
+    setNewCrop('Soybean');
+    setNewVariety('JS 335');
+    setNewQuantity(20);
+    setNewGrade('A');
+    setNewPrice(4750);
+    setNewLocation('Pimpalgaon Baswant, Nashik');
+  };
+
+  const handleSaveLot = async (e: React.FormEvent) => {
     e.preventDefault();
-    const created = await api.createProduceLot({
-      crop: newCrop,
-      variety: newVariety,
-      quantityQuintal: newQuantity,
-      grade: newGrade,
-      expectedPricePerQuintal: newPrice,
-      location: newLocation,
-    });
-    setLots([created, ...lots]);
-    setCreateModalOpen(false);
+    setError(null);
+    try {
+      if (editingLot) {
+        const updated = await lots.update(editingLot.id, {
+          crop: newCrop,
+          variety: newVariety,
+          quantityQuintal: newQuantity,
+          grade: newGrade,
+          expectedPricePerQuintal: newPrice,
+          location: newLocation,
+        });
+        setLotsList((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+        setNotice(`Lot #${updated.id} updated.`);
+      } else {
+        const created = await lots.create({
+          crop: newCrop,
+          variety: newVariety,
+          quantityQuintal: newQuantity,
+          grade: newGrade,
+          expectedPricePerQuintal: newPrice,
+          location: newLocation,
+        });
+        setLotsList((prev) => [created, ...prev]);
+        setNotice('Produce lot published for buyers.');
+      }
+      setCreateModalOpen(false);
+      resetForm();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
   };
 
-  const handleWithdrawLot = (id: string) => {
-    setLots((prev) => prev.filter((l) => l.id !== id));
+  const handleWithdrawLot = async (id: string) => {
+    setError(null);
+    setBusyId(id);
+    try {
+      await lots.remove(id);
+      setLotsList((prev) => prev.filter((l) => l.id !== id));
+      setNotice('Lot withdrawn from the marketplace.');
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  // 1-Round Negotiation: Accept Offer (Auto-creates Purchase)
-  const handleAcceptOffer = (offer: TradeOffer) => {
-    const finalPrice = offer.counterPrice || offer.pricePerUnit;
-    setOffers((prev) =>
-      prev.map((o) => (o.id === offer.id ? { ...o, status: 'accepted' } : o))
-    );
-    setPurchaseCreatedAlert(
-      `Purchase order confirmed at ₹${finalPrice}/q with ${offer.receiverName}! Purchase ID: #pur_${Date.now().toString().slice(-4)}`
-    );
-    setSelectedOffer(null);
+  const handleAcceptOffer = async (offer: TradeOffer) => {
+    setError(null);
+    setBusyId(offer.id);
+    try {
+      await offers.accept(offer.id);
+      setOffersList((prev) => prev.map((o) => (o.id === offer.id ? { ...o, status: 'accepted' } : o)));
+      const finalPrice = offer.counterPrice || offer.pricePerUnit;
+      setNotice(
+        `Purchase order confirmed at ₹${finalPrice}/q with ${offer.receiverName || 'the buyer'}!`
+      );
+      setSelectedOffer(null);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  // Counter offer (farmer counters buyer)
-  const handleSendCounter = () => {
+  const handleRejectOffer = async (offer: TradeOffer) => {
+    setError(null);
+    setBusyId(offer.id);
+    try {
+      await offers.reject(offer.id);
+      setOffersList((prev) => prev.map((o) => (o.id === offer.id ? { ...o, status: 'rejected' } : o)));
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleWithdrawOffer = async (offer: TradeOffer) => {
+    setError(null);
+    setBusyId(offer.id);
+    try {
+      await offers.withdraw(offer.id);
+      setOffersList((prev) => prev.map((o) => (o.id === offer.id ? { ...o, status: 'withdrawn' } : o)));
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSendCounter = async () => {
     if (!selectedOffer) return;
-    setOffers((prev) =>
-      prev.map((o) =>
-        o.id === selectedOffer.id
-          ? { ...o, counterPrice, counterRound: 1, status: 'countered' }
-          : o
-      )
-    );
-    setSelectedOffer(null);
+    setError(null);
+    setBusyId(selectedOffer.id);
+    try {
+      const updated = await offers.counter(selectedOffer.id, { pricePerUnit: counterPrice });
+      setOffersList((prev) => prev.map((o) => (o.id === selectedOffer.id ? updated : o)));
+      setSelectedOffer(null);
+      setNotice('Counter quote sent to the buyer.');
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -94,7 +205,10 @@ export const ProduceLotsView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setCreateModalOpen(true)}
+          onClick={() => {
+            resetForm();
+            setCreateModalOpen(true);
+          }}
           className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md flex items-center gap-2 self-start sm:self-auto transition-all"
         >
           <Plus className="w-4 h-4" />
@@ -102,167 +216,247 @@ export const ProduceLotsView: React.FC = () => {
         </button>
       </div>
 
-      {/* Confirmation Banner */}
-      {purchaseCreatedAlert && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 animate-in fade-in">
-          <div className="flex items-center gap-2 font-semibold">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-            <span>{purchaseCreatedAlert}</span>
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>{notice}</span>
           </div>
-          <button
-            onClick={() => setPurchaseCreatedAlert(null)}
-            className="text-emerald-700 font-bold hover:underline"
-          >
-            Dismiss
-          </button>
+          <button onClick={() => setNotice(null)} className="font-bold hover:underline">Dismiss</button>
         </div>
       )}
 
       {/* Section 1: Active Lots Grid */}
       <div className="space-y-3">
-        <h3 className="font-bold text-sm text-slate-900">My Listed Produce Lots ({lots.length})</h3>
+        <h3 className="font-bold text-sm text-slate-900">My Listed Produce Lots ({lotsList.length})</h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {lots.map((lot) => (
-            <div
-              key={lot.id}
-              className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Grade {lot.grade}
-                    </span>
-                    <h4 className="text-base font-extrabold text-slate-900 mt-1.5">
-                      {lot.crop} ({lot.variety})
-                    </h4>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-slate-400" /> {lot.location}
-                    </p>
+        {loading ? (
+          <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
+            Loading your produce lots…
+          </div>
+        ) : lotsList.length === 0 ? (
+          <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No lots listed yet. Post your first produce lot to start receiving buyer quotes.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {lotsList.map((lot) => (
+              <div
+                key={lot.id}
+                className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Grade {lot.grade}
+                      </span>
+                      <h4 className="text-base font-extrabold text-slate-900 mt-1.5">
+                        {lot.crop} ({lot.variety})
+                      </h4>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400" /> {lot.location}
+                      </p>
+                    </div>
+                    <StatusBadge status={lot.status} />
                   </div>
-                  <StatusBadge status={lot.status} />
+
+                  <div className="mt-4 grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl text-xs">
+                    <div>
+                      <span className="text-slate-400 text-[10px] uppercase font-bold">Quantity</span>
+                      <p className="font-bold text-slate-800">{formatWeight(lot.quantityQuintal)}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[10px] uppercase font-bold">Expected Price</span>
+                      <p className="font-bold text-emerald-700">
+                        {formatCurrency(lot.expectedPricePerQuintal)}
+                        <span className="text-[10px] text-slate-500">/q</span>
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl text-xs">
-                  <div>
-                    <span className="text-slate-400 text-[10px] uppercase font-bold">Quantity</span>
-                    <p className="font-bold text-slate-800">{formatWeight(lot.quantityQuintal)}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[10px] uppercase font-bold">Expected Price</span>
-                    <p className="font-bold text-emerald-700">
-                      {formatCurrency(lot.expectedPricePerQuintal)}
-                      <span className="text-[10px] text-slate-500">/q</span>
-                    </p>
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">
+                    {lot.offersCount} Buyer Quotes Received
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => openEditModal(lot)}
+                      className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                      title="Edit lot"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleWithdrawLot(lot.id)}
+                      disabled={busyId === lot.id}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                      title="Withdraw lot"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">
-                  {lot.offersCount} Buyer Quotes Received
-                </span>
-                <button
-                  onClick={() => handleWithdrawLot(lot.id)}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                  title="Withdraw Lot"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Section 2: Received Offers & 1-Round Negotiation Inbox */}
+      {/* Section 2: Offers & 1-Round Negotiation Inbox */}
       <div className="space-y-3 pt-4 border-t border-slate-200">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h3 className="font-bold text-sm text-slate-900">
-              Received Buyer Offers & Negotiation Desk
+              Buyer Offers & Negotiation Desk
             </h3>
             <p className="text-xs text-slate-400">
               Per Agrovercity protocol, negotiation allows <strong>maximum 1 counter round</strong> before final acceptance or decline.
             </p>
           </div>
+          <div className="flex bg-slate-100 p-1 rounded-2xl self-start">
+            {(['received', 'sent'] as OfferFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setOfferFilter(f)}
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all capitalize ${
+                  offerFilter === f ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
+                }`}
+              >
+                {f === 'received' ? 'Received Offers' : 'Sent by Me'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="space-y-3">
-          {offers.map((offer) => (
-            <div
-              key={offer.id}
-              className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
-            >
-              <div className="space-y-1.5 max-w-xl">
-                <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-slate-400" />
-                  <span className="font-extrabold text-sm text-slate-900">
-                    {offer.receiverName}
-                  </span>
-                  <StatusBadge status={offer.status} />
-                </div>
-                <p className="text-xs text-slate-600">
-                  Target: <strong>{offer.lotCrop} ({offer.quantity} Quintals)</strong>
-                </p>
-                {offer.message && (
-                  <p className="text-xs italic text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                    "{offer.message}"
-                  </p>
-                )}
-              </div>
-
-              {/* Price & Action Buttons */}
-              <div className="flex items-center gap-4 self-end md:self-center">
-                <div className="text-right">
-                  <span className="text-xs text-slate-400 block font-semibold">Offered / Counter</span>
-                  <span className="text-lg font-black text-emerald-700">
-                    {formatCurrency(offer.counterPrice || offer.pricePerUnit)}
-                  </span>
-                  <span className="text-xs text-slate-500">/q</span>
-                </div>
-
-                {offer.status !== 'accepted' && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setSelectedOffer(offer);
-                        setCounterPrice(offer.pricePerUnit + 30);
-                      }}
-                      className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs"
-                    >
-                      Counter
-                    </button>
-                    <button
-                      onClick={() => handleAcceptOffer(offer)}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
-                    >
-                      Accept
-                    </button>
+        {visibleOffers.length === 0 ? (
+          <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            {offerFilter === 'received'
+              ? 'No buyer offers yet. They will appear here when buyers quote on your lots.'
+              : 'You have not sent any offers yet. Browse buyer demands to send one.'}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {visibleOffers.map((offer) => (
+              <div
+                key={offer.id}
+                className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
+              >
+                <div className="space-y-1.5 max-w-xl">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-slate-400" />
+                    <span className="font-extrabold text-sm text-slate-900">
+                      {offerFilter === 'received' ? offer.senderName : offer.receiverName}
+                    </span>
+                    <StatusBadge status={offer.status} />
                   </div>
-                )}
+                  <p className="text-xs text-slate-600">
+                    Target: <strong>{offer.lotCrop} ({offer.quantity} Quintals)</strong>
+                  </p>
+                  {offer.message && (
+                    <p className="text-xs italic text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                      "{offer.message}"
+                    </p>
+                  )}
+                </div>
 
-                {offer.status === 'accepted' && (
-                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                    <Check className="w-4 h-4" /> Deal Locked
-                  </span>
-                )}
+                {/* Price & Action Buttons */}
+                <div className="flex items-center gap-4 self-end md:self-center">
+                  <div className="text-right">
+                    <span className="text-xs text-slate-400 block font-semibold">Offered / Counter</span>
+                    <span className="text-lg font-black text-emerald-700">
+                      {formatCurrency(offer.counterPrice || offer.pricePerUnit)}
+                    </span>
+                    <span className="text-xs text-slate-500">/q</span>
+                  </div>
+
+                  {offerFilter === 'received' && offer.status === 'pending' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedOffer(offer);
+                          setCounterPrice(offer.pricePerUnit + 30);
+                        }}
+                        className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs"
+                      >
+                        Counter
+                      </button>
+                      <button
+                        onClick={() => handleAcceptOffer(offer)}
+                        disabled={busyId === offer.id}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
+                      >
+                        Accept
+                      </button>
+                    </div>
+                  )}
+
+                  {offerFilter === 'received' && offer.status === 'countered' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleRejectOffer(offer)}
+                        disabled={busyId === offer.id}
+                        className="px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => handleAcceptOffer(offer)}
+                        disabled={busyId === offer.id}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
+                      >
+                        Accept Counter
+                      </button>
+                    </div>
+                  )}
+
+                  {offerFilter === 'sent' && offer.status === 'pending' && (
+                    <button
+                      onClick={() => handleWithdrawOffer(offer)}
+                      disabled={busyId === offer.id}
+                      className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs disabled:opacity-50"
+                    >
+                      Withdraw
+                    </button>
+                  )}
+
+                  {(offer.status === 'accepted' || offer.status === 'rejected' || offer.status === 'withdrawn') && (
+                    <span
+                      className={`text-xs font-bold flex items-center gap-1 px-3 py-1.5 rounded-xl border ${
+                        offer.status === 'accepted'
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          : 'text-slate-500 bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      {offer.status === 'accepted' && <Check className="w-4 h-4" />}
+                      {offer.status === 'accepted' ? 'Deal Locked' : offer.status === 'withdrawn' ? 'Withdrawn' : 'Closed'}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Create New Produce Lot Modal */}
+      {/* Create / Edit Produce Lot Modal */}
       <ModalSheet
         isOpen={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        title="Post New Produce Lot"
-        description="List harvested crop for direct B2B buyer discovery"
+        onClose={() => {
+          setCreateModalOpen(false);
+          resetForm();
+        }}
+        title={editingLot ? 'Edit Produce Lot' : 'Post New Produce Lot'}
+        description={editingLot ? 'Update quantity, grade or expected price' : 'List harvested crop for direct B2B buyer discovery'}
         maxWidth="lg"
       >
-        <form onSubmit={handleCreateLot} className="space-y-4">
+        <form onSubmit={handleSaveLot} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Crop</label>
@@ -306,7 +500,7 @@ export const ProduceLotsView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Quality Grade</label>
               <select
                 value={newGrade}
-                onChange={(e) => setNewGrade(e.target.value as any)}
+                onChange={(e) => setNewGrade(e.target.value as 'A' | 'B' | 'C' | 'Ungraded')}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
               >
                 <option value="A">Grade A (Export/Premium)</option>
@@ -342,7 +536,7 @@ export const ProduceLotsView: React.FC = () => {
             type="submit"
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md transition-all mt-2"
           >
-            Publish Lot for Buyers
+            {editingLot ? 'Save Lot Changes' : 'Publish Lot for Buyers'}
           </button>
         </form>
       </ModalSheet>
@@ -359,7 +553,7 @@ export const ProduceLotsView: React.FC = () => {
           <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
             <div className="flex justify-between text-slate-600">
               <span>Buyer:</span>
-              <span className="font-bold text-slate-900">{selectedOffer?.receiverName}</span>
+              <span className="font-bold text-slate-900">{selectedOffer?.senderName}</span>
             </div>
             <div className="flex justify-between text-slate-600">
               <span>Buyer's Offer:</span>
@@ -384,7 +578,8 @@ export const ProduceLotsView: React.FC = () => {
 
           <button
             onClick={handleSendCounter}
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all"
+            disabled={Boolean(selectedOffer) && busyId === selectedOffer?.id}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
           >
             Send Counter Quote to Buyer
           </button>

@@ -1,47 +1,56 @@
-import React, { useState } from 'react';
-import { Gift, CheckCircle2, ShieldCheck, FileText, ArrowRight, ExternalLink, Lock } from 'lucide-react';
-import { ModalSheet } from '../../components/common/ModalSheet';
-import { formatCurrency } from '../../lib/utils';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Gift, CheckCircle2, FileText, ExternalLink, Lock, ArrowRight } from 'lucide-react';
+import { schemes, vault, apiErrorMessage } from '../../lib/api';
+import { formatDate } from '../../lib/utils';
+
+const asRecord = (v: unknown): Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+const asStr = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback);
 
 export const GovtSchemesView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'schemes' | 'vault'>('schemes');
+  const [schemeList, setSchemeList] = useState<unknown[]>([]);
+  const [portals, setPortals] = useState<unknown[]>([]);
+  const [vaultDocs, setVaultDocs] = useState<unknown[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const schemes = [
-    {
-      id: 'sch_1',
-      title: 'PM-KISAN (Pradhan Mantri Kisan Samman Nidhi)',
-      benefit: '₹6,000 / year (3 installments)',
-      category: 'Direct Income Support',
-      eligibility: 'All landholding farmers',
-      status: 'Active • 17th Installment Credited',
-      isEligible: true,
-    },
-    {
-      id: 'sch_2',
-      title: 'PM Krishi Sinchayee Yojana (Drip & Sprinkler Subsidy)',
-      benefit: 'Up to 55% subsidy on Drip Irrigation systems',
-      category: 'Water & Irrigation Infrastructure',
-      eligibility: 'Small & marginal farmers (<5 acres)',
-      status: 'Open for Application',
-      isEligible: true,
-    },
-    {
-      id: 'sch_3',
-      title: 'SMAM — Sub-Mission on Agricultural Mechanization',
-      benefit: '40% - 50% subsidy on Tractors & Rotavators',
-      category: 'Farm Machinery',
-      eligibility: 'Farmers with active 7/12 land record',
-      status: 'Open for Application',
-      isEligible: true,
-    },
-  ];
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([
+      schemes.list().catch(() => []),
+      schemes.portals().catch(() => []),
+      vault.documents().catch(() => []),
+    ])
+      .then(([s, p, v]) => {
+        if (!active) return;
+        setSchemeList(s);
+        setPortals(p);
+        setVaultDocs(v);
+      })
+      .catch((e) => active && setError(apiErrorMessage(e)))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
 
-  const vaultDocs = [
-    { name: '7/12 Land Record (Gat 312)', date: 'Verified 10 Oct 2026', type: 'Land Record', status: 'Verified' },
-    { name: 'Aadhaar Card (UIDAI Linked)', date: 'Verified 02 Oct 2026', type: 'Identity', status: 'Verified' },
-    { name: 'Bank Passbook (SBI Pimpalgaon)', date: 'Verified 02 Oct 2026', type: 'Banking / DBT', status: 'Verified' },
-    { name: 'Soil Health Card (N-P-K Report)', date: 'Uploaded 14 Sep 2026', type: 'Agronomy', status: 'Active' },
-  ];
+  const handleApply = async (id: string, title: string) => {
+    setError(null);
+    setBusyId(id);
+    try {
+      await schemes.apply(id, {});
+      setNotice(`Application for "${title}" submitted with your vault documents attached.`);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -71,69 +80,161 @@ export const GovtSchemesView: React.FC = () => {
               activeTab === 'vault' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
             }`}
           >
-            Digital Vault (4)
+            Digital Vault ({vaultDocs.length})
           </button>
         </div>
       </div>
 
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center justify-between">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="font-bold hover:underline">Dismiss</button>
+        </div>
+      )}
+
       {activeTab === 'schemes' ? (
         <div className="space-y-4">
-          {schemes.map((sch) => (
-            <div
-              key={sch.id}
-              className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div className="space-y-1.5 max-w-xl">
-                <span className="text-[10px] uppercase font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                  {sch.category}
-                </span>
-                <h4 className="font-extrabold text-base text-slate-900">{sch.title}</h4>
-                <p className="text-xs font-bold text-emerald-700">{sch.benefit}</p>
-                <p className="text-xs text-slate-500">Eligibility: {sch.eligibility}</p>
-              </div>
+          {loading ? (
+            <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
+              Loading schemes…
+            </div>
+          ) : schemeList.length === 0 ? (
+            <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+              No schemes matched to your profile yet. Complete KYC and link your 7/12 records.
+            </div>
+          ) : (
+            schemeList.map((sch, i) => {
+              const r = asRecord(sch);
+              const id = asStr(r.id, String(i));
+              const title = asStr(r.title ?? r.name, 'Government Scheme');
+              return (
+                <div
+                  key={id}
+                  className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="space-y-1.5 max-w-xl">
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      {asStr(r.category ?? r.ministry, 'Agriculture')}
+                    </span>
+                    <h4 className="font-extrabold text-base text-slate-900">{title}</h4>
+                    <p className="text-xs font-bold text-emerald-700">
+                      {asStr(r.benefit, asStr(r.subsidy, ''))}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Eligibility: {asStr(r.eligibility, asStr(r.description, 'All farmers'))}
+                    </p>
+                    {asStr(r.deadline) && (
+                      <p className="text-[11px] text-amber-700 font-semibold">
+                        Deadline: {formatDate(asStr(r.deadline))}
+                      </p>
+                    )}
+                  </div>
 
-              <div className="flex flex-col sm:items-end gap-2">
-                <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> You are eligible!
-                </span>
-                <button className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs">
-                  Apply via Agrovercity Vault
-                </button>
+                  <div className="flex flex-col sm:items-end gap-2">
+                    {r.isEligible === true && (
+                      <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" /> You are eligible!
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleApply(id, title)}
+                      disabled={busyId === id}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
+                    >
+                      {busyId === id ? 'Applying…' : 'Apply via Agrovercity Vault'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {/* External portals */}
+          {portals.length > 0 && (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
+              <h3 className="font-bold text-sm text-slate-900">State & National Agri Portals</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {portals.map((p, i) => {
+                  const r = asRecord(p);
+                  const url = asStr(r.url ?? r.link);
+                  return (
+                    <a
+                      key={asStr(r.id, String(i))}
+                      href={url || '#'}
+                      target={url ? '_blank' : undefined}
+                      rel="noreferrer"
+                      className="p-3.5 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-100 flex items-center justify-between text-xs transition-colors"
+                    >
+                      <div>
+                        <p className="font-bold text-slate-900">{asStr(r.name ?? r.title, 'Portal')}</p>
+                        <p className="text-[10px] text-slate-400">{asStr(r.description, '')}</p>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-slate-400" />
+                    </a>
+                  );
+                })}
               </div>
             </div>
-          ))}
+          )}
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-900 flex items-center gap-3">
-            <Lock className="w-5 h-5 text-emerald-700 flex-shrink-0" />
-            <span>
-              All vault documents are end-to-end encrypted and digitally signed for zero-paperwork DBT subsidy disbursement.
-            </span>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-900 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Lock className="w-5 h-5 text-emerald-700 flex-shrink-0" />
+              <span>
+                All vault documents are end-to-end encrypted and digitally signed for zero-paperwork DBT subsidy disbursement.
+              </span>
+            </div>
+            <Link
+              to="/farmer/vault"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-xl flex items-center gap-1 whitespace-nowrap"
+            >
+              Open Full Vault <ArrowRight className="w-3 h-3" />
+            </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {vaultDocs.map((doc, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-slate-100 text-slate-700">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">{doc.name}</h5>
-                    <p className="text-[11px] text-slate-400">{doc.date} • {doc.type}</p>
-                  </div>
-                </div>
+          {vaultDocs.length === 0 ? (
+            <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+              No documents in your vault yet. Upload your 7/12, Aadhaar and bank passbook for 1-click applications.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {vaultDocs.map((doc, i) => {
+                const r = asRecord(doc);
+                return (
+                  <div
+                    key={asStr(r.id, String(i))}
+                    className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 rounded-2xl bg-slate-100 text-slate-700">
+                        <FileText className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h5 className="font-bold text-xs text-slate-900">
+                          {asStr(r.name ?? r.title ?? r.fileName, 'Document')}
+                        </h5>
+                        <p className="text-[11px] text-slate-400">
+                          {asStr(r.verifiedAt ?? r.createdAt ?? r.date, '') && formatDate(asStr(r.verifiedAt ?? r.createdAt ?? r.date))}{' '}
+                          • {asStr(r.type ?? r.category, 'General')}
+                        </p>
+                      </div>
+                    </div>
 
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                  {doc.status}
-                </span>
-              </div>
-            ))}
-          </div>
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 capitalize">
+                      {asStr(r.status, 'active')}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -22,6 +22,10 @@ class NotificationPrefsIn(BaseModel):
     digestMode: bool | None = None
 
 
+class NotificationBatchReadIn(BaseModel):
+    ids: list[str]
+
+
 def _error(status_code: int, code: str, message: str):
     raise HTTPException(
         status_code=status_code,
@@ -76,6 +80,23 @@ async def read_all(uid: str = Depends(current_user_id)):
         doc["read"] = True
         doc["readAt"] = now
         await set_doc("notifications", doc["id"], doc)
+        updated += 1
+    return {"updated": updated}
+
+
+@router.post("/read")
+async def read_batch(body: NotificationBatchReadIn, uid: str = Depends(current_user_id)):
+    """§24 batch read: mark each own unread notification read + readAt.
+    Foreign and missing ids are ignored — they never leak existence."""
+    now = datetime.now(timezone.utc).isoformat()
+    updated = 0
+    for nid in body.ids:
+        doc = await get_doc("notifications", nid)
+        if doc is None or doc.get("userId") != uid or doc.get("read"):
+            continue
+        doc["read"] = True
+        doc["readAt"] = now
+        await set_doc("notifications", nid, doc)
         updated += 1
     return {"updated": updated}
 

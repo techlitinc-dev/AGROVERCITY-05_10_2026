@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import logging
@@ -21,6 +21,8 @@ from app.models.auth import (
     MpinResetRequest,
     MpinSetRequest,
     MpinVerifyRequest,
+    OtpSendRequest,
+    OtpVerifyRequest,
     PhoneMpinLoginRequest,
     QuickLoginRequest,
     RefreshRequest,
@@ -154,6 +156,129 @@ async def firebase_verify(body: FirebaseVerifyRequest, user_agent: str | None = 
     phone = decoded.get("phone_number", "")
     if phone and not phone.startswith("+"):
         phone = "+91" + phone
+    user, is_new = await upsert_user_from_firebase(uid, phone)
+    try:
+        from app.services.churn import record_return
+
+        await record_return(uid)
+    except Exception:  # noqa: BLE001 — outcome hook must never fail a login
+        pass
+    pair = await _issue_session(uid, user_agent)
+    return AuthResponse(
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
+        isNewUser=is_new,
+        user=_public_user(user),
+    )
+
+
+# ==========================================
+# PHONE OTP LOGIN (endpoints.md §1)
+# ==========================================
+
+OTP_SESSION_COLLECTION = "otp_sessions"
+OTP_TTL_SECONDS = 300
+OTP_RESEND_SECONDS = 30
+OTP_MAX_ATTEMPTS = 5
+
+
+def _sms_configured() -> bool:
+    return bool(getattr(settings, "sms_provider", ""))
+
+
+def _hash_otp(otp: str, salt: str) -> str:
+    return hashlib.sha256(f"{otp}:{salt}".encode()).hexdigest()
+
+
+def _otp_session_expired(session: dict, now: datetime) -> bool:
+    expires_at = session.get("expiresAt")
+    if not expires_at:
+        return True
+    try:
+        return now >= datetime.fromisoformat(expires_at)
+    except ValueError:
+        return True
+
+
+@router.post("/otp/send")
+async def otp_send(body: OtpSendRequest):
+    """§1 loginWithPhone: issue a 6-digit OTP as a 5-minute session doc. Only
+    the salted sha256 of the OTP is persisted — never the plaintext. The 30s
+    resend lock rejects a re-send while the latest open session is younger
+    than resendAfterSec. With no SMS provider wired (settings.sms_provider
+    empty → dev mode) the OTP is returned as devOtp, non-prod only."""
+    phone = _normalize_phone(body.phone)
+    if not phone:
+        _error(422, "VALIDATION_ERROR", "phone is required")
+    await hit("otp_send", phone, 5, 600)
+    now = datetime.now(timezone.utc)
+    existing = await query(OTP_SESSION_COLLECTION, [("phone", "==", phone)])
+    open_sessions = [s for s in existing if not s.get("consumedAt")]
+    if open_sessions:
+        latest = max(open_sessions, key=lambda s: s.get("createdAt") or "")
+        try:
+            elapsed = (now - datetime.fromisoformat(latest["createdAt"])).total_seconds()
+        except (KeyError, ValueError):
+            elapsed = OTP_RESEND_SECONDS
+        if elapsed < OTP_RESEND_SECONDS:
+            _error(409, "RESEND_TOO_SOON", f"retry in {int(OTP_RESEND_SECONDS - elapsed)}s")
+    otp = f"{secrets.randbelow(1000000):06d}"
+    salt = secrets.token_hex(8)
+    session_id = f"ots_{secrets.token_hex(8)}"
+    await set_doc(
+        OTP_SESSION_COLLECTION,
+        session_id,
+        {
+            "id": session_id,
+            "phone": phone,
+            "otpHash": _hash_otp(otp, salt),
+            "salt": salt,
+            "expiresAt": (now + timedelta(seconds=OTP_TTL_SECONDS)).isoformat(),
+            "resendAfterSec": OTP_RESEND_SECONDS,
+            "attempts": 0,
+            "createdAt": now.isoformat(),
+        },
+    )
+    if not _sms_configured():
+        logger.warning("otp/send: no SMS provider configured for %s — dev mode", phone)
+    payload = {
+        "otpSessionId": session_id,
+        "expiresInSec": OTP_TTL_SECONDS,
+        "resendAfterSec": OTP_RESEND_SECONDS,
+    }
+    if not _sms_configured() and settings.env != "prod":
+        payload["devOtp"] = otp
+    return payload
+
+
+@router.post("/otp/verify", response_model=AuthResponse, response_model_exclude_none=True)
+async def otp_verify(body: OtpVerifyRequest, user_agent: str | None = Header(None)):
+    """§1: validate the OTP session (one-shot — a consumed session is gone),
+    then find-or-create the account for the phone and issue the same token
+    pair as firebase-verify. Existence never leaks: a missing session, a
+    phone mismatch, or a replayed (consumed) session all read 404."""
+    phone = _normalize_phone(body.phone)
+    session = await get_doc(OTP_SESSION_COLLECTION, body.otpSessionId)
+    if session is None or session.get("phone") != phone or session.get("consumedAt"):
+        _error(404, "OTP_SESSION_NOT_FOUND", "no such OTP session for this phone")
+    now = datetime.now(timezone.utc)
+    if _otp_session_expired(session, now):
+        _error(400, "OTP_EXPIRED", "OTP expired — request a fresh one")
+    attempts = int(session.get("attempts") or 0)
+    if attempts >= OTP_MAX_ATTEMPTS:
+        _error(429, "OTP_TOO_MANY_ATTEMPTS", "too many attempts — request a fresh OTP")
+    if not hmac.compare_digest(
+        session.get("otpHash") or "", _hash_otp(body.otp.strip(), session.get("salt") or "")
+    ):
+        session["attempts"] = attempts + 1
+        await set_doc(OTP_SESSION_COLLECTION, body.otpSessionId, session)
+        _error(400, "OTP_INVALID", "incorrect OTP")
+    session["consumedAt"] = now.isoformat()
+    await set_doc(OTP_SESSION_COLLECTION, body.otpSessionId, session)
+    # Same bootstrap as firebase-verify; with no Firebase uid on this path the
+    # account id is derived deterministically from the phone (quick-login
+    # precedent: user_<last 10 digits>).
+    uid = f"user_{phone.replace('+', '')[-10:]}"
     user, is_new = await upsert_user_from_firebase(uid, phone)
     try:
         from app.services.churn import record_return

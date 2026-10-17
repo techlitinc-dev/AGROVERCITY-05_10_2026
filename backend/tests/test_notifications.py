@@ -138,3 +138,41 @@ async def test_requires_auth(client):
     assert resp.status_code == 401
     resp = await client.put("/v1/notifications/read-all")
     assert resp.status_code == 401
+
+
+async def test_batch_read_marks_only_own_and_ignores_missing(client, user_store):
+    token = seed_user(user_store)
+    ids = _seed_notifications(user_store, "uid-1", 3)
+    _seed_notifications(user_store, "uid-2", 2)
+    resp = await client.post(
+        "/v1/notifications/read",
+        json={"ids": [ids[0], ids[2], "ntf_uid-2_0", "ntf_missing"]},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"updated": 2}
+    for nid in (ids[0], ids[2]):
+        assert user_store[f"notifications/{nid}"]["read"] is True
+        assert user_store[f"notifications/{nid}"]["readAt"]
+    # foreign and missing ids are untouched
+    assert user_store["notifications/ntf_uid-2_0"]["read"] is False
+    assert "readAt" not in user_store["notifications/ntf_uid-2_0"]
+
+    # already-read docs are not counted a second time
+    resp = await client.post(
+        "/v1/notifications/read", json={"ids": [ids[0], ids[2]]}, headers=auth(token)
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"updated": 0}
+
+
+async def test_batch_read_empty_ids_is_noop(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post("/v1/notifications/read", json={"ids": []}, headers=auth(token))
+    assert resp.status_code == 200
+    assert resp.json() == {"updated": 0}
+
+
+async def test_batch_read_requires_auth(client):
+    resp = await client.post("/v1/notifications/read", json={"ids": ["ntf_x"]})
+    assert resp.status_code == 401

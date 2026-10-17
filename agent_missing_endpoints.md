@@ -132,7 +132,7 @@
 
 | endpoints.md ref | Documented | Reality | Resolution |
 |---|---|---|---|
-| §1 | `POST /auth/otp/send` + `POST /auth/otp/verify` | Not implemented. OTP runs through Firebase Phone Auth (client SDK) + `POST /v1/auth/firebase-verify` (backend) per `plan/onboardoing_plan.md` §4 | Update endpoints.md §1 to document `/auth/firebase-verify` (and MPIN/refresh/logout which do exist) |
+| §1 | `POST /auth/otp/send` + `POST /auth/otp/verify` | **Implemented 2026-10-17** (`auth.py`): salted-sha256 OTP sessions (`otp_sessions`, 300s TTL, 30s resend lock → 409 `RESEND_TOO_SOON`, 5-attempt cap → 429 `OTP_TOO_MANY_ATTEMPTS`); verify bootstraps the phone's user doc like firebase-verify and issues the same token pair; `devOtp` returned only when no SMS provider is configured and env ≠ prod (`settings.sms_provider`) | No doc change needed — endpoints.md §1 now matches code |
 | §2 | `GET /users/me/dashboard/{profileType}` | Not implemented (also listed as P2-1 build item) | Either build it or remove from §2; per-module dashboards already exist for 7 personas |
 | §20 | `GET /dashboard/home` | Not implemented (P1-1) | Build it or drop from §20 |
 | §24 | `GET /notifications` paged list | **Is implemented** (`notifications.py` empty-path GET) — the mechanical inventory missed it; two personas initially reported it as missing | No action; keep documented |

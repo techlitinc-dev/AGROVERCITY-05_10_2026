@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
     bank_verify_provider: str = "stub"
+    # OTP SMS delivery. Empty = no provider wired → /auth/otp/send runs in dev
+    # mode and surfaces `devOtp` in the response (non-prod environments only).
+    sms_provider: str = ""
     escrow_dispute_window_hours: int = 24
     billing_grace_period_days: int = 7
     openrouter_api_key: str = ""

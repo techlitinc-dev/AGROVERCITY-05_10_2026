@@ -1,16 +1,40 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Phone, Lock, Sprout, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Phone, Lock, Sprout, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 import { OtpField } from '../../components/common/OtpField';
 import { MpinPad } from '../../components/common/MpinPad';
-import { api } from '../../lib/api';
+import { apiErrorMessage } from '../../lib/api';
+import type { PersonaType } from '../../types';
+import { auth } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+
+/** Persona → home route mapping. */
+const PERSONA_HOME: Record<PersonaType, string> = {
+  farmer: '/farmer',
+  landlord: '/landlord',
+  transporter: '/transporter',
+  seller: '/seller',
+  equipmentOwner: '/equipmentOwner',
+  broker: '/broker',
+  dairyManager: '/dairyManager',
+  instructor: '/instructor',
+  directBuyer: '/directBuyer',
+  customer: '/customer',
+  bankManager: '/bankManager',
+  insuranceProvider: '/insuranceProvider',
+  coldStorageProvider: '/coldStorageProvider',
+  gaushalaManager: '/gaushalaManager',
+  superadmin: '/superadmin',
+};
+
+const personaHome = (persona: PersonaType): string => PERSONA_HOME[persona] || '/farmer';
 
 export const LoginPage: React.FC = () => {
   const [phone, setPhone] = useState('9876543210');
   const [step, setStep] = useState<'phone' | 'otp' | 'mpin'>('phone');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const { login } = useAuthStore();
   const navigate = useNavigate();
@@ -19,30 +43,52 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     if (phone.length < 10) return;
     setLoading(true);
-    const res = await api.requestOtp(phone);
-    setLoading(false);
-    setMessage(res.message);
-    setStep('otp');
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await auth.requestOtp(phone);
+      setMessage(res.message || `OTP sent to +91 ${phone}.`);
+      setStep('otp');
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleVerifyOtp = async (otp: string) => {
     setLoading(true);
-    const res = await api.verifyOtp(phone, otp);
-    setLoading(false);
-    if (res.success) {
-      login(res.user, res.token);
-      navigate(`/${res.user.activePersona}`);
+    setError(null);
+    try {
+      const res = await auth.verifyOtp(phone, otp);
+      if (res.isNewUser) {
+        navigate('/register', { state: { phone } });
+        return;
+      }
+      login(res.user, res);
+      navigate(personaHome(res.user.activePersona));
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleVerifyMpin = async (mpin: string) => {
     setLoading(true);
-    const valid = await api.verifyMpin(mpin);
-    setLoading(false);
-    if (valid) {
-      const res = await api.verifyOtp(phone, '123456');
-      login(res.user, res.token);
-      navigate(`/${res.user.activePersona}`);
+    setError(null);
+    try {
+      const res = await auth.loginWithMpin(phone, mpin);
+      if (res.isNewUser) {
+        navigate('/register', { state: { phone } });
+        return;
+      }
+      login(res.user, res);
+      navigate(personaHome(res.user.activePersona));
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -62,11 +108,23 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Status / Test hint alert */}
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-xs text-emerald-800 flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <span>Demo account pre-filled. Dev test OTP is <strong>123456</strong>.</span>
-        </div>
+        {import.meta.env.DEV && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-xs text-emerald-800 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>Dev build: when the OTP gateway is unavailable, the dev server may accept the test OTP.</span>
+          </div>
+        )}
+
+        {message && !error && (
+          <div className="bg-sky-50 border border-sky-200 rounded-2xl p-3 text-xs text-sky-800">{message}</div>
+        )}
+
+        {error && (
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {/* Step 1: Phone Entry */}
         {step === 'phone' && (
@@ -103,7 +161,10 @@ export const LoginPage: React.FC = () => {
             <div className="text-center pt-2">
               <button
                 type="button"
-                onClick={() => setStep('mpin')}
+                onClick={() => {
+                  setError(null);
+                  setStep('mpin');
+                }}
                 className="text-xs font-bold text-emerald-700 hover:underline inline-flex items-center gap-1"
               >
                 <Lock className="w-3.5 h-3.5" /> Or Login with 4-Digit MPIN
@@ -130,20 +191,15 @@ export const LoginPage: React.FC = () => {
             <OtpField length={6} onComplete={handleVerifyOtp} disabled={loading} />
 
             {loading && <p className="text-xs text-emerald-700 font-semibold animate-pulse">Verifying credentials...</p>}
-
-            <button
-              type="button"
-              onClick={() => handleVerifyOtp('123456')}
-              className="text-xs font-semibold text-slate-400 hover:text-emerald-700 hover:underline"
-            >
-              Auto-fill demo OTP (123456)
-            </button>
           </div>
         )}
 
         {/* Step 3: MPIN Pad */}
         {step === 'mpin' && (
           <div className="space-y-4">
+            <p className="text-center text-xs text-slate-600">
+              Enter MPIN for <strong>+91 {phone}</strong>
+            </p>
             <MpinPad
               onSuccess={handleVerifyMpin}
               title="Enter Security MPIN"

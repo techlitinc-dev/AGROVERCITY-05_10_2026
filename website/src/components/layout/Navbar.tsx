@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Sprout,
@@ -11,6 +11,12 @@ import {
   Shield,
   LogOut,
   Sparkles,
+  Settings,
+  CreditCard,
+  Landmark,
+  LifeBuoy,
+  MessageCircle,
+  FileCheck2,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
@@ -22,12 +28,21 @@ import { cn } from '../../lib/utils';
 export const Navbar: React.FC = () => {
   const { user, activePersona, switchPersona, isAuthenticated, logout } = useAuthStore();
   const { getTotalItems } = useCartStore();
-  const { getUnreadCount, setIsOpen: setNotifOpen } = useNotificationStore();
+  const { getUnreadCount, setIsOpen: setNotifOpen, refresh: refreshNotifications } =
+    useNotificationStore();
   const { language, setLanguage, t } = useI18nStore();
   const navigate = useNavigate();
 
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
+  // Load the real inbox once after login so the bell badge reflects unread count.
+  useEffect(() => {
+    if (isAuthenticated) {
+      void refreshNotifications();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   const personaOptions: { id: PersonaType; label: string; icon: string }[] = [
     { id: 'farmer', label: 'Farmer / Kisan (किसान)', icon: '🌾' },
@@ -147,7 +162,7 @@ export const Navbar: React.FC = () => {
           {/* Kisan Coins Badge */}
           {isAuthenticated && user && (
             <Link
-              to="/farmer/coins"
+              to="/community/coins"
               className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100/80 transition-colors"
               title="Kisan Coins Rewards Wallet"
             >
@@ -226,6 +241,62 @@ export const Navbar: React.FC = () => {
                       className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
                     >
                       <User className="w-4 h-4 text-slate-400" /> Multi-Profile Switcher
+                    </Link>
+
+                    <Link
+                      to="/notifications"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <Bell className="w-4 h-4 text-slate-400" /> Notifications Inbox
+                    </Link>
+
+                    <Link
+                      to="/chat"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <MessageCircle className="w-4 h-4 text-slate-400" /> Chats
+                    </Link>
+
+                    <Link
+                      to="/settings"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <Settings className="w-4 h-4 text-slate-400" /> Settings & Privacy
+                    </Link>
+
+                    <Link
+                      to="/billing"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <CreditCard className="w-4 h-4 text-slate-400" /> Billing & Plans
+                    </Link>
+
+                    <Link
+                      to="/bank-accounts"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <Landmark className="w-4 h-4 text-slate-400" /> Bank Accounts
+                    </Link>
+
+                    <Link
+                      to="/kyc"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <FileCheck2 className="w-4 h-4 text-slate-400" /> KYC Verification
+                    </Link>
+
+                    <Link
+                      to="/support"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <LifeBuoy className="w-4 h-4 text-slate-400" /> Help & Support
                     </Link>
 
                     <Link

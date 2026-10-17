@@ -50,7 +50,8 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/purchases', label: 'My B2B Orders', icon: FileCheck },
               { to: '/farmer/contracts', label: 'Supply Contracts', icon: FileText },
               { to: '/farmer/transport', label: 'Book Gadi / Transport', icon: Truck },
-              { to: '/farmer/diary', label: 'Farm Diary & P&L', icon: BookOpen },
+              { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
+              { to: '/farmer/pnl', label: 'P&L Dashboard', icon: DollarSign },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
             ],
           },
@@ -58,11 +59,20 @@ export const Sidebar: React.FC = () => {
             title: 'Finance & Security',
             items: [
               { to: '/farmer/loans', label: 'KCC & Agri Loans', icon: Landmark },
+              { to: '/farmer/bank-accounts', label: 'Bank Accounts', icon: Building2 },
               { to: '/farmer/insurance', label: 'PMFBY Crop Insurance', icon: ShieldAlert },
               { to: '/farmer/712', label: '7/12 Land Records', icon: FileSpreadsheet },
-              { to: '/farmer/schemes', label: 'Govt Schemes & Vault', icon: Gift },
+              { to: '/farmer/schemes', label: 'Govt Schemes', icon: Gift },
+              { to: '/farmer/vault', label: 'Document Vault', icon: Award },
               { to: '/farmer/water', label: 'Water & Weather', icon: Droplets },
               { to: '/farmer/dairy', label: 'My Dairy Slips', icon: Milk },
+            ],
+          },
+          {
+            title: 'Growth & Community',
+            items: [
+              { to: '/farmer/referrals', label: 'Refer & Earn', icon: Users },
+              { to: '/farmer/coins', label: 'Kisan Coins', icon: Sparkles },
             ],
           },
         ];

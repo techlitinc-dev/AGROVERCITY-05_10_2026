@@ -350,3 +350,14 @@ async def open_farmer_deal_dispute(
         source_id=dispute["id"],
     )
     return dispute
+
+
+@router.get("/deals/{deal_id}/disputes")
+async def list_farmer_deal_disputes(deal_id: str, ctx: tuple = Depends(_farmer_user)):
+    """P1-11 read side: the farmer's list of disputes on a matched deal —
+    same shape as the broker-side list (newest first)."""
+    user, _ = ctx
+    await _load_deal(user, deal_id)
+    disputes = await query("deal_disputes", [("dealId", "==", deal_id)], limit=50)
+    disputes.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return {"data": disputes, "total": len(disputes)}

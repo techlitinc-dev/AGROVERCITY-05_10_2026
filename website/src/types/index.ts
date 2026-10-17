@@ -152,9 +152,18 @@ export interface SupplyContract {
   farmerName?: string;
   crop: string;
   totalQuantityQuintal: number;
-  pricingType: 'fixed' | 'mandiLinked';
+  /** Backend contract-farming payload (POST /contracts) — targeted offers. */
+  specId?: string;
+  quantityTotal?: number;
+  priceType?: 'fixed' | 'mandiLinked';
+  pricingType?: 'fixed' | 'mandiLinked';
+  baseRate?: number;
   baseRatePerQuintal: number;
   premiumPerQuintal?: number;
+  mandiName?: string;
+  schedule?: { startDate: string; endDate: string; frequency: string; qtyPerDelivery: number };
+  deliveryLocation?: string;
+  termsText?: string;
   frequency: 'weekly' | 'fortnightly' | 'monthly' | 'one-time';
   paymentTermsDays: number;
   status: 'offered' | 'active' | 'completed' | 'declined' | 'open';
@@ -175,6 +184,24 @@ export interface TransportVehicle {
   ratePerKm: number;
   currentLocation: string;
   available: boolean;
+  /** Backend (owner fleet) aliases — transport.py returns these on /transport/vehicles/my. */
+  registrationNo?: string;
+  capacityTonnes?: number;
+  docStatus?: string;
+  docReview?: string;
+  rejectionReason?: string | null;
+  rcDocUrl?: string | null;
+  insuranceDocUrl?: string | null;
+  pucExpiry?: string | null;
+  fitnessExpiry?: string | null;
+  insuranceExpiry?: string | null;
+  permitType?: string;
+  driverName?: string | null;
+  driverPhone?: string | null;
+  availableNow?: boolean;
+  active?: boolean;
+  ownerId?: string;
+  perKmRate?: number | null;
 }
 
 export interface TransportBooking {
@@ -198,12 +225,27 @@ export interface TransportBooking {
   estimatedFare: number;
   waitingHours: number;
   waitingChargePaisa: number;
-  status: 'pending' | 'accepted' | 'driverAssigned' | 'inTransit' | 'delivered' | 'completed' | 'cancelled';
+  status: 'pending' | 'requested' | 'accepted' | 'driverAssigned' | 'inTransit' | 'enRoute' | 'delivered' | 'completed' | 'cancelled';
   shareToken?: string;
   currentLat?: number;
   currentLng?: number;
   biltyNumber?: string;
   createdAt: string;
+  /** Backend booking-doc aliases — transport.py stores pickup/drop/commodity/fare. */
+  pickup?: string;
+  drop?: string;
+  commodity?: string;
+  weightQuintals?: number;
+  fare?: number;
+  date?: string;
+  vehicleId?: string | null;
+  vehicleNo?: string | null;
+  driverName?: string | null;
+  driverPhone?: string | null;
+  userId?: string;
+  waypointsLog?: { waypoint?: string; label?: string; time?: string }[];
+  pod?: { photos?: string[]; receiverName?: string; deliveredAt?: string };
+  podOtp?: { verifiedAt?: string };
 }
 
 export interface FarmDiaryEntry {
@@ -309,6 +351,16 @@ export interface LandLeaseListing {
   terms: string;
   status: 'open' | 'negotiating' | 'leased' | 'closed';
   createdAt: string;
+  /** Backend (land.py / land_ops.py) aliases — listings are stored with these fields. */
+  lat?: number;
+  lng?: number;
+  areaAcres?: number;
+  expectedRentRupees?: number;
+  plotId?: string | null;
+  gatNumber?: string | null;
+  availability?: { fromDate: string; toDate: string; status: string }[];
+  viewsCount?: number;
+  photos?: { id?: string; url: string; caption?: string }[];
 }
 
 export interface LeaseNegotiation {

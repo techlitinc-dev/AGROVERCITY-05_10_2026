@@ -1,24 +1,32 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Plus,
   ArrowUpRight,
   ArrowDownRight,
-  Calendar,
-  PieChart,
-  Download,
-  Filter,
-  DollarSign,
+  Camera,
+  Pencil,
+  Trash2,
   TrendingUp,
 } from 'lucide-react';
-import { MOCK_FARM_DIARY } from '../../lib/api';
+import { Link } from 'react-router-dom';
+import { diary, uploads, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import type { FarmDiaryEntry } from '../../types';
 
 export const FarmDiaryView: React.FC = () => {
-  const [entries, setEntries] = useState<FarmDiaryEntry[]>(MOCK_FARM_DIARY);
+  const [entries, setEntries] = useState<FarmDiaryEntry[]>([]);
+  const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<FarmDiaryEntry | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [photosEntry, setPhotosEntry] = useState<FarmDiaryEntry | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Form State
   const [type, setType] = useState<'income' | 'expense'>('expense');
@@ -27,6 +35,22 @@ export const FarmDiaryView: React.FC = () => {
   const [amount, setAmount] = useState(2500);
   const [date, setDate] = useState('2026-10-17');
   const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([diary.entries(), diary.summary().catch(() => null)])
+      .then(([e, s]) => {
+        if (!active) return;
+        setEntries(e);
+        if (s) setSummary(s as Record<string, unknown>);
+      })
+      .catch((err) => active && setError(apiErrorMessage(err)))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const totalIncome = entries
     .filter((e) => e.type === 'income')
@@ -38,19 +62,85 @@ export const FarmDiaryView: React.FC = () => {
 
   const netProfit = totalIncome - totalExpense;
 
-  const handleAddEntry = (e: React.FormEvent) => {
+  const breakEven =
+    summary && typeof summary === 'object'
+      ? (summary.breakEvenPerQuintal as number | undefined) ?? (summary.breakEven as number | undefined)
+      : undefined;
+
+  const resetForm = () => {
+    setEditingEntry(null);
+    setType('expense');
+    setCrop('Soybean');
+    setCategory('Fertilizers');
+    setAmount(2500);
+    setDate('2026-10-17');
+    setNotes('');
+  };
+
+  const openEdit = (entry: FarmDiaryEntry) => {
+    setEditingEntry(entry);
+    setType(entry.type);
+    setCrop(entry.crop);
+    setCategory(entry.category);
+    setAmount(entry.amount);
+    setDate(entry.date);
+    setNotes(entry.notes || '');
+    setModalOpen(true);
+  };
+
+  const handleAddEntry = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newEntry: FarmDiaryEntry = {
-      id: 'fd_' + Date.now(),
-      date,
-      type,
-      crop,
-      category,
-      amount,
-      notes,
-    };
-    setEntries([newEntry, ...entries]);
-    setModalOpen(false);
+    setError(null);
+    try {
+      if (editingEntry) {
+        const updated = await diary.update(editingEntry.id, { date, type, crop, category, amount, notes });
+        setEntries((prev) => prev.map((en) => (en.id === updated.id ? updated : en)));
+        setNotice('Diary entry updated.');
+      } else {
+        const created = await diary.create({ date, type, crop, category, amount, notes });
+        setEntries((prev) => [created, ...prev]);
+        setNotice('Entry saved to farm diary.');
+      }
+      setModalOpen(false);
+      resetForm();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
+  };
+
+  const handleDeleteEntry = async (id: string) => {
+    setError(null);
+    setBusyId(id);
+    try {
+      await diary.remove(id);
+      setEntries((prev) => prev.filter((en) => en.id !== id));
+      setNotice('Diary entry deleted.');
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePhotoUpload = async (file: File | undefined) => {
+    if (!file || !photosEntry) return;
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      const uploaded = (await uploads.upload(file, { folder: 'diary', purpose: 'diary-entry-photo' })) as {
+        url?: string;
+        fileUrl?: string;
+      };
+      const url = uploaded?.url ?? uploaded?.fileUrl ?? '';
+      await diary.addPhotos(photosEntry.id, { photoUrls: [url] });
+      setNotice(`Photo attached to entry #${photosEntry.id}.`);
+      setPhotosEntry(null);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setPhotoBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   return (
@@ -67,14 +157,38 @@ export const FarmDiaryView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md flex items-center gap-2 self-start sm:self-auto transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Cashbook Entry</span>
-        </button>
+        <div className="flex gap-2 self-start sm:self-auto">
+          <Link
+            to="/farmer/pnl"
+            className="px-4 py-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 transition-all"
+          >
+            <TrendingUp className="w-4 h-4" />
+            <span>P&L Dashboard</span>
+          </Link>
+          <button
+            onClick={() => {
+              resetForm();
+              setModalOpen(true);
+            }}
+            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Cashbook Entry</span>
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center justify-between">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="font-bold hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {/* P&L Executive Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -108,7 +222,9 @@ export const FarmDiaryView: React.FC = () => {
             </span>
           </div>
           <div className="mt-3 text-2xl font-black text-slate-900">{formatCurrency(netProfit)}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Break-even: ₹3,120 / quintal</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {typeof breakEven === 'number' ? `Break-even: ${formatCurrency(breakEven)} / quintal` : 'Break-even available in the P&L dashboard'}
+          </p>
         </div>
       </div>
 
@@ -127,45 +243,89 @@ export const FarmDiaryView: React.FC = () => {
                 <th className="py-3 px-4">Crop</th>
                 <th className="py-3 px-4">Category</th>
                 <th className="py-3 px-4">Notes / Purpose</th>
-                <th className="py-3 px-6 text-right">Amount</th>
+                <th className="py-3 px-4 text-right">Amount</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {entries.map((entry) => (
-                <tr key={entry.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-3.5 px-6 font-medium text-slate-600">{formatDate(entry.date)}</td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900">{entry.crop}</td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        entry.type === 'income'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      {entry.category}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-slate-500 italic">{entry.notes || '—'}</td>
-                  <td
-                    className={`py-3.5 px-6 text-right font-bold text-sm font-mono ${
-                      entry.type === 'income' ? 'text-emerald-700' : 'text-slate-900'
-                    }`}
-                  >
-                    {entry.type === 'income' ? `+${formatCurrency(entry.amount)}` : `-${formatCurrency(entry.amount)}`}
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
+                    Loading diary entries…
                   </td>
                 </tr>
-              ))}
+              ) : entries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-xs font-semibold text-slate-400">
+                    No diary entries yet. Add your first income or expense record.
+                  </td>
+                </tr>
+              ) : (
+                entries.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-3.5 px-6 font-medium text-slate-600">{formatDate(entry.date)}</td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900">{entry.crop}</td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          entry.type === 'income'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {entry.category}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-500 italic">{entry.notes || '—'}</td>
+                    <td
+                      className={`py-3.5 px-4 text-right font-bold text-sm font-mono ${
+                        entry.type === 'income' ? 'text-emerald-700' : 'text-slate-900'
+                      }`}
+                    >
+                      {entry.type === 'income' ? `+${formatCurrency(entry.amount)}` : `-${formatCurrency(entry.amount)}`}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="inline-flex gap-1">
+                        <button
+                          onClick={() => setPhotosEntry(entry)}
+                          className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors"
+                          title="Attach photo"
+                        >
+                          <Camera className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => openEdit(entry)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="Edit entry"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEntry(entry.id)}
+                          disabled={busyId === entry.id}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                          title="Delete entry"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Add Cashbook Entry Modal */}
+      {/* Add / Edit Cashbook Entry Modal */}
       <ModalSheet
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="Add Farm Diary Entry"
+        onClose={() => {
+          setModalOpen(false);
+          resetForm();
+        }}
+        title={editingEntry ? 'Edit Farm Diary Entry' : 'Add Farm Diary Entry'}
         description="Record income or expenditure for accurate season P&L"
         maxWidth="md"
       >
@@ -214,7 +374,7 @@ export const FarmDiaryView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as any)}
+                onChange={(e) => setCategory(e.target.value as FarmDiaryEntry['category'])}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
               >
                 <option value="Seeds">Seeds</option>
@@ -265,9 +425,42 @@ export const FarmDiaryView: React.FC = () => {
             type="submit"
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all"
           >
-            Save Entry to Diary
+            {editingEntry ? 'Save Changes' : 'Save Entry to Diary'}
           </button>
         </form>
+      </ModalSheet>
+
+      {/* Attach Photo Modal */}
+      <ModalSheet
+        isOpen={Boolean(photosEntry)}
+        onClose={() => setPhotosEntry(null)}
+        title="Attach Photo to Entry"
+        description={`Add a bill, receipt or field photo as proof for entry #${photosEntry?.id ?? ''}`}
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-4 border-2 border-dashed border-slate-300 rounded-2xl text-center space-y-2">
+            <Camera className="w-8 h-8 text-slate-400 mx-auto" />
+            <div className="text-xs text-slate-600">
+              Upload a photo of the invoice, receipt or field activity
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => handlePhotoUpload(e.target.files?.[0])}
+              className="hidden"
+            />
+            <button
+              type="button"
+              disabled={photoBusy}
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-60"
+            >
+              {photoBusy ? 'Uploading…' : 'Choose Photo'}
+            </button>
+          </div>
+        </div>
       </ModalSheet>
     </div>
   );

@@ -1,93 +1,82 @@
-import React, { useState } from 'react';
-import {
-  Sparkles,
-  ShieldCheck,
-  Users,
-  DollarSign,
-  TrendingUp,
-  AlertTriangle,
-  Check,
-  X,
-  Send,
-  Radio,
-  FileSpreadsheet,
-  Lock,
-  Layers,
-  Truck,
-  Wrench,
-  Building2,
-  Milk,
-  GraduationCap,
-  Landmark,
-  Snowflake,
-  Heart,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { Sparkles, ShieldCheck, Users, DollarSign, Layers, LayoutGrid } from 'lucide-react';
 import { StatCard } from '../../components/common/StatCard';
-import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
+import { admin } from '../../lib/api';
+import { CONSOLE_NAV, ConsolePanel, KNOWN_PANEL_IDS } from './panels';
+import { asRow, asRows, firstVal, useAsync } from './panels/shared';
+
+const normalizePanel = (raw: string | null | undefined): string | null =>
+  raw && KNOWN_PANEL_IDS.includes(raw.toLowerCase()) ? raw.toLowerCase() : null;
+
+const metricOf = (d: unknown, ...keys: string[]): string => {
+  const r = asRow(d);
+  if (!r) return '—';
+  const v = firstVal(r, keys);
+  if (v === undefined) return '—';
+  if (typeof v === 'number') return v.toLocaleString('en-IN');
+  return String(v);
+};
+
+const currencyOf = (d: unknown, ...keys: string[]): string => {
+  const r = asRow(d);
+  if (!r) return '—';
+  const v = firstVal(r, keys);
+  if (typeof v === 'number') return formatCurrency(v);
+  return v === undefined ? '—' : String(v);
+};
 
 export const SuperadminMasterConsole: React.FC = () => {
-  const [activeSop, setActiveSop] = useState<string>('SOP-02');
-  const [broadcastMsg, setBroadcastMsg] = useState('');
-  const [broadcastSent, setBroadcastSent] = useState(false);
+  const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activePanel, setActivePanel] = useState<string>(
+    () =>
+      normalizePanel(params.panelId) ??
+      normalizePanel(params.sopId) ??
+      normalizePanel(searchParams.get('p')) ??
+      normalizePanel(searchParams.get('sop')) ??
+      'home'
+  );
 
-  // SOP-03 KYC Queue Mock Data
-  const [kycQueue, setKycQueue] = useState([
-    { id: 'kyc_1', name: 'Ramesh Patil', role: 'Farmer', phone: '9876543210', doc: '7/12 Gat 312 + Aadhaar', status: 'pending' },
-    { id: 'kyc_2', name: 'Rahul Shinde', role: 'Transporter', phone: '9822012345', doc: 'Vehicle RC + Driving License', status: 'pending' },
-    { id: 'kyc_3', name: 'Shree Foods Pvt Ltd', role: 'Direct Buyer', phone: '9820099887', doc: 'GST Certificate + Mandi License', status: 'pending' },
-  ]);
+  // Keep tab state in sync with external URL changes (back/forward, deep links).
+  const urlPanel =
+    normalizePanel(params.panelId) ??
+    normalizePanel(params.sopId) ??
+    normalizePanel(searchParams.get('p')) ??
+    normalizePanel(searchParams.get('sop'));
+  useEffect(() => {
+    if (urlPanel && urlPanel !== activePanel) setActivePanel(urlPanel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlPanel]);
 
-  // SOP-04 Mandi Approvals Mock Data
-  const [mandiApprovals, setMandiApprovals] = useState([
-    { id: 'mnd_sync_1', mandi: 'Lasalgaon APMC', commodity: 'Onion', rate: 2950, change: '+5.4%', reason: 'Heavy rains in southern belt' },
-  ]);
-
-  const sops = [
-    { id: 'SOP-01', title: '01. Auth & Admin Sessions' },
-    { id: 'SOP-02', title: '02. User & Persona Governance' },
-    { id: 'SOP-03', title: '03. KYC & Document Vault Queue' },
-    { id: 'SOP-04', title: '04. Mandi Rates & Approvals' },
-    { id: 'SOP-05', title: '05. Produce Lots & B2B Trade' },
-    { id: 'SOP-06', title: '06. Marketplace Catalog' },
-    { id: 'SOP-07', title: '07. Buyer Contracts & Escrow' },
-    { id: 'SOP-08', title: '08. Transport Fleet & Dispatch' },
-    { id: 'SOP-09', title: '09. Equipment Rental Fleet' },
-    { id: 'SOP-10', title: '10. Land Leasing Disputes' },
-    { id: 'SOP-11', title: '11. AI Advisory & Soil Labs' },
-    { id: 'SOP-12', title: '12. Chatbot Transcripts & Handoff' },
-    { id: 'SOP-13', title: '13. Farm Diary & P&L Oversight' },
-    { id: 'SOP-14', title: '14. Banking & Loan Underwriting' },
-    { id: 'SOP-15', title: '15. Insurance Claims & DBT Disbursal' },
-    { id: 'SOP-16', title: '16. Land Records Registry Sync' },
-    { id: 'SOP-17', title: '17. Water Resources & Canal Roster' },
-    { id: 'SOP-18', title: '18. FPO Verification & Pools' },
-    { id: 'SOP-19', title: '19. Livestock, Vet & Dairy Network' },
-    { id: 'SOP-20', title: '20. Content CMS & Live Channels' },
-    { id: 'SOP-21', title: '21. Agroforestry & Saplings' },
-    { id: 'SOP-22', title: '22. Gamification & Referral Economy' },
-    { id: 'SOP-23', title: '23. Climate Alerts & Cold Storage' },
-    { id: 'SOP-24', title: '24. Women & SHG Enterprise Programs' },
-    { id: 'SOP-25', title: '25. Financial Settlements & Cron Jobs' },
-    { id: 'SOP-26', title: '26. System Config & Platform Broadcasts' },
-    { id: 'SOP-27', title: '27. Gurukul Instructor Oversight' },
-  ];
-
-  const handleApproveKyc = (id: string) => {
-    setKycQueue((prev) =>
-      prev.map((k) => (k.id === id ? { ...k, status: 'verified' } : k))
-    );
+  const selectPanel = (id: string) => {
+    setActivePanel(id);
+    setSearchParams({ p: id }, { replace: true });
   };
 
-  const handleSendBroadcast = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!broadcastMsg.trim()) return;
-    setBroadcastSent(true);
-    setTimeout(() => {
-      setBroadcastSent(false);
-      setBroadcastMsg('');
-    }, 1500);
-  };
+  // ----- KPI wall + sidebar queue badges (allSettled so one dead queue can't blank the wall)
+  const kpis = useAsync(async () => {
+    const [summary, overview, kyc, rates, approvals, disputes] = await Promise.all([
+      admin.platform.analyticsSummary().then((d) => d, () => null),
+      admin.platform.overview().then((d) => d, () => null),
+      admin.kyc.queue().then((d) => d, () => null),
+      admin.rates.pending().then((d) => d, () => null),
+      admin.moderation.approvals().then((d) => d, () => null),
+      admin.disputes.list().then((d) => d, () => null),
+    ]);
+    return { summary, overview, kyc, rates, approvals, disputes };
+  }, []);
+
+  const badges: Record<string, number> = {};
+  if (kpis.data) {
+    badges['SOP-03'] = asRows(kpis.data.kyc).length;
+    badges['SOP-04'] = asRows(kpis.data.rates).length;
+    badges['SOP-26'] = asRows(kpis.data.approvals).length;
+    badges['SOP-10'] = asRows(kpis.data.disputes).length;
+  }
+
+  const activeMeta = CONSOLE_NAV.find((n) => n.id === activePanel);
 
   return (
     <div className="space-y-6">
@@ -108,201 +97,92 @@ export const SuperadminMasterConsole: React.FC = () => {
         </span>
       </div>
 
-      {/* Platform Level Metrics */}
+      {/* Platform Level Metrics (live from /admin/analytics/summary + /admin/overview) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard
           title="Total Registered Users"
-          value="14,820"
+          value={metricOf(kpis.data?.summary, 'totalUsers', 'total_users', 'users', 'userCount')}
           subtitle="Across 15 persona profiles"
           icon={Users}
           colorScheme="blue"
         />
         <StatCard
           title="Escrow Balance Locked"
-          value={formatCurrency(4850000)}
+          value={currencyOf(kpis.data?.overview, 'escrowBalance', 'escrowLocked', 'escrow')}
           subtitle="Protected B2B orders"
           icon={DollarSign}
           colorScheme="green"
         />
         <StatCard
           title="Pending KYC Review"
-          value={`${kycQueue.filter((k) => k.status === 'pending').length} In Queue`}
+          value={`${badges['SOP-03'] ?? 0} In Queue`}
           subtitle="SOP-03 verification"
           icon={ShieldCheck}
           colorScheme="amber"
         />
         <StatCard
           title="Active B2B Purchases"
-          value="182 Deals"
+          value={metricOf(kpis.data?.overview, 'activePurchases', 'activeDeals', 'b2bActive', 'activeOrders')}
           subtitle="In Transit / Pickup"
           icon={Layers}
           colorScheme="purple"
         />
       </div>
 
-      {/* 2-Column: SOP Drawer Navigation + Workspace Detail Panel */}
+      {/* 2-Column: Console Navigation Drawer + Workspace Detail Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left: 27 SOP selector list */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-3 space-y-1 h-[600px] overflow-y-auto">
-          <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Operational SOP Consoles (27 Sub-Modules)
-          </div>
-          {sops.map((sop) => (
-            <button
-              key={sop.id}
-              onClick={() => setActiveSop(sop.id)}
-              className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeSop === sop.id
-                  ? 'bg-emerald-600 text-white font-bold shadow-xs'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {sop.title}
-            </button>
-          ))}
+        {/* Left: console home + 27 SOP selector list + cross-cutting desks */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-3 space-y-1 lg:sticky lg:top-4 lg:h-fit lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+          {CONSOLE_NAV.map((item, i) => {
+            const prev = CONSOLE_NAV[i - 1];
+            const showGroupLabel = !prev || prev.group !== item.group;
+            return (
+              <React.Fragment key={item.id}>
+                {showGroupLabel && (
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 first:pt-1">
+                    {item.group === 'console'
+                      ? 'Console'
+                      : item.group === 'sop'
+                        ? 'Operational SOP Consoles (27 Sub-Modules)'
+                        : 'Cross-Cutting Desks'}
+                  </div>
+                )}
+                <button
+                  onClick={() => selectPanel(item.id)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-between gap-2 ${
+                    activePanel === item.id
+                      ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {item.id === 'home' && <LayoutGrid className="w-3.5 h-3.5 shrink-0" />}
+                    <span className="truncate">{item.label}</span>
+                  </span>
+                  {badges[item.id] !== undefined && badges[item.id] > 0 && (
+                    <span
+                      className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0 ${
+                        activePanel === item.id ? 'bg-white/25 text-white' : 'bg-rose-100 text-rose-700'
+                      }`}
+                    >
+                      {badges[item.id]}
+                    </span>
+                  )}
+                </button>
+              </React.Fragment>
+            );
+          })}
         </div>
 
-        {/* Right: Active SOP Detail Surface */}
+        {/* Right: Active panel workspace */}
         <div className="lg:col-span-3 space-y-5">
-          {/* SOP-02: User Governance */}
-          {activeSop === 'SOP-02' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-              <h3 className="font-extrabold text-base text-slate-900">
-                SOP-02: User Management & Multi-Persona Governance
-              </h3>
-              <p className="text-xs text-slate-500">
-                Total registered personas: 8,420 Farmers • 1,240 Landlords • 890 Transporters • 620 Vyaparis • 410 Direct Buyers • 280 Dairies.
-              </p>
-              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-950 font-bold">
-                ✓ Cross-persona security isolation active. Role switches require active session JWT validation.
-              </div>
-            </div>
+          {activeMeta && activeMeta.id !== 'home' && (
+            <p className="text-[11px] font-semibold text-slate-400 -mb-2">
+              {activeMeta.label} — every mutation here prompts for an audit reason (sent as X-Audit-Reason) and is
+              written to the immutable audit trail.
+            </p>
           )}
-
-          {/* SOP-03: KYC Queue */}
-          {activeSop === 'SOP-03' && (
-            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-sm text-slate-900">
-                  SOP-03: KYC Verification & Document Vault Queue
-                </h3>
-                <span className="text-xs text-slate-400 font-semibold">{kycQueue.length} Records</span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100">
-                      <th className="py-3 px-6">User & Role</th>
-                      <th className="py-3 px-4">Contact</th>
-                      <th className="py-3 px-4">Submitted Documents</th>
-                      <th className="py-3 px-4">Status</th>
-                      <th className="py-3 px-6 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {kycQueue.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50/60">
-                        <td className="py-3.5 px-6 font-bold text-slate-900">
-                          {item.name}
-                          <span className="text-[10px] text-slate-400 block font-normal">{item.role}</span>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-slate-600">+91 {item.phone}</td>
-                        <td className="py-3.5 px-4 font-semibold text-slate-800">{item.doc}</td>
-                        <td className="py-3.5 px-4">
-                          <StatusBadge status={item.status} />
-                        </td>
-                        <td className="py-3.5 px-6 text-right">
-                          {item.status === 'pending' ? (
-                            <div className="flex justify-end gap-1.5">
-                              <button
-                                onClick={() => handleApproveKyc(item.id)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
-                              >
-                                Approve
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-xs font-bold text-emerald-700">✓ Verified</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* SOP-04: Mandi Approvals */}
-          {activeSop === 'SOP-04' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-              <h3 className="font-bold text-sm text-slate-900">
-                SOP-04: Mandi Rate Sync & Price Anomaly Approvals
-              </h3>
-              <div className="space-y-3">
-                {mandiApprovals.map((m) => (
-                  <div key={m.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs flex justify-between items-center">
-                    <div>
-                      <h5 className="font-bold text-slate-900">{m.mandi} — {m.commodity}</h5>
-                      <p className="text-slate-500 mt-0.5">Rate: <strong>₹{m.rate}/q</strong> ({m.change}) • {m.reason}</p>
-                    </div>
-                    <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs">
-                      Approve Sync
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* SOP-26: System Broadcasts */}
-          {activeSop === 'SOP-26' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-              <div className="flex items-center gap-2">
-                <Radio className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-bold text-sm text-slate-900">SOP-26: System Broadcasts & Alert Announcer</h3>
-              </div>
-              <p className="text-xs text-slate-500">
-                Send emergency weather warnings, mandi closure notices, or platform maintenance alerts to all 15,000+ active users via Push Notification & SMS.
-              </p>
-
-              <form onSubmit={handleSendBroadcast} className="space-y-3 pt-2">
-                <textarea
-                  rows={3}
-                  placeholder="e.g. Alert: Unseasonal hailstorm warning for Nashik & Niphad over the next 24 hours. Secure harvested soybean lots under tarpaulins."
-                  value={broadcastMsg}
-                  onChange={(e) => setBroadcastMsg(e.target.value)}
-                  className="w-full px-4 py-3 text-xs rounded-2xl border border-slate-300"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={broadcastSent}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2"
-                >
-                  {broadcastSent ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                  <span>{broadcastSent ? 'Broadcast Dispatched!' : 'Send Platform Broadcast'}</span>
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* Default fallback for other SOPs */}
-          {!['SOP-02', 'SOP-03', 'SOP-04', 'SOP-26'].includes(activeSop) && (
-            <div className="bg-white rounded-3xl p-8 border border-slate-200/80 shadow-xs space-y-4 text-center py-16">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto">
-                <ShieldCheck className="w-8 h-8" />
-              </div>
-              <h3 className="font-extrabold text-base text-slate-900">{activeSop} Ops Console</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Standard Operating Procedure automated under Agrovercity Backend Governance Engine. Zero pending exceptions in this queue.
-              </p>
-              <div className="inline-block text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                Status: Operational & Compliant
-              </div>
-            </div>
-          )}
+          <ConsolePanel key={activePanel} panelId={activePanel} />
         </div>
       </div>
     </div>

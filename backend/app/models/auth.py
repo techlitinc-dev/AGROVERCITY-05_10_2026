@@ -5,6 +5,16 @@ class FirebaseVerifyRequest(BaseModel):
     idToken: str
 
 
+class OtpSendRequest(BaseModel):
+    phone: str
+
+
+class OtpVerifyRequest(BaseModel):
+    phone: str
+    otp: str
+    otpSessionId: str
+
+
 class PhoneMpinLoginRequest(BaseModel):
     phone: str
     mpin: str

@@ -1,53 +1,71 @@
 import { create } from 'zustand';
 import type { UserProfile, PersonaType } from '../types';
-import { INITIAL_USER } from '../lib/api';
+import type { AuthTokens } from '../lib/api';
+import { auth } from '../lib/api';
 
 interface AuthState {
   user: UserProfile | null;
-  token: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
   activePersona: PersonaType;
   isAuthenticated: boolean;
-  login: (user: UserProfile, token: string) => void;
+  /** Persist tokens to localStorage (the axios interceptor reads them from there). */
+  login: (user: UserProfile, tokens?: AuthTokens) => void;
   logout: () => void;
   switchPersona: (persona: PersonaType) => void;
   updateCoins: (delta: number) => void;
   setKycStatus: (status: UserProfile['kycStatus']) => void;
 }
 
-const savedToken = localStorage.getItem('agrovercity_access_token');
-const savedPersona = (localStorage.getItem('agrovercity_active_persona') as PersonaType) || 'farmer';
+const ACCESS_KEY = 'agrovercity_access_token';
+const REFRESH_KEY = 'agrovercity_refresh_token';
+const PERSONA_KEY = 'agrovercity_active_persona';
+
+const savedAccessToken = localStorage.getItem(ACCESS_KEY);
+const savedRefreshToken = localStorage.getItem(REFRESH_KEY);
+const savedPersona = (localStorage.getItem(PERSONA_KEY) as PersonaType) || 'farmer';
 
 export const useAuthStore = create<AuthState>((set) => ({
-  user: INITIAL_USER,
-  token: savedToken || 'dev_session_token',
+  user: null,
+  accessToken: savedAccessToken,
+  refreshToken: savedRefreshToken,
   activePersona: savedPersona,
-  isAuthenticated: true,
+  isAuthenticated: !!savedAccessToken,
 
-  login: (user, token) => {
-    localStorage.setItem('agrovercity_access_token', token);
-    localStorage.setItem('agrovercity_active_persona', user.activePersona);
+  login: (user, tokens) => {
+    if (tokens?.accessToken) {
+      localStorage.setItem(ACCESS_KEY, tokens.accessToken);
+    }
+    if (tokens?.refreshToken) {
+      localStorage.setItem(REFRESH_KEY, tokens.refreshToken);
+    }
+    localStorage.setItem(PERSONA_KEY, user.activePersona);
     set({
       user,
-      token,
+      accessToken: tokens?.accessToken ?? savedAccessToken,
+      refreshToken: tokens?.refreshToken ?? savedRefreshToken,
       activePersona: user.activePersona,
       isAuthenticated: true,
     });
   },
 
   logout: () => {
-    localStorage.removeItem('agrovercity_access_token');
-    localStorage.removeItem('agrovercity_refresh_token');
-    localStorage.removeItem('agrovercity_active_persona');
+    // Best-effort server-side session invalidation; local state clears regardless.
+    auth.logout().catch(() => undefined);
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(PERSONA_KEY);
     set({
       user: null,
-      token: null,
+      accessToken: null,
+      refreshToken: null,
       activePersona: 'farmer',
       isAuthenticated: false,
     });
   },
 
   switchPersona: (persona) => {
-    localStorage.setItem('agrovercity_active_persona', persona);
+    localStorage.setItem(PERSONA_KEY, persona);
     set((state) => ({
       activePersona: persona,
       user: state.user ? { ...state.user, activePersona: persona } : null,

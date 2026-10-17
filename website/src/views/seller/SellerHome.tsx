@@ -1,63 +1,298 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Store,
   Package,
-  Layers,
   FileSpreadsheet,
   DollarSign,
   Plus,
-  CheckCircle2,
   AlertTriangle,
-  Receipt,
-  Search,
+  ArrowRight,
+  Landmark,
+  RefreshCcw,
+  Link2,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { seller, apiClient, apiErrorMessage, unwrapList } from '../../lib/api';
 import { StatCard } from '../../components/common/StatCard';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
+import {
+  arr,
+  cardCls,
+  EmptyState,
+  ErrorBanner,
+  ghostBtnCls,
+  inputCls,
+  labelCls,
+  LoadingBlock,
+  num,
+  paisaToRupees,
+  primaryBtnCls,
+  rec,
+  str,
+  type Rec,
+} from './shared';
+
+type Tab = 'catalog' | 'orders' | 'procure' | 'pos';
+
+const NEXT_ORDER_STATUS: Record<string, string> = {
+  placed: 'confirmed',
+  paid: 'confirmed',
+  confirmed: 'shipped',
+  shipped: 'out_for_delivery',
+  out_for_delivery: 'delivered',
+};
+
+const ORDER_ACTION_LABEL: Record<string, string> = {
+  placed: 'Confirm Order',
+  paid: 'Confirm Order',
+  confirmed: 'Mark Shipped',
+  shipped: 'Out for Delivery',
+  out_for_delivery: 'Mark Delivered',
+};
+
+/** Backend has no GET /seller/orders; /orders is tried best-effort (scoped to the caller). */
+async function loadSellerOrders(): Promise<Rec[]> {
+  try {
+    const res = await apiClient.get('/orders', { params: { scope: 'seller' } });
+    return (unwrapList<unknown>(res.data) as unknown[]).map(rec);
+  } catch {
+    return [];
+  }
+}
 
 export const SellerHome: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'catalog' | 'orders' | 'procure' | 'pos'>('catalog');
+  const [activeTab, setActiveTab] = useState<Tab>('catalog');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Storefront Catalog State
-  const [products, setProducts] = useState([
-    { id: 'p1', title: 'Certified Lokwan Wheat Seeds (40kg)', brand: 'Mahyco Gold', price: 1750, stock: 85, category: 'Seeds' },
-    { id: 'p2', title: 'IFFCO 19:19:19 100% Water Soluble (25kg)', brand: 'IFFCO', price: 2450, stock: 120, category: 'Fertilizers' },
-    { id: 'p3', title: 'Pure Cold Pressed Neem Oil (1L)', brand: 'GreenBio', price: 680, stock: 14, category: 'Crop Protection' },
-  ]);
+  const [dashboard, setDashboard] = useState<Rec>({});
+  const [cashflow, setCashflow] = useState<Rec>({});
+  const [products, setProducts] = useState<Rec[]>([]);
+  const [orders, setOrders] = useState<Rec[]>([]);
+  const [procurement, setProcurement] = useState<Rec[]>([]);
+  const [procStats, setProcStats] = useState<Rec>({});
+  const [ledgers, setLedgers] = useState<Rec[]>([]);
+  const [ledgerSummary, setLedgerSummary] = useState<Rec>({});
+  const [stockSummary, setStockSummary] = useState<Rec[]>([]);
 
-  // Mall Orders State
-  const [orders, setOrders] = useState([
-    { id: 'ord_9182', customer: 'Suresh More', product: 'Wheat Seeds (40kg)', qty: 2, total: 3500, status: 'placed' },
-    { id: 'ord_9183', customer: 'Vikas Kadam', product: 'IFFCO NPK (25kg)', qty: 1, total: 2450, status: 'packed' },
-  ]);
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [dash, cf, prods, ords, proc, led, stock] = await Promise.all([
+        seller.dashboard().catch(() => ({})),
+        seller.cashflow().catch(() => ({})),
+        seller.products().catch(() => []),
+        loadSellerOrders(),
+        seller.procurement().catch(() => []),
+        seller.ledgers().catch(() => []),
+        seller.stock().catch(() => []),
+      ]);
+      setDashboard(rec(dash));
+      setCashflow(rec(cf));
+      setProducts((prods as unknown[]).map(rec));
+      setOrders(ords);
+      const procList = arr(proc).map(rec);
+      const maybeWrapped = rec(proc);
+      setProcurement(procList);
+      setProcStats(rec(maybeWrapped.stats ?? {}));
+      const ledgerPayload = rec(led);
+      setLedgers(arr(ledgerPayload.entries ?? ledgerPayload.data ?? (Array.isArray(led) ? led : [])).map(rec));
+      setLedgerSummary(ledgerPayload);
+      const stockPayload = rec(stock);
+      const summary = rec(stockPayload.summary);
+      setStockSummary(arr(summary.byCrop).map(rec));
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // J-Form Procurement State
-  const [jForms, setJForms] = useState([
-    { id: 'JF-2026-401', farmer: 'Ramesh Patil', crop: 'Soybean Grade A', qty: '20 Quintals', rate: 4750, total: 95000, date: '17 Oct 2026' },
-  ]);
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
+  // --- KPI helpers -------------------------------------------------------
+  const todayProc = rec(dashboard.todayProcurement);
+  const pendingPay = rec(dashboard.pendingFarmerPayments);
+  const udhaar = rec(dashboard.udhaarOutstanding);
+  const rateStatus = rec(dashboard.rateStatus);
+  const openOffers = rec(dashboard.openOffers);
+  const lowStock = stockSummary.filter((s) => num(s.availableQuintals) < 5).length;
+
+  const kpi = [
+    {
+      title: "Today's Procurement",
+      value: formatCurrency(paisaToRupees(todayProc.amountPaisa)),
+      subtitle: `${num(todayProc.quantityQuintals)} q across ${num(todayProc.lotsCount)} lots`,
+      icon: DollarSign,
+      colorScheme: 'green' as const,
+    },
+    {
+      title: 'Pending Farmer Payments',
+      value: formatCurrency(paisaToRupees(pendingPay.amountPaisa)),
+      subtitle: `${num(pendingPay.count)} lots awaiting settlement`,
+      icon: Landmark,
+      colorScheme: 'amber' as const,
+    },
+    {
+      title: 'Udhar Outstanding',
+      value: formatCurrency(paisaToRupees(udhaar.netPaisa)),
+      subtitle: `${num(ledgerSummary.totalDebtors)} buyers on khata book`,
+      icon: AlertTriangle,
+      colorScheme: 'purple' as const,
+    },
+    {
+      title: 'Open Offers / Negotiations',
+      value: `${num(openOffers.count)} live`,
+      subtitle: `${num(rateStatus.pendingCount)} rates pending review`,
+      icon: Package,
+      colorScheme: 'blue' as const,
+    },
+  ];
+
+  // --- product CRUD ------------------------------------------------------
   const [addProductModal, setAddProductModal] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newBrand, setNewBrand] = useState('');
-  const [newPrice, setNewPrice] = useState(1200);
-  const [newStock, setNewStock] = useState(50);
-  const [newCat, setNewCat] = useState('Seeds');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pTitle, setPTitle] = useState('');
+  const [pBrand, setPBrand] = useState('');
+  const [pCategory, setPCategory] = useState('Seeds');
+  const [pPrice, setPPrice] = useState(1200);
+  const [pMrp, setPMrp] = useState(1500);
+  const [pStock, setPStock] = useState(50);
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProducts([
-      { id: 'p_' + Date.now(), title: newTitle, brand: newBrand, price: newPrice, stock: newStock, category: newCat },
-      ...products,
-    ]);
-    setAddProductModal(false);
+    setSaving(true);
+    setFormError(null);
+    try {
+      await seller.addProduct({
+        title: pTitle,
+        brand: pBrand,
+        category: pCategory,
+        price: pPrice,
+        mrp: pMrp || pPrice,
+        stockQty: pStock,
+      });
+      setAddProductModal(false);
+      await loadAll();
+    } catch (err) {
+      setFormError(apiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const updateOrderStatus = (id: string, nextStatus: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: nextStatus } : o))
-    );
+  const restockProduct = async (product: Rec, delta: number) => {
+    setFormError(null);
+    try {
+      await seller.updateProduct(str(product.id), {
+        stockQty: Math.max(0, num(product.stockQty) + delta),
+      });
+      await loadAll();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
   };
+
+  // --- orders -------------------------------------------------------------
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const advanceOrder = async (order: Rec) => {
+    const next = NEXT_ORDER_STATUS[str(order.status)];
+    if (!next) return;
+    setOrderError(null);
+    try {
+      await seller.updateOrderStatus(str(order.id), next);
+      await loadAll();
+    } catch (err) {
+      setOrderError(apiErrorMessage(err));
+    }
+  };
+
+  // --- procurement J-form ---------------------------------------------------
+  const [jFormModal, setJFormModal] = useState(false);
+  const [jSaving, setJSaving] = useState(false);
+  const [jfFarmer, setJfFarmer] = useState('');
+  const [jfPhone, setJfPhone] = useState('');
+  const [jfCrop, setJfCrop] = useState('Soybean');
+  const [jfQty, setJfQty] = useState(20);
+  const [jfRate, setJfRate] = useState(4750);
+  const [jfDeduction, setJfDeduction] = useState(0);
+
+  const handleCreateJForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setJSaving(true);
+    setFormError(null);
+    try {
+      await seller.createProcurement({
+        farmerName: jfFarmer,
+        farmerPhone: jfPhone,
+        crop: jfCrop,
+        grossWeightKg: jfQty * 100,
+        tareWeightKg: 0,
+        netWeightQuintals: jfQty,
+        ratePerQuintal: jfRate,
+        qualityDeductionPct: jfDeduction,
+      });
+      setJFormModal(false);
+      await loadAll();
+    } catch (err) {
+      setFormError(apiErrorMessage(err));
+    } finally {
+      setJSaving(false);
+    }
+  };
+
+  const payLot = async (lot: Rec) => {
+    setFormError(null);
+    try {
+      await seller.payProcurement(str(lot.id), { paymentMode: 'bank_transfer', utrNo: '' });
+      await loadAll();
+    } catch (err) {
+      setFormError(apiErrorMessage(err));
+    }
+  };
+
+  // --- POS quick sale -------------------------------------------------------
+  const [posModal, setPosModal] = useState(false);
+  const [posSaving, setPosSaving] = useState(false);
+  const [posBuyer, setPosBuyer] = useState('');
+  const [posItem, setPosItem] = useState('');
+  const [posQty, setPosQty] = useState(1);
+  const [posRate, setPosRate] = useState(1000);
+  const [posPaid, setPosPaid] = useState(0);
+  const [posMode, setPosMode] = useState('cash');
+
+  const handlePosSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPosSaving(true);
+    setFormError(null);
+    try {
+      await seller.recordSale({
+        buyerName: posBuyer,
+        buyerPhone: '',
+        item: posItem,
+        quantity: posQty,
+        unit: 'Quintal',
+        ratePerUnit: posRate,
+        paymentMode: posMode,
+        amountPaid: posPaid,
+      });
+      setPosModal(false);
+      await loadAll();
+    } catch (err) {
+      setFormError(apiErrorMessage(err));
+    } finally {
+      setPosSaving(false);
+    }
+  };
+
+  const inflow = arr(cashflow.summary ?? cashflow.data);
+  const netCash = num(cashflow.netBalance ?? cashflow.netPaisa);
 
   return (
     <div className="space-y-6">
@@ -72,200 +307,293 @@ export const SellerHome: React.FC = () => {
             Storefront input sales on Krishi Mall, direct farmer crop procurement, J-Form issuance, and customer Khata ledger
           </p>
         </div>
-
-        <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto overflow-x-auto no-scrollbar">
-          {[
-            { id: 'catalog', label: 'Store Products' },
-            { id: 'orders', label: 'Mall Orders' },
-            { id: 'procure', label: 'Procurement (J-Form)' },
-            { id: 'pos', label: 'Khata & POS' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                activeTab === tab.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* KPI Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard
-          title="Today's Input Sales"
-          value={formatCurrency(18400)}
-          subtitle="Mall + Counter POS"
-          icon={DollarSign}
-          colorScheme="green"
-        />
-        <StatCard
-          title="Pending Orders"
-          value="2 Orders"
-          subtitle="Ready for packing"
-          icon={Package}
-          colorScheme="amber"
-        />
-        <StatCard
-          title="Low Stock Alert"
-          value="1 SKU"
-          subtitle="Neem Oil (14 left)"
-          icon={AlertTriangle}
-          colorScheme="purple"
-        />
-        <StatCard
-          title="Procured This Week"
-          value="45 Quintals"
-          subtitle="Soybean & Wheat J-Forms"
-          icon={FileSpreadsheet}
-          colorScheme="blue"
-        />
-      </div>
-
-      {/* Tab 1: Storefront Catalog */}
-      {activeTab === 'catalog' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="font-bold text-sm text-slate-900">Live Krishi Mall SKUs ({products.length})</h3>
-            <button
-              onClick={() => setAddProductModal(true)}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
-            >
-              <Plus className="w-4 h-4" /> Add New SKU
-            </button>
-          </div>
-
-          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100">
-                  <th className="py-3 px-6">Product Title & Brand</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Selling Price</th>
-                  <th className="py-3 px-4">Stock In Hand</th>
-                  <th className="py-3 px-6 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {products.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/60">
-                    <td className="py-3.5 px-6 font-bold text-slate-900">
-                      {p.title}
-                      <span className="text-[11px] text-slate-400 block font-normal">{p.brand}</span>
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-600">{p.category}</td>
-                    <td className="py-3.5 px-4 font-bold text-emerald-800">{formatCurrency(p.price)}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-800">{p.stock} Units</td>
-                    <td className="py-3.5 px-6 text-right">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          p.stock > 20 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                        }`}
-                      >
-                        {p.stock > 20 ? 'In Stock' : 'Low Stock'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Mall Orders */}
-      {activeTab === 'orders' && (
-        <div className="space-y-4">
-          <h3 className="font-bold text-sm text-slate-900">Customer Mall Orders & Shipping Desk</h3>
-          <div className="space-y-3">
-            {orders.map((ord) => (
-              <div
-                key={ord.id}
-                className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button onClick={() => void loadAll()} className={ghostBtnCls} title="Refresh">
+            <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar">
+            {[
+              { id: 'catalog', label: 'Store Products' },
+              { id: 'orders', label: 'Mall Orders' },
+              { id: 'procure', label: 'Procurement (J-Form)' },
+              { id: 'pos', label: 'Khata & POS' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as Tab)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                  activeTab === tab.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
+                }`}
               >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <ErrorBanner message={error ?? formError} />
+
+      {loading ? (
+        <LoadingBlock />
+      ) : (
+        <>
+          {/* KPI Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {kpi.map((k) => (
+              <StatCard key={k.title} {...k} />
+            ))}
+          </div>
+
+          {/* Quick links to full pages */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { to: '/seller/procurement', label: 'Procurement Desk', icon: FileSpreadsheet },
+              { to: '/seller/stock', label: 'Stock & Resale', icon: Package },
+              { to: '/seller/pos', label: 'POS Billing', icon: DollarSign },
+              { to: '/seller/rates', label: 'Mandi Rates', icon: Landmark },
+              { to: '/seller/analytics', label: 'Analytics', icon: Store },
+              { to: '/seller/compliance', label: 'Compliance', icon: AlertTriangle },
+              { to: '/seller/demands', label: 'Buyer Demands', icon: Link2 },
+            ].map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className={`${cardCls} p-3.5 flex items-center gap-2.5 hover:border-emerald-300 transition-all text-xs font-bold text-slate-800`}
+              >
+                <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+                  <l.icon className="w-4 h-4" />
+                </span>
+                {l.label}
+                <ArrowRight className="w-3.5 h-3.5 ml-auto text-slate-400" />
+              </Link>
+            ))}
+          </div>
+
+          {/* Tab 1: Storefront Catalog */}
+          {activeTab === 'catalog' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-sm text-slate-900">Live Krishi Mall SKUs ({products.length})</h3>
+                <button onClick={() => setAddProductModal(true)} className={primaryBtnCls}>
+                  <Plus className="w-4 h-4 inline mr-1" /> Add New SKU
+                </button>
+              </div>
+
+              {products.length === 0 ? (
+                <div className={cardCls}>
+                  <EmptyState label="No products yet — add your first SKU" />
+                </div>
+              ) : (
+                <div className={`${cardCls} overflow-hidden`}>
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100">
+                        <th className="py-3 px-6">Product Title & Brand</th>
+                        <th className="py-3 px-4">Category</th>
+                        <th className="py-3 px-4">Price / MRP</th>
+                        <th className="py-3 px-4">Stock In Hand</th>
+                        <th className="py-3 px-6 text-right">Quick Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {products.map((p) => {
+                        const stockQty = num(p.stockQty);
+                        return (
+                          <tr key={str(p.id)} className="hover:bg-slate-50/60">
+                            <td className="py-3.5 px-6 font-bold text-slate-900">
+                              {str(p.title || p.name, 'Untitled SKU')}
+                              <span className="text-[11px] text-slate-400 block font-normal">
+                                {str(p.brand, '—')} · {str(p.batchNo, '')}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-semibold text-slate-600">{str(p.category, 'General')}</td>
+                            <td className="py-3.5 px-4 font-bold text-emerald-800">
+                              {formatCurrency(num(p.price))}
+                              <span className="text-[10px] text-slate-400 block font-normal">
+                                MRP {formatCurrency(num(p.mrp, num(p.price)))}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-slate-800">
+                              {stockQty} {str(p.unit, 'units')}
+                            </td>
+                            <td className="py-3.5 px-6 text-right">
+                              <div className="inline-flex gap-1.5">
+                                <button onClick={() => void restockProduct(p, 10)} className={ghostBtnCls}>
+                                  +10
+                                </button>
+                                <button onClick={() => void restockProduct(p, -10)} className={ghostBtnCls}>
+                                  −10
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 2: Mall Orders */}
+          {activeTab === 'orders' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-slate-900">Customer Mall Orders & Shipping Desk</h3>
+                {orderError && <ErrorBanner message={orderError} />}
+              </div>
+              {orders.length === 0 ? (
+                <div className={cardCls}>
+                  <EmptyState label="No mall orders found for your store yet" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {orders.map((ord) => {
+                    const status = str(ord.status, 'placed');
+                    const items = arr(ord.items);
+                    const total = num(ord.finalTotal, num(ord.total));
+                    return (
+                      <div key={str(ord.id)} className={`${cardCls} p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4`}>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-sm text-slate-900">Order #{str(ord.id)}</h4>
+                            <StatusBadge status={status} />
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {items.length > 0
+                              ? `${items.length} line item(s): ${items
+                                  .slice(0, 2)
+                                  .map((it) => str(rec(it).title || rec(it).name))
+                                  .join(', ')}${items.length > 2 ? '…' : ''}`
+                              : 'Marketplace order'}
+                            {ord.paymentMethod ? ` · ${str(ord.paymentMethod)}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-black text-emerald-800">{formatCurrency(total)}</span>
+                          {ORDER_ACTION_LABEL[status] && (
+                            <button onClick={() => void advanceOrder(ord)} className={primaryBtnCls}>
+                              {ORDER_ACTION_LABEL[status]}
+                            </button>
+                          )}
+                          <Link to={`/seller/orders/${str(ord.id)}`} className={ghostBtnCls}>
+                            Detail
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: J-Form Procurement */}
+          {activeTab === 'procure' && (
+            <div className={`${cardCls} p-6 space-y-4`}>
+              <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-100 pb-3">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-sm text-slate-900">Order #{ord.id}</h4>
-                    <StatusBadge status={ord.status} />
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Customer: <strong>{ord.customer}</strong> • Item: {ord.product} (Qty: {ord.qty})
+                  <h3 className="font-bold text-sm text-slate-900">APMC J-Form Digital Sale Receipts</h3>
+                  <p className="text-xs text-slate-400">
+                    {num(procStats.totalLots)} lots · {num(procStats.totalProcuredQuintals)} q procured ·{' '}
+                    {formatCurrency(num(procStats.pendingPayouts))} pending payout
                   </p>
                 </div>
+                <button onClick={() => setJFormModal(true)} className={primaryBtnCls}>
+                  <Plus className="w-4 h-4 inline mr-1" /> Generate New J-Form
+                </button>
+              </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-black text-emerald-800">{formatCurrency(ord.total)}</span>
-                  {ord.status === 'placed' && (
-                    <button
-                      onClick={() => updateOrderStatus(ord.id, 'packed')}
-                      className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs"
-                    >
-                      Mark Packed
-                    </button>
+              {procurement.length === 0 ? (
+                <EmptyState label="No procurement J-forms recorded yet" />
+              ) : (
+                <div className="space-y-3">
+                  {procurement.map((jf) => {
+                    const paid = str(jf.paymentStatus) === 'paid';
+                    return (
+                      <div key={str(jf.id)} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
+                        <div className="flex flex-wrap justify-between font-bold text-slate-900 gap-2">
+                          <span>J-Form: {str(jf.jFormNumber, jf.id)}</span>
+                          <span className="text-emerald-700">{formatCurrency(num(jf.finalAmount))}</span>
+                        </div>
+                        <p className="text-slate-600">
+                          Farmer: <strong>{str(jf.farmerName)}</strong> • {str(jf.crop)} ({num(jf.netWeightQuintals)} q @ ₹
+                          {num(jf.ratePerQuintal)}/q)
+                        </p>
+                        <div className="flex flex-wrap justify-between items-center gap-2 text-[11px] text-slate-400 pt-1 border-t border-slate-200">
+                          <span>
+                            {paid
+                              ? `Paid · UTR ${str(jf.utrNumber)} · ${str(jf.receiptNo)}`
+                              : `Payment: ${str(jf.paymentStatus, 'unpaid')}`}
+                          </span>
+                          {!paid && (
+                            <button onClick={() => void payLot(jf)} className={primaryBtnCls}>
+                              Mark Paid (Bank Transfer)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 4: Khata & POS */}
+          {activeTab === 'pos' && (
+            <div className="space-y-4">
+              <div className={`${cardCls} p-6 space-y-4`}>
+                <div className="flex justify-between items-center">
+                  <h3 className="font-bold text-sm text-slate-900">Customer Udhar Khata Ledger</h3>
+                  <Link to="/seller/pos" className={primaryBtnCls}>
+                    Open Full POS Desk
+                  </Link>
+                </div>
+                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-950 flex justify-between items-center gap-4">
+                  <div>
+                    <h5 className="font-bold">
+                      Total Udhar Outstanding Across {num(ledgerSummary.totalDebtors)} Buyers
+                    </h5>
+                    <p className="text-[11px] text-amber-800">
+                      {inflow.length > 0 ? `${inflow.length} cashflow entr(y/ies) this period` : 'Ledger-driven khata book'}
+                    </p>
+                  </div>
+                  <span className="text-xl font-black text-amber-900 whitespace-nowrap">
+                    {formatCurrency(num(ledgerSummary.totalCreditOutstanding, paisaToRupees(ledgerSummary.totalCreditOutstandingPaisa)))}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-700 mb-2">Top Khata Accounts</h4>
+                  {ledgers.length === 0 ? (
+                    <EmptyState label="No ledger entries yet" />
+                  ) : (
+                    <div className="space-y-2">
+                      {ledgers.slice(0, 5).map((b) => (
+                        <div key={`${str(b.buyerName)}-${str(b.buyerPhone)}`} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl text-xs">
+                          <span className="font-bold text-slate-800">{str(b.buyerName, 'Unknown buyer')}</span>
+                          <span className={num(b.netBalance) > 0 ? 'font-black text-rose-700' : 'font-bold text-emerald-700'}>
+                            {formatCurrency(Math.abs(num(b.netBalance)))} {num(b.netBalance) > 0 ? 'due' : 'settled'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  {ord.status === 'packed' && (
-                    <button
-                      onClick={() => updateOrderStatus(ord.id, 'shipped')}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-                    >
-                      Mark Dispatched
-                    </button>
-                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] text-slate-500">
+                  <div className="p-3 bg-slate-50 rounded-xl">
+                    Net cash position: <strong className="text-slate-800">{formatCurrency(netCash)}</strong>
+                  </div>
+                  <button onClick={() => setPosModal(true)} className={primaryBtnCls}>
+                    <Plus className="w-4 h-4 inline mr-1" /> Record Counter Sale
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: J-Form Procurement */}
-      {activeTab === 'procure' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="font-bold text-sm text-slate-900">APMC J-Form Digital Sale Receipts</h3>
-              <p className="text-xs text-slate-400">Statutory procurement receipt under Agricultural Produce Marketing Act</p>
             </div>
-            <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs">
-              Generate New J-Form
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {jForms.map((jf) => (
-              <div key={jf.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
-                <div className="flex justify-between font-bold text-slate-900">
-                  <span>J-Form: {jf.id}</span>
-                  <span className="text-emerald-700">{formatCurrency(jf.total)}</span>
-                </div>
-                <p className="text-slate-600">
-                  Seller Farmer: <strong>{jf.farmer}</strong> • Produce: {jf.crop} ({jf.qty} @ ₹{jf.rate}/q)
-                </p>
-                <div className="flex justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-200">
-                  <span>Date: {jf.date}</span>
-                  <span className="text-emerald-800 font-bold">✓ APMC Market Fee (1%) Remitted</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: Khata & POS */}
-      {activeTab === 'pos' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-          <h3 className="font-bold text-sm text-slate-900">Customer Udhar Khata Ledger</h3>
-          <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-950 flex justify-between items-center">
-            <div>
-              <h5 className="font-bold">Total Udhar Outstanding Across 12 Farmers</h5>
-              <p className="text-[11px] text-amber-800">Auto SMS reminders scheduled for next harvest cycle</p>
-            </div>
-            <span className="text-xl font-black text-amber-900">₹42,850</span>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
       {/* Add Product Modal */}
@@ -276,74 +604,143 @@ export const SellerHome: React.FC = () => {
         description="Publish product on Krishi Shopping Mall"
         maxWidth="md"
       >
-        <form onSubmit={handleAddProduct} className="space-y-4">
+        <form onSubmit={(e) => void handleAddProduct(e)} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Product Title</label>
-            <input
-              type="text"
-              placeholder="e.g. Mahyco Hybrid Cotton Seeds (450g)"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-              required
-            />
+            <label className={labelCls}>Product Title</label>
+            <input className={inputCls} value={pTitle} onChange={(e) => setPTitle(e.target.value)} required />
           </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Brand</label>
-              <input
-                type="text"
-                placeholder="e.g. Mahyco / Bayer / IFFCO"
-                value={newBrand}
-                onChange={(e) => setNewBrand(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                required
-              />
+              <label className={labelCls}>Brand</label>
+              <input className={inputCls} value={pBrand} onChange={(e) => setPBrand(e.target.value)} required />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
-              <select
-                value={newCat}
-                onChange={(e) => setNewCat(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
-              >
-                <option value="Seeds">Seeds</option>
-                <option value="Fertilizers">Fertilizers</option>
-                <option value="Crop Protection">Crop Protection</option>
-                <option value="Tools & Machinery">Tools & Machinery</option>
+              <label className={labelCls}>Category</label>
+              <select className={inputCls} value={pCategory} onChange={(e) => setPCategory(e.target.value)}>
+                <option>Seeds</option>
+                <option>Fertilizers</option>
+                <option>Crop Protection</option>
+                <option>Tools & Machinery</option>
+                <option>Cattle Feed</option>
               </select>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Price (₹)</label>
-              <input
-                type="number"
-                value={newPrice}
-                onChange={(e) => setNewPrice(Number(e.target.value))}
-                className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300"
-                required
-              />
+              <label className={labelCls}>Price (₹)</label>
+              <input type="number" className={inputCls} value={pPrice} onChange={(e) => setPPrice(Number(e.target.value))} required />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Initial Stock Qty</label>
-              <input
-                type="number"
-                value={newStock}
-                onChange={(e) => setNewStock(Number(e.target.value))}
-                className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300"
-                required
-              />
+              <label className={labelCls}>MRP (₹)</label>
+              <input type="number" className={inputCls} value={pMrp} onChange={(e) => setPMrp(Number(e.target.value))} />
+            </div>
+            <div>
+              <label className={labelCls}>Stock Qty</label>
+              <input type="number" className={inputCls} value={pStock} onChange={(e) => setPStock(Number(e.target.value))} required />
             </div>
           </div>
+          <ErrorBanner message={formError} />
+          <button type="submit" disabled={saving} className={`${primaryBtnCls} w-full py-3`}>
+            {saving ? 'Publishing…' : 'Publish SKU to Krishi Mall'}
+          </button>
+        </form>
+      </ModalSheet>
 
-          <button
-            type="submit"
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all"
-          >
-            Publish SKU to Krishi Mall
+      {/* J-Form Modal */}
+      <ModalSheet
+        isOpen={jFormModal}
+        onClose={() => setJFormModal(false)}
+        title="Generate APMC J-Form Procurement"
+        description="Weighbridge-captured farmer produce purchase with statutory market fee"
+        maxWidth="md"
+      >
+        <form onSubmit={(e) => void handleCreateJForm(e)} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Farmer Name</label>
+              <input className={inputCls} value={jfFarmer} onChange={(e) => setJfFarmer(e.target.value)} required />
+            </div>
+            <div>
+              <label className={labelCls}>Farmer Phone</label>
+              <input className={inputCls} value={jfPhone} onChange={(e) => setJfPhone(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Crop</label>
+              <input className={inputCls} value={jfCrop} onChange={(e) => setJfCrop(e.target.value)} required />
+            </div>
+            <div>
+              <label className={labelCls}>Net Quantity (q)</label>
+              <input type="number" className={inputCls} value={jfQty} onChange={(e) => setJfQty(Number(e.target.value))} required />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Rate (₹/quintal)</label>
+              <input type="number" className={inputCls} value={jfRate} onChange={(e) => setJfRate(Number(e.target.value))} required />
+            </div>
+            <div>
+              <label className={labelCls}>Quality Deduction (%)</label>
+              <input type="number" className={inputCls} value={jfDeduction} onChange={(e) => setJfDeduction(Number(e.target.value))} min={0} max={50} />
+            </div>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600">
+            Gross: <strong>{formatCurrency(jfQty * jfRate)}</strong> → Net after {jfDeduction}% deduction:{' '}
+            <strong className="text-emerald-800">{formatCurrency(jfQty * jfRate * (1 - jfDeduction / 100))}</strong>
+          </div>
+          <ErrorBanner message={formError} />
+          <button type="submit" disabled={jSaving} className={`${primaryBtnCls} w-full py-3`}>
+            {jSaving ? 'Recording…' : 'Record J-Form Purchase'}
+          </button>
+        </form>
+      </ModalSheet>
+
+      {/* POS Quick Sale Modal */}
+      <ModalSheet
+        isOpen={posModal}
+        onClose={() => setPosModal(false)}
+        title="Record Counter Sale (POS)"
+        description="Creates a GST invoice-ready sale entry; unpaid balance goes to buyer khata"
+        maxWidth="md"
+      >
+        <form onSubmit={(e) => void handlePosSale(e)} className="space-y-4">
+          <div>
+            <label className={labelCls}>Buyer Name</label>
+            <input className={inputCls} value={posBuyer} onChange={(e) => setPosBuyer(e.target.value)} required />
+          </div>
+          <div>
+            <label className={labelCls}>Item</label>
+            <input className={inputCls} value={posItem} onChange={(e) => setPosItem(e.target.value)} required />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Quantity</label>
+              <input type="number" className={inputCls} value={posQty} onChange={(e) => setPosQty(Number(e.target.value))} required />
+            </div>
+            <div>
+              <label className={labelCls}>Rate (₹/unit)</label>
+              <input type="number" className={inputCls} value={posRate} onChange={(e) => setPosRate(Number(e.target.value))} required />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Payment Mode</label>
+              <select className={inputCls} value={posMode} onChange={(e) => setPosMode(e.target.value)}>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="credit">Credit (Udhar)</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Amount Paid (₹)</label>
+              <input type="number" className={inputCls} value={posPaid} onChange={(e) => setPosPaid(Number(e.target.value))} />
+            </div>
+          </div>
+          <ErrorBanner message={formError} />
+          <button type="submit" disabled={posSaving} className={`${primaryBtnCls} w-full py-3`}>
+            {posSaving ? 'Saving…' : `Record Sale · ${formatCurrency(posQty * posRate)}`}
           </button>
         </form>
       </ModalSheet>
