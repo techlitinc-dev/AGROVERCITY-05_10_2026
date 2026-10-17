@@ -245,6 +245,42 @@ def build_tds_statement_pdf(statement: dict, seller: dict) -> str:
     return path
 
 
+def build_direct_buyer_statement_pdf(statement: dict, buyer: dict) -> str:
+    """Monthly purchase & commission statement for Direct Buyer (P2-15)."""
+    path = f"/tmp/direct_buyer_statement_{statement.get('month', uuid.uuid4().hex[:8])}.pdf"
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Direct Buyer Purchase Statement / क्रेता विवरण", styles["Title"]),
+        Paragraph(
+            f"Generated on: {datetime.now(timezone.utc).date().isoformat()}", styles["Normal"]
+        ),
+        Spacer(1, 12),
+    ]
+    rows = [
+        ["Buyer Name", buyer.get("name", "")],
+        ["Buyer Phone", buyer.get("phone", "")],
+        ["Period / Month", str(statement.get("month", "All time"))],
+        ["Total Purchases", str(statement.get("totalPurchases", 0))],
+        ["Gross Spend", f"Rs {float(statement.get('grossSpendRupees', 0)):.2f}"],
+        ["Commissions / Fees", f"Rs {float(statement.get('escrowCommissionsRupees', 0)):.2f}"],
+        ["Net Paid", f"Rs {float(statement.get('netPaidRupees', 0)):.2f}"],
+    ]
+    table = Table(rows, colWidths=[140, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    doc.build(story)
+    return path
+
+
 def build_gst_invoice_pdf(sale: dict, seller: dict) -> str:
     """GST tax invoice per completed sale (phase-02 WS-03, S6)."""
     path = f"/tmp/gst_invoice_{sale.get('id', uuid.uuid4().hex[:8])}.pdf"

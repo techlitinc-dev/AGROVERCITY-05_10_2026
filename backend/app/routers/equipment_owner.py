@@ -5,17 +5,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.db import get_doc, query, set_doc
-from app.core.deps import admin_action, current_user_id
+from app.core.deps import admin_action, admin_user, current_user_id
 from app.models.equipment import (
     CheckInPinIn,
     DamageClaimIn,
     EquipmentCounterQuoteIn,
+    EquipmentPricingRulesIn,
     EquipmentUpsertRequest,
     JobExecutionUpdateIn,
     MaintenanceLogIn,
     RejectEquipmentBookingRequest,
 )
 from app.routers.equipment import IST, promote_waitlist_head
+from app.routers.equipment_rental import expire_counter_if_due
 from app.routers.users import require_role
 from app.services import equipment_ai
 from app.services.ai.privacy import build_equipment_booking_rec_state
@@ -157,6 +159,51 @@ async def update_equipment(equipment_id: str, body: EquipmentUpsertRequest, uid:
     for field in UPDATABLE_FIELDS:
         equipment[field] = getattr(body, field)
     equipment["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("equipment", equipment_id, equipment)
+    return equipment
+
+
+def _validate_pricing_rules(body: EquipmentPricingRulesIn):
+    for raw in body.blockedDates:
+        try:
+            datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            _error(422, "VALIDATION_ERROR", "blockedDates must be YYYY-MM-DD", {"blockedDates": f"invalid date {raw}"})
+    for discount in body.discounts:
+        label = discount.get("label")
+        if not label or not str(label).strip():
+            _error(422, "VALIDATION_ERROR", "each discount needs a label", {"discounts": "label required"})
+        percent = discount.get("percent")
+        if percent is None or not 0 < float(percent) <= 100:
+            _error(422, "VALIDATION_ERROR", "discount percent must be 1-100", {"discounts": "percent must be 1-100"})
+        valid_until = discount.get("validUntil")
+        if valid_until:
+            try:
+                datetime.strptime(str(valid_until), "%Y-%m-%d")
+            except ValueError:
+                _error(422, "VALIDATION_ERROR", "validUntil must be YYYY-MM-DD", {"discounts": "validUntil invalid"})
+
+
+@router.put("/{equipment_id}/pricing-rules")
+async def update_pricing_rules(
+    equipment_id: str,
+    body: EquipmentPricingRulesIn,
+    uid: str = Depends(_owner),
+):
+    """Idle-time pricing & yield rules (§A owner must-haves): minimum billing,
+    travel/idle charges, seasonal blocked dates and discount rules — stored on
+    the equipment doc and applied by the pricing engine."""
+    equipment = await _own_equipment(equipment_id, uid)
+    _validate_pricing_rules(body)
+    rules = equipment.get("pricingRules") or {}
+    for field in ("minBillingRupees", "travelChargePerKmRupees", "idleChargePerHourRupees"):
+        value = getattr(body, field)
+        if value is not None:
+            rules[field] = value
+    rules["blockedDates"] = list(body.blockedDates)
+    rules["discounts"] = list(body.discounts)
+    rules["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    equipment["pricingRules"] = rules
     await set_doc("equipment", equipment_id, equipment)
     return equipment
 
@@ -382,6 +429,8 @@ async def get_booking_execution(booking_id: str, uid: str = Depends(current_user
     booking = await get_doc("equipment_bookings", booking_id)
     if booking is None:
         _error(404, "BOOKING_NOT_FOUND", "booking not found")
+    # booking read: a counter past expiry is treated as expired (persisted)
+    booking = await expire_counter_if_due(booking)
 
     exec_doc = await get_doc("equipment_executions", booking_id)
     if exec_doc is None:
@@ -544,6 +593,37 @@ async def resolve_damage_claim(
     claim["resolvedAt"] = datetime.now(timezone.utc).isoformat()
     await set_doc("equipment_damage_claims", claim_id, claim)
     return claim
+
+
+# SOP-09 admin lane: registered on the existing /v1/admin router (mounted by
+# main) at import time of this module, co-located with the claim routes above.
+from app.routers.admin import router as _admin_router  # noqa: E402
+
+
+@_admin_router.get("/equipment/damage-claims", tags=["admin-equipment"])
+async def admin_list_equipment_damage_claims(
+    status: str | None = None,
+    _admin: dict = Depends(admin_user),
+):
+    """Admin damage-claim queue (SOP-09): every claim joined to its booking and
+    farmer, with an optional ?status= filter."""
+    claims = await query("equipment_damage_claims", [], limit=500)
+    if status:
+        claims = [c for c in claims if c.get("status") == status]
+    claims.sort(key=lambda c: c.get("createdAt", ""), reverse=True)
+    rows = []
+    for claim in claims:
+        booking = await get_doc("equipment_bookings", claim.get("bookingId") or "") or {}
+        farmer = await get_user(booking.get("userId") or "") or {}
+        rows.append(
+            {
+                **claim,
+                "farmerId": booking.get("userId"),
+                "farmerName": farmer.get("name"),
+                "bookingStatus": booking.get("status"),
+            }
+        )
+    return {"data": rows, "total": len(rows)}
 
 
 # ==========================================
@@ -769,4 +849,22 @@ async def owner_dashboard(uid: str = Depends(_owner)):
         "weeklyIncomePaisa": weekly_income_paisa,
         "nextPayout": next_payout,
         "maintenanceEntries": len(my_maintenance),
+    }
+
+
+@router.get("/owner/tds-statements")
+async def owner_tds_statements(uid: str = Depends(_owner)):
+    """TDS 194-O statements on the owner's received payments (integer paisa) —
+    the equipmentRental persona rows of the platform TDS ledger, mirroring the
+    seller TDS statement shape (grossPaisa, tdsPaisa, rate, period)."""
+    docs = await query(
+        "tds_ledger", [("persona", "==", "equipmentRental"), ("entityId", "==", uid)], limit=500
+    )
+    docs.sort(key=lambda d: d.get("period", ""), reverse=True)
+    return {
+        "data": docs,
+        "totalTdsPaisa": sum(int(d.get("tdsPaisa", 0)) for d in docs),
+        "tdsRate": 0.01,
+        "section": "194-O",
+        "total": len(docs),
     }

@@ -99,6 +99,19 @@ class PayIn(BaseModel):
     kind: Literal["balance", "full"]
 
 
+class PurchaseDisputeCreate(BaseModel):
+    """S9/G4 booking-scoped dispute raise (buyer or farmer)."""
+
+    category: str = Field(min_length=1)
+    reason: str = ""
+    evidence: dict = Field(default_factory=dict)
+
+
+class PurchaseDisputeEvidenceIn(BaseModel):
+    note: str = ""
+    photoUrls: list[str] = Field(default_factory=list)
+
+
 class CancelIn(BaseModel):
     reason: str = ""
 

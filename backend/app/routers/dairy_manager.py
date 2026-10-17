@@ -1,5 +1,6 @@
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -7,7 +8,15 @@ from pydantic import BaseModel, Field
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.routers.livestock_dairy import _manager_or_agent, assert_fssai_kyc
+from app.models.livestock_mgmt import (
+    CollectionOtpSendIn,
+    CollectionOtpVerifyIn,
+    CollectionQrIssueIn,
+    CollectionQrScanIn,
+    PickupSlotBookIn,
+    RouteStatusIn,
+)
+from app.routers.livestock_dairy import _manager_or_agent, assert_fssai_kyc, dairy_agent_record
 from app.routers.purchases import _new_purchase
 from app.routers.users import require_role
 from app.services import idempotency
@@ -15,6 +24,13 @@ from app.services.ai import outcomes as ai_outcomes
 from app.services.users import get_user
 
 router = APIRouter(prefix="/dairy-manager", tags=["dairy-manager"])
+
+# Farm-gate collection verification (F10/M6/E12, P0-7): the OTP is manager
+# triggered, revealed to the farmer in-app, and verified server-side. The
+# `farmerOtpVerified` flag is owned by the server only — clients can never set it.
+FARMER_OTP_VALID_MINUTES = 10
+FARMER_OTP_MAX_ATTEMPTS = 5
+COLLECTION_QR_VALID_MINUTES = 30
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -88,7 +104,6 @@ class CollectionCheckIn(BaseModel):
     ratePerLiter: float = Field(gt=0)
     qualityStatus: Literal["accepted", "regraded", "rejected"] = "accepted"
     evidencePhotoUrl: str | None = None
-    farmerOtpVerified: bool = True
     notes: str = ""
 
 
@@ -403,12 +418,264 @@ async def record_collection_check(body: CollectionCheckIn, uid: str = Depends(_m
         "totalAmountRupees": total_amt,
         "qualityStatus": body.qualityStatus,
         "evidencePhotoUrl": body.evidencePhotoUrl,
-        "farmerOtpVerified": body.farmerOtpVerified,
+        # Server-owned anchor (F10/M6/E12, P0-7): never accepted from the client.
+        # It flips to true only via /collections/otp/verify or /collections/qr/scan.
+        "farmerOtpVerified": False,
         "notes": body.notes,
         "collectedAt": datetime.now(timezone.utc).isoformat(),
     }
     await set_doc("dairy_collections", cid, doc)
     return doc
+
+
+# ---------------------------------------------------------------------------
+# Farm-gate collection verification — farmer OTP (F10/M6/E12, P0-7) and
+# QR-anchored collection (P1-13). One verification path (OTP or QR) suffices
+# for the payment anchor: both set the same server-owned `farmerOtpVerified`.
+# ---------------------------------------------------------------------------
+
+
+def _farmer_otp_fresh(collection: dict) -> bool:
+    expires_at = collection.get("farmerOtpExpiresAt")
+    if not expires_at or not collection.get("farmerOtp"):
+        return False
+    try:
+        return datetime.now(timezone.utc) < datetime.fromisoformat(expires_at)
+    except ValueError:
+        return False
+
+
+async def _collection_for_center(collection_id: str, uid: str):
+    """Resolve a collection for a manager or one of their pickup agents."""
+    collection = await get_doc("dairy_collections", collection_id)
+    if collection is None:
+        _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    center_id = uid
+    agent = await dairy_agent_record(uid)
+    if agent is not None:
+        center_id = agent.get("centerId", uid)
+    if collection.get("managerId") != center_id:
+        _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    return collection, center_id
+
+
+@router.post("/collections/otp/send")
+async def send_collection_otp(body: CollectionOtpSendIn, user: dict = Depends(_manager)):
+    """Manager triggers the farm-gate OTP: stored on the collection doc with a
+    10-minute expiry. The OTP itself is NOT returned here — the farmer reveals
+    it in-app via GET /v1/dairy/collections/{id}/otp."""
+    collection = await get_doc("dairy_collections", body.collectionId)
+    if collection is None or collection.get("managerId") != user["id"]:
+        _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    now = datetime.now(timezone.utc)
+    collection["farmerOtp"] = f"{secrets.randbelow(1000000):06d}"
+    collection["farmerOtpGeneratedAt"] = now.isoformat()
+    collection["farmerOtpExpiresAt"] = (
+        now + timedelta(minutes=FARMER_OTP_VALID_MINUTES)
+    ).isoformat()
+    collection["farmerOtpAttempts"] = 0
+    collection["updatedAt"] = now.isoformat()
+    await set_doc("dairy_collections", body.collectionId, collection)
+    return {
+        "collectionId": body.collectionId,
+        "generatedAt": collection["farmerOtpGeneratedAt"],
+        "expiresAt": collection["farmerOtpExpiresAt"],
+        "validMinutes": FARMER_OTP_VALID_MINUTES,
+    }
+
+
+@router.post("/collections/otp/verify")
+async def verify_collection_otp(body: CollectionOtpVerifyIn, uid: str = Depends(_manager_or_agent)):
+    """Manager/agent enters the farmer's OTP at pickup → sets the server-owned
+    `farmerOtpVerified` anchor + verifiedAt."""
+    collection, _ = await _collection_for_center(body.collectionId, uid)
+    if collection.get("farmerOtpVerified"):
+        _error(409, "ALREADY_VERIFIED", "collection is already farmer-verified")
+    if not collection.get("farmerOtp"):
+        _error(400, "OTP_NOT_GENERATED", "manager must send the OTP first")
+    if not _farmer_otp_fresh(collection):
+        _error(400, "OTP_EXPIRED", "collection OTP expired — send a fresh one")
+    if (collection.get("farmerOtpAttempts") or 0) >= FARMER_OTP_MAX_ATTEMPTS:
+        _error(429, "TOO_MANY_ATTEMPTS", "too many attempts — send a fresh OTP")
+    code = body.otp.strip()
+    if code != collection.get("farmerOtp"):
+        collection["farmerOtpAttempts"] = (collection.get("farmerOtpAttempts") or 0) + 1
+        collection["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        await set_doc("dairy_collections", body.collectionId, collection)
+        _error(400, "INVALID_OTP", "incorrect collection OTP")
+    now = datetime.now(timezone.utc).isoformat()
+    collection["farmerOtpVerified"] = True
+    collection["farmerOtpVerifiedAt"] = now
+    collection["verification"] = {"method": "otp", "verifiedBy": uid, "verifiedAt": now}
+    collection["farmerOtpAttempts"] = 0
+    collection["updatedAt"] = now
+    await set_doc("dairy_collections", body.collectionId, collection)
+    return collection
+
+
+@router.post("/collections/qr")
+async def issue_collection_qr(body: CollectionQrIssueIn, user: dict = Depends(_manager)):
+    """Issue a pickup QR token (uuid hex) for the collection, valid 30 minutes."""
+    collection = await get_doc("dairy_collections", body.collectionId)
+    if collection is None or collection.get("managerId") != user["id"]:
+        _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex
+    collection["qrToken"] = token
+    collection["qrStatus"] = "active"
+    collection["qrIssuedAt"] = now.isoformat()
+    collection["qrExpiresAt"] = (now + timedelta(minutes=COLLECTION_QR_VALID_MINUTES)).isoformat()
+    collection["updatedAt"] = now.isoformat()
+    await set_doc("dairy_collections", body.collectionId, collection)
+    return {
+        "collectionId": body.collectionId,
+        "token": token,
+        "status": "active",
+        "issuedAt": collection["qrIssuedAt"],
+        "expiresAt": collection["qrExpiresAt"],
+        "validMinutes": COLLECTION_QR_VALID_MINUTES,
+    }
+
+
+@router.post("/collections/qr/scan")
+async def scan_collection_qr(body: CollectionQrScanIn, uid: str = Depends(_manager_or_agent)):
+    """Agent scans the pickup QR at the farm gate: validates freshness, marks the
+    collection qrVerified and sets the same anchor flag OTP verification sets."""
+    matches = await query("dairy_collections", [("qrToken", "==", body.token.strip())], limit=1)
+    if not matches:
+        _error(404, "QR_TOKEN_NOT_FOUND", "no collection matches this QR token")
+    collection = matches[0]
+    center_id = uid
+    agent = await dairy_agent_record(uid)
+    if agent is not None:
+        center_id = agent.get("centerId", uid)
+    if collection.get("managerId") != center_id:
+        _error(404, "QR_TOKEN_NOT_FOUND", "no collection matches this QR token")
+    if collection.get("qrStatus") == "scanned":
+        _error(409, "QR_ALREADY_SCANNED", "this QR token was already scanned")
+    try:
+        fresh = datetime.now(timezone.utc) < datetime.fromisoformat(collection.get("qrExpiresAt", ""))
+    except ValueError:
+        fresh = False
+    if not fresh:
+        _error(400, "QR_EXPIRED", "collection QR expired — issue a fresh one")
+    now = datetime.now(timezone.utc).isoformat()
+    collection["qrStatus"] = "scanned"
+    collection["qrScannedAt"] = now
+    collection["qrScannedBy"] = uid
+    collection["qrVerified"] = True
+    collection["qrVerifiedAt"] = now
+    # Same payment anchor the OTP path sets — one verified path suffices.
+    collection["farmerOtpVerified"] = True
+    collection["farmerOtpVerifiedAt"] = now
+    collection["verification"] = {"method": "qr", "verifiedBy": uid, "verifiedAt": now}
+    collection["updatedAt"] = now
+    await set_doc("dairy_collections", collection["id"], collection)
+    return collection
+
+
+# ---------------------------------------------------------------------------
+# Procurement route lifecycle (M4/S6/E4, P2-9)
+# ---------------------------------------------------------------------------
+
+_ROUTE_NEXT = {
+    "planned": {"dispatched", "cancelled"},
+    "dispatched": {"completed", "cancelled"},
+}
+
+
+@router.post("/routes/{route_id}/status")
+async def update_route_status(route_id: str, body: RouteStatusIn, user: dict = Depends(_manager)):
+    route = await get_doc("dairy_routes", route_id)
+    if route is None or route.get("managerId") != user["id"]:
+        _error(404, "ROUTE_NOT_FOUND", "route not found")
+    allowed = _ROUTE_NEXT.get(route.get("status"), set())
+    if body.status not in allowed:
+        _error(
+            409,
+            "INVALID_TRANSITION",
+            f"cannot move route from {route.get('status')} to {body.status}",
+        )
+    now = datetime.now(timezone.utc).isoformat()
+    route["status"] = body.status
+    history = list(route.get("statusHistory") or [])
+    history.append({"status": body.status, "note": body.note, "by": user["id"], "at": now})
+    route["statusHistory"] = history
+    if body.status == "dispatched":
+        route["dispatchedAt"] = now
+    elif body.status == "completed":
+        route["completedAt"] = now
+    elif body.status == "cancelled":
+        route["cancelledAt"] = now
+    route["updatedAt"] = now
+    await set_doc("dairy_routes", route_id, route)
+    return route
+
+
+# ---------------------------------------------------------------------------
+# Pickup slot calendar (F9, P2-11)
+# ---------------------------------------------------------------------------
+
+DEFAULT_PICKUP_SLOTS = [
+    {"window": "Morning (06:00 - 08:30)", "capacity": 10},
+    {"window": "Evening (17:00 - 19:30)", "capacity": 10},
+]
+
+
+@router.get("/pickup-slots")
+async def list_pickup_slots(date: str | None = None, user: dict = Depends(_manager)):
+    """Slots for a date on the caller's dairy. The calendar is provisioned with
+    the default morning/evening windows the first time a date is listed."""
+    target = date or datetime.now(timezone.utc).date().isoformat()
+    try:
+        datetime.strptime(target, "%Y-%m-%d")
+    except ValueError:
+        _error(422, "VALIDATION_ERROR", "date must be YYYY-MM-DD", {"date": "must be YYYY-MM-DD"})
+    slots = await query(
+        "dairy_pickup_slots",
+        [("managerId", "==", user["id"]), ("date", "==", target)],
+        limit=100,
+    )
+    if not slots:
+        for template in DEFAULT_PICKUP_SLOTS:
+            sid = f"slot_{uuid.uuid4().hex[:10]}"
+            doc = {
+                "id": sid,
+                "managerId": user["id"],
+                "date": target,
+                "window": template["window"],
+                "capacity": template["capacity"],
+                "bookedCount": 0,
+                "bookedCollectionIds": [],
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            }
+            await set_doc("dairy_pickup_slots", sid, doc)
+            slots.append(doc)
+    slots.sort(key=lambda s: s.get("window", ""))
+    return {"data": slots, "total": len(slots), "date": target}
+
+
+@router.post("/pickup-slots/{slot_id}/book")
+async def book_pickup_slot(slot_id: str, body: PickupSlotBookIn, user: dict = Depends(_manager)):
+    slot = await get_doc("dairy_pickup_slots", slot_id)
+    if slot is None or slot.get("managerId") != user["id"]:
+        _error(404, "PICKUP_SLOT_NOT_FOUND", "pickup slot not found")
+    if body.collectionId:
+        collection = await get_doc("dairy_collections", body.collectionId)
+        if collection is None or collection.get("managerId") != user["id"]:
+            _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    booked_ids = list(slot.get("bookedCollectionIds") or [])
+    if body.collectionId and body.collectionId in booked_ids:
+        return slot  # idempotent re-book of the same collection
+    if (slot.get("bookedCount") or 0) >= slot.get("capacity", 0):
+        _error(409, "SLOT_FULL", "this pickup slot is at capacity")
+    if body.collectionId:
+        booked_ids.append(body.collectionId)
+        slot["bookedCollectionIds"] = booked_ids
+    slot["bookedCount"] = (slot.get("bookedCount") or 0) + 1
+    slot["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("dairy_pickup_slots", slot_id, slot)
+    return slot
 
 
 @router.post("/collections/{collection_id}/flag-review")

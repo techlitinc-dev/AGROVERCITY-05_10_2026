@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
+import hashlib
+import hmac
 import logging
+import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from firebase_admin import auth as firebase_auth
@@ -12,6 +15,8 @@ from app.core.ratelimit import hit
 from app.core.security import hash_mpin, validate_mpin_format, verify_mpin
 from app.models.auth import (
     AuthResponse,
+    BiometricLoginRequest,
+    BiometricRegisterRequest,
     FirebaseVerifyRequest,
     MpinResetRequest,
     MpinSetRequest,
@@ -359,6 +364,87 @@ async def mpin_reset(body: MpinResetRequest):
     user["mpinHash"] = hash_mpin(body.newMpin)
     await set_doc("users", uid, user)
     return {"ok": True}
+
+
+BIOMETRIC_COLLECTION = "biometric_credentials"
+
+
+def _biometric_signature(secret: str, phone: str, device_key: str) -> str:
+    message = f"{phone}:{device_key}".encode()
+    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+@router.post("/biometric/register")
+async def biometric_register(
+    body: BiometricRegisterRequest,
+    uid: str = Depends(current_user_id),
+):
+    """Enrollment (P2-2): an authenticated session binds a deviceKey to the
+    account's phone. A fresh per-device secret is generated server-side and
+    stored on the credential doc — it is never returned in a response or
+    written to logs. Re-enrollment rotates the secret and resets the counter."""
+    phone = _normalize_phone(body.phone)
+    if not body.deviceKey:
+        _error(422, "VALIDATION_ERROR", "deviceKey is required")
+    users = await query("users", [("phone", "==", phone)])
+    user = next((u for u in users if u["id"] == uid), None)
+    if user is None:
+        if users:
+            _error(403, "FORBIDDEN", "the authenticated session does not own this phone number")
+        _error(404, "USER_NOT_FOUND", "no account found for this phone number")
+    now = datetime.now(timezone.utc).isoformat()
+    await set_doc(
+        BIOMETRIC_COLLECTION,
+        body.deviceKey,
+        {
+            "id": body.deviceKey,
+            "deviceKey": body.deviceKey,
+            "uid": user["id"],
+            "phone": phone,
+            "publicKey": body.publicKey,
+            "secret": secrets.token_hex(32),
+            "counter": 0,
+            "createdAt": now,
+            "updatedAt": now,
+        },
+    )
+    return {"ok": True, "deviceKey": body.deviceKey, "phone": phone, "enrolledAt": now}
+
+
+@router.post("/biometric", response_model=AuthResponse, response_model_exclude_none=True)
+async def biometric_login(
+    body: BiometricLoginRequest,
+    user_agent: str | None = Header(None),
+):
+    """P2-2: device-bound biometric login. The device signs f"{phone}:{deviceKey}"
+    with its enrollment secret; a valid HMAC (compare_digest) issues the same
+    token pair as firebase-verify."""
+    phone = _normalize_phone(body.phone)
+    credential = await get_doc(BIOMETRIC_COLLECTION, body.deviceKey)
+    verified = False
+    if credential is not None and credential.get("phone") == phone and credential.get("secret"):
+        expected = _biometric_signature(credential["secret"], phone, body.deviceKey)
+        verified = hmac.compare_digest(expected, body.signature or "")
+    if not verified:
+        # Strike-less plain failure: no lockout, no strike bookkeeping.
+        _error(401, "BIOMETRIC_VERIFICATION_FAILED", "biometric verification failed")
+    users = await query("users", [("phone", "==", phone)])
+    user = next(
+        (u for u in users if u["id"] == credential.get("uid")),
+        users[0] if users else None,
+    )
+    if user is None:
+        _error(404, "USER_NOT_FOUND", "no account found for this phone number")
+    credential["counter"] = int(credential.get("counter") or 0) + 1
+    credential["lastUsedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc(BIOMETRIC_COLLECTION, body.deviceKey, credential)
+    pair = await _issue_session(user["id"], user_agent)
+    return AuthResponse(
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
+        isNewUser=False,
+        user=_public_user(user),
+    )
 
 
 @router.post("/quick-login", response_model=AuthResponse, response_model_exclude_none=True)

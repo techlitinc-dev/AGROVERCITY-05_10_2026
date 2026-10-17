@@ -328,7 +328,7 @@ Doctor / vet network (`livestock_vets.py`; vet workspace requires a claimed vet 
 | POST | `/livestock/vet/campaigns/{id}/enroll` | Enroll own animal `{ animalId }` (403 other owner's animal, 409 `ALREADY_ENROLLED`/`CAMPAIGN_CLOSED`); FCM reminder. | farmer, seller, dairyManager |
 | POST | `/livestock/vet/campaigns/{id}/mark-vaccinated` | Mark animal vaccinated `{ animalId }` — enrollment → `vaccinated`; FCM to farmer (404 `ENROLLMENT_NOT_FOUND`). | dairyManager, vet |
 
-> `MilkCollectionIn` (§`livestock.py` procurement) gained optional `memberId` + `quality`. `AnimalIn` gained optional `gaushalaId` — when the caller manages that gaushala, the animal is registered as its cattle (`ownerType: "gaushala"`, `cattleStatus: "in-shelter"`, intake event recorded; 404 `GAUSHALA_NOT_FOUND` otherwise); `Animal` responses now carry `gaushalaId`/`cattleStatus`/`events`. The `dairyManager` persona (8th profile) is the livestock-domain super-manager; no admin endpoints exist yet — the `/admin/livestock` console is deferred (see SOP-19).
+> `MilkCollectionIn` (§`livestock.py` procurement) gained optional `memberId` + `quality`. `AnimalIn` gained optional `gaushalaId` — when the caller manages that gaushala, the animal is registered as its cattle (`ownerType: "gaushala"`, `cattleStatus: "in-shelter"`, intake event recorded; 404 `GAUSHALA_NOT_FOUND` otherwise); `Animal` responses now carry `gaushalaId`/`cattleStatus`/`events`. The `dairyManager` persona (8th profile) is the livestock-domain super-manager. The superadmin console for this domain is live — see §28.19 (SOP-19: `/admin/livestock/vets`, `/admin/livestock/vets/{id}/verify`, `/admin/livestock/gaushalas`, `/admin/livestock/orders`).
 
 ## 17. Content: News, Live Channels, Gyan Hub
 
@@ -568,6 +568,316 @@ Deal status map: `negotiating → contract_issued → accepted → in_transit �
 | GET | `/contracts/{id}/deliveries` | Participant only (buyer owner or targeted farmer; else 403). `{ data: [{ slotDate, purchaseId, status (from the purchase), finalAmount? }], fulfilment: { total, completed, cancelled, pending } }`. | directBuyer, seller, farmer |
 
 Contract status map (targeted): `offered → active` (farmer MPIN accept) with `declined`/`cancelled` terminal; legacy untargeted seeds keep the old `open → accepted` flow. `GET /contracts` and `GET /contracts/{id}` stay backward compatible and now include `currentPrice` when `priceType` is set.
+
+---
+
+## 27. Mahila Gruh Udyog (Women's Home Enterprise → Krishi Shopping Mall)
+
+> Added 2026-10-14. The mahila registers her home enterprise ("unit"), adds homemade products (papad, pickles, masala, sweets, handicrafts, textiles…), and **publishes them straight into the Krishi Shopping Mall catalog** — a live listing is a `products` doc carrying `source: "gruh_udyog"`, `unitId`, `gruhProductId`, so it appears in `GET /products` / cart / orders like any mall item. Module collections: `gruh_udyog_units` (one per owner), `gruh_udyog_products` (`draft|live|paused`), `gruh_udyog_batches` (production batches, optional stock add), `gruh_udyog_certifications` (`fssai|udyam|shg|handicraft_mark|pan`), `gruh_udyog_offers` (time-boxed discounts applied to the live mall price). Prices are integer rupees (mall convention); dashboard revenue is paisa. **Gates:** food categories require a *verified, unexpired FSSAI* cert to publish (403 `FSSAI_REQUIRED`); publishing needs stock > 0 (422 `STOCK_REQUIRED`) and an `active` unit (403 `UNIT_PAUSED`); unpublishing is blocked by open orders (409 `OPEN_ORDERS_EXIST`). All writes accept `Idempotency-Key`. All routes require auth; every mutation is owner-only (403 `FORBIDDEN` otherwise).
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/gruh-udyog/categories` | Category catalog with food flags: `{ data: [{ category, isFood, requiresFssai }] }` — Papad & Fryums, Pickles & Chutneys, Spices & Masala, Dairy & Sweets, Grains & Flours (food, FSSAI-gated) + Handicrafts, Textiles & Apparel, Bamboo & Cane, Candles & Diyas, Herbal & Cosmetics, Other. | all |
+| POST | `/gruh-udyog/units` | Register a unit (one per user; 409 `UNIT_ALREADY_EXISTS`). Body `{ name, category, vernacularName?, description?, village?, district?, state?, shgName?, establishedYear?, capacityPerWeek?, imageUrl? }` → 201 `gu_` doc `status: active`. | all |
+| GET | `/gruh-udyog/units/me` | My unit; 404 `UNIT_NOT_FOUND` when not registered. | all |
+| GET | `/gruh-udyog/units/{id}` | Public brand card: `{ unit, productsCount, liveProductsCount, certifications }` — others see only verified certs, owner sees all. | all |
+| PUT | `/gruh-udyog/units/{id}` | Partial update of unit profile fields (owner only). | all |
+| POST | `/gruh-udyog/units/{id}/pause` · `/resume` | Pause blocks new products/publishes (403 `UNIT_PAUSED`); resume re-enables. Existing listings stay up. | all |
+| POST | `/gruh-udyog/units/{id}/products` | Add a homemade product (draft). Body `{ title, vernacularTitle?, category (whitelist, 422), description?, ingredients?, mrp>0, price>0 (≤ mrp), stock≥0, unit?, imageUrls[], tags[], shelfLifeDays?, isVeg? }` → 201 `gup_` doc `status: draft`. | all |
+| GET | `/gruh-udyog/units/{id}/products` | Owner → all statuses; anyone else → live only. `{ data, total }`, newest first. | all |
+| GET | `/gruh-udyog/products/{id}` | Product detail `{ product, batches (owner only), activeOffer }`. | all |
+| PUT | `/gruh-udyog/products/{id}` | Partial update; `price > mrp` → 422; live listings re-sync to the mall doc. | all |
+| PUT | `/gruh-udyog/products/{id}/stock` | Absolute stock set `{ stock ≥ 0 }`; syncs to the mall listing when live. | all |
+| POST | `/gruh-udyog/products/{id}/publish` | Draft → Krishi Shopping Mall: creates the `products` catalog doc (`source: "gruh_udyog"`, seller = owner) and flips status `live`. Idempotent. 409 `ALREADY_LIVE`. | all |
+| POST | `/gruh-udyog/products/{id}/unpublish` | Remove from the mall (→ draft); 409 `OPEN_ORDERS_EXIST` while placed/paid orders or in-flight fulfilment reference it. | all |
+| DELETE | `/gruh-udyog/products/{id}` | Delete a non-live product (409 `PRODUCT_LIVE` otherwise); its offers are removed too. | all |
+| POST | `/gruh-udyog/products/{id}/batches` | Record a production batch `{ batchNo?, quantity>0, productionDate, expiryDate? (≥ productionDate, else 422), addToStock? }` → 201 `gub_`; `addToStock: true` increments product stock (+ mall sync). | all |
+| POST | `/gruh-udyog/batches/{id}/status` | Close an active batch `{ status: sold_out\|expired }`; 409 `BATCH_CLOSED` when already closed. | all |
+| POST | `/gruh-udyog/units/{id}/certifications` | Register a certification `{ type: fssai\|udyam\|shg\|handicraft_mark\|pan, number, issuingAuthority?, validUntil?, documentUrl? }` → 201 `guc_`, `status: pending`; duplicate type+number → 409. | all |
+| GET | `/gruh-udyog/units/{id}/certifications` | Owner → all certs; others → verified only. | all |
+| POST | `/gruh-udyog/products/{id}/offers` | Time-boxed discount `{ title, discountPercent 1–90, validFrom, validUntil }` → 201 `guo_` with computed `offerPrice`; a live mall listing is repriced immediately. | all |
+| GET | `/gruh-udyog/units/{id}/offers` | All offers across the unit's products, newest first. | all |
+| DELETE | `/gruh-udyog/offers/{id}` | Remove an offer; the live mall price falls back to the product price. | all |
+| GET | `/gruh-udyog/units/{id}/orders?status=` | Mall orders containing her products (join on `orders.items.productId` ↔ live mall ids) with per-unit `fulfillment` state. | all |
+| POST | `/gruh-udyog/orders/{id}/accept` | Accept an open order for her unit; snapshots `itemsTotal` (price-lock revenue) → `fulfillment.status: accepted`. 404 when the order has none of her products. | all |
+| POST | `/gruh-udyog/orders/{id}/reject` | Reject with `{ reason }` while still open; after acceptance only possible before fulfilment starts. | all |
+| POST | `/gruh-udyog/orders/{id}/status` | Fulfilment transition `{ status: packed\|shipped\|delivered }` — strict chain `accepted → packed → shipped → delivered` (409 `BAD_TRANSITION` on skips). | all |
+| GET | `/gruh-udyog/units/{id}/dashboard` | `{ products, liveProducts, draftProducts, lowStock[] (≤5 units), orders, orderStates, revenuePaisa (delivered itemsTotal × 100), expiringBatches (≤30d) }`. | all |
+
+---
+
+## 28. Superadmin Console API (SOP 01–27)
+
+> Added 2026-10-17. The complete superadmin console specified in `docs/superadmin-instructions/` SOP-01…SOP-27 — the 111 endpoint paths below (plus `POST /threads` in §28.28), all mounted under `/v1`. SOP modules live in the `admin_sop_*` routers; paths that predate the SOP build are served verbatim from the phase-07 console routers (`admin.py`, `admin_console.py`) and are marked "(console path)" — both families share the same Firestore collections, so doc paths and console paths behave identically. SOP-router paths that duplicate a legacy path under a different route are marked "(alias of …)".
+> - **Auth:** `Authorization: Bearer <token>` — either a Firebase ID token bearing the `admin: true` claim or a backend access JWT whose user carries an `adminRole` tier: `superadmin`, `compliance_officer`, `finance_admin`, `agronomist`/`scientist` (aliases), `operations_lead`, `content_moderator`. `superadmin` always passes; endpoints that restrict to specific tiers list them in the Roles column, everything else accepts any admin (Roles: `admin`). Optional `X-Admin-Role` header must match the server-resolved role (else 403 `FORBIDDEN_ADMIN_ROLE`).
+> - **Audit:** every mutating endpoint (POST/PUT/DELETE) REQUIRES the `X-Audit-Reason` header (min 3 chars; missing/short → 422) and writes an immutable `audit_logs` doc: `adminId`, `timestamp`, `ipAddress`, `previousState`, `newState`, `reason`.
+> - **Maker-checker:** high-value money movements return `{requiresApproval: true}` and create a pending `admin_approvals` doc that a *different* admin must approve (`GET /admin/approvals`, `POST /admin/approvals/{id}/approve`, `POST /admin/approvals/{id}/reject`) — insurance claim payouts > ₹50,000 (`PAYOUT_DUAL_SIGNOFF_PAISE`), other money movements > ₹10,000 (order refunds, penny-drop overrides, coin adjustments, `MAKER_CHECKER_THRESHOLD_PAISE`); `PUT /admin/insurance/rates` and `PUT /admin/chatbot/prompt-config` always require a second admin.
+> - **Reads & errors:** list endpoints return the standard paged envelope `{ data, page, pageSize, total }`; errors use the standard `{error:{code,message,fieldErrors}}` shape with 401 (`INVALID_TOKEN`/`ADMIN_REQUIRED`), 403 (`FORBIDDEN_ADMIN_ROLE`), 404, 409, 422.
+
+### 28.1 Auth & Sessions (SOP-01)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/auth/users` | List user auth credentials and login history — `auth_tokens` + `sessions` rows with last-login IP and revoked flag, paged. (console path) | superadmin, compliance_officer |
+| POST | `/admin/auth/users/{uid}/reset-mpin` | Admin force MPIN reset — issues a 6-digit `mpinResetOtp` on the user doc. (console path) | superadmin, compliance_officer |
+| POST | `/admin/auth/users/{uid}/revoke-sessions` | Revoke all refresh tokens and sessions for a user. (console path) | superadmin, compliance_officer |
+| PUT | `/admin/auth/users/{uid}/status` | Update account status (`active`/`suspended`/`locked`/`banned`; 409 `STATUS_ALREADY_SET`). (alias of `POST /admin/users/{uid}/status`) | admin |
+
+### 28.2 User Management & Personas (SOP-02)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/users` | Search & paginate all users with persona/status/search filters. (console path) | admin |
+| GET | `/admin/users/{uid}` | Full profile details + linked personas + role-profile subcollection docs. | admin |
+| PUT | `/admin/users/{uid}/status` | Set user account status (same writer as §28.1; alias of `POST /admin/users/{uid}/status`). | admin |
+| PUT | `/admin/users/{uid}/personas` | Manage linked personas — add/remove + role-profile upserts; ≥1 persona must remain (409 `LAST_PROFILE`, 409 `PROFILE_ALREADY_LINKED`). | admin |
+| GET | `/admin/users/{uid}/farm-map` | Farm boundary polygon coordinates + land plots + imported land records. | admin |
+
+### 28.3 KYC Verification & Vault (SOP-03)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/kyc/pending` | List pending KYC verification items with AI extraction + risk reasons attached. (console path) | superadmin, compliance_officer |
+| POST | `/admin/kyc/{id}/verify` | Approve KYC document and issue badge. (console path) | superadmin, compliance_officer |
+| POST | `/admin/kyc/{id}/reject` | Reject KYC with a specific reason (min 3 chars). (console path) | superadmin, compliance_officer |
+| GET | `/admin/kyc/history` | Audit trail of all KYC decisions (verified/rejected docs). (console path) | superadmin, compliance_officer |
+
+### 28.4 Mandi Rates & Approvals (SOP-04)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/rates/pending` | List pending vyapari rate submissions with the ±15% Agmarknet sanity-band flag. | admin |
+| POST | `/admin/rates/{id}/approve` | Approve rate update — goes live on the mobile vyapari feed (`vyapari_rates`, cache invalidated). | admin |
+| POST | `/admin/rates/{id}/reject` | Reject rate update with explanation back to the trader. | admin |
+| POST | `/admin/mandi/sync` | Trigger manual Agmarknet/eNAM sync job; records a `cron_job_logs` row either way. | admin |
+
+### 28.5 Produce Lots & B2B Procurement (SOP-05)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/lots` | Search and inspect all produce lots (`market_lots`). (console path) | admin |
+| PUT | `/admin/lots/{id}/status` | Force-update lot status (`active`→`open`/`suspended`/`sold`); a sold lot is terminal (409 `LOT_NOT_EDITABLE`). | admin |
+| GET | `/admin/procurements` | Audit trader procurement records and slips — backed by `purchases` booked by trader-role buyers (seller/directBuyer/exporter) with payment + escrow summary. | admin |
+
+### 28.6 Marketplace Catalog & Orders (SOP-06)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/marketplace/products` | List products with category/status/search filters and computed stock status. | admin |
+| POST | `/admin/marketplace/products` | Add new product SKU to the catalog (admin-owned seller doc, `ADM-` batch no). | admin |
+| PUT | `/admin/marketplace/products/{id}` | Update product pricing and inventory (422 when discounted price > MRP). | admin |
+| GET | `/admin/marketplace/orders` | List orders with delivery (`status`) and payment (`paymentStatus` from refund/Razorpay flags) columns. | admin |
+| POST | `/admin/marketplace/orders/{id}/refund` | Trigger refund for a cancelled order (Razorpay when paid online, manual otherwise; > ₹10,000 routes via maker-checker). (alias of `POST /admin/orders/{id}/refund`) | admin |
+
+### 28.7 Buyer Contracts & Escrow (SOP-07)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/contracts` | List buyer contracts across all stages with current mandi-linked price, farmer/buyer names and delivery-slot count. | admin |
+| POST | `/admin/contracts` | Publish approved institutional contract — an open (untargeted) offer any verified farmer can accept. | admin |
+| PUT | `/admin/contracts/{id}/status` | Update contract state — admin cancellation with breach/cancellation reason (409 when already terminal). | admin |
+| GET | `/admin/contracts/{id}/acceptances` | List signed farmer agreements — `contracts/{id}/acceptances` e-sign records. | admin |
+
+### 28.8 Transport Fleet & Dispatch (SOP-08)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/transport/vehicles` | List registered fleet with KYC doc status. (console path) | superadmin, operations_lead |
+| POST | `/admin/transport/vehicles/{id}/verify` | Approve vehicle commercial papers. (console path) | superadmin, operations_lead |
+| GET | `/admin/transport/bookings` | List active and historical bookings with lot snapshot enrichment, newest first. | admin |
+| PUT | `/admin/transport/bookings/{id}/status` | Manual intervention in trip status — same `ALLOWED_TRANSITIONS` machine and side effects as the transporter flow (waypoint log, chat unlock on accept, POD + two-way rating prompts on delivery, party notifications; 409 `ILLEGAL_TRANSITION`). | admin |
+
+### 28.9 Equipment & Slot Management (SOP-09)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/equipment` | List machinery inventory with owner details. (console path) | superadmin, operations_lead |
+| PUT | `/admin/equipment/{id}/verify` | Approve machine for public booking — flips `docStatus: verified` so it appears in the farmer browse surface (409 `ALREADY_VERIFIED`). | admin |
+| GET | `/admin/equipment/bookings` | List slot bookings and waitlist entries (`status=waitlist` for waitlist only, `all` for both). | admin |
+| DELETE | `/admin/equipment/bookings/{id}` | Admin force cancellation with auto-refund of paid amounts — releases the slot, promotes the waitlist head, notifies farmer + owner (409 when already cancelled). | admin |
+
+### 28.10 Land Leasing & Disputes (SOP-10)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/land/listings` | List land listings for lease with AI-quality audit flags (rent band, completeness). | admin |
+| GET | `/admin/land/leases` | List active leases and payment compliance across landlords. (console path) | superadmin, operations_lead, compliance_officer |
+| GET | `/admin/land/leases/{id}/agreement` | Inspect the generated lease agreement PDF — lease record + freshly built `agreementUrl`, no Pro-plan gate. | admin |
+| PUT | `/admin/land/leases/{id}/terminate` | Arbitrated lease contract termination — plot reverts to `vacant`, marketplace listing reopens, `lease_terminations` record written (409 `LEASE_NOT_ACTIVE`). | admin |
+
+### 28.11 AI Advisory & Soil Tests (SOP-11)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/advisory/scans` | Audit disease scans and confidence metrics (`disease_scans`; < 0.7 flagged low-confidence) + summary metrics block. | admin |
+| POST | `/admin/advisory/pest-alerts` | Broadcast geofenced pest outbreak alert (`pest_alerts`). (console path) | superadmin, agronomist, scientist |
+| GET | `/admin/soil-tests` | List pending soil sample tests across users (`status=pending\|all\|booked\|sampleCollected\|reportReady`). | admin |
+| POST | `/admin/soil-tests/{id}/results` | Upload lab result PDF + NPK/pH values and notify the farmer — sets `reportReady`. | admin |
+
+### 28.12 Chatbot Transcripts & Expert Handoff (SOP-12)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/chatbot/transcripts` | Search & inspect Kisan Mitra chat transcripts — `q`/`language`/`hasHandoff` filters, message counts, last-message-at. | admin |
+| GET | `/admin/chatbot/handoffs` | Queue of escalated expert handoff tickets with 24-h SLA due/breached flags. | admin |
+| POST | `/admin/chatbot/handoffs/{id}/assign` | Assign agronomist to a support thread (queued/assigned only, 409 `TICKET_NOT_ASSIGNABLE`); FCM to the farmer. | admin |
+| PUT | `/admin/chatbot/prompt-config` | Update LLM system prompt and parameters (`platform_config/chatbot`) — always requires a second admin. (console path) | superadmin, content_moderator |
+
+### 28.13 Farm Diary & P&L Oversight (SOP-13)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/diary/summary` | Regional farm expenditure statistics aggregated from `users/{uid}/diary_entries`, grouped by district and diary category. | admin |
+| GET | `/admin/pnl/benchmarks` | State-level crop production-cost benchmarks (`platform_config/pnl_benchmarks`; empty until first PUT). | admin |
+| PUT | `/admin/pnl/benchmarks/{crop}` | Update (merge) standard input cost baselines for one crop. | admin |
+
+### 28.14 Banking, Credit & Loan Underwriting (SOP-14)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/finance/accounts` | List registered bank accounts and verification status — masked `XXXX`+last4 only, never full numbers. | superadmin, finance_admin, compliance_officer |
+| POST | `/admin/finance/accounts/{id}/override-verify` | Manual penny-drop approval (maker-checker when amount > ₹10,000). (alias of `POST /admin/finance/bank-accounts/{id}/override-verify`) | superadmin, finance_admin |
+| GET | `/admin/finance/loans` | Loan application underwriting queue over `loan_applications`. (console path — see §11c) | admin |
+| PUT | `/admin/finance/loans/{id}/status` | Update loan application approval status along the `LOAN_TRANSITIONS` machine. (console path — see §11c) | admin |
+
+### 28.15 Insurance Claims & DBT Disbursal (SOP-15)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/claims` | List claims by status across all farmers (top-level `insurance_claims` desk). (alias of `GET /admin/insurance/claims`) | superadmin, finance_admin, compliance_officer |
+| PUT | `/admin/claims/{userId}/{claimId}` | Advance claim state along `CLAIM_TRANSITIONS`, optionally set payout amount + DBT txn ID — payouts > ₹50,000 route via maker-checker (409 `CLAIM_INVALID_TRANSITION`). | superadmin, finance_admin |
+| POST | `/admin/claims/{id}/assign-surveyor` | Assign field surveyor to claim (`intimated` → `surveyorAssigned`); stamps surveyor details and notifies the farmer. | superadmin, finance_admin |
+| PUT | `/admin/insurance/rates` | Update actuarial and farmer premium rates — closes the open row for the product and always requires a second admin. (alias of `POST /admin/insurance/rates`) | superadmin, finance_admin |
+
+### 28.16 Land Records Registry (SOP-16)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/land-records/status` | Revenue-portal gateway health and latency (`gateway_health` probe rows). (alias of `GET /admin/land-records/health`) | superadmin, operations_lead, agronomist |
+| POST | `/admin/land-records/seed` | Seed verified village 7/12 records into the `land_records_712` cache. | superadmin, operations_lead |
+| GET | `/admin/land-records/audit-log` | Audit trail of user 7/12 imports (from `users/{uid}.landRecords`). | superadmin, operations_lead, agronomist |
+
+### 28.17 Water Resources & Irrigation (SOP-17)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| PUT | `/admin/water/canal-schedule` | Update canal rotation timetable for a canal division (upsert into `canal_schedules`). | superadmin, operations_lead |
+| POST | `/admin/water/groundwater-readings` | Batch ingest CGWB station water-table readings (`cgwb_stations`, one latest doc per station). | superadmin, operations_lead |
+| PUT | `/admin/water/subsidy-rules` | Update PMKSY subsidy parameters (`platform_config/pmksy` admin-owned override store). | superadmin, operations_lead |
+
+### 28.18 FPO Verification & Pool Management (SOP-18)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/fpo` | List registered FPOs with computed membership and pool counts. | admin |
+| POST | `/admin/fpo/verify/{id}` | Approve FPO credential verification — sets `status` + farmer-facing `verification_status`. (alias of `POST /admin/fpos/{id}/verify`) | admin |
+| POST | `/admin/fpo/pools` | Create platform-sponsored group-buy pool (`fpo_pools`). | admin |
+| PUT | `/admin/fpo/pools/{id}/status` | Close pool / change status (`open`/`closed`/`cancelled`) — closing generates a supplier purchase-order ref. | admin |
+
+### 28.19 Livestock, Vet & Dairy Network (SOP-19)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/livestock/vets` | List vet doctors with credential verification status and claimed flag. | admin |
+| POST | `/admin/livestock/vets/{id}/verify` | Verify vet credentials/license — sets the WS-06 `credentialStatus` the vet workspace gates on. (alias of `POST /admin/vets/{id}/verify`) | admin |
+| GET | `/admin/livestock/gaushalas` | List Gaushalas with computed offerings and panchagavya products joined. | admin |
+| GET | `/admin/livestock/orders` | Audit dairy + manure orders across the network, each row tagged `source: milk_sale\|manure\|dairy_product`. | admin |
+
+### 28.20 Content CMS, Live Channels & Workshops (SOP-20)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/content/{collection}` | List and paginate CMS content items — whitelist maps doc names to live collections (`agri_news`→`news`, `agri_channels`→`channels`, `video_guides`→`videos`, `blog_articles`→`blogs`, …); unknown names → 404. | admin |
+| POST | `/admin/content/{collection}` | Create news, blog, workshop, talk, or video item. | admin |
+| PUT | `/admin/content/{collection}/{id}` | Update content item details. | admin |
+| DELETE | `/admin/content/{collection}/{id}` | Remove content item. | admin |
+| GET | `/admin/workshops/{id}/roster` | View workshop enrolled farmers (scanned from per-user `workshop_enrollments`, resolved against user docs). | admin |
+
+### 28.21 Agroforestry & Sapling Requests (SOP-21)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/tree/requests` | List pending sapling requests — collection-group scan over top-level + per-user `sapling_requests`. | admin |
+| PUT | `/admin/tree/requests/{id}/status` | Approve, dispatch, or reject a request — `pending→approved\|rejected`, `approved→dispatched\|rejected` (409 `INVALID_STATUS_TRANSITION`; rejection reason required). | admin |
+| GET | `/admin/tree/ngos` | Manage partner NGO directory (`ngos`). | admin |
+
+### 28.22 Gamification Economy & Referrals (SOP-22)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/gamification/ledger` | System-wide AgriCoins transaction log — canonical `gamification_ledger` mint/burn rows merged with admin `agri_coins_ledger` adjustments. | admin |
+| POST | `/admin/gamification/rewards` | Add new voucher to the rewards store (`reward_coupons`). | admin |
+| GET | `/admin/referrals/audit` | Referral fraud detection report — duplicate invited phones (device farms), top referrers, open fraud holds, coupons. | admin |
+| DELETE | `/admin/ratings/{id}` | Remove abusive or defamatory rating (soft delete) and re-curate the provider's public aggregate. | admin |
+
+### 28.23 Climate Resilience & Cold Storage (SOP-23)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/cold-storage/facilities` | Directory of registered cold chains (`cold_storages`). | admin |
+| POST | `/admin/cold-storage/facilities` | Onboard new cold storage partner. (alias of `POST /admin/cold-storages`) | admin |
+| GET | `/admin/climate/carbon-audit` | Carbon credit certification and payout desk — `carbon_enrollments` with CO₂e/payout estimates computed from `carbon_factors`, plus summary block. | admin |
+| PUT | `/admin/climate/varieties/{id}` | Update certified seed variety specs (`climate_varieties`). | admin |
+
+### 28.24 Women & SHG Programs (SOP-24)
+
+Both 24-* SOP files are served from the real `shg_groups` / `gruh_udyog_*` / `home_enterprises` collections — one subsection for both path families.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/women/shgs/queue` | Pending SHG verification applications (`status` not yet verified/rejected). | admin |
+| POST | `/admin/women/shgs/{id}/verify` | Approve SHG registration & grant eligibility (409 `ALREADY_VERIFIED`). | admin |
+| POST | `/admin/women/subsidies/disburse` | Credit interest-subvention subsidy to the SHG bank — dual-writes `shg_deposits` + `shg_groups/{id}/deposits` and bumps the group corpus. | admin |
+| GET | `/admin/women/enterprise-products` | Curate the home-enterprise storefront — every `gruh_udyog_products` row joined with its unit brand and owner name. | admin |
+| GET | `/admin/women/shg` | List registered SHGs and corpus totals, with `totals` block (counts + corpus/loan-fund paisa). | admin |
+| POST | `/admin/women/shg/verify` | Approve SHG official registration — body `{shgId}`; same verify writer as the 24a path. | admin |
+| GET | `/admin/women/enterprises` | Review home enterprise product lines (`home_enterprises`) with owner names and profit totals. | admin |
+
+### 28.25 Financial Settlements & Automated Jobs (SOP-25)
+
+The two 25-* SOP files are identical; all paths are the phase-07 settlement console (`admin_console.py`), so doc paths and console paths are the same routes.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/settlements` | List settlements with status filters (`pending`/`approved`/`paid`/`all`), newest period first. (console path) | superadmin, finance_admin |
+| POST | `/admin/settlements/{id}/mark-paid` | Mark settlement disbursed with payment ref. (console path) | superadmin, finance_admin |
+| POST | `/admin/jobs/settlements/run` | Trigger manual settlement batch run (default last ISO week). (console path) | superadmin, finance_admin |
+| GET | `/admin/platform-config/commissions` | Read current commission rates (`platform_config/settlements` — transport/equipmentRental/broker %). (console path; read-side companion to the SOP-listed PUT) | superadmin, finance_admin |
+| PUT | `/admin/platform-config/commissions` | Update commission rates. (console path) | superadmin, finance_admin |
+
+### 28.26 System Config, Broadcasts & Moderation (SOP-26)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/app-config` | Fetch current app version gates and feature flags (`app_config/current`). (console path) | superadmin, operations_lead |
+| PUT | `/admin/app-config` | Update minSupportedVersion and feature flags. (console path) | superadmin, operations_lead |
+| POST | `/admin/broadcast` | Send targeted FCM push to user segments (persona/state/district filters); persists a `broadcasts` doc with recipient/sent counts. (alias of `POST /admin/broadcasts`) | superadmin, operations_lead |
+| GET | `/admin/reports` | List reported users and content for moderation (`user_reports` queue, status/module filters). | admin |
+| POST | `/admin/reports/{id}/resolve` | Resolve report with `warning`/`ban`/`dismiss` — `ban` suspends the reported user account (409 `REPORT_ALREADY_RESOLVED`). | admin |
+| GET | `/admin/analytics/summary` | Global platform KPI dashboard summary — users/personas, marketplace + e-market GMV, active leases, pending KYC/claims/settlements, transport bookings, open reports; no hardcoded constants. | admin |
+
+### 28.27 Instructor Courses (SOP-27)
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/admin/courses/queue` | Course review queue, newest first (`status=pendingReview\|published\|rejected\|all`). (console path) | admin |
+| POST | `/admin/courses/{id}/review` | Publish or reject a course — `reason` required on reject (422); writes `audit_logs` and notifies. (console path) | superadmin, compliance_officer |
+| POST | `/admin/courses/{id}/feature` | Feature/unfeature a published course (409 `NOT_PUBLISHED` otherwise). (console path) | superadmin, compliance_officer |
+| GET | `/admin/courses/report` | Aggregates: counts by status, total sales, free claims, GMV, platform commission, instructor earnings. (console path) | admin |
+
+### 28.28 Chat Threads (system)
+
+From `features/farm_e-market_customer.md` §D.1 — chat threads are created server-side only; clients cannot create them. Not under `/admin` — mounted at `/v1/threads`, admin/system-only, same `X-Audit-Reason` + audit contract.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| POST | `/threads` | Create the order-bound chat thread — resolves farmer + buyer from `customer_orders` (e-market) or `orders` (retail), writes `chat_rooms/{orderId}`, notifies both parties. 404 `ORDER_NOT_FOUND` when the order/participants are missing; 409 `THREAD_EXISTS` when a thread already exists for the order; 409 `THREAD_NOT_CONFIRMED` while an e-market order is still `created`/`cancelled`. | admin |
+
+**Known gaps & notes**
+
+- **None.** Every path listed in the SOP §5 tables (SOP-01…SOP-27) is implemented — all 111 are documented above (112 rows: §28.25 also lists the read-side `GET /admin/platform-config/commissions` companion to the SOP-listed PUT); nothing had to be omitted.
+- Doc-vs-code collection naming (same behaviour, real backing collections): SOP-05 `procurements` → `purchases`; SOP-11 `advisory_scans` → `disease_scans`; SOP-16 import audit reads `users/{uid}.landRecords` (the doc's `imported_records` subcollection has no writer); both SOP-24 families read `shg_groups` (the 24a `women_shgs` collection has no writer); SOP-13 aggregates `users/{uid}/diary_entries`.
+- Maker-checker thresholds differ by module: claim payouts > ₹50,000 (`PAYOUT_DUAL_SIGNOFF_PAISE`, SOP-15) vs the platform-wide > ₹10,000 (`MAKER_CHECKER_THRESHOLD_PAISE`) used by order refunds, penny-drop overrides and coin adjustments.
 
 ---
 

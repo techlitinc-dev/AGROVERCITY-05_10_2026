@@ -390,3 +390,22 @@ class PanchagavyaProduct(BaseModel):
     description: str
     imageUrl: str
     createdAt: str
+
+
+# --- Payment capture & settlement (P0-12 / P0-13 / P1-28) ---
+
+class LivestockPayVerifyIn(BaseModel):
+    """Razorpay checkout verification for gaushala donation/adoption fees and
+    vet appointment consultation fees."""
+
+    razorpayOrderId: str = Field(min_length=1)
+    razorpayPaymentId: str = Field(min_length=1)
+    signature: str = Field(min_length=1)
+
+
+class VetPayoutIn(BaseModel):
+    """Vet self-serve payout of settled consultation-fee earnings (P1-28)."""
+
+    amountPaise: int = Field(gt=0)
+    bankAccountId: str = ""
+    mpin: str = ""

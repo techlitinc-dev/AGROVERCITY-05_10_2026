@@ -23,6 +23,42 @@ class DairyAgentIn(BaseModel):
     routeIds: list[str] = Field(default_factory=list)
 
 
+class DairyAgentUpdateIn(BaseModel):
+    """Pickup-team reassignment (M5): partial agent update by the managing manager."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    routeIds: list[str] | None = None
+    active: bool | None = None
+
+
+class RouteStatusIn(BaseModel):
+    """Procurement route lifecycle (M4/S6/E4)."""
+
+    status: Literal["dispatched", "completed", "cancelled"]
+    note: str = ""
+
+
+class CollectionOtpSendIn(BaseModel):
+    collectionId: str = Field(min_length=1)
+
+
+class CollectionOtpVerifyIn(BaseModel):
+    collectionId: str = Field(min_length=1)
+    otp: str = Field(min_length=1, max_length=6)
+
+
+class CollectionQrIssueIn(BaseModel):
+    collectionId: str = Field(min_length=1)
+
+
+class CollectionQrScanIn(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class PickupSlotBookIn(BaseModel):
+    collectionId: str | None = None
+
+
 class RateChartIn(BaseModel):
     species: Literal["cow", "buffalo"] = "cow"
     effectiveFrom: str

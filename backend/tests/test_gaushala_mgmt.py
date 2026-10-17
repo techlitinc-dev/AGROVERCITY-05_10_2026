@@ -168,6 +168,11 @@ async def test_adoption_approve_creates_receipt(client, user_store):
         "amountInr": 1100,
         "status": "active",
         "createdAt": "2026-09-01T08:00:00Z",
+        # P0-12: 80G receipts now require a verified payment on the record.
+        "paymentStatus": "paid",
+        "amountPaisa": 110000,
+        "razorpayPaymentId": "pay_test_1",
+        "paidAt": "2026-09-02T08:00:00Z",
     }
     resp = await client.put(
         "/v1/livestock/gaushala/adoptions/adopt-1/status",
@@ -201,6 +206,9 @@ async def test_adoption_invalid_transition(client, user_store):
     user_store["cow_adoptions/adopt-1"] = {
         "id": "adopt-1", "gaushalaId": profile["id"], "donorId": "farmer-1",
         "donorName": "विनोद शहा", "amountInr": 1100, "status": "active",
+        # P0-12: approval issues an 80G receipt — payment must be verified first.
+        "paymentStatus": "paid", "amountPaisa": 110000,
+        "razorpayPaymentId": "pay_test_1", "paidAt": "2026-09-02T08:00:00Z",
     }
     resp = await client.put(
         "/v1/livestock/gaushala/adoptions/adopt-1/status",
@@ -231,6 +239,9 @@ async def test_donation_acknowledge_creates_receipt(client, user_store):
         "id": "don-1", "gaushalaId": profile["id"], "donorId": "farmer-1",
         "donorName": "अशोकराव कदम", "amountInr": 3500, "donationType": "green_fodder",
         "createdAt": "2026-09-20T10:00:00Z",
+        # P0-12: acknowledgement issues an 80G receipt — payment verified first.
+        "paymentStatus": "paid", "amountPaisa": 350000,
+        "razorpayPaymentId": "pay_test_1", "paidAt": "2026-09-21T10:00:00Z",
     }
     resp = await client.put(
         "/v1/livestock/gaushala/donations/don-1/status",

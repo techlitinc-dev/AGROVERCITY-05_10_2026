@@ -25,6 +25,8 @@ from app.services.kyc import emarket_business_verified_docs
 from app.services.payments import refund_razorpay_payment
 from app.services.users import get_user
 
+from app.models.emarket import SubscriptionUpdateIn
+
 router = APIRouter(prefix="/customer", tags=["emarket-customer"])
 
 LOGISTICS_MODES = ("farmer_delivery", "customer_pickup", "platform_transport")
@@ -1070,6 +1072,44 @@ async def cancel_subscription(subscription_id: str, user: dict = Depends(_custom
         _error(404, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
     sub["status"] = "cancelled"
     sub["updatedAt"] = _now()
+    await set_doc("customer_subscriptions", subscription_id, sub)
+    return sub
+
+
+@router.put("/subscriptions/{subscription_id}")
+async def update_subscription(
+    subscription_id: str,
+    body: SubscriptionUpdateIn,
+    user: dict = Depends(_customer),
+):
+    """P2-18 (C2): standing-order lifecycle. Only the subscribing customer may
+    pause/resume (active <-> paused, cancelled is terminal) or edit the
+    quantity / delivery window of an active subscription."""
+    sub = await get_doc("customer_subscriptions", subscription_id)
+    if sub is None or sub.get("customerId") != user["id"]:
+        _error(404, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
+    current = sub.get("status") or "active"
+    if current == "cancelled":
+        _error(409, "SUBSCRIPTION_TERMINAL", "a cancelled subscription cannot be modified")
+    requested = body.status
+    if requested is not None and requested != current:
+        # The only legal transitions are active <-> paused; any other current
+        # state (e.g. expired) is immutable here.
+        if {current, requested} != {"active", "paused"}:
+            _error(409, "SUBSCRIPTION_INVALID_TRANSITION", "status can only transition between active and paused")
+        sub["status"] = requested
+        sub["updatedAt"] = _now()
+    elif requested is not None:
+        _error(409, "SUBSCRIPTION_INVALID_TRANSITION", f"subscription is already {current}")
+    effective = sub.get("status") or "active"
+    if body.qtyKg is not None or body.deliveryWindow is not None:
+        if effective != "active":
+            _error(409, "SUBSCRIPTION_NOT_ACTIVE", "qtyKg and deliveryWindow can only be updated while the subscription is active")
+        if body.qtyKg is not None:
+            sub["qtyKg"] = body.qtyKg
+        if body.deliveryWindow is not None:
+            sub["deliveryWindow"] = body.deliveryWindow
+        sub["updatedAt"] = _now()
     await set_doc("customer_subscriptions", subscription_id, sub)
     return sub
 

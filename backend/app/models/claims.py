@@ -6,6 +6,10 @@ ClaimStatus = Literal[
     "intimated", "surveyorAssigned", "fieldAssessed", "dbtApproved", "disbursed", "rejected"
 ]
 
+# SOP-15 §6.3 — payouts above ₹50,000 stay in `fieldAssessed` with
+# `pending_second_signoff` until a second admin signs the payout approval.
+PayoutApprovalStatus = Literal["pending_second_signoff", "approved", "rejected"]
+
 
 class ClaimTimelineEntry(BaseModel):
     status: str
@@ -37,9 +41,16 @@ class InsuranceClaimRecord(BaseModel):
     bankAccountLast4: str | None = None
     appealCount: int = 0
     rejectionReason: str | None = None
+    payoutApprovalStatus: PayoutApprovalStatus | None = None
+    payoutApprovalId: str | None = None
+    payoutApprovedBy: str | None = None
     timeline: list[ClaimTimelineEntry] = []
 
 
 class AppealIn(BaseModel):
     reason: str = Field(min_length=10, max_length=1000)
     photos: list[str] = []
+
+
+class PayoutApprovalRequestIn(BaseModel):
+    notes: str | None = None

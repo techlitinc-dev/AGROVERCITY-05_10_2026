@@ -8,6 +8,7 @@ from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.livestock_mgmt import (
     DairyAgentIn,
+    DairyAgentUpdateIn,
     DairyMemberIn,
     MilkSaleCustomerIn,
     MilkSaleOrderIn,
@@ -400,6 +401,26 @@ async def deactivate_dairy_agent(agent_uid: str, uid: str = Depends(_manager)):
     if doc is None:
         _error(404, "AGENT_NOT_FOUND", "agent not found")
     doc["active"] = False
+    doc["updatedAt"] = _now()
+    await set_doc("dairy_agents", doc["id"], doc)
+    return doc
+
+
+@router.put("/livestock/dairy/agents/{agent_uid}")
+async def update_dairy_agent(agent_uid: str, body: DairyAgentUpdateIn, uid: str = Depends(_manager)):
+    """Pickup-team reassignment (M5): the managing manager updates the agent's
+    name, route assignments or active flag. Scoped to this center — another
+    manager gets a plain 404."""
+    docs = await query("dairy_agents", [("uid", "==", agent_uid), ("centerId", "==", uid)], limit=5)
+    doc = next((d for d in docs if d.get("active")), None)
+    if doc is None:
+        _error(404, "AGENT_NOT_FOUND", "agent not found")
+    if body.name is not None:
+        doc["name"] = body.name
+    if body.routeIds is not None:
+        doc["routeIds"] = body.routeIds
+    if body.active is not None:
+        doc["active"] = body.active
     doc["updatedAt"] = _now()
     await set_doc("dairy_agents", doc["id"], doc)
     return doc

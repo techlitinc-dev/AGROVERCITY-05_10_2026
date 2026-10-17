@@ -85,7 +85,6 @@ async def test_dairy_manager_routes_collection_and_ratechart(client, user_store)
         "snfPercent": 9.2,
         "ratePerLiter": 66.5,
         "qualityStatus": "accepted",
-        "farmerOtpVerified": True,
         "notes": "Lactometer & ultrasonic analyzer verified.",
     }
     resp = await client.post("/v1/dairy-manager/collection-check", json=collection_payload, headers=auth(manager_token))
@@ -93,6 +92,16 @@ async def test_dairy_manager_routes_collection_and_ratechart(client, user_store)
     col = resp.json()
     assert col["fatPercent"] == 6.8
     assert col["totalAmountRupees"] == round(40.0 * 66.5, 2)
+    # P0-7 trust fix: the client can no longer assert farmerOtpVerified — the
+    # flag is server-owned (starts False even if a client sends it).
+    resp = await client.post(
+        "/v1/dairy-manager/collection-check",
+        json={**collection_payload, "farmerOtpVerified": True},
+        headers=auth(manager_token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["farmerOtpVerified"] is False
+    assert user_store[f"dairy_collections/{resp.json()['id']}"]["farmerOtpVerified"] is False
 
     # Milk slips generation
     resp = await client.get("/v1/dairy-manager/milk-slips", headers=auth(manager_token))

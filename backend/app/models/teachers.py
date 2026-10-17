@@ -98,3 +98,23 @@ class AssignmentGradeIn(BaseModel):
     grade: str  # A+, A, B, Pass, Incomplete
     feedback: str = ""
     passed: bool = True
+
+
+class EnquiryCounterIn(BaseModel):
+    quotedFeeRupees: float = Field(gt=0)
+    ttlHours: int = Field(default=24, ge=1, le=48)
+
+
+class OneOnOneSlotIn(BaseModel):
+    date: str = Field(min_length=10, max_length=10)
+    startTime: str = Field(min_length=4, max_length=5)
+    endTime: str = Field(min_length=4, max_length=5)
+
+
+class TeacherAvailabilityIn(BaseModel):
+    blackoutDates: list[str] = Field(default_factory=list)
+    oneOnOneSlots: list[OneOnOneSlotIn] = Field(default_factory=list)
+
+
+class CertificateRevokeIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)

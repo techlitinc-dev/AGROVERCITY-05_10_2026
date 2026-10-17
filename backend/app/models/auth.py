@@ -47,3 +47,15 @@ class QuickLoginRequest(BaseModel):
     phone: str | None = None
     mpin: str | None = None
 
+
+class BiometricRegisterRequest(BaseModel):
+    phone: str
+    deviceKey: str
+    publicKey: str | None = None
+
+
+class BiometricLoginRequest(BaseModel):
+    phone: str
+    deviceKey: str
+    signature: str
+

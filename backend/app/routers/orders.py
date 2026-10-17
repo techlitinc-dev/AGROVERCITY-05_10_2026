@@ -68,6 +68,14 @@ async def _restore_stock(order: dict):
             await set_doc("products", item["productId"], product)
 
 
+def _bnpl_schedule(final_total: float) -> list[dict]:
+    """Two equal installments at 30/60 days, exactly as the order response."""
+    return [
+        {"installment": 1, "dueInDays": 30, "amount": final_total / 2},
+        {"installment": 2, "dueInDays": 60, "amount": final_total / 2},
+    ]
+
+
 # Buyer-facing task titles per order status (phase-05 WS-03 task 3.14).
 ORDER_STATUS_TITLES: dict[str, tuple[str, str]] = {
     "placed": ("Order placed", "ऑर्डर दिया गया"),
@@ -181,6 +189,8 @@ async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
         order["couponCode"] = body.couponCode
         order["discount"] = discount
         order["finalTotal"] = final_total
+    if body.paymentMethod == "bnpl":
+        order["bnplSchedule"] = _bnpl_schedule(final_total)
     await set_doc("orders", order_id, order)
     for item in body.items:
         product = products[item.productId]
@@ -196,10 +206,7 @@ async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
         response["discount"] = discount
         response["finalTotal"] = final_total
     if body.paymentMethod == "bnpl":
-        response["bnplSchedule"] = [
-            {"installment": 1, "dueInDays": 30, "amount": final_total / 2},
-            {"installment": 2, "dueInDays": 60, "amount": final_total / 2},
-        ]
+        response["bnplSchedule"] = order["bnplSchedule"]
     await set_doc("idempotency_keys", body.idempotencyKey, {"key": body.idempotencyKey, "response": response})
     await _audit(order, "order_placed")
     await emit_order_status_task(order, "placed")
@@ -224,6 +231,23 @@ async def list_orders(page: int = 1, pageSize: int = 20, uid: str = Depends(_ord
 @router.get("/orders/{order_id}")
 async def get_order(order_id: str, uid: str = Depends(_order_user)):
     return await _own_order(order_id, uid)
+
+
+@router.get("/orders/{order_id}/bnpl-schedule")
+async def get_bnpl_schedule(order_id: str, uid: str = Depends(_order_user)):
+    """P2-17: the persisted BNPL installment plan (order owner only). Orders
+    placed before persistence existed are computed lazily — exactly as POST
+    /orders does — and then stored on the doc."""
+    order = await _own_order(order_id, uid)
+    schedule = order.get("bnplSchedule")
+    if schedule is None:
+        if order.get("paymentMethod") != "bnpl":
+            _error(404, "BNPL_SCHEDULE_NOT_FOUND", "order has no BNPL schedule")
+        final_total = float(order.get("finalTotal", order.get("total", 0)) or 0)
+        schedule = _bnpl_schedule(final_total)
+        order["bnplSchedule"] = schedule
+        await set_doc("orders", order_id, order)
+    return {"orderId": order_id, "bnplSchedule": schedule}
 
 
 @router.post("/orders/{order_id}/cancel")

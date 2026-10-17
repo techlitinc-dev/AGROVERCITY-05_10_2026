@@ -5,7 +5,7 @@
 > **Target Collections:** `gaushalas`, `nurseries`, `vets`, `dairy_products`, `vet_bookings`, `manure_orders`, `dairy_members`, `rate_charts`, `payment_batches`, `payment_entries`, `milk_sale_customers`, `milk_sale_orders`, `dairy_stock_items`, `gaushala_expenses`, `appointments`, `vet_schedules`, `prescriptions`, `vaccination_campaigns`, `campaign_enrollments`, `receipts`  
 > **Superadmin UI Path:** `/admin/livestock`  
 > **Access Level:** Super Admin (`customClaims: {admin: true}`)
-> **Implementation Status (26 Sep 2026):** User-facing backend (FastAPI, tag `livestock`) and mobile consoles are **implemented and verified** (65 new tests; full suite 453 passed + 1 pre-existing skip). The superadmin console UI at `/admin/livestock` and its `/v1/admin/livestock/*` endpoints remain **pending — deferred by user decision** (see §5).
+> **Implementation Status (26 Sep 2026, updated 17 Oct 2026):** User-facing backend (FastAPI, tag `livestock`) and mobile consoles are **implemented and verified** (65 new tests; full suite 453 passed + 1 pre-existing skip). The superadmin console endpoints `/v1/admin/livestock/*` are **implemented** as of 17 Oct 2026 (`admin_sop_org.py`; the deferral is lifted — see §5 and `endpoints.md` §28.19). The console UI at `/admin/livestock` remains a frontend build item.
 
 ---
 
@@ -93,7 +93,7 @@ The superadmin interface for this module provides the following core operational
 
 ## 5. Backend Admin API Endpoints
 
-> **Status: PENDING (deferred).** No `/v1/admin/livestock/*` endpoints are implemented yet. The table below is the target contract for the deferred console build — do not treat these as live.
+> **Status: IMPLEMENTED (17 Oct 2026).** All four `/v1/admin/livestock/*` endpoints below are live in `backend/app/routers/admin_sop_org.py`, backed by the real `vets` / `gaushalas` / `milk_sale_orders` + manure-order collections (see `endpoints.md` §28.19). The deferral is lifted.
 
 All admin endpoints require an Authorization header with a Firebase ID token bearing the `admin: true` custom claim:
 `Authorization: Bearer <firebase_id_token>`

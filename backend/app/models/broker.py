@@ -62,6 +62,33 @@ class LeadUpdate(BaseModel):
 class RespondRequest(BaseModel):
     action: Literal["accept", "decline"]
     reason: str = ""
+    # P0-6 (C5/F6): MPIN e-sign on accept. The gate applies only when the
+    # accepting farmer has an MPIN on file (mpinHash) — farmers without an MPIN
+    # accept with a recorded consentTimestamp instead.
+    mpin: str | None = None
+    signatureData: str | None = None
+    consentTimestamp: str | None = None
+
+
+MilestoneType = Literal["departed", "arrived", "loading", "in_transit", "weighed", "delivered"]
+
+
+class MilestoneCreate(BaseModel):
+    """P1-9 (F9/B9): event-based delivery milestones — no GPS telemetry."""
+
+    type: MilestoneType
+    note: str = ""
+    at: str | None = None  # ISO-8601; defaults to now
+    weightKg: float | None = None  # P1-9/E6: only meaningful on "weighed"
+
+
+class VehicleUpdate(BaseModel):
+    """P1-12 (B8): vehicle & pickup details. The full plate is stored; every
+    deal serializer masks it ("MH 12 •• 3456")."""
+
+    vehicleType: str
+    vehicleNumber: str
+    driverName: str
 
 
 class BuyerRequirementCreate(BaseModel):
@@ -72,6 +99,13 @@ class BuyerRequirementCreate(BaseModel):
     notes: str = ""
 
 class DealCancelRequest(BaseModel):
+    reason: str = ""
+
+
+class DealDisputeCreate(BaseModel):
+    """C9/WS-05 step 9: a deal dispute — category + reason (either party)."""
+
+    category: str  # "payment" | "quality" | "delivery" | "other"
     reason: str = ""
 
 class EvidenceEntry(BaseModel):

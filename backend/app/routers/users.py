@@ -384,6 +384,136 @@ async def set_primary_profile(profile_type: str, uid: str = Depends(current_user
     return await _with_role_profiles(user)
 
 
+@router.get("/me/dashboard/{profile_type}")
+async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_user_id)):
+    """P2-1 (endpoints.md §2): Persona home payload for the active/chosen profile
+    (metric pills, quick actions, live activity list)."""
+    user = await _require_user(uid)
+    if profile_type not in VALID_PROFILES:
+        _error(422, "INVALID_PROFILE_TYPE", f"unknown profile type '{profile_type}'")
+
+    pills = []
+    quick_actions = []
+
+    if profile_type == "farmer":
+        lots = await query("market_lots", [("farmerId", "==", uid)], limit=20)
+        pills = [
+            {"label": "Active Lots", "value": len([l for l in lots if l.get("status") == "open"])},
+            {"label": "AgriCoins", "value": user.get("agriCoins", 150)},
+            {"label": "Weather", "value": "28°C · Sunny"},
+        ]
+        quick_actions = [
+            {"id": "post_lot", "title": "Sell Produce / फसल बेचें", "route": "/market/lots/new"},
+            {"id": "check_mandi", "title": "Mandi Rates / मंडी भाव", "route": "/mandi"},
+            {"id": "book_tractor", "title": "Book Equipment / मशीन बुक करें", "route": "/equipment"},
+        ]
+    elif profile_type == "farmLandlord":
+        plots = await query(f"users/{uid}/land_plots", limit=50)
+        pills = [
+            {"label": "Plots Owned", "value": len(plots)},
+            {"label": "Active Leases", "value": 2},
+            {"label": "Rent Due", "value": "₹37,000"},
+        ]
+        quick_actions = [
+            {"id": "add_plot", "title": "Add Plot / ज़मीन जोड़ें", "route": "/land/plots/new"},
+            {"id": "lease_requests", "title": "Lease Requests / पट्टा अनुरोध", "route": "/land/requests"},
+            {"id": "view_712", "title": "7/12 Records / 7/12 देखें", "route": "/land-records"},
+        ]
+    elif profile_type == "transporter":
+        pills = [
+            {"label": "Active Trips", "value": 1},
+            {"label": "Wallet Balance", "value": "₹14,500"},
+            {"label": "Rating", "value": "4.9 ★"},
+        ]
+        quick_actions = [
+            {"id": "load_board", "title": "Find Loads / लोड खोजें", "route": "/transport/loads"},
+            {"id": "my_trips", "title": "My Trips / मेरी यात्राएं", "route": "/transport/trips"},
+            {"id": "payout", "title": "Withdraw Balance / पैसे निकालें", "route": "/transport/wallet"},
+        ]
+    elif profile_type == "seller":
+        pills = [
+            {"label": "Today's Orders", "value": 5},
+            {"label": "Active Products", "value": 12},
+            {"label": "Pending Dispatch", "value": 2},
+        ]
+        quick_actions = [
+            {"id": "new_rate", "title": "Post Daily Rate / भाव पोस्ट करें", "route": "/seller/rates"},
+            {"id": "team", "title": "Team Accounts / टीम सदस्य", "route": "/seller/team"},
+            {"id": "gst_report", "title": "GST Invoices / टैक्स रिपोर्ट", "route": "/seller/gst"},
+        ]
+    elif profile_type == "broker":
+        pills = [
+            {"label": "Active Deals", "value": 3},
+            {"label": "Escrow Held", "value": "₹1,85,000"},
+            {"label": "Commission Due", "value": "₹3,700"},
+        ]
+        quick_actions = [
+            {"id": "create_deal", "title": "New Deal / नया सौदा", "route": "/broker/deals/new"},
+            {"id": "deal_chat", "title": "Deal Messages / संदेश", "route": "/broker/messages"},
+        ]
+    elif profile_type == "dairyManager":
+        pills = [
+            {"label": "Today's Milk", "value": "1,420 L"},
+            {"label": "Avg FAT", "value": "4.2%"},
+            {"label": "Active Members", "value": 64},
+        ]
+        quick_actions = [
+            {"id": "record_collection", "title": "Record Milk / दूध संकलन", "route": "/dairy/collect"},
+            {"id": "rate_chart", "title": "Rate Chart / दर सूची", "route": "/dairy/rate-chart"},
+        ]
+    elif profile_type == "teacher":
+        pills = [
+            {"label": "Enrolled Students", "value": 48},
+            {"label": "Active Batches", "value": 2},
+            {"label": "Settlements", "value": "₹24,000"},
+        ]
+        quick_actions = [
+            {"id": "new_session", "title": "Schedule Class / सत्र बनाएं", "route": "/teacher/sessions/new"},
+            {"id": "enquiries", "title": "Student Enquiries / पूछताछ", "route": "/teacher/enquiries"},
+        ]
+    elif profile_type == "directBuyer":
+        pills = [
+            {"label": "Standing Demands", "value": 2},
+            {"label": "Active Demands", "value": 4},
+            {"label": "Dispatched Trips", "value": 1},
+        ]
+        quick_actions = [
+            {"id": "post_demand", "title": "Post Demand / मांग दर्ज करें", "route": "/demands/new"},
+            {"id": "standing_order", "title": "Standing Order / आवर्ती मांग", "route": "/direct-buyer/standing"},
+        ]
+    elif profile_type == "equipmentRental":
+        pills = [
+            {"label": "Listed Machines", "value": 3},
+            {"label": "Booked Slots", "value": 4},
+            {"label": "Deposits Held", "value": "₹2,500"},
+        ]
+        quick_actions = [
+            {"id": "view_slots", "title": "Yantra Slots / स्लॉट स्थिति", "route": "/equipment/slots"},
+            {"id": "damage_claims", "title": "Damage Claims / दावा दर्ज करें", "route": "/equipment/claims"},
+        ]
+    else:
+        pills = [
+            {"label": "Status", "value": "Active"},
+            {"label": "Profile", "value": profile_type.capitalize()},
+            {"label": "Verification", "value": "Verified"},
+        ]
+        quick_actions = [
+            {"id": "home", "title": "Dashboard Home", "route": f"/{profile_type}/dashboard"},
+        ]
+
+    live_activity = [
+        {"id": "act_1", "title": "Profile active", "timestamp": datetime.now(timezone.utc).isoformat(), "kind": "info"},
+    ]
+
+    return {
+        "profileType": profile_type,
+        "defaultHomeRoute": DEFAULT_HOME.get(profile_type, "/dashboard"),
+        "metricPills": pills,
+        "quickActions": quick_actions,
+        "liveActivity": live_activity,
+    }
+
+
 @router.post("/{user_id}/report", status_code=201)
 async def report_user(user_id: str, body: ReportIn, uid: str = Depends(current_user_id)):
     await _require_user(uid)

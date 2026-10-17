@@ -9,10 +9,14 @@ from pydantic import BaseModel
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import admin_action, current_user_id
+from app.core.security import verify_mpin
 from app.models.transport import (
     AcceptBookingRequest,
     AssignDriverRequest,
     AvailabilityRequest,
+    BookingPaymentRequest,
+    BookingStopsRequest,
+    BreakdownRequest,
     CreateBookingRequest,
     FareEstimateOut,
     FareEstimateRequest,
@@ -22,6 +26,8 @@ from app.models.transport import (
     OwnerVehicleRequest,
     OwnerVehicleUpdateRequest,
     RejectBookingRequest,
+    StopPodRequest,
+    TransportPayoutRequest,
     TransportProfileUpdate,
     TripExpenseRequest,
     TripLocationUpdate,
@@ -41,6 +47,13 @@ from app.routers.users import require_role
 from app.services import kyc as kyc_service
 from app.services import reports
 from app.services import settlements as settlements_service
+from app.services import escrow as escrow_service
+from app.services.payments import (
+    create_razorpay_order,
+    create_razorpayx_payout,
+    refund_razorpay_payment,
+    verify_razorpay_signature,
+)
 from app.services.pnl_engine import record_auto_entry
 from app.services import transport_match
 from app.services.billing import effective_plan, entitlement_guard, record_usage
@@ -2868,4 +2881,801 @@ async def driver_analytics(driver_id: str, uid: str = Depends(_transporter)):
             if str(b.get("date") or "").startswith(month_prefix)
         ),
         "avgRating": (driver.get("ratingStats") or {}).get("average"),
+    }
+
+
+# ==========================================
+# 21. TRIP FARE PAYMENTS & IN-TRIP ESCROW (P0-1, spec F10/S4)
+# ==========================================
+
+TRANSPORT_WALLET_LEDGER = "transport_wallet_ledger"
+
+# Booking statuses after which no fare payment is accepted.
+PAYMENT_CLOSED_STATUSES = ("cancelled", "delivered", "breakdown")
+
+
+def _fare_paisa(booking: dict) -> int:
+    """The agreed fare in integer paisa (bookings store rupees)."""
+    return int(round(float(booking.get("fare") or 0) * 100))
+
+
+def _empty_escrow() -> dict:
+    """Escrow subdoc shape — mirrors the purchases escrow contract."""
+    return {
+        "status": "unfunded",
+        "amountPaisa": 0,
+        "fundedAt": None,
+        "releaseAt": None,
+        "releasedAt": None,
+        "refundedAt": None,
+        "disputeWindowHours": None,
+        "disputeOpenedAt": None,
+        "disputeResolvedAt": None,
+        "commissionPaisa": None,
+        "netReleasePaisa": None,
+    }
+
+
+async def _post_wallet_entry(
+    uid: str,
+    kind: str,  # "credit" | "debit"
+    amount_paisa: int,
+    *,
+    booking_id: str | None = None,
+    payout_id: str | None = None,
+    note: str | None = None,
+) -> dict:
+    """Append-only wallet ledger line; the wallet balance is the sum of it."""
+    doc = {
+        "id": f"twl_{uuid.uuid4().hex[:12]}",
+        "userId": uid,
+        "kind": kind,
+        "amountPaisa": int(amount_paisa),
+        "bookingId": booking_id,
+        "payoutId": payout_id,
+        "note": note,
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc(TRANSPORT_WALLET_LEDGER, doc["id"], doc)
+    return doc
+
+
+async def _wallet_entries(uid: str) -> list[dict]:
+    entries = await query(TRANSPORT_WALLET_LEDGER, [("userId", "==", uid)], limit=2000)
+    entries.sort(key=lambda e: e.get("at", ""), reverse=True)
+    return entries
+
+
+async def _wallet_balance_paisa(uid: str) -> int:
+    balance = 0
+    for entry in await _wallet_entries(uid):
+        amount = int(entry.get("amountPaisa") or 0)
+        balance += amount if entry.get("kind") == "credit" else -amount
+    return balance
+
+
+async def _post_tds_entry(uid: str, txn_id: str, gross_paisa: int) -> dict:
+    """TDS 194-O ledger line (same rail the weekly settlement run writes)."""
+    tds_paisa = int(round(gross_paisa * settlements_service.TDS_194O_RATE))
+    doc = {
+        "txnId": txn_id,
+        "persona": "transport",
+        "entityId": uid,
+        "grossPaisa": int(gross_paisa),
+        "tdsPaisa": tds_paisa,
+        "section": "194-O",
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("tds_ledger", f"tds_{txn_id}", doc)
+    return doc
+
+
+async def _transport_room_local(booking: dict) -> dict:
+    """Local copy of services/chat.ensure_transport_room (spec S5/D room
+    shape) — payment-in-escrow also unlocks chat when the booking is already
+    accepted. Writes collection "chat_rooms"."""
+    existing = await get_doc("chat_rooms", booking["id"])
+    if existing is not None:
+        return existing
+    if not booking.get("transporterId"):
+        return None
+    farmer = await get_doc("users", booking["userId"]) or {}
+    transporter = await get_doc("users", booking["transporterId"]) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    room = {
+        "id": booking["id"],
+        "kind": "transport",
+        "purchaseId": None,
+        "farmerId": booking["userId"],
+        "farmerName": (farmer.get("name", "") or "").strip().split(" ")[0],
+        "buyerId": booking["transporterId"],
+        "buyerName": (transporter.get("name", "") or "").strip().split(" ")[0],
+        "crop": booking.get("commodity") or booking.get("vehicleType", ""),
+        "createdAt": now,
+        "lastMessageAt": None,
+        "lastMessageText": "",
+        "readByFarmer": True,
+        "readByBuyer": True,
+    }
+    await set_doc("chat_rooms", room["id"], room)
+    return room
+
+
+@router.post("/bookings/{booking_id}/payments")
+async def create_booking_payment(
+    booking_id: str,
+    body: BookingPaymentRequest,
+    uid: str = Depends(_booker),
+):
+    """P0-1: fare order creation (returns orderId) or, when the razorpay*
+    fields are supplied, signature verification that captures the payment,
+    funds the trip escrow and unlocks chat on an accepted trip."""
+    booking = await _get_booking(booking_id)
+    if booking.get("userId") != uid:
+        _error(403, "FORBIDDEN", "only the booker pays for this booking")
+    if booking.get("status") in PAYMENT_CLOSED_STATUSES:
+        _error(
+            409,
+            "INVALID_STATUS_TRANSITION",
+            f"cannot pay a {booking.get('status')} booking",
+        )
+
+    if body.razorpayOrderId or body.razorpayPaymentId or body.razorpaySignature:
+        missing = [
+            field
+            for field, value in (
+                ("razorpayOrderId", body.razorpayOrderId),
+                ("razorpayPaymentId", body.razorpayPaymentId),
+                ("razorpaySignature", body.razorpaySignature),
+            )
+            if not value
+        ]
+        if missing:
+            _error(
+                422,
+                "PAYMENT_INCOMPLETE",
+                "order id, payment id and signature are all required to verify",
+                {f: "required for verification" for f in missing},
+            )
+        return await _verify_booking_payment(booking, body)
+    return await _create_booking_order(booking, body)
+
+
+async def _create_booking_order(booking: dict, body: BookingPaymentRequest) -> dict:
+    amount_paisa = body.amountPaisa or _fare_paisa(booking)
+    if amount_paisa <= 0:
+        _error(422, "VALIDATION_ERROR", "nothing to pay on this booking", {"amountPaisa": "fare is zero"})
+    order = create_razorpay_order(amount_paisa, booking["id"])
+    booking["pendingOrderId"] = order["id"]
+    booking["pendingOrderAmountPaisa"] = amount_paisa
+    booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("transport_bookings", booking["id"], booking)
+    return {
+        "bookingId": booking["id"],
+        "orderId": order["id"],
+        "amountPaisa": amount_paisa,
+        "currency": "INR",
+        "status": "created",
+    }
+
+
+async def _verify_booking_payment(booking: dict, body: BookingPaymentRequest) -> dict:
+    escrow = booking.get("escrow") or {}
+    if escrow.get("status") == "released":
+        _error(409, "ESCROW_ALREADY_RELEASED", "the trip escrow is already released")
+    if not booking.get("pendingOrderId"):
+        _error(400, "ORDER_NOT_CREATED", "create a payment order for this booking first")
+    if body.razorpayOrderId != booking["pendingOrderId"]:
+        _error(
+            400,
+            "ORDER_MISMATCH",
+            "payment order does not match the booking's pending order",
+            {"razorpayOrderId": "does not match the booking's pending order"},
+        )
+    payments = booking.setdefault("payments", [])
+    if any(
+        p.get("razorpayPaymentId") == body.razorpayPaymentId and p.get("status") == "captured"
+        for p in payments
+    ):
+        return {"ok": True, "duplicate": True, "bookingId": booking["id"]}
+    if not verify_razorpay_signature(
+        body.razorpayOrderId, body.razorpayPaymentId, body.razorpaySignature
+    ):
+        _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
+
+    now = datetime.now(timezone.utc).isoformat()
+    amount_paisa = int(booking.get("pendingOrderAmountPaisa") or _fare_paisa(booking))
+    payment = {
+        "amountPaisa": amount_paisa,
+        "razorpayOrderId": body.razorpayOrderId,
+        "razorpayPaymentId": body.razorpayPaymentId,
+        "status": "captured",
+        "at": now,
+    }
+    payments.append(payment)
+    booking["payments"] = payments
+
+    first_funding = escrow.get("status") != "held"
+    if not escrow:
+        escrow = _empty_escrow()
+        booking["escrow"] = escrow
+    escrow["status"] = "held"
+    escrow["amountPaisa"] = int(escrow.get("amountPaisa") or 0) + amount_paisa
+    escrow["fundedAt"] = now
+    if first_funding:
+        escrow_service.start_clock(escrow)  # releaseAt = now + dispute window
+    booking["updatedAt"] = now
+    await set_doc("transport_bookings", booking["id"], booking)
+
+    # Spec D.5: payment in escrow confirms the trip → chat room exists.
+    if booking.get("transporterId") and booking.get("status") in ("accepted", "enRoute"):
+        room = await _transport_room_local(booking)
+        if room:
+            for party in (booking["userId"], booking["transporterId"]):
+                await notify_user(
+                    party,
+                    type="chat_unlocked",
+                    title="Chat unlocked / चैट खुली",
+                    body="Fare secured in escrow — coordinate the pickup in-app",
+                    deepLink=f"/dashboard/p/transport/trips/{booking['id']}/chat",
+                )
+    await notify_user(
+        booking["userId"],
+        type="fare_payment_captured",
+        title="Payment secured / भुगतान सुरक्षित",
+        body=f"₹{amount_paisa / 100:.0f} held in escrow for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
+        deepLink=f"/dashboard/p/transport/trips/{booking['id']}",
+    )
+    return {"ok": True, "payment": payment, "escrow": booking["escrow"], "bookingId": booking["id"]}
+
+
+async def _perform_escrow_release(booking: dict) -> dict:
+    """Shared release body (endpoint + nightly job): commission per the
+    settlements config, net credited to the transporter's wallet, TDS 194-O
+    ledger line, platform ledger line. Callers gate on status/due/disputes."""
+    escrow = booking["escrow"]
+    amount_paisa = int(escrow.get("amountPaisa") or 0)
+    config = await settlements_service._config()
+    commission_paisa = int(round(amount_paisa * float(config.get("transportPct", 10)) / 100))
+    net_release = amount_paisa - commission_paisa
+    now = datetime.now(timezone.utc).isoformat()
+    escrow.update(
+        status="released",
+        releasedAt=now,
+        commissionPaisa=commission_paisa,
+        netReleasePaisa=net_release,
+    )
+    booking["updatedAt"] = now
+    await set_doc("transport_bookings", booking["id"], booking)
+
+    transporter_id = booking.get("transporterId")
+    if transporter_id:
+        await _post_wallet_entry(
+            transporter_id,
+            "credit",
+            net_release,
+            booking_id=booking["id"],
+            note="escrow released",
+        )
+        await _post_tds_entry(transporter_id, f"trb_{booking['id']}", amount_paisa)
+    await set_doc(
+        "platform_ledger",
+        f"escrow_rel_{booking['id']}",
+        {
+            "id": f"escrow_rel_{booking['id']}",
+            "kind": "transport_escrow_release",
+            "bookingId": booking["id"],
+            "userId": transporter_id,
+            "amountPaisa": net_release,
+            "commissionPaisa": commission_paisa,
+            "status": "posted",
+            "createdAt": now,
+        },
+    )
+    return booking
+
+
+async def release_booking_escrow(booking: dict) -> dict:
+    """Release a held trip escrow once the dispute window closed silently
+    (spec S4 auto-release). Imported by the nightly-job agent — no-ops unless
+    the escrow is held, unpaused and due; returns the (possibly updated)
+    booking."""
+    escrow = booking.get("escrow") or {}
+    if escrow.get("status") != "held":
+        return booking
+    if escrow_service.is_paused(escrow):
+        return booking
+    if not escrow_service.is_due(escrow):
+        return booking
+    return await _perform_escrow_release(booking)
+
+
+@router.post("/bookings/{booking_id}/escrow/release")
+async def release_escrow_now(booking_id: str, uid: str = Depends(_viewer)):
+    """Manual release: on POD (spec S4 "released on POD") or once the dispute
+    window closed. A dispute opened inside the window pauses the release."""
+    booking = await _get_booking(booking_id)
+    if uid not in (booking.get("userId"), booking.get("transporterId")):
+        _error(403, "FORBIDDEN", "only a booking party can release this escrow")
+    escrow = booking.get("escrow") or {}
+    if escrow.get("status") != "held":
+        _error(409, "ESCROW_NOT_HELD", f"escrow is {escrow.get('status') or 'unfunded'}")
+    if escrow_service.is_paused(escrow):
+        _error(409, "ESCROW_DISPUTE_OPEN", "release paused until the open dispute is resolved")
+    if not escrow_service.is_due(escrow) and booking.get("status") != "delivered":
+        _error(409, "ESCROW_NOT_DUE", "escrow can be released on delivery or after the dispute window")
+    await _perform_escrow_release(booking)
+    return booking
+
+
+# ==========================================
+# 22. TRANSPORTER WALLET & PAYOUTS (P0-1, spec T9)
+# ==========================================
+
+@router.get("/wallet")
+async def transport_wallet(uid: str = Depends(_transporter)):
+    """Wallet balance from the booking payment/payout ledger entries, plus the
+    TDS 194-O summary for this transporter."""
+    entries = await _wallet_entries(uid)
+    balance = 0
+    for entry in entries:
+        amount = int(entry.get("amountPaisa") or 0)
+        balance += amount if entry.get("kind") == "credit" else -amount
+    tds_docs = await query(
+        "tds_ledger", [("persona", "==", "transport"), ("entityId", "==", uid)], limit=1000
+    )
+    tds_deducted = sum(int(d.get("tdsPaisa") or 0) for d in tds_docs)
+    return {
+        "userId": uid,
+        "balancePaisa": balance,
+        "currency": "INR",
+        "entries": entries,
+        "entryCount": len(entries),
+        "tds": {
+            "tdsDeductedPaisa": tds_deducted,
+            "tdsRatePct": round(settlements_service.TDS_194O_RATE * 100, 2),
+        },
+    }
+
+
+@router.post("/payouts", status_code=201)
+async def create_transport_payout(
+    body: TransportPayoutRequest,
+    uid: str = Depends(_transporter),
+):
+    """Move wallet balance to the transporter's penny-drop-verified bank
+    account over the RazorpayX rail. MPIN-gated (high-risk money movement)."""
+    user = await get_user(uid) or {}
+    stored = user.get("mpinHash")
+    if not stored:
+        _error(409, "MPIN_NOT_SET", "set an MPIN before requesting a payout")
+    if not verify_mpin(body.mpin, stored):
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+
+    accounts = await query(f"users/{uid}/bank_accounts", [], limit=100)
+    verified = [a for a in accounts if a.get("verifyStatus") == "verified"]
+    if not verified:
+        _error(422, "NO_VERIFIED_BANK_ACCOUNT", "add and verify a bank account to receive payouts")
+    primary = next((a for a in verified if a.get("isPrimary")), verified[0])
+
+    balance = await _wallet_balance_paisa(uid)
+    amount_paisa = body.amountPaisa or balance
+    if amount_paisa <= 0:
+        _error(422, "AMOUNT_INVALID", "payout amount must be positive", {"amountPaisa": "must be > 0"})
+    if amount_paisa > balance:
+        _error(
+            422,
+            "INSUFFICIENT_BALANCE",
+            f"payout exceeds the wallet balance of ₹{balance / 100:.2f}",
+            {"amountPaisa": f"must be <= {balance}"},
+        )
+
+    payout_id = f"tpay_{uuid.uuid4().hex[:12]}"
+    result = await create_razorpayx_payout(
+        primary.get("razorpayFundAccountId", ""), amount_paisa, payout_id
+    )
+    payout = {
+        "id": payout_id,
+        "userId": uid,
+        "amountPaisa": amount_paisa,
+        "status": result.get("status", "processed"),
+        "razorpayPayoutId": result.get("id"),
+        "bankAccountId": primary["id"],
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("transport_payouts", payout_id, payout)
+    await _post_wallet_entry(
+        uid, "debit", amount_paisa, payout_id=payout_id, note="payout to bank"
+    )
+    return payout
+
+
+# ==========================================
+# 23. TRANSPORTER RATINGS RECEIVED (P1-27, spec T10)
+# ==========================================
+
+@router.get("/ratings")
+async def my_transport_ratings(uid: str = Depends(_transporter)):
+    """Ratings this transporter received (the /v1/ratings transport write
+    flow), with the aggregate average/count and tag tally."""
+    ratings = await query(
+        "ratings", [("providerId", "==", uid), ("bookingKind", "==", "transport")], limit=1000
+    )
+    ratings.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+    count = len(ratings)
+    average = round(sum(int(r.get("stars") or 0) for r in ratings) / count, 2) if count else None
+    tags: dict[str, int] = {}
+    for rating in ratings:
+        for tag in rating.get("tags") or []:
+            tags[tag] = int(tags.get(tag) or 0) + 1
+    return {
+        "data": ratings,
+        "total": count,
+        "aggregate": {"average": average, "count": count, "tags": tags},
+    }
+
+
+# ==========================================
+# 24. MULTI-DROP STOPS & PER-STOP POD (P2-36, spec F15/E16)
+# ==========================================
+
+@router.post("/bookings/{booking_id}/stops", status_code=201)
+async def add_booking_stops(
+    booking_id: str,
+    body: BookingStopsRequest,
+    uid: str = Depends(_viewer),
+):
+    """Plan delivery stops on a live booking (milk-run). Either booking party
+    may plan; stops append after the existing ones."""
+    booking = await _get_booking(booking_id)
+    if uid not in (booking.get("userId"), booking.get("transporterId")):
+        _error(403, "FORBIDDEN", "only a booking party can plan stops")
+    if booking.get("status") in ("delivered", "cancelled", "breakdown"):
+        _error(409, "INVALID_STATUS_TRANSITION", f"cannot plan stops on a {booking.get('status')} booking")
+    stops = list(booking.get("stops") or [])
+    for offset, stop in enumerate(body.stops):
+        stops.append(
+            {
+                "stopNo": len(stops) + 1,
+                "label": stop.label,
+                "address": stop.address,
+                "eta": stop.eta,
+                "status": "pending",
+                "pod": None,
+            }
+        )
+    booking["stops"] = stops
+    booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("transport_bookings", booking_id, booking)
+    return {"bookingId": booking_id, "stops": stops}
+
+
+@router.post("/bookings/{booking_id}/stops/{stop_no}/pod")
+async def pod_booking_stop(
+    booking_id: str,
+    stop_no: int,
+    body: StopPodRequest,
+    uid: str = Depends(_fleet_member),
+):
+    """Per-stop proof of delivery (spec E16): photos (+ optional note/OTP/
+    receiver). Marks exactly that stop delivered; partial disputes stay
+    scoped to the affected leg."""
+    booking = await _get_booking(booking_id)
+    await _assert_trip_operator(booking, uid)
+    stops = list(booking.get("stops") or [])
+    stop = next((s for s in stops if int(s.get("stopNo") or 0) == stop_no), None)
+    if stop is None:
+        _error(404, "STOP_NOT_FOUND", f"stop {stop_no} not found on this booking")
+    if stop.get("status") == "delivered":
+        _error(409, "STOP_ALREADY_DELIVERED", f"stop {stop_no} already has a POD")
+
+    otp_recorded = None
+    if body.otp:
+        pod_otp = booking.get("podOtp") or {}
+        expected = pod_otp.get("otp")
+        if expected and str(body.otp).strip() != expected:
+            pod_otp["attempts"] = (pod_otp.get("attempts") or 0) + 1
+            booking["podOtp"] = pod_otp
+            booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            await set_doc("transport_bookings", booking_id, booking)
+            _error(400, "INVALID_OTP", "incorrect POD OTP for this stop")
+        otp_recorded = body.otp
+
+    now = datetime.now(timezone.utc).isoformat()
+    stop["status"] = "delivered"
+    stop["pod"] = {
+        "photos": body.photos,
+        "note": body.note,
+        "receiverName": body.receiverName,
+        "otp": otp_recorded,
+        "deliveredBy": uid,
+        "deliveredAt": now,
+    }
+    booking["stops"] = stops
+    booking["updatedAt"] = now
+    await set_doc("transport_bookings", booking_id, booking)
+    return {"bookingId": booking_id, "stop": stop, "stops": stops}
+
+
+# ==========================================
+# 25. MID-TRIP BREAKDOWN & PRO-RATA (P2-37, spec E11)
+# ==========================================
+
+@router.post("/bookings/{booking_id}/breakdown")
+async def report_breakdown(
+    booking_id: str,
+    body: BreakdownRequest,
+    uid: str = Depends(_fleet_member),
+):
+    """Transporter taps "Breakdown" mid-trip (spec E11): trip parks in
+    `breakdown`, the booker is notified for the re-match, and a funded escrow
+    settles pro-rata — the completed-distance leg (minus commission) is
+    released to the transporter, the remainder is refunded to the booker."""
+    booking = await _get_booking(booking_id)
+    await _assert_trip_operator(booking, uid)
+    if booking.get("status") not in ("accepted", "enRoute"):
+        _error(
+            409,
+            "INVALID_STATUS_TRANSITION",
+            f"cannot report a breakdown while {booking.get('status')}",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    fare_paisa = _fare_paisa(booking)
+    distance_km = float(booking.get("distanceKm") or 0)
+    completed_km = body.completedDistanceKm
+    pro_rata_paisa = 0
+    refund_paisa = 0
+    adjustment = None
+    if completed_km is not None and distance_km > 0 and fare_paisa > 0:
+        # Fare rules: pro-rata = agreed fare × completed fraction of the trip.
+        completed_km = min(float(completed_km), distance_km)
+        pro_rata_paisa = int(round(fare_paisa * completed_km / distance_km))
+        refund_paisa = fare_paisa - pro_rata_paisa
+        adjustment = {"proRataFarePaisa": pro_rata_paisa, "refundPaisa": refund_paisa}
+
+    booking["breakdown"] = {
+        "note": body.note,
+        "location": body.location,
+        "completedDistanceKm": body.completedDistanceKm,
+        "proRataFarePaisa": pro_rata_paisa,
+        "refundPaisa": refund_paisa,
+        "reportedBy": uid,
+        "reportedAt": now,
+    }
+    booking["status"] = "breakdown"
+    waypoints = booking.get("waypointsLog", [])
+    waypoints.append({"waypoint": "breakdown", "label": f"ब्रेकडाउन: {body.note}", "time": now})
+    booking["waypointsLog"] = waypoints
+
+    escrow = booking.get("escrow") or {}
+    if adjustment and escrow.get("status") == "held":
+        config = await settlements_service._config()
+        commission_paisa = int(
+            round(pro_rata_paisa * float(config.get("transportPct", 10)) / 100)
+        )
+        net_release = pro_rata_paisa - commission_paisa
+        escrow.update(
+            status="released",
+            releasedAt=now,
+            commissionPaisa=commission_paisa,
+            netReleasePaisa=net_release,
+            breakdownRefundPaisa=refund_paisa,
+        )
+        transporter_id = booking.get("transporterId")
+        if transporter_id:
+            await _post_wallet_entry(
+                transporter_id,
+                "credit",
+                net_release,
+                booking_id=booking_id,
+                note="breakdown pro-rata",
+            )
+            await _post_tds_entry(transporter_id, f"trb_{booking_id}", pro_rata_paisa)
+        refund_ref = None
+        captured = [
+            p for p in (booking.get("payments") or []) if p.get("razorpayPaymentId")
+        ]
+        if refund_paisa > 0 and captured:
+            refund = await refund_razorpay_payment(
+                captured[-1]["razorpayPaymentId"], refund_paisa
+            )
+            refund_ref = {
+                "amountPaisa": refund_paisa,
+                "razorpayRefundId": refund.get("id"),
+                "status": refund.get("status"),
+            }
+        elif refund_paisa > 0:
+            refund_ref = {"amountPaisa": refund_paisa, "razorpayRefundId": None, "status": "recorded"}
+        booking["breakdown"]["refund"] = refund_ref
+        await set_doc(
+            "platform_ledger",
+            f"brk_{booking_id}",
+            {
+                "id": f"brk_{booking_id}",
+                "kind": "transport_breakdown_prorata",
+                "bookingId": booking_id,
+                "userId": transporter_id,
+                "amountPaisa": net_release,
+                "commissionPaisa": commission_paisa,
+                "refundPaisa": refund_paisa,
+                "status": "posted",
+                "createdAt": now,
+            },
+        )
+
+    booking["updatedAt"] = now
+    await set_doc("transport_bookings", booking_id, booking)
+    await notify_user(
+        booking["userId"],
+        type="trip_breakdown",
+        title="Vehicle breakdown / गाड़ी खराब",
+        body=(
+            f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {body.note}. "
+            "The platform is re-matching your load; any fare paid is settled pro-rata."
+        ),
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+    )
+    return booking
+
+
+# ==========================================
+# 26. PERSONALIZED LOAD MATCHING & FARE TRENDS (P2-38, spec T3/T4/F14)
+# ==========================================
+
+@router.get("/loads/matched")
+async def matched_loads(uid: str = Depends(_transporter)):
+    """Personalized load board: open loads scored against this transporter's
+    fleet vehicle types, profiled operating routes, and completed-trip
+    corridors. Deterministic scoring (2 = vehicle match, +1 route preference,
+    +1 history corridor); the AI ranker may re-order the same set later."""
+    await _assert_load_board_access(uid)
+    vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
+    my_types = {v.get("vehicleType") for v in vehicles if v.get("active", True)}
+
+    profile = await get_doc(f"users/{uid}/role_profiles", "transport") or {}
+    route_tokens = _place_tokens(
+        " ".join(profile.get("operatingRoutes") or [])
+        + " "
+        + " ".join(profile.get("operatingStates") or [])
+    )
+    bookings = await query("transport_bookings", [("transporterId", "==", uid)], limit=1000)
+    history_tokens: set[str] = set()
+    for trip in bookings:
+        history_tokens |= _place_tokens(trip.get("pickup") or "")
+        history_tokens |= _place_tokens(trip.get("drop") or "")
+
+    loads = await query("transport_loads", [], limit=500)
+    scored = []
+    for load in loads:
+        if load.get("status") != "open":
+            continue
+        score = 0
+        reasons = []
+        if load.get("preferredVehicleType") in my_types:
+            score += 2
+            reasons.append("vehicle_match")
+        pickup_tokens = _place_tokens(load.get("pickupLocation") or "")
+        corridor_tokens = pickup_tokens | _place_tokens(load.get("dropLocation") or "")
+        if route_tokens & pickup_tokens:
+            score += 1
+            reasons.append("route_preference")
+        if history_tokens & corridor_tokens:
+            score += 1
+            reasons.append("history_corridor")
+        scored.append({**load, "score": score, "matchReasons": reasons})
+    scored.sort(key=lambda l: (l["score"], l.get("createdAt", "")), reverse=True)
+    return {"data": scored, "total": len(scored)}
+
+
+FARE_TREND_BANDS = (
+    (0.0, 50.0, "under50km"),
+    (50.0, 200.0, "50to200km"),
+    (200.0, 500.0, "200to500km"),
+    (500.0, None, "over500km"),
+)
+
+
+def _fare_band(distance_km: float) -> str:
+    for low, high, label in FARE_TREND_BANDS:
+        if distance_km >= low and (high is None or distance_km < high):
+            return label
+    return FARE_TREND_BANDS[-1][2]
+
+
+@router.get("/fare-trends")
+async def fare_trends(
+    pickup: str | None = None,
+    drop: str | None = None,
+    vehicleType: str | None = None,
+    uid: str = Depends(_viewer),
+):
+    """Fare trend read from recent completed (delivered) bookings: overall
+    avg/min/max ₹-per-km in paisa plus the same per distance band. Optional
+    route/vehicle filters use the same token matching as return loads."""
+    bookings = await query("transport_bookings", [("status", "==", "delivered")], limit=1000)
+    per_km: list[float] = []
+    banded: dict[str, list[float]] = {}
+    for booking in bookings:
+        distance_km = float(booking.get("distanceKm") or 0)
+        if distance_km <= 0:
+            continue
+        if vehicleType and booking.get("vehicleType") != vehicleType:
+            continue
+        if pickup and not _places_match(str(booking.get("pickup") or ""), pickup):
+            continue
+        if drop and not _places_match(str(booking.get("drop") or ""), drop):
+            continue
+        rate = _fare_paisa(booking) / distance_km
+        per_km.append(rate)
+        banded.setdefault(_fare_band(distance_km), []).append(rate)
+
+    def _stats(rates: list[float]) -> dict:
+        if not rates:
+            return {"count": 0, "avgPerKmPaisa": None, "minPerKmPaisa": None, "maxPerKmPaisa": None}
+        return {
+            "count": len(rates),
+            "avgPerKmPaisa": round(sum(rates) / len(rates), 2),
+            "minPerKmPaisa": round(min(rates), 2),
+            "maxPerKmPaisa": round(max(rates), 2),
+        }
+
+    return {
+        "sampleSize": len(per_km),
+        "overall": _stats(per_km),
+        "bands": {label: _stats(banded.get(label, [])) for _, _, label in FARE_TREND_BANDS},
+        "filters": {"pickup": pickup, "drop": drop, "vehicleType": vehicleType},
+    }
+
+
+# ==========================================
+# 27. COMPLIANCE VIEW (P2-39, spec T11)
+# ==========================================
+
+@router.get("/compliance")
+async def transport_compliance(uid: str = Depends(_transporter)):
+    """The caller transporter's strikes, active cooldowns/restrictions, and
+    the penalty matrix the platform enforces (config-backed where a config
+    exists, hardcoded rules annotated otherwise)."""
+    user = await get_user(uid) or {}
+    strikes = await query(f"users/{uid}/strikes", [], limit=1000)
+    strikes.sort(key=lambda s: s.get("at", ""), reverse=True)
+
+    now = datetime.now(timezone.utc)
+    muted_until = user.get("chatMutedUntil")
+    muted_active = False
+    if muted_until:
+        try:
+            parsed = datetime.fromisoformat(str(muted_until))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            muted_active = now < parsed
+        except ValueError:
+            muted_active = False
+
+    penalties = await _transport_penalties()
+    return {
+        "userId": uid,
+        "strikes": strikes,
+        "strikeCount": len(strikes),
+        "noShowStrikes": int(user.get("noShowStrikes") or 0),
+        "cooldowns": {
+            "chatMutedUntil": muted_until if muted_active else None,
+            "loadBoardSuspended": bool(user.get("loadBoardSuspended")),
+            "bookingRestricted": bool(user.get("bookingRestricted")),
+            "suspended": bool(user.get("suspended")),
+        },
+        "penaltyMatrix": {
+            "cancelWindowHours": penalties["cancelWindowHours"],
+            "strikesToSuspend": penalties["strikesToSuspend"],
+            "farmerCancelPenaltyPct": penalties["farmerCancelPenaltyPct"],
+            "farmerLateCancelPenaltyPct": penalties["farmerLateCancelPenaltyPct"],
+            "transporterCompensationPct": penalties["transporterCompensationPct"],
+            # Hardcoded rule enforced in this router (PATCH cancel inside the
+            # pickup window records a no-show strike; strikesToSuspend strikes
+            # suspend load-board access):
+            "transporterCancelInsideWindow": "no_show_strike",
+            "version": penalties.get("version"),
+            "effectiveFrom": penalties.get("effectiveFrom"),
+        },
     }

@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.config import settings
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.models.livestock import LivestockPayVerifyIn
 from app.models.livestock_mgmt import (
     AdoptionStatusIn,
     CattleEventIn,
@@ -15,6 +17,7 @@ from app.models.livestock_mgmt import (
 )
 from app.routers.users import require_role
 from app.services.notifications import send_fcm_to_user
+from app.services.payments import create_razorpay_order, verify_razorpay_signature
 from app.services.reports import build_80g_receipt_pdf
 from app.services.users import get_user
 
@@ -78,6 +81,44 @@ def _financial_year() -> str:
     now = datetime.now(timezone.utc)
     start = now.year if now.month >= 4 else now.year - 1
     return f"{start}-{str(start + 1)[-2:]}"
+
+
+def _amount_to_paisa(value) -> int:
+    """P0-12: `amountInr` is donor-typed free text — parse it robustly into
+    integer paisa; 422 when it cannot be interpreted as a positive amount."""
+    field_errors = {"amountInr": "could not parse a donation amount from this value"}
+    amount = None
+    if isinstance(value, bool):
+        amount = None
+    elif isinstance(value, (int, float)):
+        amount = float(value)
+    elif isinstance(value, str):
+        cleaned = (
+            value.replace("₹", "")
+            .replace(",", "")
+            .replace("Rs.", "")
+            .replace("rs.", "")
+            .replace("INR", "")
+            .strip()
+        )
+        try:
+            amount = float(cleaned)
+        except ValueError:
+            amount = None
+    if amount is None or amount != amount or amount <= 0:  # NaN / non-positive
+        _error(422, "VALIDATION_ERROR", "amountInr is not a parseable amount", field_errors)
+    return int(round(amount * 100))
+
+
+async def _payment_actor(doc: dict, uid: str) -> None:
+    """Only the donor or the managing gaushala may initiate/verify a payment
+    against a donation/adoption record."""
+    if doc.get("donorId") and doc.get("donorId") == uid:
+        return
+    gaushala = await get_doc("gaushalas", doc.get("gaushalaId") or "")
+    if gaushala and gaushala.get("managerId") == uid:
+        return
+    _error(403, "FORBIDDEN_ROLE", "only the donor or the gaushala manager can record this payment")
 
 
 async def _next_80g_number(gaushala_id: str, kind: str) -> str:
@@ -218,6 +259,94 @@ async def add_cattle_event(animal_id: str, body: CattleEventIn, uid: str = Depen
 # Adoptions & donations
 # =========================================================================
 
+async def _initiate_payment(doc: dict, collection: str, ref_prefix: str) -> dict:
+    """P0-12: create a Razorpay order for the donor-entered amount and hold it
+    on the record. Idempotent — a paid record or an existing pending order is
+    returned as-is."""
+    if doc.get("paymentStatus") == "paid" or doc.get("razorpayOrderId"):
+        return {
+            "donation" if collection == "fodder_donations" else "adoption": doc,
+            "razorpayOrderId": doc.get("razorpayOrderId", ""),
+            "amountPaisa": doc.get("amountPaisa", 0),
+            "currency": "INR",
+            "keyId": settings.razorpay_key_id,
+            "alreadyPaid": doc.get("paymentStatus") == "paid",
+        }
+    amount_paisa = _amount_to_paisa(doc.get("amountInr"))
+    order = create_razorpay_order(amount_paisa, f"{ref_prefix}-{doc['id']}")
+    doc["paymentStatus"] = "initiated"
+    doc["amountPaisa"] = amount_paisa
+    doc["razorpayOrderId"] = order["id"]
+    doc["paymentInitiatedAt"] = _now()
+    await set_doc(collection, doc["id"], doc)
+    return {
+        "donation" if collection == "fodder_donations" else "adoption": doc,
+        "razorpayOrderId": order["id"],
+        "amountPaisa": amount_paisa,
+        "currency": "INR",
+        "keyId": settings.razorpay_key_id,
+        "alreadyPaid": False,
+    }
+
+
+async def _verify_payment(doc: dict, collection: str, body: LivestockPayVerifyIn) -> dict:
+    """P0-12: signature-verify the Razorpay checkout and mark the record paid."""
+    if doc.get("paymentStatus") == "paid":
+        return {"ok": True, "status": "paid", "alreadyPaid": True}
+    expected = doc.get("razorpayOrderId") or ""
+    if not expected or body.razorpayOrderId != expected:
+        _error(400, "PAYMENT_ORDER_MISMATCH", "razorpayOrderId does not match the pending payment order for this record")
+    if not verify_razorpay_signature(body.razorpayOrderId, body.razorpayPaymentId, body.signature):
+        _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
+    doc["paymentStatus"] = "paid"
+    doc["razorpayPaymentId"] = body.razorpayPaymentId
+    doc["paidAt"] = _now()
+    await set_doc(collection, doc["id"], doc)
+    return {"ok": True, "status": "paid", "alreadyPaid": False}
+
+
+@router.post("/livestock/gaushala/donations/{donation_id}/pay")
+async def pay_donation(donation_id: str, uid: str = Depends(current_user_id)):
+    donation = await get_doc("fodder_donations", donation_id)
+    if not donation:
+        _error(404, "DONATION_NOT_FOUND", "donation not found")
+    await _payment_actor(donation, uid)
+    return await _initiate_payment(donation, "fodder_donations", "donation")
+
+
+@router.post("/livestock/gaushala/donations/{donation_id}/pay/verify")
+async def verify_donation_payment(
+    donation_id: str, body: LivestockPayVerifyIn, uid: str = Depends(current_user_id)
+):
+    donation = await get_doc("fodder_donations", donation_id)
+    if not donation:
+        _error(404, "DONATION_NOT_FOUND", "donation not found")
+    await _payment_actor(donation, uid)
+    result = await _verify_payment(donation, "fodder_donations", body)
+    return {**result, "donation": donation}
+
+
+@router.post("/livestock/gaushala/adoptions/{adoption_id}/pay")
+async def pay_adoption(adoption_id: str, uid: str = Depends(current_user_id)):
+    adoption = await get_doc("cow_adoptions", adoption_id)
+    if not adoption:
+        _error(404, "ADOPTION_NOT_FOUND", "adoption not found")
+    await _payment_actor(adoption, uid)
+    return await _initiate_payment(adoption, "cow_adoptions", "adoption")
+
+
+@router.post("/livestock/gaushala/adoptions/{adoption_id}/pay/verify")
+async def verify_adoption_payment(
+    adoption_id: str, body: LivestockPayVerifyIn, uid: str = Depends(current_user_id)
+):
+    adoption = await get_doc("cow_adoptions", adoption_id)
+    if not adoption:
+        _error(404, "ADOPTION_NOT_FOUND", "adoption not found")
+    await _payment_actor(adoption, uid)
+    result = await _verify_payment(adoption, "cow_adoptions", body)
+    return {**result, "adoption": adoption}
+
+
 @router.put("/livestock/gaushala/adoptions/{adoption_id}/status")
 async def update_adoption_status(adoption_id: str, body: AdoptionStatusIn, uid: str = Depends(_manager)):
     gaushala = await _require_gaushala(uid)
@@ -231,6 +360,10 @@ async def update_adoption_status(adoption_id: str, body: AdoptionStatusIn, uid: 
     }
     if body.status not in allowed.get(current, set()):
         _error(409, "INVALID_TRANSITION", f"cannot move adoption from {current} to {body.status}")
+    # P0-12: an 80G receipt is a tax document (SOP-19 §2 — never alter after
+    # issue); it may only be issued against a verified payment.
+    if body.status == "approved" and adoption.get("paymentStatus") != "paid":
+        _error(409, "PAYMENT_REQUIRED", "adoption payment must be verified before an 80G receipt can be issued")
     adoption["status"] = body.status
     adoption["updatedAt"] = _now()
     await set_doc("cow_adoptions", adoption_id, adoption)
@@ -257,6 +390,10 @@ async def update_donation_status(donation_id: str, body: DonationStatusIn, uid: 
     donation = await get_doc("fodder_donations", donation_id)
     if not donation or donation.get("gaushalaId") != gaushala["id"]:
         _error(404, "DONATION_NOT_FOUND", "donation not found")
+    # P0-12: acknowledging auto-issues an immutable 80G receipt — only allowed
+    # once the donor's payment has been signature-verified.
+    if body.status == "acknowledged" and donation.get("paymentStatus") != "paid":
+        _error(409, "PAYMENT_REQUIRED", "donation payment must be verified before an 80G receipt can be issued")
     donation["status"] = body.status
     donation["updatedAt"] = _now()
     await set_doc("fodder_donations", donation_id, donation)

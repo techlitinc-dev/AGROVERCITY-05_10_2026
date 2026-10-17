@@ -148,3 +148,40 @@ class CourseAnswerIn(BaseModel):
 class AnnouncementIn(BaseModel):
     title: str = Field(min_length=3, max_length=140)
     message: str = Field(min_length=5, max_length=2000)
+
+
+class PurchaseCancelIn(BaseModel):
+    reason: str = Field(default="", max_length=500)
+
+
+class PurchaseDisputeIn(BaseModel):
+    category: str = Field(min_length=3, max_length=60)
+    reason: str = Field(min_length=5, max_length=2000)
+    evidence: dict = Field(default_factory=dict)
+
+
+class CourseEnquiryCreateIn(BaseModel):
+    questionTemplate: str = Field(min_length=3, max_length=280)
+    details: str = Field(default="", max_length=2000)
+
+
+class AssignmentCreateIn(BaseModel):
+    title: str = Field(min_length=3, max_length=140)
+    instructions: str = Field(default="", max_length=5000)
+    dueAt: str | None = None
+    maxPhotos: int = Field(default=3, ge=1, le=10)
+
+
+class AssignmentSubmissionIn(BaseModel):
+    photoUrls: list[str] = Field(min_length=1, max_length=3)
+
+
+class BatchSessionCreateIn(BaseModel):
+    title: str | None = Field(default=None, max_length=140)
+    startsAt: str = Field(min_length=4)
+    endsAt: str | None = None
+    topic: str | None = Field(default=None, max_length=280)
+
+
+class SessionCheckInIn(BaseModel):
+    qrToken: str = Field(min_length=1)

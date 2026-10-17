@@ -26,9 +26,21 @@ from pydantic import BaseModel, Field
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.core.security import verify_mpin
+from app.models.equipment import (
+    DemandPostQuoteIn,
+    EquipmentDepositForfeitIn,
+    EquipmentDepositIn,
+    EquipmentPaymentOrderIn,
+    EquipmentPaymentVerifyIn,
+)
 from app.routers.users import require_role
 from app.services import storage
 from app.services.notify import notify_user
+from app.services.payments import (
+    create_razorpay_order,
+    refund_razorpay_payment,
+    verify_razorpay_signature,
+)
 from app.services.sms import send_sms
 from app.services.users import get_user
 
@@ -1141,3 +1153,507 @@ async def equipment_reminders(ctx: tuple = Depends(_owner)):
         )
     reminders.sort(key=lambda r: (r["daysLeft"], r["priority"] != "urgent"))
     return {"data": reminders, "total": len(reminders)}
+
+
+# ---------------------------------------------------------------------------
+# 10. Counter-offer lifecycle: farmer accept/decline + expiry (P1-5)
+# ---------------------------------------------------------------------------
+
+# terminal counter states — a booking whose counter reached one of these has
+# no live counter anymore regardless of booking.status
+_COUNTER_TERMINAL = ("accepted", "declined", "expired")
+
+
+def _parse_dt(raw) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+async def expire_counter_if_due(booking: dict) -> dict:
+    """Lazy expiry: a pending counter past counterExpiresAt is marked expired
+    and the booking returns to `pending` (owner may still approve the original
+    request). Persists when it mutates; returns the booking doc."""
+    if booking.get("status") != "countered":
+        return booking
+    if booking.get("counterStatus") in _COUNTER_TERMINAL:
+        return booking
+    expires = _parse_dt(booking.get("counterExpiresAt"))
+    if expires is None or expires > datetime.now(timezone.utc):
+        return booking
+    booking["counterStatus"] = "expired"
+    booking["status"] = "pending"
+    booking["updatedAt"] = _now()
+    await set_doc("equipment_bookings", booking["id"], booking)
+    return booking
+
+
+async def _live_counter(booking_id: str, uid: str) -> dict:
+    """Load a booking and enforce the counter contract for the farmer-side
+    response endpoints: only the farmer answers, the counter must be live,
+    and a past-expiry counter is persisted as expired + rejected here."""
+    booking = await get_doc("equipment_bookings", booking_id)
+    if booking is None:
+        _error(404, "BOOKING_NOT_FOUND", "booking not found")
+    if booking.get("userId") != uid:
+        _error(403, "NOT_COUNTER_RECIPIENT", "only the farmer answers a counter-offer")
+    was_countered = booking.get("status") == "countered"
+    booking = await expire_counter_if_due(booking)
+    if was_countered and booking.get("counterStatus") == "expired":
+        _error(409, "COUNTER_EXPIRED", "the counter-offer has expired")
+    if booking.get("status") != "countered" or booking.get("counterStatus") in _COUNTER_TERMINAL:
+        _error(409, "COUNTER_NOT_PENDING", "no live counter-offer on this booking")
+    if booking.get("counterRateRupees") is None:
+        _error(409, "COUNTER_NOT_PENDING", "no live counter-offer on this booking")
+    return booking
+
+
+async def expire_pending_counters() -> dict:
+    """Job hook for the cron route: sweep countered bookings and mark every
+    expired pending counter expired (booking returns to `pending`)."""
+    bookings = await query("equipment_bookings", [("status", "==", "countered")], limit=2000)
+    now = datetime.now(timezone.utc)
+    expired = 0
+    for booking in bookings:
+        if booking.get("counterStatus") in _COUNTER_TERMINAL:
+            continue
+        expires = _parse_dt(booking.get("counterExpiresAt"))
+        if expires is None or expires > now:
+            continue
+        booking["counterStatus"] = "expired"
+        booking["status"] = "pending"
+        booking["updatedAt"] = _now()
+        await set_doc("equipment_bookings", booking["id"], booking)
+        expired += 1
+    return {"scanned": len(bookings), "expired": expired}
+
+
+@router.post("/bookings/{booking_id}/counter/accept")
+async def accept_counter_offer(booking_id: str, uid: str = Depends(current_user_id)):
+    """Farmer accepts the owner's counter rate — the booking rate is updated
+    and the booking confirms at the countered rate."""
+    booking = await _live_counter(booking_id, uid)
+    booking["priceRupees"] = booking["counterRateRupees"]
+    booking["counterStatus"] = "accepted"
+    booking["counterAcceptedAt"] = _now()
+    booking["status"] = "booked"
+    booking["updatedAt"] = _now()
+    await set_doc("equipment_bookings", booking_id, booking)
+    slot = await get_doc("equipment_slots", booking.get("slotId") or "")
+    if slot is not None:
+        slot["status"] = "booked"
+        await set_doc("equipment_slots", slot["id"], slot)
+    equipment = await get_doc("equipment", booking["equipmentId"]) or {}
+    owner_id = equipment.get("ownerId")
+    if owner_id:
+        await notify_user(
+            owner_id,
+            type="equipment_counter",
+            title="Counter accepted / काउंटर स्वीकृत",
+            body=f"{booking.get('farmerName', 'Farmer')} accepted ₹{booking['priceRupees']} for {equipment.get('name', '')}",
+            deepLink=f"/dashboard/p/equipment/bookings/{booking_id}",
+        )
+    return booking
+
+
+@router.post("/bookings/{booking_id}/counter/decline")
+async def decline_counter_offer(booking_id: str, uid: str = Depends(current_user_id)):
+    """Farmer declines the counter-offer; the booking closes and the slot is
+    released for other farmers."""
+    booking = await _live_counter(booking_id, uid)
+    booking["counterStatus"] = "declined"
+    booking["status"] = "rejected"
+    booking["rejectionReason"] = "counter declined by farmer"
+    booking["updatedAt"] = _now()
+    await set_doc("equipment_bookings", booking_id, booking)
+    slot = await get_doc("equipment_slots", booking.get("slotId") or "")
+    if slot is not None:
+        slot["status"] = "available"
+        slot["bookedByName"] = None
+        await set_doc("equipment_slots", slot["id"], slot)
+    equipment = await get_doc("equipment", booking["equipmentId"]) or {}
+    owner_id = equipment.get("ownerId")
+    if owner_id:
+        await notify_user(
+            owner_id,
+            type="equipment_counter",
+            title="Counter declined / काउंटर अस्वीकृत",
+            body=f"{booking.get('farmerName', 'Farmer')} declined your counter for {equipment.get('name', '')}",
+            deepLink=f"/dashboard/p/equipment/bookings/{booking_id}",
+        )
+    return booking
+
+
+# ---------------------------------------------------------------------------
+# 11. Booking-gated chat room (spec §D unlock rule, P1-6)
+# ---------------------------------------------------------------------------
+
+# Mirrors app/services/chat.py ensure_transport_room — kept local per module
+# boundary (services/chat.py is owned by the purchases surface).
+def _room_first_name(name: str) -> str:
+    return (name or "").strip().split(" ")[0]
+
+
+async def _ensure_equipment_room(booking: dict, equipment: dict) -> dict:
+    existing = await get_doc("chat_rooms", booking["id"])
+    if existing is not None:
+        return existing
+    owner_id = equipment.get("ownerId")
+    farmer = await get_doc("users", booking["userId"]) or {}
+    owner = await get_doc("users", owner_id) or {}
+    room = {
+        "id": booking["id"],
+        "kind": "equipment",
+        "purchaseId": None,
+        "bookingId": booking["id"],
+        "farmerId": booking["userId"],
+        "farmerName": _room_first_name(farmer.get("name", "")),
+        "buyerId": owner_id,
+        "buyerName": _room_first_name(owner.get("name", "")),
+        "crop": equipment.get("name", ""),
+        "createdAt": _now(),
+        "lastMessageAt": None,
+        "lastMessageText": "",
+        "readByFarmer": True,
+        "readByBuyer": True,
+    }
+    await set_doc("chat_rooms", room["id"], room)
+    return room
+
+
+@router.get("/bookings/{booking_id}/chat-room")
+async def get_booking_chat_room(booking_id: str, uid: str = Depends(current_user_id)):
+    """One room per booking, unlocked only when the booking is confirmed AND
+    the contract is e-signed (spec §D). Both parties (or admin) may read."""
+    booking = await get_doc("equipment_bookings", booking_id)
+    if booking is None:
+        _error(404, "BOOKING_NOT_FOUND", "booking not found")
+    equipment = await get_doc("equipment", booking["equipmentId"]) or {}
+    if uid not in (booking.get("userId"), equipment.get("ownerId")) and not (await get_user(uid) or {}).get("isAdmin"):
+        _error(403, "CHAT_FORBIDDEN", "only the booking parties can open this chat room")
+    contract = await get_doc("equipment_contracts", booking_id) or {}
+    confirmed = booking.get("status") in ("booked", "in_progress", "completed")
+    if not confirmed or contract.get("status") != "signed":
+        _error(409, "CHAT_LOCKED", "Chat unlocks after booking confirmation and contract e-sign")
+    room = await _ensure_equipment_room(booking, equipment)
+    return room
+
+
+# ---------------------------------------------------------------------------
+# 12. Security deposit collect / forfeit (P0-4) + PSP-verified captures (P1-7)
+# ---------------------------------------------------------------------------
+
+async def _audit_financial(action: str, actor: str, target_id: str, detail: dict):
+    now = _now()
+    await set_doc(
+        "audit_logs",
+        f"aud_eq_{action}_{now[:26]}_{uuid.uuid4().hex[:6]}",
+        {
+            "adminId": actor,
+            "role": "owner",
+            "action": action,
+            "targetId": target_id,
+            "reason": detail.get("reason", ""),
+            "detail": detail,
+            "at": now,
+        },
+    )
+
+
+async def _owner_booking(booking_id: str, uid: str) -> tuple[dict, dict]:
+    booking = await get_doc("equipment_bookings", booking_id)
+    if booking is None:
+        _error(404, "BOOKING_NOT_FOUND", "booking not found")
+    equipment = await get_doc("equipment", booking["equipmentId"])
+    if equipment is None:
+        _error(404, "EQUIPMENT_NOT_FOUND", "equipment not found")
+    if equipment.get("ownerId") != uid:
+        _error(403, "NOT_EQUIPMENT_OWNER", "only the equipment owner can do this")
+    return booking, equipment
+
+
+def _deposit_amount_paisa(deposit: dict) -> int:
+    return int(deposit.get("amountPaisa") or 0)
+
+
+@router.post("/bookings/{booking_id}/deposit")
+async def collect_security_deposit(
+    booking_id: str,
+    body: EquipmentDepositIn,
+    uid: str = Depends(current_user_id),
+):
+    """Owner collects a security deposit: the Razorpay payment signature is
+    verified, the PSP order is created for reconciliation, and the deposit is
+    stored on the booking as {amountPaisa, status: held, paymentId}."""
+    booking, equipment = await _owner_booking(booking_id, uid)
+    if booking.get("status") in ("cancelled", "rejected"):
+        _error(409, "DEPOSIT_NOT_ALLOWED", f"cannot collect a deposit on a {booking.get('status')} booking")
+    existing = booking.get("deposit") or {}
+    if existing.get("status") == "held":
+        if existing.get("paymentId") == body.razorpayPaymentId:
+            return {"deposit": existing, "booking": booking, "alreadyHeld": True}
+        _error(409, "DEPOSIT_ALREADY_HELD", "a deposit is already held on this booking")
+    if not verify_razorpay_signature(body.razorpayOrderId, body.razorpayPaymentId, body.signature):
+        _error(402, "PAYMENT_VERIFICATION_FAILED", "deposit payment signature verification failed")
+    amount_paisa = int(round(body.amountRupees * 100))
+    order = create_razorpay_order(amount_paisa, f"eqdep-{booking_id}")
+    deposit = {
+        "amountPaisa": amount_paisa,
+        "status": "held",
+        "paymentId": body.razorpayPaymentId,
+        "orderId": order.get("id"),
+        "razorpayOrderId": body.razorpayOrderId,
+        "currency": "INR",
+        "collectedBy": uid,
+        "collectedAt": _now(),
+    }
+    booking["deposit"] = deposit
+    await set_doc("equipment_bookings", booking_id, booking)
+    await _audit_financial("EQUIPMENT_DEPOSIT_COLLECT", uid, booking_id, {"amountPaisa": amount_paisa, "paymentId": body.razorpayPaymentId})
+    await notify_user(
+        booking.get("userId"),
+        type="equipment_deposit",
+        title="Security deposit collected / जमाह राशि जमा",
+        body=f"₹{body.amountRupees} deposit held for {equipment.get('name', '')} — refundable after job completion",
+        deepLink=f"/dashboard/p/equipment/bookings/{booking_id}",
+    )
+    return {"deposit": deposit, "booking": booking}
+
+
+@router.post("/bookings/{booking_id}/deposit/forfeit")
+async def forfeit_security_deposit(
+    booking_id: str,
+    body: EquipmentDepositForfeitIn,
+    uid: str = Depends(current_user_id),
+):
+    """Owner forfeits part or all of the held deposit against damage: the
+    deduction is capped at the deposit, the remainder is refunded through the
+    PSP, and a damage claim (with confirmedDeductionPaisa, building on the
+    confirm-estimate flow) is stored for admin arbitration."""
+    booking, equipment = await _owner_booking(booking_id, uid)
+    deposit = booking.get("deposit") or {}
+    if deposit.get("status") != "held":
+        _error(409, "DEPOSIT_NOT_HELD", "no held deposit to forfeit on this booking")
+    amount_paisa = _deposit_amount_paisa(deposit)
+    deduction = deposit["amountPaisa"] if body.deductionPaisa is None else body.deductionPaisa
+    if deduction > amount_paisa:
+        _error(422, "VALIDATION_ERROR", "deduction cannot exceed the held deposit", {"deductionPaisa": f"must be <= {amount_paisa}"})
+    remainder = amount_paisa - deduction
+    refund = None
+    if remainder > 0:
+        refund = await refund_razorpay_payment(deposit.get("paymentId", ""), remainder)
+    deposit.update(
+        status="forfeited" if deduction > 0 else "refunded",
+        deductedPaisa=deduction,
+        refundedPaisa=remainder,
+        refundId=(refund or {}).get("id"),
+        claimNote=body.claimNote,
+        claimPhotoUrls=body.claimPhotoUrls,
+        forfeitedAt=_now(),
+        forfeitedBy=uid,
+    )
+    booking["deposit"] = deposit
+    claim = None
+    if deduction > 0:
+        claim_id = f"claim_{uuid.uuid4().hex[:10]}"
+        claim = {
+            "id": claim_id,
+            "ownerId": uid,
+            "equipmentId": equipment["id"],
+            "equipmentName": equipment.get("name", "Machinery"),
+            "bookingId": booking_id,
+            "incidentDate": _now()[:10],
+            "description": body.claimNote or "Security-deposit damage forfeit",
+            "estimatedRepairCostRupees": round(deduction / 100, 2),
+            "claimPaisa": deduction,
+            "photoEvidenceUrls": body.claimPhotoUrls,
+            "beforePhotoUrls": [],
+            "afterPhotoUrls": body.claimPhotoUrls,
+            # deposit-forfeit lane: owner-adjudicated, admin-visible (SOP-09)
+            "status": "resolved",
+            "resolution": "deposit_forfeit",
+            "confirmedDeductionPaisa": deduction,
+            "confirmedBy": uid,
+            "confirmedAt": _now(),
+            "resolvedBy": uid,
+            "resolvedAt": _now(),
+            "source": "deposit_forfeit",
+            "createdAt": _now(),
+        }
+        await set_doc("equipment_damage_claims", claim_id, claim)
+        booking["damageClaim"] = {
+            "claimId": claim_id,
+            "deductionPaisa": deduction,
+            "claimNote": body.claimNote,
+            "claimPhotoUrls": body.claimPhotoUrls,
+            "at": _now(),
+        }
+    await set_doc("equipment_bookings", booking_id, booking)
+    await _audit_financial(
+        "EQUIPMENT_DEPOSIT_FORFEIT",
+        uid,
+        booking_id,
+        {"deductionPaisa": deduction, "refundedPaisa": remainder, "claimId": (claim or {}).get("id")},
+    )
+    await notify_user(
+        booking.get("userId"),
+        type="equipment_deposit_forfeit",
+        title="Deposit adjusted / जमाह राशि समायोजित",
+        body=f"₹{deduction / 100:.0f} deducted from your deposit for {equipment.get('name', '')}: {body.claimNote or 'damage claim'}",
+        deepLink=f"/dashboard/p/equipment/bookings/{booking_id}",
+    )
+    return {"deposit": deposit, "refund": refund, "claim": claim, "booking": booking}
+
+
+@router.post("/bookings/{booking_id}/payments/order")
+async def create_booking_payment_order(
+    booking_id: str,
+    body: EquipmentPaymentOrderIn,
+    uid: str = Depends(current_user_id),
+):
+    """Create a Razorpay order for the booking's pending amount (remaining
+    rental minus already-captured payments). The order is recorded on the
+    booking for the verify step."""
+    booking, equipment = await _booking_participant(booking_id, uid)
+    if booking.get("status") in ("cancelled", "rejected"):
+        _error(409, "BOOKING_SETTLED", f"cannot pay a {booking.get('status')} booking")
+    ledger = booking.get("paymentsLedger") or []
+    captured = sum(int(p.get("amountPaisa") or 0) for p in ledger if p.get("status") == "captured")
+    due_paisa = int(round(float(booking.get("priceRupees", 0)) * 100)) - captured
+    if due_paisa <= 0:
+        _error(409, "PAYMENT_EXCEEDS_DUE", "booking is already fully paid")
+    amount_paisa = body.amountPaisa or due_paisa
+    if amount_paisa > due_paisa:
+        _error(409, "PAYMENT_EXCEEDS_DUE", f"only ₹{due_paisa / 100:.2f} pending on this booking")
+    orders = booking.get("paymentOrders") or []
+    order = create_razorpay_order(amount_paisa, f"eqpay-{booking_id}-{len(orders) + 1}")
+    entry = {"razorpayOrderId": order.get("id"), "amountPaisa": amount_paisa, "at": _now()}
+    orders.append(entry)
+    booking["paymentOrders"] = orders
+    await set_doc("equipment_bookings", booking_id, booking)
+    return {
+        "razorpayOrderId": order.get("id"),
+        "amountPaisa": amount_paisa,
+        "duePaisa": due_paisa,
+        "currency": "INR",
+        "bookingId": booking_id,
+    }
+
+
+@router.post("/bookings/{booking_id}/payments/verify")
+async def verify_booking_payment(
+    booking_id: str,
+    body: EquipmentPaymentVerifyIn,
+    uid: str = Depends(current_user_id),
+):
+    """PSP-verified payment capture: the Razorpay signature is verified and
+    only then is {amountPaisa, razorpayOrderId, razorpayPaymentId, status:
+    captured, at} appended to the booking payments ledger."""
+    booking, equipment = await _booking_participant(booking_id, uid)
+    if booking.get("status") in ("cancelled", "rejected"):
+        _error(409, "BOOKING_SETTLED", f"cannot pay a {booking.get('status')} booking")
+    orders = booking.get("paymentOrders") or []
+    order = next((o for o in orders if o.get("razorpayOrderId") == body.razorpayOrderId), None)
+    if order is None:
+        _error(404, "PAYMENT_ORDER_NOT_FOUND", "no payment order found for this booking — create one first")
+    ledger = list(booking.get("paymentsLedger") or [])
+    if any(p.get("razorpayPaymentId") == body.razorpayPaymentId for p in ledger):
+        return {"captured": False, "alreadyCaptured": True, "ledger": ledger, "paidPaisa": sum(int(p.get("amountPaisa") or 0) for p in ledger)}
+    if not verify_razorpay_signature(body.razorpayOrderId, body.razorpayPaymentId, body.signature):
+        _error(402, "PAYMENT_VERIFICATION_FAILED", "payment signature verification failed")
+    entry = {
+        "amountPaisa": int(order.get("amountPaisa") or 0),
+        "razorpayOrderId": body.razorpayOrderId,
+        "razorpayPaymentId": body.razorpayPaymentId,
+        "status": "captured",
+        "at": _now(),
+        "by": uid,
+    }
+    ledger.append(entry)
+    booking["paymentsLedger"] = ledger
+    await set_doc("equipment_bookings", booking_id, booking)
+    await _audit_financial("EQUIPMENT_PAYMENT_CAPTURED", uid, booking_id, {"amountPaisa": entry["amountPaisa"], "paymentId": body.razorpayPaymentId})
+    owner_id = equipment.get("ownerId")
+    if owner_id and owner_id != uid:
+        await notify_user(
+            owner_id,
+            type="equipment_payment",
+            title="Payment captured / भुगतान मिला",
+            body=f"₹{entry['amountPaisa'] / 100:.0f} captured for {equipment.get('name', '')} ({booking.get('date', '')})",
+            deepLink=f"/dashboard/p/equipment/bookings/{booking_id}",
+        )
+    paid = sum(int(p.get("amountPaisa") or 0) for p in ledger if p.get("status") == "captured")
+    total = int(round(float(booking.get("priceRupees", 0)) * 100))
+    return {"captured": True, "entry": entry, "paidPaisa": paid, "duePaisa": max(0, total - paid)}
+
+
+# ---------------------------------------------------------------------------
+# 13. Owner quotes on farmer demand posts (P2-5)
+# ---------------------------------------------------------------------------
+
+
+def _valid_date(raw: str | None) -> bool:
+    if raw is None:
+        return True
+    try:
+        datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True
+
+
+@router.post("/demand-posts/{post_id}/quotes", status_code=201)
+async def quote_demand_post(post_id: str, body: DemandPostQuoteIn, ctx: tuple = Depends(_owner)):
+    """Owner quote lifecycle: an equipment owner quotes a rate/message against
+    a farmer's demand post. One open quote per owner per post (re-quoting
+    updates it); the poster sees quotes on the demand-post read."""
+    user, uid = ctx
+    post = await get_doc("equipment_demand_posts", post_id)
+    if post is None:
+        _error(404, "DEMAND_POST_NOT_FOUND", "demand post not found")
+    if post.get("status") != "open":
+        _error(409, "DEMAND_NOT_OPEN", f"demand post is {post.get('status')}")
+    if not _valid_date(body.availableFrom) or not _valid_date(body.availableTo):
+        _error(422, "VALIDATION_ERROR", "availableFrom/availableTo must be YYYY-MM-DD")
+    if body.availableFrom and body.availableTo and body.availableTo < body.availableFrom:
+        _error(422, "INVALID_DATE_RANGE", "availableTo must be on or after availableFrom")
+    if body.equipmentId:
+        machine = await get_doc("equipment", body.equipmentId)
+        if machine is None or machine.get("ownerId") != uid:
+            _error(403, "NOT_EQUIPMENT_OWNER", "quote can only reference your own equipment")
+    quotes = post.setdefault("quotes", [])
+    existing = next((q for q in quotes if q.get("ownerId") == uid), None)
+    entry = {
+        "id": (existing or {}).get("id") or f"eqq_{uuid.uuid4().hex[:10]}",
+        "ownerId": uid,
+        "ownerName": user.get("name", ""),
+        "equipmentId": body.equipmentId,
+        "rateRupees": body.rateRupees,
+        "message": body.message,
+        "availableFrom": body.availableFrom,
+        "availableTo": body.availableTo,
+        "status": "open",
+        "createdAt": (existing or {}).get("createdAt") or _now(),
+        "updatedAt": _now(),
+    }
+    if existing is not None:
+        quotes[quotes.index(existing)] = entry
+    else:
+        quotes.append(entry)
+    await set_doc("equipment_demand_posts", post_id, post)
+    poster = post.get("userId")
+    if poster and poster != uid:
+        await notify_user(
+            poster,
+            type="equipment_demand_quote",
+            title="New quote on your demand / नया कोटेशन",
+            body=f"{user.get('name', 'An owner')} quoted ₹{body.rateRupees or '—'}/hr for {post.get('machineType', '')}",
+            deepLink="/dashboard/f/equipment/demand-posts",
+        )
+    return {"quote": entry, "demandPostId": post_id, "quoteCount": len(quotes)}

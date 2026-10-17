@@ -6,16 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.models.courses import BatchSessionCreateIn
 from app.models.teachers import (
     AssignmentGradeIn,
     AssignmentSubmitIn,
     AttendanceMarkIn,
     BatchCreateIn,
+    CertificateRevokeIn,
     CourseCreateIn,
     EnquiryAnswerIn,
+    EnquiryCounterIn,
     EnquiryCreateIn,
     FeeQuoteIn,
     TeacherAnnouncementIn,
+    TeacherAvailabilityIn,
     TeacherCertificateIssueIn,
     TeacherCredentialUploadIn,
     TeacherProfileUpdateIn,
@@ -388,20 +392,186 @@ async def quote_enquiry_fee(enquiry_id: str, body: FeeQuoteIn, user: dict = Depe
     return enquiry
 
 
+# ---------------------------------------------------------------------------
+# Fee negotiation: instructor counter with TTL, farmer accept (spec F6/T7/C6)
+# ---------------------------------------------------------------------------
+def _parse_dt(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+@router.post("/enquiries/{enquiry_id}/counter")
+async def counter_enquiry(enquiry_id: str, body: EnquiryCounterIn, user: dict = Depends(_user)):
+    enquiry = await get_doc("course_enquiries", enquiry_id)
+    if enquiry is None:
+        _error(404, "ENQUIRY_NOT_FOUND", "enquiry not found")
+    if enquiry.get("instructorId") != user["id"]:
+        _error(403, "FORBIDDEN", "only the instructor of this enquiry can counter")
+    if enquiry.get("status") not in ("open", "quoted", "countered"):
+        _error(409, "ENQUIRY_NOT_COUNTERABLE", f"enquiry status is {enquiry.get('status')}")
+
+    ttl_hours = body.ttlHours or 24
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+    enquiry["quotedFeeRupees"] = body.quotedFeeRupees
+    enquiry["status"] = "countered"
+    enquiry["ttlHours"] = ttl_hours
+    enquiry["counteredAt"] = _now()
+    enquiry["expiresAt"] = expires_at.isoformat()
+    await set_doc("course_enquiries", enquiry_id, enquiry)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        enquiry.get("farmerId"),
+        type="fee_counter_offer",
+        title="New fee offer / नया शुल्क प्रस्ताव",
+        body=f"{user.get('name') or 'Instructor'} quoted ₹{body.quotedFeeRupees:.0f} (valid {ttl_hours}h)",
+        deepLink="/dashboard/p/courses/enquiries",
+    )
+    return enquiry
+
+
+@router.post("/enquiries/{enquiry_id}/accept")
+async def accept_enquiry(enquiry_id: str, user: dict = Depends(_user)):
+    enquiry = await get_doc("course_enquiries", enquiry_id)
+    if enquiry is None:
+        _error(404, "ENQUIRY_NOT_FOUND", "enquiry not found")
+    if enquiry.get("farmerId") != user["id"]:
+        _error(403, "FORBIDDEN", "only the farmer who asked can accept")
+    if enquiry.get("status") not in ("quoted", "countered"):
+        _error(409, "ENQUIRY_NOT_ACCEPTABLE", f"enquiry status is {enquiry.get('status')}")
+
+    expires_at = _parse_dt(enquiry.get("expiresAt"))
+    if expires_at is not None and datetime.now(timezone.utc) > expires_at:
+        _error(410, "ENQUIRY_EXPIRED", "the instructor's offer has expired")
+
+    enquiry["status"] = "accepted"
+    enquiry["acceptedAt"] = _now()
+    enquiry["lockedFeeRupees"] = enquiry.get("quotedFeeRupees")
+    enquiry["feeLocked"] = True
+    await set_doc("course_enquiries", enquiry_id, enquiry)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        enquiry.get("instructorId"),
+        type="fee_accepted",
+        title="Fee accepted / शुल्क स्वीकृत",
+        body=f"{user.get('name') or 'Farmer'} accepted the ₹{enquiry.get('lockedFeeRupees')} fee for {enquiry.get('courseTitle') or 'the course'}",
+        deepLink="/dashboard/p/instructor/enquiries",
+    )
+    return enquiry
+
+
+# ---------------------------------------------------------------------------
+# Batch sessions with QR check-in tokens (spec F8/T10)
+# ---------------------------------------------------------------------------
+@router.post("/batches/{batch_id}/sessions", status_code=201)
+async def create_batch_session(batch_id: str, body: BatchSessionCreateIn, user: dict = Depends(_user)):
+    batch = await get_doc("course_batches", batch_id)
+    if batch is None:
+        _error(404, "BATCH_NOT_FOUND", "batch not found")
+    if batch.get("instructorId") != user["id"]:
+        _error(403, "FORBIDDEN", "only the batch instructor can schedule sessions")
+
+    starts_at = body.startsAt
+    if _parse_dt(starts_at) is None:
+        _error(422, "VALIDATION_ERROR", "startsAt must be an ISO-8601 timestamp", {"startsAt": "invalid"})
+    if body.endsAt and _parse_dt(body.endsAt) is None:
+        _error(422, "VALIDATION_ERROR", "endsAt must be an ISO-8601 timestamp", {"endsAt": "invalid"})
+    if body.endsAt and _parse_dt(body.endsAt) <= _parse_dt(starts_at):
+        _error(422, "VALIDATION_ERROR", "endsAt must be after startsAt", {"endsAt": "must be after startsAt"})
+
+    session_id = f"ses_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id": session_id,
+        "batchId": batch_id,
+        "courseId": batch.get("courseId"),
+        "instructorId": user["id"],
+        "title": body.title or "Session",
+        "topic": body.topic or "",
+        "startsAt": starts_at,
+        "endsAt": body.endsAt,
+        "qrToken": str(uuid.uuid4()),
+        "status": "scheduled",
+        "createdAt": _now(),
+    }
+    await set_doc("batch_sessions", session_id, doc)
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Availability & blackout calendar (spec T3)
+# ---------------------------------------------------------------------------
+def _valid_date(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _valid_time(value: str) -> bool:
+    try:
+        datetime.strptime(value, "%H:%M")
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+@router.put("/availability")
+async def update_availability(body: TeacherAvailabilityIn, user: dict = Depends(_user)):
+    _is_instructor_or_404(user)
+    for day in body.blackoutDates:
+        if not _valid_date(day):
+            _error(422, "VALIDATION_ERROR", f"invalid blackout date: {day!r}", {"blackoutDates": "YYYY-MM-DD"})
+    for slot in body.oneOnOneSlots:
+        if not _valid_date(slot.date):
+            _error(422, "VALIDATION_ERROR", f"invalid slot date: {slot.date!r}", {"oneOnOneSlots.date": "YYYY-MM-DD"})
+        if not _valid_time(slot.startTime) or not _valid_time(slot.endTime):
+            _error(422, "VALIDATION_ERROR", "slot times must be HH:MM", {"oneOnOneSlots": "HH:MM"})
+        if slot.endTime <= slot.startTime:
+            _error(422, "VALIDATION_ERROR", "slot endTime must be after startTime", {"oneOnOneSlots.endTime": "after startTime"})
+
+    profile = await get_doc("teacher_profiles", user["id"]) or {
+        "id": user["id"],
+        "userId": user["id"],
+        "name": user.get("name") or "Instructor",
+        "isVerified": True,
+        "createdAt": _now(),
+    }
+    profile["availability"] = {
+        "blackoutDates": list(body.blackoutDates),
+        "oneOnOneSlots": [s.model_dump() for s in body.oneOnOneSlots],
+    }
+    profile["updatedAt"] = _now()
+    await set_doc("teacher_profiles", user["id"], profile)
+    return {
+        "teacherId": user["id"],
+        "blackoutDates": profile["availability"]["blackoutDates"],
+        "oneOnOneSlots": profile["availability"]["oneOnOneSlots"],
+        "updatedAt": profile["updatedAt"],
+    }
+
+
 @router.get("/sessions/{session_id}/attendance")
 async def get_session_attendance(session_id: str, user: dict = Depends(_user)):
     doc = await get_doc("session_attendance", session_id)
     if doc is None:
+        # No fabricated rows: an unrecorded session simply has no records yet.
         doc = {
             "sessionId": session_id,
             "sessionDate": _now()[:10],
-            "records": [
-                {"studentId": "std_1", "studentName": "Kishor Mahajan", "status": "present", "verifiedAt": _now()},
-                {"studentId": "std_2", "studentName": "Vilas Patil", "status": "present", "verifiedAt": _now()},
-                {"studentId": "std_3", "studentName": "Nilesh Borse", "status": "present", "verifiedAt": _now()},
-            ],
-            "totalPresent": 3,
-            "totalEnrolled": 3,
+            "records": [],
+            "totalPresent": 0,
+            "totalEnrolled": 0,
         }
         await set_doc("session_attendance", session_id, doc)
     return doc
@@ -484,19 +654,52 @@ async def verify_certificate_public(certificate_id: str):
     """Public certificate verification for employers / third parties.
 
     Intentionally unauthenticated, but returns only the certificate's real
-    public fields (no demo fallback, no PII beyond the learner's name)."""
+    public fields (no demo fallback, no PII beyond the learner's name).
+    Revoked certificates stay resolvable but surface `isValid: false` plus
+    the revocation record (spec C13/E19)."""
     purchases = await query("course_purchases", [("certificateId", "==", certificate_id)], limit=1)
     if not purchases:
         _error(404, "CERTIFICATE_NOT_FOUND", "certificate not found")
     p = purchases[0]
+    revoked = p.get("certificateRevoked")
     return {
-        "isValid": True,
+        "isValid": not revoked,
         "certificateId": certificate_id,
         "recipientName": p.get("studentName"),
         "courseTitle": p.get("courseTitle"),
         "issuedAt": p.get("certificateIssuedAt"),
         "credential": p.get("credential"),
+        "revoked": revoked,
     }
+
+
+@router.post("/certificates/{certificate_id}/revoke")
+async def revoke_certificate(certificate_id: str, body: CertificateRevokeIn, user: dict = Depends(_user)):
+    """Revoke a completion certificate (spec C13/E19): the certificate stays
+    resolvable on the public verify page but reads as invalid. Only the
+    instructor who taught the course (or an admin) can revoke."""
+    purchases = await query("course_purchases", [("certificateId", "==", certificate_id)], limit=1)
+    if not purchases:
+        _error(404, "CERTIFICATE_NOT_FOUND", "certificate not found")
+    p = purchases[0]
+    if p.get("instructorId") != user["id"] and not user.get("isAdmin"):
+        _error(403, "FORBIDDEN", "only the course instructor or an admin can revoke this certificate")
+
+    now = _now()
+    p["certificateIsValid"] = False
+    p["certificateRevoked"] = {"reason": body.reason, "at": now, "by": user["id"]}
+    await set_doc("course_purchases", p["id"], p)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        p.get("userId"),
+        type="certificate_revoked",
+        title="Certificate revoked / प्रमाणपत्र रद्द",
+        body=f"Your certificate for {p.get('courseTitle') or 'the course'} was revoked: {body.reason}",
+        deepLink="/dashboard/p/courses",
+    )
+    return {"certificateId": certificate_id, "isValid": False, "revoked": p["certificateRevoked"]}
 
 
 @router.get("/earnings")

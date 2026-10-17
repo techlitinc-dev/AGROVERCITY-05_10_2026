@@ -3,8 +3,11 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.config import settings
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import admin_user, current_user_id
+from app.core.security import verify_mpin
+from app.models.livestock import LivestockPayVerifyIn, VetPayoutIn
 from app.models.livestock_mgmt import (
     AppointmentIn,
     AppointmentStatusIn,
@@ -21,6 +24,12 @@ from app.routers.users import require_role
 from app.services import tasks as tasks_service
 from app.services.billing import check_entitlement, require_entitlement
 from app.services.notifications import send_fcm_to_user
+from app.services.payments import (
+    create_razorpay_order,
+    create_razorpayx_payout,
+    refund_razorpay_payment,
+    verify_razorpay_signature,
+)
 from app.services.tasks import emit_task
 from app.services.users import get_user
 
@@ -29,6 +38,11 @@ router = APIRouter(tags=["livestock"])
 # WS-06: vet Pro tier feature keys (plan config entry: persona "vet", ₹299/mo).
 VET_FEATURE_CAMPAIGNS = "vetCampaigns"
 VET_FEATURE_SCHEDULE = "vetScheduleEditor"
+
+# P1-28: platform commission on captured consultation fees, in percent. The vet
+# settlement rows (services/settlements.py config holds the other personas'
+# rates) deduct this at source before a payout can be requested.
+VET_COMMISSION_PCT = 10
 
 _VET_TRANSITIONS = {
     "requested": {"confirmed", "cancelled"},
@@ -388,6 +402,151 @@ async def my_earnings(month: str | None = None, vet: dict = Depends(_vet_owner))
 
 
 # =========================================================================
+# Settlements & payouts (P1-28)
+# =========================================================================
+
+def _fee_paisa(appt: dict) -> int:
+    if appt.get("feePaisa"):
+        return int(appt["feePaisa"])
+    return int(round(float(appt.get("fee", 0) or 0) * 100))
+
+
+async def _sync_settlements(vet_id: str) -> list[dict]:
+    """Rebuild the vet's settlement rows from captured consultation fees.
+
+    Pending rows are recomputed on every read so newly paid appointments show
+    up without a batch job; rows already covered by a payout are immutable.
+    """
+    appointments = await query("appointments", [("vetId", "==", vet_id)], limit=500)
+    periods: dict[str, list[dict]] = {}
+    for appt in appointments:
+        if appt.get("feeStatus") != "paid":
+            continue
+        period = (appt.get("feePaidAt") or appt.get("updatedAt") or "")[:7]
+        if not period:
+            continue
+        periods.setdefault(period, []).append(appt)
+    rows: list[dict] = []
+    for period in sorted(periods, reverse=True):
+        doc_id = f"vst_{vet_id}_{period}"
+        existing = await get_doc("vet_settlements", doc_id)
+        if existing and existing.get("status") == "paid":
+            rows.append(existing)
+            continue
+        appts = periods[period]
+        gross = sum(_fee_paisa(a) for a in appts)
+        commission = gross * VET_COMMISSION_PCT // 100
+        row = {
+            "id": doc_id,
+            "vetId": vet_id,
+            "period": period,
+            "appointments": len(appts),
+            "grossPaisa": gross,
+            "commissionPaisa": commission,
+            "netPaisa": gross - commission,
+            "status": "pending",
+            "paidPaisa": (existing or {}).get("paidPaisa", 0),
+            "updatedAt": _now(),
+        }
+        if (existing or {}).get("payoutRef"):
+            row["payoutRef"] = existing["payoutRef"]
+        await set_doc("vet_settlements", doc_id, row)
+        rows.append(row)
+    return rows
+
+
+@router.get("/livestock/vets/me/settlements")
+async def my_settlements(vet: dict = Depends(_vet_owner)):
+    rows = await _sync_settlements(vet["id"])
+    pending_paisa = sum(
+        max(r["netPaisa"] - r.get("paidPaisa", 0), 0)
+        for r in rows
+        if r.get("status") == "pending"
+    )
+    return {
+        "data": rows,
+        "total": len(rows),
+        "pendingPaisa": pending_paisa,
+        "commissionPct": VET_COMMISSION_PCT,
+    }
+
+
+@router.post("/livestock/vets/me/payouts", status_code=201)
+async def request_payout(body: VetPayoutIn, vet: dict = Depends(_vet_owner)):
+    uid = vet.get("claimedByUid", "")
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    if not user.get("mpinHash"):
+        _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
+    if not body.mpin or not verify_mpin(body.mpin, user["mpinHash"]):
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+
+    rows = await _sync_settlements(vet["id"])
+    pending = sorted(
+        (r for r in rows if r.get("status") == "pending"),
+        key=lambda r: r["period"],
+    )
+    available = sum(max(r["netPaisa"] - r.get("paidPaisa", 0), 0) for r in pending)
+    if body.amountPaise > available:
+        _error(409, "INSUFFICIENT_BALANCE", f"payout exceeds unsettled earnings ({available} paisa available)")
+
+    accounts = await query(f"users/{uid}/bank_accounts", [], limit=100)
+    if body.bankAccountId:
+        account = next((a for a in accounts if a.get("id") == body.bankAccountId), None)
+        if account is None:
+            _error(404, "BANK_ACCOUNT_NOT_FOUND", "bank account not found")
+    else:
+        verified = [a for a in accounts if a.get("verifyStatus") == "verified"]
+        verified.sort(key=lambda a: (not a.get("isPrimary", False), a.get("createdAt", "")))
+        account = verified[0] if verified else None
+        if account is None:
+            _error(404, "BANK_ACCOUNT_NOT_FOUND", "no verified bank account on file — add and verify one first")
+    if account.get("verifyStatus") != "verified":
+        _error(409, "BANK_ACCOUNT_NOT_VERIFIED", "bank account must be penny-drop verified before payouts")
+
+    ref_id = f"vetpayout_{vet['id']}_{uuid.uuid4().hex[:10]}"
+    payout = await create_razorpayx_payout(
+        account.get("razorpayFundAccountId") or account["id"], body.amountPaise, ref_id
+    )
+    payout_ref = payout.get("id") or ref_id
+    now_str = _now()
+
+    # Oldest period first, fully covering rows until the requested amount is
+    # exhausted; a partially covered row keeps its `paidPaisa` for the next run.
+    remaining = body.amountPaise
+    settled_periods: list[str] = []
+    for row in pending:
+        if remaining <= 0:
+            break
+        due = max(row["netPaisa"] - row.get("paidPaisa", 0), 0)
+        take = min(due, remaining)
+        row["paidPaisa"] = row.get("paidPaisa", 0) + take
+        remaining -= take
+        if row["paidPaisa"] >= row["netPaisa"]:
+            row["status"] = "paid"
+            row["payoutRef"] = payout_ref
+            row["paidAt"] = now_str
+            settled_periods.append(row["period"])
+        await set_doc("vet_settlements", row["id"], row)
+
+    await _notify(
+        uid,
+        "पॉउट जारी (Payout Released)",
+        f"₹{body.amountPaise / 100:.2f} का भुगतान आपके खाते में भेजा गया (रेफ {payout_ref})।",
+        {"kind": "vet_payout", "payoutRef": payout_ref, "amountPaisa": str(body.amountPaise)},
+    )
+    return {
+        "payoutRef": payout_ref,
+        "amountPaisa": body.amountPaise,
+        "bankAccountId": account["id"],
+        "status": payout.get("status", "processed"),
+        "settledPeriods": settled_periods,
+        "createdAt": now_str,
+    }
+
+
+# =========================================================================
 # Appointments
 # =========================================================================
 
@@ -470,6 +629,70 @@ async def create_appointment(body: AppointmentIn, uid: str = Depends(_livestock_
     return doc
 
 
+@router.post("/livestock/appointments/{appt_id}/pay")
+async def pay_appointment_fee(appt_id: str, uid: str = Depends(current_user_id)):
+    """P0-13: place the consultation-fee hold — a Razorpay order for the fee
+    defaulted per visitType at booking time. Idempotent per appointment."""
+    appt = await get_doc("appointments", appt_id)
+    if not appt:
+        _error(404, "APPOINTMENT_NOT_FOUND", "appointment not found")
+    if appt.get("farmerUid") != uid:
+        _error(403, "FORBIDDEN_ROLE", "only the booking farmer can pay the consultation fee")
+    if appt.get("feeStatus") == "paid" or appt.get("razorpayOrderId"):
+        return {
+            "appointmentId": appt_id,
+            "razorpayOrderId": appt.get("razorpayOrderId", ""),
+            "amountPaisa": appt.get("feePaisa", 0),
+            "currency": "INR",
+            "keyId": settings.razorpay_key_id,
+            "feeStatus": appt.get("feeStatus", ""),
+            "alreadyPaid": appt.get("feeStatus") == "paid",
+        }
+    fee_paisa = int(round(float(appt.get("fee", 0) or 0) * 100))
+    if fee_paisa <= 0:
+        _error(409, "NO_FEE_DUE", "this appointment has no consultation fee to collect")
+    order = create_razorpay_order(fee_paisa, f"appt-{appt_id}")
+    appt["feeStatus"] = "hold"
+    appt["feePaisa"] = fee_paisa
+    appt["razorpayOrderId"] = order["id"]
+    appt["feeHoldAt"] = _now()
+    await set_doc("appointments", appt_id, appt)
+    return {
+        "appointmentId": appt_id,
+        "razorpayOrderId": order["id"],
+        "amountPaisa": fee_paisa,
+        "currency": "INR",
+        "keyId": settings.razorpay_key_id,
+        "feeStatus": "hold",
+        "alreadyPaid": False,
+    }
+
+
+@router.post("/livestock/appointments/{appt_id}/pay/verify")
+async def verify_appointment_fee(
+    appt_id: str, body: LivestockPayVerifyIn, uid: str = Depends(current_user_id)
+):
+    """P0-13: signature-verify the fee hold — captures feePaisa on the
+    appointment; the cancel path refunds it."""
+    appt = await get_doc("appointments", appt_id)
+    if not appt:
+        _error(404, "APPOINTMENT_NOT_FOUND", "appointment not found")
+    if appt.get("farmerUid") != uid:
+        _error(403, "FORBIDDEN_ROLE", "only the booking farmer can pay the consultation fee")
+    if appt.get("feeStatus") == "paid":
+        return {"ok": True, "status": "paid", "appointmentId": appt_id, "alreadyPaid": True}
+    expected = appt.get("razorpayOrderId") or ""
+    if not expected or body.razorpayOrderId != expected:
+        _error(400, "PAYMENT_ORDER_MISMATCH", "razorpayOrderId does not match the pending fee order for this appointment")
+    if not verify_razorpay_signature(body.razorpayOrderId, body.razorpayPaymentId, body.signature):
+        _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
+    appt["feeStatus"] = "paid"
+    appt["razorpayPaymentId"] = body.razorpayPaymentId
+    appt["feePaidAt"] = _now()
+    await set_doc("appointments", appt_id, appt)
+    return {"ok": True, "status": "paid", "appointmentId": appt_id, "alreadyPaid": False}
+
+
 @router.get("/livestock/appointments")
 async def list_my_appointments(
     status: str | None = None,
@@ -513,6 +736,14 @@ async def update_appointment_status(appt_id: str, body: AppointmentStatusIn, uid
     appt["updatedAt"] = _now()
     if body.status == "cancelled":
         appt["cancelReason"] = body.cancelReason
+        # P0-13: refund the captured consultation fee back to the booker.
+        if appt.get("feeStatus") == "paid" and appt.get("razorpayPaymentId"):
+            refund = await refund_razorpay_payment(
+                appt["razorpayPaymentId"], int(appt.get("feePaisa") or 0)
+            )
+            appt["feeStatus"] = "refunded"
+            appt["feeRefundId"] = refund.get("id")
+            appt["feeRefundedAt"] = _now()
     if body.status == "completed":
         appt["completedAt"] = _now()
         if body.vetNotes:

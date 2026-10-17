@@ -1,13 +1,26 @@
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.models.direct import AdvanceIn, CancelIn, PickupIn, PurchaseCreate
+from app.models.direct import (
+    AdvanceIn,
+    CancelIn,
+    PickupIn,
+    PurchaseCreate,
+    PurchaseDisputeCreate,
+    PurchaseDisputeEvidenceIn,
+)
 from app.services import settlements as settlements_service
 from app.services.chat import ensure_chat_room
+from app.services.disputes import ingest_purchase_dispute
 from app.services.notify import notify_user
 from app.services.pnl_engine import record_auto_entry
 from app.services.users import get_user
@@ -572,3 +585,259 @@ async def cancel_purchase(purchase_id: str, body: CancelIn, uid: str = Depends(c
         deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)
+
+
+# ---------------- Purchase disputes (spec S9/G4, Vyapari V15-C8) ----------------
+# Booking-scoped tickets only — not a help/SOS surface. Either trade party
+# raises; the canonical `disputes` doc lands in the existing admin triage
+# queue (services/disputes.py); opening a dispute freezes the escrow clock.
+
+
+async def _trade_party(purchase_id: str, uid: str) -> dict:
+    """Disputes are raised by the trade parties themselves — buyer or farmer,
+    no buyer-org delegates (unlike _participant which admits org members)."""
+    doc = await get_doc("purchases", purchase_id)
+    if doc is None:
+        _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
+    if uid not in (doc.get("buyerId"), doc.get("farmerId")):
+        _error(403, "FORBIDDEN", "not a purchase participant")
+    return doc
+
+
+async def _purchase_disputes(purchase_id: str) -> list[dict]:
+    docs = await query(
+        "disputes", [("source", "==", "purchase"), ("sourceId", "==", purchase_id)], limit=100
+    )
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return docs
+
+
+@router.post("/{purchase_id}/disputes", status_code=201)
+async def open_purchase_dispute(
+    purchase_id: str, body: PurchaseDisputeCreate, uid: str = Depends(current_user_id)
+):
+    """Raise a dispute on a booking (post-transaction, admin-mediated — G4).
+    Pauses the escrow release clock (escrow.disputeOpenedAt, WS-03)."""
+    purchase = await _trade_party(purchase_id, uid)
+    if purchase.get("status") == "cancelled":
+        _error(409, "PURCHASE_NOT_DISPUTABLE", "cannot dispute a cancelled purchase")
+    if any(d.get("status") == "open" for d in await _purchase_disputes(purchase_id)):
+        _error(409, "DISPUTE_ALREADY_OPEN", "an open dispute already exists for this purchase")
+    entries = []
+    if body.evidence:
+        entries.append(
+            {
+                "id": f"evi_{uuid.uuid4().hex[:10]}",
+                "note": str(body.evidence.get("note", "")),
+                "photoUrls": [str(u) for u in (body.evidence.get("photoUrls") or [])],
+                "by": uid,
+                "at": _now(),
+            }
+        )
+    summary = f"{body.category}: {body.reason}".strip(": ")
+    doc = await ingest_purchase_dispute(purchase_id, {"summary": summary, "evidence": entries})
+    # ingest defaults evidence to {} — normalize to the list the evidence
+    # endpoint appends to, and scope the doc to its trade parties.
+    doc["evidence"] = entries
+    doc["purchaseId"] = purchase_id
+    doc["raisedBy"] = uid
+    doc["parties"] = sorted(p for p in (purchase.get("buyerId"), purchase.get("farmerId")) if p)
+    await set_doc("disputes", doc["id"], doc)
+    # WS-03 escrow clock: an open dispute freezes a held escrow until resolved.
+    escrow = purchase.setdefault("escrow", {})
+    escrow["disputeOpenedAt"] = _now()
+    _append_event(purchase, "disputeOpened", f"{body.category} — {doc['id']}")
+    purchase["updatedAt"] = _now()
+    await set_doc("purchases", purchase_id, purchase)
+    other = (
+        purchase.get("buyerId") if uid == purchase.get("farmerId") else purchase.get("farmerId")
+    )
+    if other:
+        await notify_user(
+            other,
+            type="purchase_dispute",
+            title="Dispute opened / विवाद खुला",
+            body=f"{purchase.get('crop', '')} — {body.category}",
+            deepLink=f"/dashboard/p/purchases/{purchase_id}",
+        )
+    return doc
+
+
+@router.get("/{purchase_id}/disputes")
+async def list_purchase_disputes(purchase_id: str, uid: str = Depends(current_user_id)):
+    """Party-scoped dispute list for one purchase (both trade parties)."""
+    await _trade_party(purchase_id, uid)
+    docs = await _purchase_disputes(purchase_id)
+    return {"data": docs, "total": len(docs)}
+
+
+@router.post("/{purchase_id}/disputes/{dispute_id}/evidence", status_code=201)
+async def add_purchase_dispute_evidence(
+    purchase_id: str,
+    dispute_id: str,
+    body: PurchaseDisputeEvidenceIn,
+    uid: str = Depends(current_user_id),
+):
+    """Append photos/note to the dispute's evidence locker — either party."""
+    await _trade_party(purchase_id, uid)
+    dispute = await get_doc("disputes", dispute_id)
+    if (
+        dispute is None
+        or dispute.get("source") != "purchase"
+        or dispute.get("sourceId") != purchase_id
+    ):
+        _error(404, "DISPUTE_NOT_FOUND", "dispute not found for this purchase")
+    if dispute.get("status") != "open":
+        _error(409, "DISPUTE_CLOSED", f"dispute is {dispute.get('status')}")
+    evidence = dispute.get("evidence")
+    if not isinstance(evidence, list):
+        evidence = []
+    entry = {
+        "id": f"evi_{uuid.uuid4().hex[:10]}",
+        "note": body.note,
+        "photoUrls": body.photoUrls,
+        "by": uid,
+        "at": _now(),
+    }
+    evidence.append(entry)
+    dispute["evidence"] = evidence
+    await set_doc("disputes", dispute_id, dispute)
+    return {"evidence": entry, "total": len(evidence)}
+
+
+# ---------------- GST tax-invoice PDF (direct-buyer spec B9) ----------------
+# Layout mirrors the seller-side GST invoice (services/reports.py
+# build_gst_invoice_pdf); numbering reuses the purchase invoice number
+# (_issue_invoice: INV-<last8>-<yymm>). Money is integer paisa throughout.
+
+
+async def _seller_gstin(farmer_id: str, farmer: dict) -> str:
+    """Seller GSTIN: collected + format-verified on the seller role profile
+    (SellerRoleProfile.gstNumber), user-doc fields as fallback."""
+    profile = await get_doc(f"users/{farmer_id}/role_profiles", "seller") or {}
+    return profile.get("gstNumber") or farmer.get("gstin") or farmer.get("gstIn") or ""
+
+
+def _gst_breakdown(purchase: dict, buyer: dict, farmer: dict) -> dict:
+    """Intra-state (same state) → CGST+SGST halves; inter-state → IGST full.
+    Rate source: purchase.gstRate when set, else the 5% standard agri-commodity
+    slab (fresh produce, HSN chapters 01–24). All math in integer paisa."""
+    rate = float(purchase.get("gstRate") or 5)
+    taxable = int(round(float(purchase.get("finalAmount") or purchase.get("totalAmount") or 0) * 100))
+    tax_paisa = int(round(taxable * rate / 100))
+    buyer_state = (buyer or {}).get("state") or ""
+    farmer_state = (farmer or {}).get("state") or ""
+    # Missing state on either side defaults to intra-state (local trade).
+    intra = (not buyer_state or not farmer_state) or buyer_state == farmer_state
+    lines = {}
+    if intra:
+        cgst = tax_paisa // 2
+        lines["CGST"] = {"paisa": cgst, "ratePercent": rate / 2}
+        lines["SGST"] = {"paisa": tax_paisa - cgst, "ratePercent": rate / 2}
+    else:
+        lines["IGST"] = {"paisa": tax_paisa, "ratePercent": rate}
+    return {
+        "ratePercent": rate,
+        "taxablePaisa": taxable,
+        "taxPaisa": tax_paisa,
+        "intraState": intra,
+        "lines": lines,
+        "totalPaisa": taxable + tax_paisa,
+    }
+
+
+def _rupees(paisa: int) -> str:
+    return f"Rs {paisa / 100:.2f}"
+
+
+def _build_purchase_invoice_pdf(
+    purchase: dict,
+    invoice: dict,
+    buyer: dict,
+    farmer: dict,
+    gst: dict,
+    seller_gstin: str,
+    buyer_gstin: str,
+) -> bytes:
+    """reportlab GST tax invoice — mirrors build_gst_invoice_pdf's two-column
+    table layout (seller precedent), plus GST split lines."""
+    buffer = BytesIO()
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("GST Invoice / जीएसटी चालान", styles["Title"]),
+        Paragraph(
+            f"Generated on: {datetime.now(timezone.utc).date().isoformat()}", styles["Normal"]
+        ),
+        Spacer(1, 12),
+    ]
+    rows = [
+        ["Invoice No.", invoice.get("number", "")],
+        ["Invoice Date", (invoice.get("issuedAt") or "")[:10]],
+        ["Seller", purchase.get("farmerName", "")],
+        ["Seller GSTIN", seller_gstin or "—"],
+        ["Seller State", (farmer or {}).get("state", "") or "—"],
+        ["Buyer", purchase.get("buyerName", "")],
+        ["Buyer GSTIN", buyer_gstin or "—"],
+        ["Buyer State", (buyer or {}).get("state", "") or "—"],
+        ["Item", purchase.get("crop", "")],
+        ["Quantity", f"{purchase.get('quantity', '')} {purchase.get('unit', '')}"],
+        ["Rate per Unit", f"Rs {float(purchase.get('agreedPricePerUnit', 0) or 0):.2f}"],
+        ["Taxable Amount", _rupees(gst["taxablePaisa"])],
+    ]
+    for name, line in gst["lines"].items():
+        rows.append([f"{name} @ {line['ratePercent']:g}%", _rupees(line["paisa"])])
+    rows.append(["Invoice Total", _rupees(gst["totalPaisa"])])
+    rows.append(["Payment Status", purchase.get("status", "")])
+    table = Table(rows, colWidths=[140, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(table)
+    story.append(Spacer(1, 10))
+    line_rows = [["Line Items", "Amount"]]
+    for line in invoice.get("lines") or []:
+        line_rows.append([str(line.get("description", "")), _rupees(int(line.get("amount", 0) or 0) * 100)])
+    lines_table = Table(line_rows, colWidths=[340, 100])
+    lines_table.setStyle(
+        TableStyle(
+            [
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ]
+        )
+    )
+    story.append(lines_table)
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc.build(story)
+    return buffer.getvalue()
+
+
+@router.get("/{purchase_id}/invoice.pdf")
+async def purchase_gst_invoice_pdf(purchase_id: str, uid: str = Depends(current_user_id)):
+    """B9: GST-compliant tax invoice PDF for a purchase — both trade parties.
+    Same numbering as the JSON invoice (INV-…, issued at completion)."""
+    purchase = await _participant(purchase_id, uid)
+    invoice = purchase.get("invoice")
+    if invoice is None:
+        _error(404, "INVOICE_NOT_FOUND", "invoice not issued yet")
+    buyer = await get_user(purchase.get("buyerId", "")) or {}
+    farmer = await get_user(purchase.get("farmerId", "")) or {}
+    buyer_profile = await get_doc(f"users/{purchase.get('buyerId', '')}/role_profiles", "directBuyer") or {}
+    buyer_gstin = buyer_profile.get("gstin") or buyer.get("gstin") or buyer.get("gstIn") or ""
+    gst = _gst_breakdown(purchase, buyer, farmer)
+    seller_gstin = await _seller_gstin(purchase.get("farmerId", ""), farmer)
+    content = _build_purchase_invoice_pdf(
+        purchase, invoice, buyer, farmer, gst, seller_gstin, buyer_gstin
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="gst-invoice-{purchase_id}.pdf"'},
+    )

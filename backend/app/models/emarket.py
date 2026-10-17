@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -45,3 +47,9 @@ class UserProductUpdate(BaseModel):
     unit: str | None = None
     imageUrl: str | None = None
     batchNo: str | None = None
+
+
+class SubscriptionUpdateIn(BaseModel):
+    status: Literal["paused", "active"] | None = None
+    qtyKg: float | None = Field(default=None, gt=0)
+    deliveryWindow: str | None = None

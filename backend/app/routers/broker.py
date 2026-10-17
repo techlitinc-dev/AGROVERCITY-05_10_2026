@@ -1,7 +1,9 @@
+import hashlib
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Response, UploadFile
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -10,12 +12,15 @@ from app.models.broker import (
     DealCancelRequest,
     DealCreate,
     DealUpdate,
+    DealDisputeCreate,
     DealMessageCreate,
     EvidenceKind,
     LeadCreate,
     LeadUpdate,
     MAX_VAULT_PER_KIND,
+    MilestoneCreate,
     VAULT_KINDS,
+    VehicleUpdate,
 )
 from app.routers.users import require_role
 from app.services import broker_ai, storage
@@ -30,6 +35,14 @@ router = APIRouter(prefix="/broker", tags=["broker"])
 MAX_EVIDENCE_PER_DEAL = 20
 # WS-05 step 2: counter-offer rounds cap — at 3 the deal locks to accept/decline.
 COUNTER_ROUND_CAP = 3
+
+# P0-5 (B12/E7): the captured buyer payment is held in escrow and released
+# only after delivery confirmation + this silent window; a dispute pauses it.
+ESCROW_RELEASE_WINDOW_HOURS = 48
+# P1-9 (E6): weighbridge divergence beyond this tolerance raises a pro-rata
+# adjustment proposal on the deal.
+WEIGH_TOLERANCE_PCT = 2.0
+E6_DISPUTE_WINDOW_HOURS = 24
 
 # WS-05 step 1: offer TTL — configurable 24–48h (default 24h), versioned config
 # the way transport_penalties is; the router only consumes.
@@ -91,6 +104,75 @@ async def _notify(uid: str | None, *, type: str, title: str, body: str, deepLink
         pass  # notifications are best-effort — never break the deal flow
 
 
+def _mask_plate(number: str) -> str:
+    """B8: mask an Indian vehicle plate for display — keep the first two
+    segments (state + RTO code) and the last segment, mask the middle:
+    "MH 12 AB 3456" -> "MH 12 •• 3456". The full plate stays stored."""
+    segments = str(number or "").split()
+    if len(segments) >= 3:
+        return " ".join([segments[0], segments[1], "••", segments[-1]])
+    if len(segments) == 2:
+        return f"{segments[0]} •• {segments[1]}"
+    return "••"
+
+
+def _mask_phone(phone: str) -> str:
+    """C1: phones are never shown post-auth — "+91 •• •••• •006"."""
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    last3 = digits[-3:] if len(digits) >= 3 else digits
+    return f"+91 •• •••• •{last3}" if digits else ""
+
+
+def _serialize_deal(deal: dict) -> dict:
+    """P1-12 (B8): single deal serializer — masks the vehicle plate everywhere
+    a deal doc leaves the API (detail, list, commissions, farmer side)."""
+    out = dict(deal)
+    vehicle = out.get("vehicle")
+    if vehicle and vehicle.get("vehicleNumber"):
+        masked = dict(vehicle)
+        masked["vehicleNumber"] = _mask_plate(masked["vehicleNumber"])
+        out["vehicle"] = masked
+    return out
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _first_name(name: str) -> str:
+    return (name or "").strip().split(" ")[0]
+
+
+async def _load_owned_deal(deal_id: str, uid: str) -> dict:
+    deal = await get_doc("broker_deals", deal_id)
+    if not deal or deal.get("brokerId") != uid:
+        _error(404, "DEAL_NOT_FOUND", "Deal not found")
+    return deal
+
+
+async def _deal_party(deal_id: str, uid: str = Depends(current_user_id)) -> tuple[dict, str]:
+    """Deal-party dependency for party-facing documents (contract/receipt):
+    the owning broker or the farmer matched by phone (P2 contract)."""
+    deal = await get_doc("broker_deals", deal_id)
+    if deal is None:
+        _error(404, "DEAL_NOT_FOUND", "Deal not found")
+    if deal.get("brokerId") == uid:
+        return deal, uid
+    user = await get_user(uid) or {}
+    target = _last10(user.get("phone", ""))
+    if target and target == _last10(deal.get("sellerPhone", "")):
+        return deal, uid
+    _error(404, "DEAL_NOT_FOUND", "Deal not found")
+
+
 @router.get("/deals")
 async def list_deals(
     status: str | None = None,
@@ -106,7 +188,7 @@ async def list_deals(
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize
-    return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
+    return {"data": [_serialize_deal(d) for d in docs[start:start + pageSize]], "page": page, "pageSize": pageSize, "total": total}
 
 
 @router.post("/deals", status_code=201)
@@ -176,7 +258,7 @@ async def get_deal(deal_id: str, ctx: tuple = Depends(_broker_user)):
     doc = await get_doc("broker_deals", deal_id)
     if not doc or doc.get("brokerId") != uid:
         _error(404, "DEAL_NOT_FOUND", "Deal not found")
-    return doc
+    return _serialize_deal(doc)
 
 
 @router.put("/deals/{deal_id}")
@@ -197,9 +279,22 @@ async def update_deal(deal_id: str, body: DealUpdate, ctx: tuple = Depends(_brok
         doc["commissionAmount"] = round(doc["grossAmount"] * (pct / 100.0), 2)
 
     doc["updatedAt"] = datetime.now(timezone.utc).isoformat()
-    await set_doc("broker_deals", deal_id, doc)
 
     new_status = doc.get("status")
+    if new_status == "completed" and not doc.get("deliveredAt"):
+        # P0-5: completion is the delivery confirmation — it starts the
+        # escrow release clock (deliveredAt + 48h silent window).
+        doc["deliveredAt"] = doc["updatedAt"]
+        escrow = doc.get("escrow")
+        if escrow and escrow.get("status") == "held" and not escrow.get("releaseAt"):
+            delivered_at = _parse_iso(doc["deliveredAt"])
+            if delivered_at:
+                escrow["releaseAt"] = (
+                    delivered_at + timedelta(hours=ESCROW_RELEASE_WINDOW_HOURS)
+                ).isoformat()
+            doc["escrow"] = escrow
+    await set_doc("broker_deals", deal_id, doc)
+
     if new_status != previous_status:
         commodity = doc.get("commodity", "")
         if new_status == "contract_issued":
@@ -229,7 +324,7 @@ async def update_deal(deal_id: str, body: DealUpdate, ctx: tuple = Depends(_brok
                 ),
                 deepLink=f"/dashboard/p/farmer/deals/{deal_id}",
             )
-    return doc
+    return _serialize_deal(doc)
 
 
 @router.delete("/deals/{deal_id}")
@@ -450,7 +545,7 @@ async def list_commissions(ctx: tuple = Depends(_broker_user)):
         "pendingPayout": round(pending_commission, 2),
         "completedDealsCount": len(completed),
         "activeDealsCount": len(deals) - len(completed),
-        "deals": deals[:50],
+        "deals": [_serialize_deal(d) for d in deals[:50]],
     }
 
 
@@ -565,6 +660,25 @@ async def capture_deal_payment(deal_id: str, ctx: tuple = Depends(_broker_user))
         "razorpayRef": split.get("id"),
         "capturedAt": now,
     }
+    # P0-5 (B12/E7): the captured amount is NOT split to the farmer at capture
+    # — it is held in escrow on the deal and released after delivery
+    # confirmation + a 48h silent window (release_deal_escrow performs the
+    # split). A dispute opened on the deal pauses the release.
+    delivered_at = _parse_iso(deal.get("deliveredAt"))
+    deal["escrow"] = {
+        "status": "held",
+        "amountPaisa": gross_paisa,
+        "releaseAt": (
+            (delivered_at + timedelta(hours=ESCROW_RELEASE_WINDOW_HOURS)).isoformat()
+            if delivered_at
+            else None
+        ),
+        "disputeWindowHours": ESCROW_RELEASE_WINDOW_HOURS,
+        "disputeOpenedAt": None,
+        "disputeResolvedAt": None,
+        "heldAt": now,
+        "captureRef": split.get("id"),
+    }
     deal["updatedAt"] = now
     await set_doc("broker_deals", deal_id, deal)
     await set_doc(
@@ -581,7 +695,111 @@ async def capture_deal_payment(deal_id: str, ctx: tuple = Depends(_broker_user))
             "timestamp": now,
         },
     )
-    return deal["paymentCapture"]
+    return {**deal["paymentCapture"], "escrow": deal["escrow"]}
+
+
+async def release_deal_escrow(deal: dict) -> dict:
+    """P0-5 (B12/E7): release a deal's held escrow — the actual farmer/platform
+    split. The captured amount leaves escrow only when the delivery + 48h
+    silent window closed and no dispute is open; the farmer leg (held amount
+    minus commission) lands as a farmer settlement row and the commission leg
+    is recorded to the platform, each with an audit_logs entry.
+
+    This is the module-level helper the nightly payout job imports; it is
+    idempotent (an already-released/paused/not-due escrow is a no-op) and
+    persists the mutated deal before returning it."""
+    from app.services.escrow import is_due, is_paused
+
+    escrow = deal.get("escrow") or {}
+    if escrow.get("status") != "held" or is_paused(escrow) or not is_due(escrow):
+        return deal
+
+    now = datetime.now(timezone.utc).isoformat()
+    amount_paisa = int(escrow.get("amountPaisa") or 0)
+    capture = deal.get("paymentCapture") or {}
+    commission_paisa = int(capture.get("commissionLegPaisa") or 0)
+    farmer_net_paisa = amount_paisa - commission_paisa
+    escrow.update(
+        {
+            "status": "released",
+            "releasedAt": now,
+            "commissionPaisa": commission_paisa,
+            "netReleasePaisa": farmer_net_paisa,
+        }
+    )
+    deal["escrow"] = escrow
+    deal["updatedAt"] = now
+    await set_doc("broker_deals", deal["id"], deal)
+
+    # The split: farmer leg -> farmer settlement row; commission -> platform.
+    seller_uid = deal.get("sellerUid")
+    await set_doc(
+        "settlements",
+        f"st_deal_farmer_{deal['id']}",
+        {
+            "id": f"st_deal_farmer_{deal['id']}",
+            "role": "farmer",
+            "kind": "broker_deal",
+            "entityId": seller_uid or deal.get("sellerPhone", ""),
+            "dealId": deal["id"],
+            "grossRupees": amount_paisa // 100,
+            "commissionRupees": commission_paisa // 100,
+            "netRupees": farmer_net_paisa // 100,
+            "status": "pending",
+            "sourceIds": [deal["id"]],
+            "createdAt": now,
+        },
+    )
+    await set_doc(
+        "audit_logs",
+        f"aud_deal_escrow_release_{deal['id']}_{now[:19]}",
+        {
+            "action": "DEAL_ESCROW_RELEASED",
+            "actorId": deal.get("brokerId"),
+            "dealId": deal["id"],
+            "amountPaisa": amount_paisa,
+            "farmerLegPaisa": farmer_net_paisa,
+            "commissionPaisa": commission_paisa,
+            "timestamp": now,
+        },
+    )
+    await _notify(
+        seller_uid,
+        type="deal_payout_released",
+        title="Payout released / भुगतान जारी",
+        body=(
+            f"₹{farmer_net_paisa / 100:.2f} for {deal.get('commodity', '')} "
+            f"({deal.get('quantityQuintals', 0)}q) released to your settlement"
+        ),
+        deepLink=f"/dashboard/p/farmer/deals/{deal['id']}",
+    )
+    return deal
+
+
+@router.post("/deals/{deal_id}/release-payout")
+async def release_deal_payout(deal_id: str, ctx: tuple = Depends(_broker_user)):
+    """B12: broker-triggered payout release — the endpoint twin of the nightly
+    job. Enforces the escrow rules before delegating to release_deal_escrow:
+    delivery + 48h silent window closed, and no open dispute (a dispute
+    pauses the release until resolved)."""
+    from app.services.escrow import is_due, is_paused
+
+    _, uid = ctx
+    deal = await _load_owned_deal(deal_id, uid)
+    escrow = deal.get("escrow") or {}
+    if escrow.get("status") != "held":
+        _error(409, "INVALID_STATE", "no held escrow to release for this deal")
+    if is_paused(escrow):
+        _error(409, "DISPUTE_OPEN", "an open dispute pauses the payout release")
+    if not is_due(escrow):
+        _error(
+            409,
+            "RELEASE_WINDOW_OPEN",
+            f"the {escrow.get('disputeWindowHours', ESCROW_RELEASE_WINDOW_HOURS)}h silent window "
+            "after delivery has not closed yet",
+        )
+    deal = await release_deal_escrow(deal)
+    return _serialize_deal(deal)
 
 
 # ==========================================
@@ -738,11 +956,6 @@ async def broker_trust_tier(ctx: tuple = Depends(_broker_user)):
 DISPUTE_SLA_HOURS = 72
 
 
-class DealDisputeCreate(BaseModel):
-    category: str  # "payment" | "quality" | "delivery" | "other"
-    reason: str = ""
-
-
 @router.post("/deals/{deal_id}/disputes", status_code=201)
 async def open_deal_dispute(deal_id: str, body: DealDisputeCreate, ctx: tuple = Depends(_broker_user)):
     """WS-05 step 9: dispute record with category, evidence freeze and an SLA
@@ -771,6 +984,11 @@ async def open_deal_dispute(deal_id: str, body: DealDisputeCreate, ctx: tuple = 
     }
     await set_doc("deal_disputes", dispute["id"], dispute)
     deal["evidenceFrozenAt"] = now.isoformat()
+    # P0-5: an open dispute pauses the escrow payout release.
+    escrow = deal.get("escrow")
+    if escrow and escrow.get("status") == "held" and not escrow.get("disputeOpenedAt"):
+        escrow["disputeOpenedAt"] = now.isoformat()
+        deal["escrow"] = escrow
     deal["updatedAt"] = now.isoformat()
     await set_doc("broker_deals", deal_id, deal)
     await emit_task(
@@ -797,6 +1015,387 @@ async def list_deal_disputes(deal_id: str, ctx: tuple = Depends(_broker_user)):
     disputes = await query("deal_disputes", [("dealId", "==", deal_id)], limit=50)
     disputes.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     return {"data": disputes, "total": len(disputes)}
+
+
+# ==========================================
+# DELIVERY MILESTONES (P1-9, spec F9/B9 + E6)
+# ==========================================
+
+MILESTONE_OPEN_STATUSES = ("accepted", "in_transit", "completed")
+
+
+def _weigh_adjustment(deal: dict, weight_kg: float, at: str, uid: str) -> dict | None:
+    """E6: weighbridge divergence beyond tolerance -> a pro-rata adjustment
+    proposal on the deal (adjusted payout = weighed qty × agreed rate);
+    either party may dispute within 24h."""
+    claimed_q = float(deal.get("quantityQuintals") or 0)
+    if claimed_q <= 0:
+        return None
+    claimed_kg = claimed_q * 100.0
+    variance_pct = abs(float(weight_kg) - claimed_kg) / claimed_kg * 100.0
+    if variance_pct <= WEIGH_TOLERANCE_PCT:
+        return None
+    rate = float(deal.get("agreedRate") or 0)
+    pct = float(deal.get("brokerCommissionPct") or 0)
+    weighed_q = float(weight_kg) / 100.0
+    adjusted_gross = round(weighed_q * rate, 2)
+    adjusted_commission = round(adjusted_gross * pct / 100.0, 2)
+    return {
+        "kind": "pro_rata_weighbridge",
+        "claimedQuantityQuintals": claimed_q,
+        "weighedWeightKg": float(weight_kg),
+        "weighedQuantityQuintals": round(weighed_q, 3),
+        "variancePct": round(variance_pct, 2),
+        "tolerancePct": WEIGH_TOLERANCE_PCT,
+        "agreedRate": rate,
+        "adjustedGrossAmount": adjusted_gross,
+        "adjustedCommissionAmount": adjusted_commission,
+        "adjustedPayout": round(adjusted_gross - adjusted_commission, 2),
+        "status": "proposed",
+        "disputeWindowHours": E6_DISPUTE_WINDOW_HOURS,
+        "proposedAt": at,
+        "proposedBy": uid,
+    }
+
+
+@router.post("/deals/{deal_id}/milestones", status_code=201)
+async def add_deal_milestone(deal_id: str, body: MilestoneCreate, ctx: tuple = Depends(_broker_user)):
+    """P1-9 (F9/B9): broker-pushed, event-based delivery milestones — no GPS
+    telemetry. 'weighed' may carry weightKg; divergence beyond tolerance
+    raises the E6 pro-rata adjustment proposal on the deal."""
+    _, uid = ctx
+    deal = await _load_owned_deal(deal_id, uid)
+    if deal.get("status") not in MILESTONE_OPEN_STATUSES:
+        _error(
+            409,
+            "INVALID_STATE",
+            f"cannot add milestones to a deal in status {deal.get('status')}",
+        )
+    at = _parse_iso(body.at) if body.at else None
+    if body.at and at is None:
+        _error(422, "VALIDATION_ERROR", "at must be an ISO-8601 timestamp", {"at": "invalid timestamp"})
+    at = at or datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).isoformat()
+    milestone = {
+        "id": f"ms_{uuid.uuid4().hex[:10]}",
+        "dealId": deal_id,
+        "type": body.type,
+        "note": body.note,
+        "at": at.isoformat(),
+        "weightKg": body.weightKg,
+        "createdBy": uid,
+        "createdAt": now,
+    }
+    await set_doc("deal_milestones", milestone["id"], milestone)
+
+    if body.type == "delivered":
+        deal["deliveredAt"] = at.isoformat()
+        escrow = deal.get("escrow")
+        if escrow and escrow.get("status") == "held" and not escrow.get("releaseAt"):
+            escrow["releaseAt"] = (at + timedelta(hours=ESCROW_RELEASE_WINDOW_HOURS)).isoformat()
+            deal["escrow"] = escrow
+    if body.type == "weighed" and body.weightKg is not None:
+        proposal = _weigh_adjustment(deal, body.weightKg, at.isoformat(), uid)
+        if proposal:
+            deal["adjustmentProposal"] = proposal
+            await _notify(
+                deal.get("sellerUid"),
+                type="deal_adjustment_proposed",
+                title="Weighbridge adjustment / तौल समायोजन",
+                body=(
+                    f"{deal.get('commodity', '')}: weighed {body.weightKg}kg vs booked "
+                    f"{float(deal.get('quantityQuintals', 0)) * 100}kg — pro-rata payout "
+                    f"₹{proposal['adjustedPayout']} proposed; dispute within "
+                    f"{E6_DISPUTE_WINDOW_HOURS}h to contest"
+                ),
+                deepLink=f"/dashboard/p/farmer/deals/{deal_id}",
+            )
+    deal["updatedAt"] = now
+    await set_doc("broker_deals", deal_id, deal)
+    return milestone
+
+
+@router.get("/deals/{deal_id}/milestones")
+async def list_deal_milestones(deal_id: str, ctx: tuple = Depends(_broker_user)):
+    _, uid = ctx
+    await _load_owned_deal(deal_id, uid)
+    docs = await query("deal_milestones", [("dealId", "==", deal_id)], limit=200)
+    docs.sort(key=lambda d: d.get("at", ""))
+    return {"data": docs, "total": len(docs)}
+
+
+# ==========================================
+# POST-ACCEPTANCE DEAL CHAT (P1-10, spec D1/B7)
+# ==========================================
+
+DEAL_CHAT_OPEN_STATUSES = ("accepted", "in_transit", "completed")
+
+
+async def ensure_broker_deal_room(deal: dict, broker_user: dict, farmer: dict | None) -> dict | None:
+    """P1-10: booking-gated chat room for a broker deal — local copy of the
+    room shape from services/chat.py `ensure_transport_room` (kind
+    "broker_deal"; parties broker + farmer)."""
+    existing = await get_doc("chat_rooms", deal["id"])
+    if existing is not None:
+        return existing
+    farmer_id = deal.get("sellerUid") or (farmer or {}).get("id")
+    if not farmer_id:
+        return None
+    farmer_name = (farmer or {}).get("fullName") or (farmer or {}).get("name") or deal.get("sellerName", "")
+    broker_name = (
+        broker_user.get("fullName")
+        or broker_user.get("vernacularName")
+        or deal.get("brokerName", "")
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    room = {
+        "id": deal["id"],
+        "kind": "broker_deal",
+        "dealId": deal["id"],
+        "purchaseId": None,
+        "farmerId": farmer_id,
+        "farmerName": _first_name(farmer_name),
+        "buyerId": deal["brokerId"],
+        "buyerName": _first_name(broker_name),
+        "crop": deal.get("commodity", ""),
+        "createdAt": now,
+        "lastMessageAt": None,
+        "lastMessageText": "",
+        "readByFarmer": True,
+        "readByBuyer": True,
+    }
+    await set_doc("chat_rooms", room["id"], room)
+    return room
+
+
+@router.post("/deals/{deal_id}/chat-room", status_code=201)
+async def open_deal_chat_room(deal_id: str, ctx: tuple = Depends(_broker_user)):
+    """P1-10 (D1): chat unlocks only after the deal is accepted; the room is
+    lazily created on first request and idempotent thereafter."""
+    user, uid = ctx
+    deal = await _load_owned_deal(deal_id, uid)
+    if deal.get("status") not in DEAL_CHAT_OPEN_STATUSES:
+        _error(409, "CHAT_LOCKED", "chat opens after the deal is accepted")
+    farmer = None
+    farmer_id = deal.get("sellerUid") or await _find_uid_by_phone(deal.get("sellerPhone", ""))
+    if farmer_id:
+        farmer = await get_user(farmer_id)
+    room = await ensure_broker_deal_room(deal, user, farmer)
+    if room is None:
+        _error(409, "COUNTERPARTY_MISSING", "the farmer party could not be resolved for this deal")
+    return room
+
+
+# ==========================================
+# VEHICLE & PICKUP DETAILS (P1-12, spec B8)
+# ==========================================
+
+@router.put("/deals/{deal_id}/vehicle")
+async def set_deal_vehicle(deal_id: str, body: VehicleUpdate, ctx: tuple = Depends(_broker_user)):
+    """B8: vehicle type, number (stored in full, masked in every deal
+    response) and driver name — no driver phone is ever stored or shown."""
+    _, uid = ctx
+    deal = await _load_owned_deal(deal_id, uid)
+    if deal.get("status") not in MILESTONE_OPEN_STATUSES:
+        _error(409, "INVALID_STATE", "vehicle details are set once the deal is accepted")
+    deal["vehicle"] = {
+        "vehicleType": body.vehicleType,
+        "vehicleNumber": body.vehicleNumber,
+        "driverName": body.driverName,
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    deal["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("broker_deals", deal_id, deal)
+    return _serialize_deal(deal)
+
+
+# ==========================================
+# E-CONTRACT + RECEIPT DOCUMENTS (P0-6 C5/F6, P2-8 F12)
+# ==========================================
+
+def _deal_terms_rows(deal: dict) -> list[list[str]]:
+    gross = float(deal.get("grossAmount") or 0)
+    commission = float(deal.get("commissionAmount") or 0)
+    return [
+        ["Deal ID", str(deal.get("id", ""))],
+        ["Status", str(deal.get("status", ""))],
+        ["Broker", str(deal.get("brokerName", ""))],
+        ["Buyer", f"{deal.get('buyerName', '')} ({_mask_phone(deal.get('buyerPhone', ''))})"],
+        ["Seller / Farmer", f"{deal.get('sellerName', '')} ({_mask_phone(deal.get('sellerPhone', ''))})"],
+        ["Commodity", str(deal.get("commodity", ""))],
+        ["Variety", str(deal.get("variety", "") or "-")],
+        ["Grade", str(deal.get("grade", ""))],
+        ["Quantity", f"{deal.get('quantityQuintals', 0)} quintals"],
+        ["Agreed Rate", f"Rs {deal.get('agreedRate', 0)}/quintal"],
+        ["Gross Amount", f"Rs {gross}"],
+        ["Commission", f"{deal.get('brokerCommissionPct', 0)}% = Rs {commission}"],
+        ["Farmer Payout", f"Rs {round(gross - commission, 2)}"],
+        ["Payment Terms", str(deal.get("paymentTerms", ""))],
+        ["Delivery Location", str(deal.get("deliveryLocation", "") or "-")],
+    ]
+
+
+def _deal_integrity_hash(deal: dict, acceptances: list[dict]) -> str:
+    """P0-6: SHA-256 over the canonical deal terms + acceptance log — printed
+    on the contract so any later tampering is detectable."""
+    payload = json.dumps(
+        {
+            "dealId": deal.get("id"),
+            "commodity": deal.get("commodity"),
+            "quantityQuintals": deal.get("quantityQuintals"),
+            "agreedRate": deal.get("agreedRate"),
+            "grossAmount": deal.get("grossAmount"),
+            "commissionAmount": deal.get("commissionAmount"),
+            "paymentTerms": deal.get("paymentTerms"),
+            "status": deal.get("status"),
+            "acceptances": [
+                {
+                    "userId": a.get("userId"),
+                    "signatureData": a.get("signatureData"),
+                    "consentTimestamp": a.get("consentTimestamp"),
+                    "acceptedAt": a.get("acceptedAt"),
+                }
+                for a in acceptances
+            ],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _deal_pdf_bytes(
+    title: str,
+    subtitle: str,
+    sections: list[tuple[str, list[list[str]]]],
+    footer_lines: list[str],
+) -> bytes:
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    buffer = BytesIO()
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(title, styles["Title"]),
+        Paragraph(subtitle, styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    for heading, rows in sections:
+        story.append(Paragraph(heading, styles["Heading2"]))
+        table = Table(rows, colWidths=[150, 320])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 10))
+    for line in footer_lines:
+        story.append(Paragraph(line, styles["Normal"]))
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc.build(story)
+    return buffer.getvalue()
+
+
+@router.get("/deals/{deal_id}/contract")
+async def deal_contract_pdf(party: tuple = Depends(_deal_party)):
+    """P0-6 (C5/F6): the e-contract document — the deal terms, the digital
+    acceptance log (acceptances subcollection) and a SHA-256 integrity hash.
+    Accessible to both deal parties."""
+    deal, deal_id = party
+    acceptances = await query(f"broker_deals/{deal_id}/acceptances", [], limit=50)
+    acceptances.sort(key=lambda a: a.get("acceptedAt", ""))
+    generated_at = datetime.now(timezone.utc).isoformat()
+    digest = _deal_integrity_hash(deal, acceptances)
+    acceptance_rows = [["Party", "Accepted At", "Consent Timestamp", "Signature"]]
+    for acceptance in acceptances:
+        acceptance_rows.append(
+            [
+                str(acceptance.get("userId", "")),
+                str(acceptance.get("acceptedAt", "")),
+                str(acceptance.get("consentTimestamp", "") or "-"),
+                "recorded" if acceptance.get("signatureData") else "-",
+            ]
+        )
+    if len(acceptance_rows) == 1:
+        acceptance_rows.append(["-", "awaiting acceptance", "-", "-"])
+    pdf = _deal_pdf_bytes(
+        "AgroverCity — Broker Deal E-Contract",
+        f"Deal {deal_id} · Generated {generated_at}",
+        [
+            ("Deal Terms", _deal_terms_rows(deal)),
+            ("Digital Acceptance Log", acceptance_rows),
+        ],
+        [
+            f"Integrity hash (SHA-256): {digest}",
+            "This e-contract is binding once accepted in-app (MPIN e-sign). "
+            "Post-booking price changes are not permitted; deductions only via "
+            "dispute ruling (spec C3/E8).",
+        ],
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="deal_{deal_id}_contract.pdf"'},
+    )
+
+
+@router.get("/deals/{deal_id}/receipt")
+async def deal_receipt_pdf(party: tuple = Depends(_deal_party)):
+    """P2-8 (F12): downloadable deal receipt — amounts, commission and payout
+    for the farmer, with the payment/escrow state. Accessible to deal parties."""
+    deal, deal_id = party
+    capture = deal.get("paymentCapture") or {}
+    escrow = deal.get("escrow") or {}
+    gross = float(deal.get("grossAmount") or 0)
+    commission = float(deal.get("commissionAmount") or 0)
+    adjustment = deal.get("adjustmentProposal") or {}
+    payout = round(gross - commission, 2)
+    if adjustment.get("status") == "proposed":
+        payout = float(adjustment.get("adjustedPayout") or payout)
+    rows = _deal_terms_rows(deal) + [
+        ["Delivered At", str(deal.get("deliveredAt", "") or "-")],
+        ["Payment Reference", str(capture.get("razorpayRef", "") or "-")],
+        ["Escrow Status", str(escrow.get("status", "not held"))],
+    ]
+    if adjustment.get("status") == "proposed":
+        rows.append(
+            [
+                "Weighbridge Adjustment",
+                f"weighed {adjustment.get('weighedWeightKg')}kg "
+                f"({adjustment.get('variancePct')}% off) — payout ₹{payout}",
+            ]
+        )
+    rows.append(["Payout To Farmer", f"Rs {payout}"])
+    generated_at = datetime.now(timezone.utc).isoformat()
+    pdf = _deal_pdf_bytes(
+        "AgroverCity — Deal Receipt",
+        f"Receipt for deal {deal_id} · Generated {generated_at}",
+        [("Receipt Details", rows)],
+        [
+            "Payout is released after delivery confirmation + the escrow "
+            "silent window, net of platform commission (spec B12/E7).",
+        ],
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="deal_{deal_id}_receipt.pdf"'},
+    )
 
 
 # ==========================================

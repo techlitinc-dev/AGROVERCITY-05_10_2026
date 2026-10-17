@@ -1,14 +1,23 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.models.broker import DealMessageCreate, EvidenceKind, RespondRequest
-from app.routers.broker import MAX_EVIDENCE_PER_DEAL, _last10
+from app.core.security import verify_mpin
+from app.models.broker import DealDisputeCreate, DealMessageCreate, EvidenceKind, RespondRequest
+from app.routers.broker import (
+    DISPUTE_SLA_HOURS,
+    MAX_EVIDENCE_PER_DEAL,
+    _last10,
+    _serialize_deal,
+)
 from app.routers.users import require_role
 from app.services import blocks, storage
+from app.services.disputes import ingest_dispute
 from app.services.notify import notify_user
+from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/farmer", tags=["farmer"])
@@ -72,13 +81,13 @@ async def list_deals(
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize
-    return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
+    return {"data": [_serialize_deal(d) for d in docs[start:start + pageSize]], "page": page, "pageSize": pageSize, "total": total}
 
 
 @router.get("/deals/{deal_id}")
 async def get_deal(deal_id: str, ctx: tuple = Depends(_farmer_user)):
     user, _ = ctx
-    return await _load_deal(user, deal_id)
+    return _serialize_deal(await _load_deal(user, deal_id))
 
 
 @router.get("/deals/{deal_id}/messages")
@@ -141,6 +150,14 @@ async def respond_to_deal(deal_id: str, body: RespondRequest, ctx: tuple = Depen
     if body.action == "accept":
         if current_status != "contract_issued":
             _error(409, "INVALID_STATE", f"cannot accept a deal in status {current_status}")
+        # P0-6 (C5/F6): MPIN e-sign. The gate applies only when this farmer has
+        # an MPIN on file — farmers without an MPIN accept with a recorded
+        # consentTimestamp instead (their account has nothing to verify against).
+        if user.get("mpinHash"):
+            if not body.mpin:
+                _error(401, "WRONG_MPIN", "mpin is required to accept this contract")
+            if not verify_mpin(body.mpin, user["mpinHash"]):
+                _error(401, "WRONG_MPIN", "incorrect MPIN")
         doc["status"] = "accepted"
         if not doc.get("sellerUid"):
             doc["sellerUid"] = uid
@@ -150,7 +167,21 @@ async def respond_to_deal(deal_id: str, body: RespondRequest, ctx: tuple = Depen
         doc["status"] = "cancelled"
         doc["cancelReason"] = body.reason
 
-    doc["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    if body.action == "accept":
+        # E-sign convention: the acceptance subdoc is the audit trail surfaced
+        # in the contract PDF (GET /v1/broker/deals/{id}/contract).
+        await set_doc(
+            f"broker_deals/{deal_id}/acceptances",
+            uid,
+            {
+                "userId": uid,
+                "signatureData": body.signatureData or "",
+                "consentTimestamp": body.consentTimestamp or now,
+                "acceptedAt": now,
+            },
+        )
+    doc["updatedAt"] = now
     await set_doc("broker_deals", deal_id, doc)
 
     if body.action == "accept":
@@ -161,7 +192,29 @@ async def respond_to_deal(deal_id: str, body: RespondRequest, ctx: tuple = Depen
             body=f"{doc.get('commodity', '')} — {doc.get('quantityQuintals', 0)}q @ ₹{doc.get('agreedRate', 0)}/quintal",
             deepLink=DEAL_PATH.format(deal_id),
         )
-    return doc
+    return _serialize_deal(doc)
+
+
+class DealAcceptIn(BaseModel):
+    mpin: str | None = None
+    signatureData: str | None = None
+    consentTimestamp: str | None = None
+
+
+@router.post("/deals/{deal_id}/accept")
+async def accept_deal(
+    deal_id: str,
+    body: DealAcceptIn = DealAcceptIn(),
+    ctx: tuple = Depends(_farmer_user),
+):
+    """P0-6: Farmer e-signs and accepts the broker deal contract with MPIN."""
+    req = RespondRequest(
+        action="accept",
+        mpin=body.mpin,
+        signatureData=body.signatureData,
+        consentTimestamp=body.consentTimestamp,
+    )
+    return await respond_to_deal(deal_id, req, ctx)
 
 
 @router.post("/deals/{deal_id}/evidence", status_code=201)
@@ -209,3 +262,89 @@ async def view_deal_vault(deal_id: str, ctx: tuple = Depends(_farmer_user)):
 async def _load_deal_user(deal_id: str, uid: str) -> dict:
     doc = await _load_deal(await get_user(uid) or {}, deal_id)
     return doc
+
+
+# ==========================================
+# DELIVERY TRACKING VIEW (P1-9, spec F9)
+# ==========================================
+
+@router.get("/deals/{deal_id}/milestones")
+async def list_deal_milestones(deal_id: str, ctx: tuple = Depends(_farmer_user)):
+    """F9: the farmer's read view of the broker-pushed delivery milestones."""
+    user, _ = ctx
+    await _load_deal(user, deal_id)
+    docs = await query("deal_milestones", [("dealId", "==", deal_id)], limit=200)
+    docs.sort(key=lambda d: d.get("at", ""))
+    return {"data": docs, "total": len(docs)}
+
+
+# ==========================================
+# FARMER-SIDE DEAL DISPUTE (P1-11, spec C9)
+# ==========================================
+
+@router.post("/deals/{deal_id}/disputes", status_code=201)
+async def open_farmer_deal_dispute(
+    deal_id: str, body: DealDisputeCreate, ctx: tuple = Depends(_farmer_user)
+):
+    """C9 "user opens dispute (farmer or broker)": the farmer side. Mirrors the
+    broker flow — canonical disputes triage, evidence freeze, SLA — and pauses
+    the escrow payout release (P0-5) until the dispute resolves."""
+    user, uid = ctx
+    deal = await _load_deal(user, deal_id)
+    if deal.get("status") not in ("accepted", "in_transit", "completed"):
+        _error(409, "INVALID_STATE", f"cannot dispute a deal in status {deal.get('status')}")
+    existing = await query("deal_disputes", [("dealId", "==", deal_id), ("status", "==", "open")], limit=1)
+    if existing:
+        _error(409, "DISPUTE_ALREADY_OPEN", "an open dispute already exists for this deal")
+
+    now = datetime.now(timezone.utc)
+    dispute = {
+        "id": f"dsp_{uuid.uuid4().hex[:10]}",
+        "dealId": deal_id,
+        "category": body.category,
+        "reason": body.reason,
+        "evidenceFreeze": True,
+        "slaHours": DISPUTE_SLA_HOURS,
+        "slaDeadline": (now + timedelta(hours=DISPUTE_SLA_HOURS)).isoformat(),
+        "status": "open",
+        "createdBy": uid,
+        "createdAt": now.isoformat(),
+    }
+    await set_doc("deal_disputes", dispute["id"], dispute)
+    await ingest_dispute(
+        "broker_deal",
+        deal_id,
+        {
+            "summary": f"{body.category}: {body.reason}",
+            "evidence": {"category": body.category, "dealId": deal_id, "openedBy": uid},
+        },
+    )
+    deal["evidenceFrozenAt"] = now.isoformat()
+    # P0-5: an open dispute pauses the escrow payout release.
+    escrow = deal.get("escrow")
+    if escrow and escrow.get("status") == "held" and not escrow.get("disputeOpenedAt"):
+        escrow["disputeOpenedAt"] = now.isoformat()
+        deal["escrow"] = escrow
+    deal["updatedAt"] = now.isoformat()
+    await set_doc("broker_deals", deal_id, deal)
+
+    await _notify(
+        deal.get("brokerId"),
+        type="deal_dispute_opened",
+        title="Dispute opened / विवाद खुला",
+        body=f"{body.category} — {body.reason}",
+        deepLink=DEAL_PATH.format(deal_id),
+    )
+    await emit_task(
+        "admin",
+        persona="admin",
+        module="broker",
+        kind="deal_dispute_opened",
+        title_en=f"Deal dispute opened: {deal.get('commodity', '')}",
+        title_hi=f"सौदा विवाद खुला: {deal.get('commodity', '')}",
+        subtitle=f"{body.category} — {body.reason}",
+        priority="high",
+        deep_link=f"{DEEP_LINKS['broker']}/deals/{deal_id}",
+        source_id=dispute["id"],
+    )
+    return dispute

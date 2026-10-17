@@ -1,7 +1,9 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -203,3 +205,45 @@ async def withdraw_lot(lot_id: str, uid: str = Depends(_farmer_user)):
     doc["status"] = "withdrawn"
     await set_doc("market_lots", lot_id, doc)
     return {"ok": True, "status": "withdrawn"}
+
+
+class RelistRequest(BaseModel):
+    priority: bool = False
+    expectedRate: Optional[int] = None
+    quantityQuintals: Optional[float] = None
+    note: Optional[str] = None
+
+
+@router.post("/lots/{lot_id}/relist")
+async def relist_lot(
+    lot_id: str,
+    body: RelistRequest = RelistRequest(),
+    uid: str = Depends(_farmer_user),
+):
+    """P2-4: Farmer relists lot with optional priority boost (e.g. after Vyapari no-show)."""
+    doc = await get_doc("market_lots", lot_id)
+    if doc is None or doc.get("farmerId") != uid:
+        _error(404, "LOT_NOT_FOUND", "lot not found")
+    if doc.get("status") == "sold":
+        _error(409, "LOT_ALREADY_SOLD", "a sold lot cannot be relisted")
+    now = datetime.now(timezone.utc).isoformat()
+    doc["status"] = "open"
+    doc["priority"] = body.priority
+    if body.expectedRate is not None:
+        if body.expectedRate < 0:
+            _error(422, "VALIDATION_ERROR", "invalid lot", {"expectedRate": "must be 0 or more"})
+        doc["expectedRate"] = body.expectedRate
+    if body.quantityQuintals is not None:
+        if body.quantityQuintals <= 0:
+            _error(422, "VALIDATION_ERROR", "invalid lot", {"quantityQuintals": "must be greater than 0"})
+        doc["quantityQuintals"] = body.quantityQuintals
+    doc["relistedAt"] = now
+    doc["updatedAt"] = now
+    if body.priority:
+        doc["priorityRelistedAt"] = now
+        doc["priorityBoost"] = True
+    if body.note:
+        doc["relistNote"] = body.note
+    await set_doc("market_lots", lot_id, doc)
+    return doc
+

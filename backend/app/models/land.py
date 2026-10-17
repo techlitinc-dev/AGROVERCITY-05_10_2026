@@ -146,6 +146,22 @@ class MilestoneUpdateIn(BaseModel):
     notes: str = ""
 
 
+class LeaseEsignIn(BaseModel):
+    signatureData: str = Field(..., min_length=1)
+    consentTimestamp: str = Field(..., min_length=10)
+    mpin: str = Field(..., min_length=4, max_length=4)
+
+
+class EscrowFundIn(BaseModel):
+    razorpayOrderId: str | None = None
+    razorpayPaymentId: str | None = None
+    razorpaySignature: str | None = None
+
+
+class MilestoneReleaseIn(BaseModel):
+    notes: str | None = Field(None, max_length=500)
+
+
 # ---- extension-2026-10-11: landlord ops (listing enrichment, leads, lease
 # lifecycle, profit management). All shapes are plain JSON over Firestore docs.
 

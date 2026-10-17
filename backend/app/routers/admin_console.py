@@ -761,6 +761,63 @@ async def get_dispute(
 
 class ResolveDisputeIn(BaseModel):
     resolution: str = Field(..., min_length=3)
+    releaseTo: Optional[str] = None
+    split: Optional[dict[str, float]] = None
+    refundAmountPaise: Optional[int] = None
+    penaltyPaise: Optional[int] = None
+    penaltyTarget: Optional[str] = None
+
+
+class DisputeSettlementIn(BaseModel):
+    releaseTo: str = Field(..., description="Target party for escrow release: buyer, seller, farmer, transporter, or split")
+    split: Optional[dict[str, float]] = None
+    refundAmountPaise: Optional[int] = None
+    penaltyPaise: Optional[int] = None
+    penaltyTarget: Optional[str] = None
+    resolutionNotes: str = Field("", min_length=0)
+
+
+async def _execute_dispute_money_movement(doc: dict, settlement: dict):
+    source = doc.get("source") or ""
+    source_id = doc.get("sourceId") or doc.get("purchaseId") or doc.get("bookingId") or doc.get("dealId") or ""
+    release_to = settlement.get("releaseTo")
+    now_iso = _now()
+
+    if (source == "purchase" or doc.get("purchaseId")) and source_id:
+        purchase = await get_doc("purchases", source_id)
+        if purchase:
+            purchase["escrowStatus"] = "released" if release_to in ("seller", "farmer") else "refunded"
+            purchase["disputeStatus"] = "resolved"
+            purchase["status"] = "completed" if release_to in ("seller", "farmer") else "resolved"
+            purchase["settlementOutcome"] = {**settlement, "settledAt": now_iso}
+            purchase["updatedAt"] = now_iso
+            await set_doc("purchases", source_id, purchase)
+
+    elif (source == "transport" or doc.get("bookingKind") == "transport") and source_id:
+        booking = await get_doc("transport_bookings", source_id)
+        if booking:
+            booking["escrowStatus"] = "released" if release_to == "transporter" else "refunded"
+            booking["disputeStatus"] = "resolved"
+            booking["settlementOutcome"] = {**settlement, "settledAt": now_iso}
+            booking["updatedAt"] = now_iso
+            await set_doc("transport_bookings", source_id, booking)
+
+    elif (source == "broker_deal" or doc.get("dealId")) and source_id:
+        deal = await get_doc("broker_deals", source_id)
+        if deal:
+            deal["status"] = "settled" if release_to in ("farmer", "seller") else "resolved"
+            deal["disputeStatus"] = "resolved"
+            deal["settlementOutcome"] = {**settlement, "settledAt": now_iso}
+            deal["updatedAt"] = now_iso
+            await set_doc("broker_deals", source_id, deal)
+
+    elif (source == "equipment" or doc.get("bookingKind") == "equipment") and source_id:
+        eq_booking = await get_doc("equipment_bookings", source_id)
+        if eq_booking:
+            eq_booking["disputeStatus"] = "resolved"
+            eq_booking["settlementOutcome"] = {**settlement, "settledAt": now_iso}
+            eq_booking["updatedAt"] = now_iso
+            await set_doc("equipment_bookings", source_id, eq_booking)
 
 
 @router.post("/disputes/{dispute_id}/resolve")
@@ -778,9 +835,40 @@ async def resolve_dispute(
     doc["resolution"] = body.resolution
     doc["resolvedBy"] = ctx["admin"].get("id")
     doc["resolvedAt"] = _now()
+    if body.releaseTo:
+        settlement_dict = body.model_dump(exclude_none=True)
+        doc["settlement"] = settlement_dict
+        await _execute_dispute_money_movement(doc, settlement_dict)
     await set_doc("disputes", dispute_id, doc)
     await log_admin_action(ctx["admin"], "disputes", "resolve", dispute_id, previous, {"status": "resolved", "resolution": body.resolution}, ctx["reason"], ctx["ip"])
     return {"success": True, "dispute": doc}
+
+
+@router.post("/disputes/{dispute_id}/settlement")
+async def settle_dispute_ruling(
+    dispute_id: str,
+    body: DisputeSettlementIn,
+    ctx: dict = Depends(admin_mutation_context),
+    _role: dict = Depends(require_admin_role("superadmin", "compliance_officer", "finance_admin", "operations_lead")),
+):
+    """P0-15: Superadmin dispute ruling with money movement (release escrow / split / refund / penalty)."""
+    doc = await get_doc("disputes", dispute_id)
+    if doc is None:
+        _err(404, "NOT_FOUND", "dispute not found")
+    previous = {"status": doc.get("status")}
+    settlement_dict = body.model_dump(exclude_none=True)
+    doc["status"] = "resolved"
+    doc["resolution"] = body.resolutionNotes or f"Settled: release to {body.releaseTo}"
+    doc["settlement"] = settlement_dict
+    doc["resolvedBy"] = ctx["admin"].get("id")
+    doc["resolvedAt"] = _now()
+    await _execute_dispute_money_movement(doc, settlement_dict)
+    await set_doc("disputes", dispute_id, doc)
+    await log_admin_action(
+        ctx["admin"], "disputes", "settlement", dispute_id, previous,
+        {"status": "resolved", "settlement": settlement_dict}, ctx["reason"], ctx["ip"]
+    )
+    return {"success": True, "dispute": doc, "settlement": settlement_dict}
 
 
 approvals.register_executor("chatbot", "prompt-config", _exec_prompt_config)

@@ -5,8 +5,10 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.security import verify_mpin
 from app.models.land import (
     LandListingIn,
     LandListingOut,
@@ -24,11 +26,15 @@ from app.models.land import (
     RentPaymentOut,
     CounterRequestIn,
     MilestoneUpdateIn,
+    LeaseEsignIn,
+    EscrowFundIn,
+    MilestoneReleaseIn,
 )
 from app.routers.users import require_role
 from app.services import billing, idempotency, land_ai, reports
 from app.services.ai.privacy import build_land_listing_quality_state
-from app.services.land_crm import convert_lead, promote_waitlist, upsert_lead
+from app.services.land_crm import convert_lead, find_lease_for_caller, promote_waitlist, upsert_lead
+from app.services.payments import create_razorpay_order, verify_razorpay_signature
 from app.services.pnl_engine import record_auto_entry
 from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import DEEP_LINKS, emit_task
@@ -644,7 +650,9 @@ async def lease_agreement_pdf(lease_id: str, uid: str = Depends(_owner)):
             lease = {**lease, "plotName": plot.get("name"), "gatNumber": plot.get("gatNumber")}
     path = reports.build_lease_agreement_pdf(lease, landlord, tenant)
     url = reports.upload_to_storage(path, f"agreements/{uid}/{lease_id}.pdf")
-    return {"agreementUrl": url}
+    acceptances = await list_subdocs(f"users/{landlord_id}/land_leases/{lease_id}/acceptances")
+    acceptances.sort(key=lambda a: a.get("acceptedAt", ""))
+    return {"agreementUrl": url, "acceptances": acceptances}
 
 
 @router.get("/analytics")
@@ -952,3 +960,388 @@ async def landlord_summary(uid: str = Depends(_landlord)):
             for p in plots
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Lease e-sign, escrow funding & milestone release (spec L4/C8/F5, F6/C5)
+# ---------------------------------------------------------------------------
+
+LEASE_SIGNABLE_STATUSES = ("esign_pending", "pending", "active")
+
+# Lease-escrow commission: read from platform_config/settlements
+# ("landLeasePct"), falling back to the 2% rate family the settlements engine
+# already uses for low-ticket marketplace roles (broker/seller).
+LAND_LEASE_COMMISSION_PCT = 2
+
+
+async def _lease_milestones_doc(lease_id: str, uid: str) -> dict:
+    """Fetch the escrow milestones doc, seeding the 30/40/30 split on first
+    read (same bookkeeping the GET /milestones endpoint maintains)."""
+    milestones_doc = await get_doc(f"leases/{lease_id}/escrow", "milestones")
+    if milestones_doc is None:
+        await get_lease_milestones(lease_id=lease_id, uid=uid)
+        milestones_doc = await get_doc(f"leases/{lease_id}/escrow", "milestones")
+    return milestones_doc or {"leaseId": lease_id, "milestones": []}
+
+
+@router.post("/leases/{lease_id}/esign")
+async def esign_lease(lease_id: str, body: LeaseEsignIn, uid: str = Depends(_owner)):
+    """MPIN-gated e-sign of the lease agreement (spec L4/C8/F5).
+
+    Both the landlord and the tenant farmer sign; each signature is an
+    immutable acceptance subdoc, the lease moves to `active`, an audit log is
+    written and the counterparty is notified."""
+    resolved = await find_lease_for_caller(uid, lease_id)
+    if resolved is None:
+        _error(404, "LEASE_NOT_FOUND", "lease not found")
+    landlord_id, lease = resolved
+    role = "landlord" if uid == landlord_id else "tenant"
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    if user.get("mpinHash") is None:
+        _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
+    if not verify_mpin(body.mpin, user["mpinHash"]):
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+    if lease.get("status") not in LEASE_SIGNABLE_STATUSES:
+        _error(409, "LEASE_NOT_SIGNABLE", "lease can no longer be signed")
+    acceptances_path = f"users/{landlord_id}/land_leases/{lease_id}/acceptances"
+    if await get_doc(acceptances_path, uid) is not None:
+        _error(409, "ALREADY_SIGNED", "you have already signed this lease")
+    now = datetime.now(timezone.utc).isoformat()
+    await set_doc(
+        acceptances_path,
+        uid,
+        {
+            "userId": uid,
+            "role": role,
+            "signatureData": body.signatureData,
+            "consentTimestamp": body.consentTimestamp,
+            "acceptedAt": now,
+        },
+    )
+    lease["status"] = "active"
+    lease["updatedAt"] = now
+    await set_doc(f"users/{landlord_id}/land_leases", lease_id, lease)
+    await _audit(
+        uid,
+        "LEASE_SIGNED",
+        {
+            "leaseId": lease_id,
+            "landlordId": landlord_id,
+            "role": role,
+            "consentTimestamp": body.consentTimestamp,
+        },
+    )
+    counterparty_id = landlord_id if role == "tenant" else lease.get("tenantFarmerId")
+    if counterparty_id:
+        await emit_task(
+            counterparty_id,
+            persona="farmLandlord" if role == "tenant" else "farmer",
+            module="land",
+            kind="lease_esign_signed",
+            title_en="Lease agreement signed",
+            title_hi="पट्टा अनुबंध हस्ताक्षरित",
+            subtitle=f"{user.get('name', '')} ({role}) signed the lease agreement",
+            priority="today",
+            deep_link=DEEP_LINKS["land"],
+            source_id=lease_id,
+        )
+    return {"ok": True, "leaseId": lease_id, "status": "active", "signedBy": uid, "role": role}
+
+
+@router.post("/leases/{lease_id}/escrow/fund")
+async def fund_lease_escrow(
+    lease_id: str, body: EscrowFundIn, uid: str = Depends(_owner)
+):
+    """Tenant funds the lease escrow (spec F6/C5): Razorpay order + signature
+    verification, then the lease carries an `escrow` subdoc with status `held`,
+    `amountPaisa` equal to the rent-milestones total and a release clock."""
+    from app.services import escrow as escrow_service
+
+    resolved = await find_lease_for_caller(uid, lease_id)
+    if resolved is None:
+        _error(404, "LEASE_NOT_FOUND", "lease not found")
+    landlord_id, lease = resolved
+    if uid == landlord_id:
+        _error(403, "FORBIDDEN_ROLE", "only the tenant farmer funds the escrow")
+    if lease.get("status") != "active":
+        _error(409, "LEASE_NOT_ACTIVE", "escrow can only be funded on an active lease")
+    existing = lease.get("escrow") or {}
+    if existing.get("status") == "held":
+        _error(409, "ESCROW_ALREADY_FUNDED", "escrow is already funded for this lease")
+    milestones_doc = await _lease_milestones_doc(lease_id, uid)
+    total_rupees = sum(
+        float(m.get("amountRupees", 0) or 0) for m in milestones_doc.get("milestones", [])
+    )
+    amount_paisa = int(round(total_rupees * 100))
+    if amount_paisa <= 0:
+        _error(422, "VALIDATION_ERROR", "lease has no escrow milestones to fund")
+    order = create_razorpay_order(amount_paisa, f"lease-escrow-{lease_id}")
+    if settings.razorpay_key_secret:
+        if not (
+            body.razorpayOrderId and body.razorpayPaymentId and body.razorpaySignature
+        ):
+            _error(
+                400,
+                "PAYMENT_SIGNATURE_INVALID",
+                "razorpay payment details are required to fund the escrow",
+            )
+        if not verify_razorpay_signature(
+            body.razorpayOrderId, body.razorpayPaymentId, body.razorpaySignature
+        ):
+            _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
+    now = datetime.now(timezone.utc).isoformat()
+    escrow = {
+        "status": "held",
+        "amountPaisa": amount_paisa,
+        "releasedPaisa": 0,
+        "commissionPaisa": 0,
+        "fundedBy": uid,
+        "fundedAt": now,
+        "razorpayOrderId": order.get("id"),
+    }
+    if body.razorpayPaymentId:
+        escrow["razorpayPaymentId"] = body.razorpayPaymentId
+    escrow_service.start_clock(escrow)
+    lease["escrow"] = escrow
+    await set_doc(f"users/{landlord_id}/land_leases", lease_id, lease)
+    await _audit(
+        uid,
+        "LEASE_ESCROW_FUNDED",
+        {"leaseId": lease_id, "amountPaisa": amount_paisa, "releaseAt": escrow["releaseAt"]},
+    )
+    await emit_task(
+        landlord_id,
+        persona="farmLandlord",
+        module="land",
+        kind="escrow_funded",
+        title_en="Lease escrow funded",
+        title_hi="पट्टा एस्क्रो भरा गया",
+        subtitle=f"₹{amount_paisa / 100:.0f} held for {lease.get('tenantName', 'tenant')} · dispute window {escrow['disputeWindowHours']}h",
+        priority="today",
+        deep_link=DEEP_LINKS["land"],
+        source_id=lease_id,
+    )
+    return {"leaseId": lease_id, "escrow": escrow, "razorpayOrderId": order.get("id")}
+
+
+@router.post("/leases/{lease_id}/milestones/{index}/release")
+async def release_lease_milestone(
+    lease_id: str,
+    index: int,
+    body: MilestoneReleaseIn,
+    uid: str = Depends(_landlord),
+):
+    """Landlord releases one escrow milestone (spec F6/C5): the milestone is
+    marked paid, the amount moves from held to released on the escrow subdoc,
+    platform commission is deducted and a settlement ledger doc is written in
+    the module's rent/settlement style. Milestones seeded `released` by the
+    old status-only bookkeeping stay payable through this endpoint exactly
+    once (the ledger doc is the idempotency key)."""
+    from app.services import escrow as escrow_service
+    from app.services import settlements as settlements_service
+
+    lease = await _require_lease(uid, lease_id)
+    escrow = lease.get("escrow") or {}
+    if escrow.get("status") != "held":
+        _error(409, "ESCROW_NOT_FUNDED", "escrow must be funded before releasing milestones")
+    if escrow_service.is_paused(escrow):
+        _error(409, "ESCROW_DISPUTED", "escrow release is paused by an open dispute")
+    milestones_doc = await _lease_milestones_doc(lease_id, uid)
+    ms_list = milestones_doc.get("milestones", [])
+    if index < 0 or index >= len(ms_list):
+        _error(404, "MILESTONE_NOT_FOUND", "milestone not found")
+    milestone = ms_list[index]
+    if milestone.get("status") == "disputed":
+        _error(409, "MILESTONE_DISPUTED", "milestone is disputed")
+    ledger_id = f"rel_{index}"
+    ledger_path = f"users/{uid}/land_leases/{lease_id}/escrow_ledger"
+    if await get_doc(ledger_path, ledger_id) is not None:
+        _error(409, "MILESTONE_ALREADY_RELEASED", "milestone already released")
+    amount_paisa = int(round(float(milestone.get("amountRupees", 0) or 0) * 100))
+    config = await settlements_service._config()
+    pct = float(config.get("landLeasePct", LAND_LEASE_COMMISSION_PCT))
+    commission_paisa = int(round(amount_paisa * pct / 100))
+    net_paisa = amount_paisa - commission_paisa
+    now = datetime.now(timezone.utc).isoformat()
+    milestone["status"] = "released"
+    milestone["releaseDate"] = now
+    if body.notes:
+        milestone["notes"] = body.notes
+    milestones_doc["milestones"] = ms_list
+    milestones_doc["updatedAt"] = now
+    await set_doc(f"leases/{lease_id}/escrow", "milestones", milestones_doc)
+    released_paisa = int(escrow.get("releasedPaisa", 0) or 0) + amount_paisa
+    escrow["releasedPaisa"] = released_paisa
+    escrow["commissionPaisa"] = int(escrow.get("commissionPaisa", 0) or 0) + commission_paisa
+    if released_paisa >= int(escrow.get("amountPaisa", 0) or 0):
+        escrow["status"] = "released"
+        escrow["releasedAt"] = now
+    lease["escrow"] = escrow
+    await set_doc(f"users/{uid}/land_leases", lease_id, lease)
+    settlement_doc = {
+        "id": ledger_id,
+        "leaseId": lease_id,
+        "landlordId": uid,
+        "tenantFarmerId": lease.get("tenantFarmerId"),
+        "tenantName": lease.get("tenantName", ""),
+        "milestoneIndex": index,
+        "milestoneName": milestone.get("name", ""),
+        "grossPaisa": amount_paisa,
+        "commissionPaisa": commission_paisa,
+        "netPaisa": net_paisa,
+        "grossRupees": round(amount_paisa / 100, 2),
+        "commissionRupees": round(commission_paisa / 100, 2),
+        "netRupees": round(net_paisa / 100, 2),
+        "commissionPct": pct,
+        "status": "released",
+        "releasedBy": uid,
+        "releasedAt": now,
+        "retainUntil": _retain_until(),
+    }
+    await set_doc(
+        f"users/{uid}/land_leases/{lease_id}/escrow_ledger", ledger_id, settlement_doc
+    )
+    await record_auto_entry(
+        uid, "income", net_paisa, "lease_escrow_release", "lease_milestone_release", ledger_id
+    )
+    await _audit(
+        uid,
+        "LEASE_MILESTONE_RELEASED",
+        {
+            "leaseId": lease_id,
+            "milestoneIndex": index,
+            "grossPaisa": amount_paisa,
+            "commissionPaisa": commission_paisa,
+            "netPaisa": net_paisa,
+        },
+    )
+    tenant_id = lease.get("tenantFarmerId")
+    if tenant_id:
+        await emit_task(
+            tenant_id,
+            persona="farmer",
+            module="land",
+            kind="milestone_released",
+            title_en="Escrow milestone released",
+            title_hi="एस्क्रो माइलस्टोन जारी",
+            subtitle=f"{milestone.get('name', '')}: ₹{net_paisa / 100:.0f} paid to your landlord",
+            priority="today",
+            deep_link=DEEP_LINKS["land"],
+            source_id=lease_id,
+        )
+    return {
+        "leaseId": lease_id,
+        "milestone": milestone,
+        "escrow": escrow,
+        "settlement": settlement_doc,
+    }
+
+
+@router.get("/settlements")
+async def land_settlements(uid: str = Depends(_landlord)):
+    """Landlord payout dashboard (spec L5): escrow releases from the lease
+    escrow ledgers, the commission breakdown on top of them and the bank
+    settlement history from the platform settlements ledger."""
+    releases = []
+    for lease in await _leases(uid):
+        for doc in await list_subdocs(f"users/{uid}/land_leases/{lease['id']}/escrow_ledger"):
+            row = dict(doc)
+            row.setdefault("tenantName", lease.get("tenantName", ""))
+            releases.append(row)
+    releases.sort(key=lambda d: d.get("releasedAt", ""), reverse=True)
+    gross_paisa = sum(int(d.get("grossPaisa", 0) or 0) for d in releases)
+    commission_paisa = sum(int(d.get("commissionPaisa", 0) or 0) for d in releases)
+    net_paisa = sum(int(d.get("netPaisa", 0) or 0) for d in releases)
+    by_lease: dict[str, dict] = {}
+    for row in releases:
+        bucket = by_lease.setdefault(
+            row.get("leaseId", ""),
+            {
+                "leaseId": row.get("leaseId", ""),
+                "tenantName": row.get("tenantName", ""),
+                "grossPaisa": 0,
+                "commissionPaisa": 0,
+                "netPaisa": 0,
+                "releases": 0,
+            },
+        )
+        bucket["grossPaisa"] += int(row.get("grossPaisa", 0) or 0)
+        bucket["commissionPaisa"] += int(row.get("commissionPaisa", 0) or 0)
+        bucket["netPaisa"] += int(row.get("netPaisa", 0) or 0)
+        bucket["releases"] += 1
+    bank = await query(
+        "settlements", [("role", "==", "landLease"), ("entityId", "==", uid)], limit=200
+    )
+    bank.sort(key=lambda d: d.get("periodStart", ""), reverse=True)
+    paid_paisa = sum(
+        int(round(float(d.get("netRupees", 0) or 0) * 100)) for d in bank if d.get("status") == "paid"
+    )
+    return {
+        "escrowReleases": releases,
+        "commissionBreakdown": {
+            "grossPaisa": gross_paisa,
+            "commissionPaisa": commission_paisa,
+            "netPaisa": net_paisa,
+            "releaseCount": len(releases),
+            "byLease": sorted(by_lease.values(), key=lambda b: b["netPaisa"], reverse=True),
+        },
+        "bankSettlements": {"data": bank, "total": len(bank)},
+        "pendingSettlementPaisa": max(0, net_paisa - paid_paisa),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Post-confirmation landlord ↔ tenant chat (spec L6/C6/D)
+# ---------------------------------------------------------------------------
+
+
+def _first_name(name: str) -> str:
+    return (name or "").strip().split(" ")[0]
+
+
+async def _ensure_land_lease_room(landlord_id: str, lease: dict) -> dict:
+    """Booking-gated room for a land lease — local copy of the room shape in
+    app/services/chat.py::ensure_transport_room (kind: land_lease)."""
+    room_id = f"land_lease_{lease['id']}"
+    existing = await get_doc("chat_rooms", room_id)
+    if existing is not None:
+        return existing
+    landlord = await get_doc("users", landlord_id) or {}
+    tenant_id = lease.get("tenantFarmerId") or ""
+    tenant = await get_doc("users", tenant_id) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    room = {
+        "id": room_id,
+        "leaseId": lease["id"],
+        "kind": "land_lease",
+        "landlordId": landlord_id,
+        "farmerId": tenant_id,
+        "farmerName": _first_name(tenant.get("name") or lease.get("tenantName", "")),
+        "buyerId": landlord_id,
+        "buyerName": _first_name(landlord.get("name", "")),
+        "crop": "",
+        "createdAt": now,
+        "lastMessageAt": None,
+        "lastMessageText": "",
+        "readByFarmer": True,
+        "readByBuyer": True,
+    }
+    await set_doc("chat_rooms", room_id, room)
+    return room
+
+
+@router.post("/leases/{lease_id}/chat-room")
+async def lease_chat_room(lease_id: str, uid: str = Depends(_owner)):
+    """Lazy-create the landlord ↔ tenant chat room on a confirmed lease
+    (spec L6/C6/D — chat stays locked until the lease is active)."""
+    resolved = await find_lease_for_caller(uid, lease_id)
+    if resolved is None:
+        _error(404, "LEASE_NOT_FOUND", "lease not found")
+    landlord_id, lease = resolved
+    if lease.get("status") != "active":
+        _error(409, "CHAT_LOCKED", "chat unlocks once the lease is confirmed")
+    if not lease.get("tenantFarmerId"):
+        _error(409, "CHAT_LOCKED", "chat requires a confirmed tenant on the lease")
+    return await _ensure_land_lease_room(landlord_id, lease)

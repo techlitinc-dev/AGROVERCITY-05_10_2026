@@ -1,7 +1,9 @@
+import csv
+import io
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -21,6 +23,7 @@ from app.models.insurance import (
     PolicyReviewIn,
     RateCreateIn,
 )
+from app.routers.admin_sop_finance import PAYOUT_DUAL_SIGNOFF_PAISE
 from app.services import claims as claims_service
 from app.services import reports
 from app.services.ai.outcomes import record_triage_outcome
@@ -627,6 +630,7 @@ async def provider_review_claim(
         _error(404, "CLAIM_NOT_FOUND", "दावा नहीं मिला")
 
     farmer_uid = claim.get("userId")
+    payout_signoff_id: str | None = None
 
     if body.action == "approve":
         loss_pct = claim.get("assessedLossPercent", claim.get("estimatedLossPercent", 0))
@@ -637,14 +641,23 @@ async def provider_review_claim(
 
         if claim["status"] in ("surveyorAssigned", "intimated"):
             claim = claims_service.advance_status(claim, "fieldAssessed", note="Direct provider fast-track approval")
-        if claim["status"] == "fieldAssessed":
+
+        if claim["status"] == "fieldAssessed" and _paisa(approved_amt) > PAYOUT_DUAL_SIGNOFF_PAISE:
+            # P0-14 / SOP-15 §6.3 — payouts above ₹50,000 need dual-admin sign-off:
+            # do NOT finalize to dbtApproved here; route through an admin
+            # approval and leave the claim pending_second_signoff. The payout is
+            # released only when a second admin approves.
+            from app.routers.insurance_claims import create_claim_payout_signoff
+
+            payout_signoff_id = await create_claim_payout_signoff(claim, provider, body.notes)
+        elif claim["status"] == "fieldAssessed":
             claim = claims_service.advance_status(
                 claim,
                 "dbtApproved",
                 note=body.notes or f"₹{approved_amt} का दावा स्वीकृत — DBT प्रेषण प्रक्रियाधीन",
             )
 
-        if farmer_uid:
+        if payout_signoff_id is None and farmer_uid:
             try:
                 await send_fcm_to_user(
                     farmer_uid,
@@ -703,7 +716,11 @@ async def provider_review_claim(
     # above is unchanged.
     await record_triage_outcome(claim_id, body.action, claim=claim)
 
-    return InsuranceClaimRecord(**claim).model_dump()
+    response = InsuranceClaimRecord(**claim).model_dump()
+    if payout_signoff_id is not None:
+        response["requiresApproval"] = True
+        response["approvalId"] = payout_signoff_id
+    return response
 
 
 @router.post("/provider/claims/{claim_id}/disburse")
@@ -715,6 +732,15 @@ async def provider_disburse_claim(
     claim = await get_doc("insurance_claims", claim_id)
     if claim is None:
         _error(404, "CLAIM_NOT_FOUND", "दावा नहीं मिला")
+
+    if claim.get("payoutApprovalStatus") == "pending_second_signoff":
+        # P0-14 / SOP-15 §6.3 — a large payout cannot move until the second
+        # admin signs off on the pending payout approval.
+        _error(
+            409,
+            "PAYOUT_APPROVAL_REQUIRED",
+            "₹50,000 से अधिक भुगतान हेतु द्वितीय एडमिन हस्ताक्षर लंबित (SOP-15 §6.3)",
+        )
 
     if claim["status"] != "dbtApproved":
         _error(409, "NOT_APPROVED", "दावा अभी DBT स्वीकृत स्थिति में नहीं है")

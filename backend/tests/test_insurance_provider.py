@@ -186,15 +186,17 @@ async def test_claims_lifecycle_by_provider(client, user_store, monkeypatch):
     assert report_resp.status_code == 200
     assert report_resp.json()["status"] == "fieldAssessed"
 
-    # Provider approves claim
+    # Provider approves claim — amount kept under the ₹50,000 dual-signoff
+    # threshold (SOP-15 §6.3) so the legacy approve→disburse path is exercised
+    # unchanged; the over-threshold flow is covered in test_insurance_dual_signoff.py
     appr_resp = await client.post(
         f"/v1/insurance/provider/claims/{claim_id}/review",
-        json={"action": "approve", "approvedAmount": 54000.0, "notes": "Sanctioned 45% of 120000 sum insured"},
+        json={"action": "approve", "approvedAmount": 40000.0, "notes": "Sanctioned under dual-signoff threshold"},
         headers=auth(provider_token),
     )
     assert appr_resp.status_code == 200
     assert appr_resp.json()["status"] == "dbtApproved"
-    assert appr_resp.json()["approvedAmount"] == 54000.0
+    assert appr_resp.json()["approvedAmount"] == 40000.0
 
     # Provider disburses claim via DBT
     disb_resp = await client.post(

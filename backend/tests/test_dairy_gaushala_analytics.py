@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from tests.test_diary import auth, seed_user
+from tests.test_livestock_missing_endpoints import enable_test_razorpay, sign_payment
 
 MGR = {"uid": "mgr-1", "active_profile": "dairyManager"}
 FARMER = {"uid": "farmer-1", "active_profile": "farmer"}
@@ -141,7 +142,8 @@ async def test_farmer_analytics_with_and_without_membership(client, user_store):
     assert body["totals"]["liters"] == 0.0
 
 
-async def test_gaushala_analytics_receipts_and_cattle_intake(client, user_store):
+async def test_gaushala_analytics_receipts_and_cattle_intake(client, user_store, monkeypatch):
+    enable_test_razorpay(monkeypatch)
     token = seed_user(user_store, **MGR)
     gaushala = await _post(client, "/v1/livestock/gaushala/profile", token, GAUSHALA)
 
@@ -167,6 +169,23 @@ async def test_gaushala_analytics_receipts_and_cattle_intake(client, user_store)
         "donorName": "Meena Donor", "donorPhone": "+919811122233",
         "tier": "gau_gras", "amountInr": 2100, "billingCycle": "monthly",
     })
+    # P0-12: pay + signature-verify the adoption fee before approval can
+    # auto-issue the immutable 80G receipt.
+    resp = await client.post(
+        f"/v1/livestock/gaushala/adoptions/{adoption['id']}/pay", headers=auth(token)
+    )
+    assert resp.status_code == 200, resp.text
+    order_id = resp.json()["razorpayOrderId"]
+    resp = await client.post(
+        f"/v1/livestock/gaushala/adoptions/{adoption['id']}/pay/verify",
+        json={
+            "razorpayOrderId": order_id,
+            "razorpayPaymentId": "pay_adopt_1",
+            "signature": sign_payment(order_id, "pay_adopt_1"),
+        },
+        headers=auth(token),
+    )
+    assert resp.status_code == 200, resp.text
     resp = await client.put(
         f"/v1/livestock/gaushala/adoptions/{adoption['id']}/status",
         json={"status": "approved"}, headers=auth(token),
@@ -228,6 +247,9 @@ async def test_donation_80g_receipt_sequential_numbering(client, user_store):
             "id": don_id, "gaushalaId": gid, "donorId": "farmer-1",
             "donorName": "अशोकराव कदम", "amountInr": 1000,
             "createdAt": "2026-10-01T10:00:00Z",
+            # P0-12: 80G receipts require a verified payment on the record.
+            "paymentStatus": "paid", "amountPaisa": 100000,
+            "razorpayPaymentId": f"pay_{don_id}", "paidAt": "2026-10-02T10:00:00Z",
         }
 
     receipts = {}

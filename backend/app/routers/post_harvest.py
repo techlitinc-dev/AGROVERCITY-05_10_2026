@@ -1,8 +1,10 @@
 import asyncio
+import hashlib
+import hmac
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 
 from app.core.config import settings
 from app.core.db import get_doc, query, set_doc
@@ -17,6 +19,7 @@ from app.models.cold_storage import (
     CreateFacilityIn,
     GateInwardIn,
     GateReleaseIn,
+    ProviderFeePayVerifyIn,
     ReleaseRequestIn,
     WarehouseReceipt,
 )
@@ -25,7 +28,9 @@ from app.services import grading_model, storage
 from app.services.billing import check_entitlement
 from app.services.fcm import send_fcm_to_user
 from app.services.grading_model import get_grading_adapter
+from app.services.payments import create_razorpay_order, verify_razorpay_signature
 from app.services.tasks import emit_task
+from app.services.tokens import decode_token
 from app.services.users import get_user
 
 router = APIRouter(prefix="/post-harvest", tags=["post-harvest"])
@@ -405,6 +410,110 @@ async def get_warehouse_receipt(
     if user["id"] != owner_uid and user["id"] != provider_uid:
         _error(404, "RECEIPT_NOT_FOUND", "गोदाम रसीद (e-NWR) नहीं मिली")
     return receipt
+
+
+# ==============================================================================
+# Verifiable e-NWR certificate (P1-29) — one endpoint, two access modes
+# ==============================================================================
+# Receipts issued before this endpoint exist have no stored hash, so the
+# certificate hash is recomputed on read: HMAC-SHA256 (key = settings.jwt_secret)
+# over the pipe-joined immutable issuance fields below in this fixed order.
+# `status` is deliberately NOT hashed — cancel/redeem transitions change
+# validity (see _CERTIFICATE_VOID_STATUSES) but never the document's hash.
+_CERTIFICATE_HASH_FIELDS = (
+    "receiptNumber",
+    "bookingId",
+    "facilityId",
+    "facilityName",
+    "wdraRegNo",
+    "depositorName",
+    "cropName",
+    "variety",
+    "netQuintals",
+    "bagsCount",
+    "qcGrade",
+    "lotNumber",
+    "valuationRupees",
+    "issueDate",
+)
+
+# Terminal lifecycle states: a cancelled or redeemed e-NWR must never verify.
+_CERTIFICATE_VOID_STATUSES = {"cancelled", "redeemed"}
+
+
+def _certificate_hash(receipt: dict) -> str:
+    canonical = "|".join(
+        f"{field}={receipt.get(field)}" for field in _CERTIFICATE_HASH_FIELDS
+    )
+    return hmac.new(
+        settings.jwt_secret.encode(), canonical.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+async def _optional_uid(authorization: str | None = Header(None)) -> str | None:
+    """Certificate auth: no Authorization header → public verify mode; a
+    present-but-invalid token still 401s (decode_token raises)."""
+    if not authorization:
+        return None
+    if not authorization.startswith("Bearer "):
+        _error(401, "MISSING_TOKEN", "missing or malformed Authorization header")
+    return decode_token(authorization[len("Bearer "):], "access")
+
+
+@router.get("/receipts/{receipt_number}/certificate")
+async def get_receipt_certificate(
+    receipt_number: str,
+    uid: str | None = Depends(_optional_uid),
+):
+    """P1-29 — the verifiable e-NWR document (loan-collateral proof for a
+    pledgee bank), served in two modes by one endpoint:
+
+    * PUBLIC (no auth): a redacted verify view {receiptNumber, commodity,
+      status, issueDate, certificateHash, valid} so any pledgee can check
+      authenticity without seeing the depositor's private details.
+    * AUTHENTICATED owner farmer or issuing provider: the FULL certificate —
+      every receipt field plus verification {certificateHash, issuedAt,
+      verifyUrl}.
+
+    Any other authenticated caller gets the same 404 as an unknown number so
+    the endpoint never leaks a receipt's existence (mirrors the single-receipt
+    endpoint above). Cancelled/redeemed receipts are unverifiable: valid:false
+    in both modes.
+    """
+    receipt = await get_doc("warehouse_receipts", receipt_number)
+    if receipt is None:
+        _error(404, "RECEIPT_NOT_FOUND", "गोदाम रसीद (e-NWR) नहीं मिली")
+
+    valid = (receipt.get("status") or "active") not in _CERTIFICATE_VOID_STATUSES
+    certificate_hash = _certificate_hash(receipt)
+
+    if uid is None:
+        # Public verify mode — redacted, no depositor PII beyond the commodity.
+        return {
+            "receiptNumber": receipt.get("receiptNumber"),
+            "commodity": receipt.get("cropName"),
+            "status": receipt.get("status"),
+            "issueDate": receipt.get("issueDate"),
+            "certificateHash": certificate_hash,
+            "valid": valid,
+        }
+
+    booking = await get_doc("cold_storage_bookings", receipt.get("bookingId") or "")
+    facility = await get_doc("cold_storage", receipt.get("facilityId") or "")
+    owner_uid = (booking or {}).get("farmerUid")
+    provider_uid = (facility or {}).get("ownerUid")
+    if uid != owner_uid and uid != provider_uid:
+        _error(404, "RECEIPT_NOT_FOUND", "गोदाम रसीद (e-NWR) नहीं मिली")
+
+    return {
+        **receipt,
+        "valid": valid,
+        "verification": {
+            "certificateHash": certificate_hash,
+            "issuedAt": receipt.get("issueDate"),
+            "verifyUrl": f"/v1/post-harvest/receipts/{receipt_number}/certificate",
+        },
+    }
 
 
 # ==============================================================================
@@ -959,6 +1068,140 @@ async def provider_update_facility(
 
     await set_doc("cold_storage", facility_id, facility)
     return _shape_facility(facility)
+
+
+# ==============================================================================
+# Platform-fee visibility (P2-23) — the ₹50/booking SaaS fee ledgered on
+# release (see provider_gate_release) is provider-payable here: list → order →
+# signature-verify → settled, following the livestock_vets / equipment_rental
+# pay-then-pay/verify payments convention.
+# ==============================================================================
+
+
+@router.get("/provider/fees")
+async def provider_list_fees(
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    provider: dict = Depends(_require_storage_provider()),
+):
+    """P2-23 — the provider's own platform_fees docs (§6.13 per-booking fee),
+    filterable by status=pending|settled."""
+    filters = [("entityId", "==", provider["id"])]
+    if status and status != "all":
+        if status not in ("pending", "settled"):
+            _error(422, "INVALID_STATUS", "status must be 'pending' or 'settled'")
+        filters.append(("status", "==", status))
+
+    docs = await query("platform_fees", filters, limit=1000)
+    docs.sort(key=lambda d: d.get("createdAt") or "", reverse=True)
+    total = len(docs)
+    start = (page - 1) * pageSize
+    end = start + pageSize
+    return {"data": docs[start:end], "page": page, "pageSize": pageSize, "total": total}
+
+
+@router.post("/provider/fees/{fee_id}/pay")
+async def provider_pay_fee(
+    fee_id: str,
+    provider: dict = Depends(_require_storage_provider()),
+):
+    """P2-23 — place the fee hold: a Razorpay order for a pending platform fee.
+    Idempotent per fee (an existing open order is returned, never duplicated);
+    an already-settled fee reports alreadySettled instead of a fresh order."""
+    fee = await get_doc("platform_fees", fee_id)
+    if fee is None or fee.get("entityId") != provider["id"]:
+        _error(404, "FEE_NOT_FOUND", "प्लेटफॉर्म शुल्क रिकॉर्ड नहीं मिला")
+
+    amount_paisa = int(fee.get("feePaisa") or fee.get("amountPaisa") or 0)
+    if fee.get("status") == "settled":
+        return {
+            "feeId": fee_id,
+            "razorpayOrderId": fee.get("razorpayOrderId", ""),
+            "amountPaisa": amount_paisa,
+            "currency": "INR",
+            "keyId": settings.razorpay_key_id,
+            "status": "settled",
+            "alreadySettled": True,
+        }
+    if fee.get("razorpayOrderId"):
+        return {
+            "feeId": fee_id,
+            "razorpayOrderId": fee["razorpayOrderId"],
+            "amountPaisa": amount_paisa,
+            "currency": "INR",
+            "keyId": settings.razorpay_key_id,
+            "status": fee.get("status", "pending"),
+            "alreadySettled": False,
+        }
+    if amount_paisa <= 0:
+        _error(409, "NO_FEE_DUE", "this fee has no payable amount")
+
+    order = create_razorpay_order(amount_paisa, f"csfee-{fee_id}")
+    fee["razorpayOrderId"] = order["id"]
+    await set_doc("platform_fees", fee_id, fee)
+    return {
+        "feeId": fee_id,
+        "razorpayOrderId": order["id"],
+        "amountPaisa": amount_paisa,
+        "currency": "INR",
+        "keyId": settings.razorpay_key_id,
+        "status": fee.get("status", "pending"),
+        "alreadySettled": False,
+    }
+
+
+@router.post("/provider/fees/{fee_id}/pay/verify")
+async def provider_verify_fee_payment(
+    fee_id: str,
+    body: ProviderFeePayVerifyIn,
+    provider: dict = Depends(_require_storage_provider()),
+):
+    """P2-23 — signature-verify the fee payment ({razorpayOrderId,
+    razorpayPaymentId, signature}) and mark the fee settled with the payment
+    id; the settlement is audit-logged (rule 3/8)."""
+    fee = await get_doc("platform_fees", fee_id)
+    if fee is None or fee.get("entityId") != provider["id"]:
+        _error(404, "FEE_NOT_FOUND", "प्लेटफॉर्म शुल्क रिकॉर्ड नहीं मिला")
+    if fee.get("status") == "settled":
+        return {"ok": True, "status": "settled", "feeId": fee_id, "alreadySettled": True}
+
+    expected = fee.get("razorpayOrderId") or ""
+    if not expected or body.razorpayOrderId != expected:
+        _error(400, "PAYMENT_ORDER_MISMATCH", "razorpayOrderId does not match the pending order for this fee")
+    if not verify_razorpay_signature(body.razorpayOrderId, body.razorpayPaymentId, body.signature):
+        _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    fee["status"] = "settled"
+    fee["razorpayPaymentId"] = body.razorpayPaymentId
+    fee["settledAt"] = now_iso
+    await set_doc("platform_fees", fee_id, fee)
+
+    audit_id = f"aud_coldstorage_fee_settled_{fee_id}_{now_iso}"
+    await set_doc(
+        "audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "actor": provider["id"],
+            "action": "COLD_STORAGE_PLATFORM_FEE_SETTLED",
+            "feeId": fee_id,
+            "bookingId": fee.get("bookingId"),
+            "facilityId": fee.get("facilityId"),
+            "feePaisa": fee.get("feePaisa"),
+            "razorpayOrderId": body.razorpayOrderId,
+            "razorpayPaymentId": body.razorpayPaymentId,
+            "timestamp": now_iso,
+        },
+    )
+    return {
+        "ok": True,
+        "status": "settled",
+        "feeId": fee_id,
+        "alreadySettled": False,
+        "razorpayPaymentId": body.razorpayPaymentId,
+    }
 
 
 # ==============================================================================

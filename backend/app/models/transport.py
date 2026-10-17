@@ -281,3 +281,53 @@ class LoadTemplateRepeatRequest(BaseModel):
     pickupDate: str
     pickupTime: str | None = None
     targetFare: float | None = None  # seasonal override
+
+
+class BookingPaymentRequest(BaseModel):
+    """P0-1 fare payment. An empty body (or only amountPaisa) creates a
+    Razorpay order for the fare; supplying the razorpay* fields verifies the
+    captured payment, which funds the trip escrow."""
+
+    amountPaisa: int | None = Field(default=None, gt=0)
+    razorpayOrderId: str | None = None
+    razorpayPaymentId: str | None = None
+    razorpaySignature: str | None = None
+
+
+class StopIn(BaseModel):
+    """P2-36 multi-drop stop (F15 milk-run)."""
+
+    label: str = Field(min_length=1, max_length=120)
+    address: str | None = None
+    eta: str | None = None
+
+
+class BookingStopsRequest(BaseModel):
+    stops: list[StopIn] = Field(min_length=1, max_length=25)
+
+
+class StopPodRequest(BaseModel):
+    """P2-36 per-stop proof of delivery (E16). OTP is optional — when the
+    booking has a generated POD OTP it is validated against it."""
+
+    photos: list[str] = Field(min_length=1)
+    note: str | None = None
+    otp: str | None = None
+    receiverName: str | None = None
+
+
+class BreakdownRequest(BaseModel):
+    """P2-37 mid-trip breakdown (spec E11)."""
+
+    note: str = Field(min_length=3, max_length=500)
+    location: str | None = None
+    # Distance covered before the breakdown; drives the pro-rata adjustment.
+    completedDistanceKm: float | None = Field(default=None, ge=0)
+
+
+class TransportPayoutRequest(BaseModel):
+    """P0-1 wallet payout to the verified bank account. MPIN-gated like the
+    other high-risk money movements (contract accept, equipment payout)."""
+
+    mpin: str = Field(min_length=4, max_length=4)
+    amountPaisa: int | None = Field(default=None, gt=0)  # default: full balance

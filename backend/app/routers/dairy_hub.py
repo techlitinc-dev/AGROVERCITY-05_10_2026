@@ -11,14 +11,19 @@ rate_charts, dairy_stock_items, purchases, ratings, notifications) — no
 synthetic/demo fallback anywhere in this module.
 """
 
+import csv
+import io
+import re
+import statistics
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.security import verify_mpin
 from app.routers.users import require_role
 from app.services.users import get_user
 
@@ -726,3 +731,268 @@ async def dairy_purchase_chat_room(purchase_id: str, uid: str = Depends(current_
 
     room = await ensure_chat_room(purchase)
     return {"purchaseId": purchase_id, "roomId": room["id"], "room": room}
+
+
+# ---------------------------------------------------------------------------
+# Farm-gate collection farmer OTP reveal (F10/M6/E12, P0-7)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/collections/{collection_id}/otp")
+async def reveal_collection_otp(collection_id: str, uid: str = Depends(current_user_id)):
+    """Farmer-side reveal: the farmer reads the collection OTP from their own
+    app. Only the farmer of the collection can view it, and only while a fresh
+    OTP exists (manager triggered it via POST /v1/dairy-manager/collections/otp/send)."""
+    collection = await get_doc("dairy_collections", collection_id)
+    if collection is None:
+        _error(404, "COLLECTION_NOT_FOUND", "collection not found")
+    if collection.get("farmerId") != uid:
+        _error(403, "FORBIDDEN", "only the farmer of this collection can view the OTP")
+    if not collection.get("farmerOtp") or not collection.get("farmerOtpExpiresAt"):
+        _error(404, "OTP_NOT_FOUND", "no OTP was generated for this collection")
+    try:
+        fresh = datetime.now(timezone.utc) < datetime.fromisoformat(collection["farmerOtpExpiresAt"])
+    except ValueError:
+        fresh = False
+    if not fresh:
+        _error(409, "OTP_EXPIRED", "the collection OTP has expired — ask the manager to resend")
+    return {
+        "collectionId": collection_id,
+        "otp": collection["farmerOtp"],
+        "expiresAt": collection["farmerOtpExpiresAt"],
+        "verifiedAt": collection.get("farmerOtpVerifiedAt"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Booking contract & MPIN e-sign (F8/S10, P1-14)
+# ---------------------------------------------------------------------------
+
+
+class ContractEsignIn(BaseModel):
+    mpin: str = Field(min_length=1)
+    signatureData: str = ""
+    consentTimestamp: str = ""
+
+
+def _contract_term_sheet(purchase: dict) -> dict:
+    """Auto-generated booking term sheet (F8/S10) computed from the purchase."""
+    trade = purchase.get("finalAmount") or purchase.get("totalAmount") or 0
+    pickup = purchase.get("pickup") or {}
+    return {
+        "product": purchase.get("variety") or purchase.get("crop", "Milk"),
+        "quantity": purchase.get("quantity", 0),
+        "unit": purchase.get("unit", "litre"),
+        "ratePaisaPerUnit": purchase.get("agreedPricePerUnit", 0),
+        "totalAmountPaisa": trade,
+        "deliveryDate": pickup.get("date", ""),
+        "terms": (
+            "Auto-generated booking term sheet: quantity and rate as above; "
+            "quality check at pickup anchors payment; the platform commission is "
+            "charged on the dairy side only; escrow releases on farmer "
+            "verification (OTP or QR) of the collection."
+        ),
+    }
+
+
+@router.post("/purchases/{purchase_id}/contract/esign")
+async def esign_purchase_contract(purchase_id: str, body: ContractEsignIn, uid: str = Depends(current_user_id)):
+    """MPIN e-sign of the booking contract by either party. Acceptances are
+    stored per uid under `purchases/{id}/acceptances`; when both the dairy and
+    the farmer have signed, `contractStatus` flips to signed on the purchase."""
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    purchase = await get_doc("purchases", purchase_id)
+    if purchase is None or (purchase.get("source") or {}).get("type") != "dairy":
+        _error(404, "PURCHASE_NOT_FOUND", "dairy purchase not found")
+    if uid not in (purchase.get("buyerId"), purchase.get("farmerId")):
+        _error(403, "FORBIDDEN", "only the dairy or the farmer can sign this contract")
+    if user.get("mpinHash") is None:
+        _error(409, "MPIN_NOT_SET", "MPIN is not set for this account")
+    if not verify_mpin(body.mpin, user["mpinHash"]):
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+    now = _now()
+    acceptance = {
+        "userId": uid,
+        "signatureData": body.signatureData,
+        "consentTimestamp": body.consentTimestamp,
+        "acceptedAt": now,
+    }
+    await set_doc(f"purchases/{purchase_id}/acceptances", uid, acceptance)
+    acceptances = await query(f"purchases/{purchase_id}/acceptances", None, limit=10)
+    signed_by = {a.get("userId") for a in acceptances if a.get("userId")}
+    contract_status = purchase.get("contractStatus") or "pending"
+    if purchase.get("buyerId") in signed_by and purchase.get("farmerId") in signed_by:
+        contract_status = "signed"
+        purchase["contractStatus"] = "signed"
+        purchase["contractSignedAt"] = now
+        purchase["updatedAt"] = now
+        await set_doc("purchases", purchase_id, purchase)
+    return {
+        "purchaseId": purchase_id,
+        "acceptance": acceptance,
+        "contractStatus": contract_status,
+        "signedBy": sorted(signed_by),
+        "termSheet": _contract_term_sheet(purchase),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Commission payout statement (M14, P2-12)
+# ---------------------------------------------------------------------------
+
+_COMMISSION_CSV_FIELDS = [
+    "purchaseId",
+    "date",
+    "buyerName",
+    "farmerName",
+    "product",
+    "quantity",
+    "unit",
+    "tradeAmountPaisa",
+    "commissionPercent",
+    "commissionPaisa",
+    "farmerPayoutPaisa",
+]
+
+
+@router.get("/commission-statements")
+async def commission_statements(
+    month: str,
+    format: str | None = None,
+    uid: str = Depends(current_user_id),
+):
+    """Monthly commission statement: one row per dairy purchase of the month
+    with the buyer-side commission, plus totals. `?format=csv` returns
+    text/csv. Managers see purchases they bought; farmers see their own sales."""
+    match = re.fullmatch(r"(\d{4})-(\d{2})", month or "")
+    if not match or not 1 <= int(match.group(2)) <= 12:
+        _error(422, "VALIDATION_ERROR", "month must be YYYY-MM", {"month": "must be YYYY-MM"})
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    require_role(user, "dairyManager", "farmer", "seller")
+    purchases = await query("purchases", [], limit=2000)
+    mine = [
+        p
+        for p in purchases
+        if (p.get("source") or {}).get("type") == "dairy"
+        and (p.get("createdAt") or "")[:7] == month
+        and uid in (p.get("buyerId"), p.get("farmerId"))
+    ]
+    mine.sort(key=lambda p: p.get("createdAt", ""))
+    rows = []
+    for p in mine:
+        pct, commission_paisa = await _dairy_commission_purchase(p)
+        trade_paisa = p.get("finalAmount") or p.get("totalAmount") or 0
+        commission_paisa = int(round(commission_paisa))
+        rows.append(
+            {
+                "purchaseId": p.get("id"),
+                "date": (p.get("createdAt") or "")[:10],
+                "buyerName": p.get("buyerName", ""),
+                "farmerName": p.get("farmerName", ""),
+                "product": p.get("variety") or p.get("crop", ""),
+                "quantity": p.get("quantity", 0),
+                "unit": p.get("unit", "litre"),
+                "tradeAmountPaisa": trade_paisa,
+                "commissionPercent": pct,
+                "commissionPaisa": commission_paisa,
+                "farmerPayoutPaisa": trade_paisa - commission_paisa,
+            }
+        )
+    totals = {
+        "tradeAmountPaisa": sum(r["tradeAmountPaisa"] for r in rows),
+        "commissionPaisa": sum(r["commissionPaisa"] for r in rows),
+        "farmerPayoutPaisa": sum(r["farmerPayoutPaisa"] for r in rows),
+        "count": len(rows),
+    }
+    if format == "csv":
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=_COMMISSION_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="commission-statement-{month}.csv"'},
+        )
+    return {"month": month, "rows": rows, "totals": totals}
+
+
+# ---------------------------------------------------------------------------
+# Farmer reliability score (M10, P2-13)
+# ---------------------------------------------------------------------------
+
+_RELIABILITY_FORMULA = (
+    "reliabilityScore = round(0.5 * showUpRate + 0.3 * gradeConsistency + 0.2 * disputeScore); "
+    "showUpRate = 100 * completedCollections / max(1, completedCollections + noShows) "
+    "(100.0 when the farmer has no collection history); "
+    "gradeConsistency = max(0, 100 - 25 * (stdDev(fatPercent) + stdDev(snfPercent))) "
+    "across completed collections (0.0 deviation when fewer than 2 readings); "
+    "disputeScore = max(0, 100 - 25 * disputeCount)."
+)
+
+
+@router.get("/farmers/{farmer_id}/reliability")
+async def farmer_reliability(farmer_id: str, uid: str = Depends(current_user_id)):
+    """Internal reliability score for a supplying farmer: show-up rate, grade
+    consistency (FAT/SNF variance) and dispute count, rolled into a single
+    deterministic 0-100 score. Visible to dairy managers and to the farmer
+    themself. A collection doc with `noShow: true` records a scheduled pickup
+    the farmer missed."""
+    if farmer_id != uid:
+        user = await get_user(uid)
+        if user is None:
+            _error(404, "NOT_FOUND", "user not found")
+        require_role(user, "dairyManager")
+    farmer = await get_user(farmer_id)
+    if farmer is None:
+        _error(404, "FARMER_NOT_FOUND", "farmer not found")
+
+    collections = await query("dairy_collections", [("farmerId", "==", farmer_id)], limit=1000)
+    completed = [
+        c
+        for c in collections
+        if not c.get("noShow") and c.get("qualityStatus", "accepted") in ("accepted", "regraded")
+    ]
+    no_shows = [c for c in collections if c.get("noShow")]
+    scheduled = len(completed) + len(no_shows)
+    show_up_rate = round(100.0 * len(completed) / scheduled, 1) if scheduled else 100.0
+
+    fat_readings = [float(c["fatPercent"]) for c in completed if c.get("fatPercent") is not None]
+    snf_readings = [float(c["snfPercent"]) for c in completed if c.get("snfPercent") is not None]
+    fat_std = round(statistics.pstdev(fat_readings), 2) if len(fat_readings) >= 2 else 0.0
+    snf_std = round(statistics.pstdev(snf_readings), 2) if len(snf_readings) >= 2 else 0.0
+    grade_consistency = round(max(0.0, 100.0 - 25.0 * (fat_std + snf_std)), 1)
+
+    purchases = await query("purchases", [("farmerId", "==", farmer_id)], limit=1000)
+    dairy_purchase_ids = {
+        p.get("id") for p in purchases if (p.get("source") or {}).get("type") == "dairy"
+    }
+    disputes = 0
+    if dairy_purchase_ids:
+        for d in await query("disputes", [("source", "==", "purchase")], limit=2000):
+            if d.get("sourceId") in dairy_purchase_ids:
+                disputes += 1
+    dispute_score = max(0, 100 - 25 * disputes)
+
+    overall = round(0.5 * show_up_rate + 0.3 * grade_consistency + 0.2 * dispute_score, 1)
+    overall = max(0.0, min(100.0, overall))
+    return {
+        "farmerId": farmer_id,
+        "reliabilityScore": overall,
+        "components": {
+            "showUpRatePercent": show_up_rate,
+            "gradeConsistencyPercent": grade_consistency,
+            "disputeCount": disputes,
+            "disputeScorePercent": dispute_score,
+            "fatStdDev": fat_std,
+            "snfStdDev": snf_std,
+            "completedCollections": len(completed),
+            "noShows": len(no_shows),
+            "scheduledCollections": scheduled,
+        },
+        "formula": _RELIABILITY_FORMULA,
+    }

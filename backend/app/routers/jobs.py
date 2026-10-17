@@ -202,6 +202,61 @@ async def run_subscription_planner_job(x_cron_secret: str | None = Header(None, 
     return await run_subscription_planner()
 
 
+async def run_standing_demands_planner() -> dict:
+    """P1-22 (spec B2): Recurring direct-buyer standing-demands planner:
+    every open standing_orders doc whose nextRunAt has passed generates
+    one demand doc (status open, source standing_order, standingOrderId set).
+    Advances nextRunAt by 7 days (or intervalDays)."""
+    now = datetime.now(timezone.utc)
+    standing_orders = await query("standing_orders", [("status", "==", "open")], limit=1000)
+    generated = 0
+    for so in standing_orders:
+        next_run_at = so.get("nextRunAt") or so.get("startDate") or ""
+        try:
+            due = datetime.fromisoformat(next_run_at)
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=timezone.utc)
+        except ValueError:
+            due = None
+        if due is not None and due > now:
+            continue
+        demand_id = f"dmd_standing_{uuid.uuid4().hex[:10]}"
+        interval_days = int(so.get("intervalDays") or 7)
+        demand = {
+            "id": demand_id,
+            "standingOrderId": so.get("id"),
+            "buyerId": so.get("buyerId"),
+            "crop": so.get("crop"),
+            "variety": so.get("variety", ""),
+            "grade": so.get("grade", "A"),
+            "quantity": so.get("quantityPerSlot") or so.get("quantity") or 10.0,
+            "expectedPrice": (float(so.get("minPrice") or 0) + float(so.get("maxPrice") or 0)) / 2 or 4500.0,
+            "minPrice": so.get("minPrice"),
+            "maxPrice": so.get("maxPrice"),
+            "location": so.get("location") or so.get("district") or "",
+            "state": so.get("state") or "",
+            "deliveryWindow": so.get("deliveryWindow") or "within_7_days",
+            "source": "standing_order",
+            "status": "open",
+            "createdAt": now.isoformat(),
+            "updatedAt": now.isoformat(),
+        }
+        await set_doc("demands", demand_id, demand)
+        so["nextRunAt"] = (now + timedelta(days=interval_days)).isoformat()
+        so["lastGeneratedAt"] = now.isoformat()
+        so["updatedAt"] = now.isoformat()
+        await set_doc("standing_orders", so["id"], so)
+        generated += 1
+    return {"scanned": len(standing_orders), "generated": generated}
+
+
+@router.post("/demands/standing/run")
+async def run_standing_demands_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """P1-22: Recurring demand generation for due standing orders (direct buyer B2)."""
+    _check_cron_secret(x_cron_secret)
+    return await run_standing_demands_planner()
+
+
 @router.post("/kyc/expiry-reminders")
 async def kyc_expiry_reminders_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
     """Notify holders 30 days before a KYC document expires (WS-04)."""

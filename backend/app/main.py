@@ -23,6 +23,15 @@ from app.routers import (
     admin,
     admin_console,
     admin_copilot,
+    admin_sop_chatbot,
+    admin_sop_economy,
+    admin_sop_farm,
+    admin_sop_finance,
+    admin_sop_logistics,
+    admin_sop_org,
+    admin_sop_platform,
+    admin_sop_trade,
+    admin_sop_users,
     ads,
     advisory,
     agent_rules,
@@ -43,6 +52,7 @@ from app.routers import (
     coupons,
     dairy_manager,
     dairy_hub,
+    dashboard,
     demands,
     diary,
     direct_buyer,
@@ -56,6 +66,7 @@ from app.routers import (
     faq,
     fpo,
     gamification,
+    gruh_udyog,
     gyan,
     health,
     insurance,
@@ -90,6 +101,7 @@ from app.routers import (
     reference,
     referrals,
     resale,
+    saved_searches,
     schemes,
     search,
     seller,
@@ -100,6 +112,7 @@ from app.routers import (
     support,
     buyer_org,
     post_harvest,
+    uploads,
     price_alerts,
     sync,
     tasks,
@@ -206,6 +219,7 @@ app.include_router(jobs.router, prefix="/v1")
 app.include_router(settlements.router, prefix="/v1")
 app.include_router(schemes.router, prefix="/v1")
 app.include_router(search.router, prefix="/v1")
+app.include_router(saved_searches.router, prefix="/v1")
 app.include_router(vault.router, prefix="/v1")
 app.include_router(land_records.router, prefix="/v1")
 app.include_router(agent_rules.router, prefix="/v1")
@@ -225,8 +239,11 @@ app.include_router(tree.router, prefix="/v1")
 app.include_router(ratings.router, prefix="/v1")
 app.include_router(advisory.router, prefix="/v1")
 app.include_router(women.router, prefix="/v1")
+app.include_router(gruh_udyog.router, prefix="/v1")
 app.include_router(climate.router, prefix="/v1")
 app.include_router(post_harvest.router, prefix="/v1")
+app.include_router(uploads.router, prefix="/v1")
+app.include_router(dashboard.router, prefix="/v1")
 app.include_router(price_alerts.router, prefix="/v1")
 app.include_router(sync.router, prefix="/v1")
 app.include_router(privacy.router, prefix="/v1")
@@ -240,6 +257,19 @@ app.include_router(admin.router, prefix="/v1")
 app.include_router(admin_console.router, prefix="/v1")
 app.include_router(admin_copilot.router, prefix="/v1")
 app.include_router(ai_power.router, prefix="/v1")
+# SOP superadmin console routers (docs/superadmin-instructions) — mounted after
+# admin/admin_console so their static routes win over the SOP wildcard routes
+# (e.g. /admin/content/news over /admin/content/{collection}).
+app.include_router(admin_sop_users.router, prefix="/v1")
+app.include_router(admin_sop_trade.router, prefix="/v1")
+app.include_router(admin_sop_logistics.router, prefix="/v1")
+app.include_router(admin_sop_farm.router, prefix="/v1")
+app.include_router(admin_sop_finance.router, prefix="/v1")
+app.include_router(admin_sop_org.router, prefix="/v1")
+app.include_router(admin_sop_economy.router, prefix="/v1")
+app.include_router(admin_sop_platform.router, prefix="/v1")
+app.include_router(admin_sop_platform.threads_router, prefix="/v1")
+app.include_router(admin_sop_chatbot.router, prefix="/v1")
 
 
 @app.exception_handler(StarletteHTTPException)

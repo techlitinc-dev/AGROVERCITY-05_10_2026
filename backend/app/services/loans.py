@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from app.core.db import get_doc, set_doc
@@ -190,7 +191,7 @@ async def write_audit(
     actor, the action and the reason/note from the request body."""
     await set_doc(
         "audit_logs",
-        f"aud_loan_{loan_id}_{action.lower()}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        f"aud_loan_{loan_id}_{action.lower()}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}_{uuid.uuid4().hex[:6]}",
         {
             "action": action,
             "adminId": actor_id,

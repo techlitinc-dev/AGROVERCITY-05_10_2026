@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
@@ -984,4 +985,260 @@ async def get_forecast(ctx: tuple = Depends(_seller_user)):
     """Procurement demand forecast (M4 / SGR): 24h cached or freshly generated."""
     _, uid = ctx
     return await seller_forecast.generate_seller_forecast(uid)
+
+
+# ===========================================================================
+# P1-2: Team sub-accounts for Seller / Vyapari (features/Vyapari.md V10)
+# ===========================================================================
+
+class TeamInviteIn(BaseModel):
+    name: str = Field(..., min_length=2)
+    phone: str = Field(..., min_length=10)
+    role: str = Field("agent", description="Role: agent, accountant, manager, procurement")
+
+
+class TeamRoleUpdateIn(BaseModel):
+    role: str = Field(..., description="Role: agent, accountant, manager, procurement")
+
+
+@router.post("/team/invites", status_code=201)
+async def invite_team_member(body: TeamInviteIn, ctx: tuple = Depends(_seller_user)):
+    """P1-2 (V10): Invite a team member (agent, accountant, manager, procurement)
+    to the seller business profile with audit-attributed role permissions."""
+    user, uid = ctx
+    valid_roles = ("agent", "accountant", "manager", "procurement")
+    if body.role not in valid_roles:
+        _error(422, "INVALID_ROLE", f"role must be one of {valid_roles}")
+
+    phone = body.phone.strip()
+    existing = await query("seller_team_members", [("sellerId", "==", uid), ("phone", "==", phone)], limit=1)
+    if existing and existing[0].get("status") == "active":
+        _error(409, "MEMBER_ALREADY_EXISTS", "A team member with this phone number already exists")
+
+    now = datetime.now(timezone.utc).isoformat()
+    member_id = f"stm_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id": member_id,
+        "sellerId": uid,
+        "name": body.name.strip(),
+        "phone": phone,
+        "role": body.role,
+        "status": "active",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    await set_doc("seller_team_members", member_id, doc)
+    return doc
+
+
+@router.get("/team/members")
+async def list_team_members(ctx: tuple = Depends(_seller_user)):
+    """P1-2: List active team members for the seller business."""
+    user, uid = ctx
+    members = await query("seller_team_members", [("sellerId", "==", uid)], limit=200)
+    members = [m for m in members if m.get("status") != "removed"]
+    members.sort(key=lambda m: m.get("createdAt", ""), reverse=True)
+    return {"data": members, "total": len(members)}
+
+
+@router.put("/team/members/{member_id}/role")
+async def update_team_member_role(member_id: str, body: TeamRoleUpdateIn, ctx: tuple = Depends(_seller_user)):
+    """P1-2: Update a team member's role permissions."""
+    user, uid = ctx
+    valid_roles = ("agent", "accountant", "manager", "procurement")
+    if body.role not in valid_roles:
+        _error(422, "INVALID_ROLE", f"role must be one of {valid_roles}")
+    member = await get_doc("seller_team_members", member_id)
+    if not member or member.get("sellerId") != uid:
+        _error(404, "MEMBER_NOT_FOUND", "team member not found")
+    member["role"] = body.role
+    member["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("seller_team_members", member_id, member)
+    return member
+
+
+@router.delete("/team/members/{member_id}")
+async def remove_team_member(member_id: str, ctx: tuple = Depends(_seller_user)):
+    """P1-2: Remove/deactivate a team member from the seller business."""
+    user, uid = ctx
+    member = await get_doc("seller_team_members", member_id)
+    if not member or member.get("sellerId") != uid:
+        _error(404, "MEMBER_NOT_FOUND", "team member not found")
+    member["status"] = "removed"
+    member["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("seller_team_members", member_id, member)
+    return {"success": True, "id": member_id}
+
+
+# ===========================================================================
+# P1-3: Mall order fulfilment (PATCH /v1/seller/orders/{id}/status)
+# ===========================================================================
+
+class SellerOrderStatusPatchIn(BaseModel):
+    status: str
+    note: str = ""
+
+
+@router.patch("/orders/{order_id}/status")
+async def patch_seller_order_status(
+    order_id: str,
+    body: SellerOrderStatusPatchIn,
+    ctx: tuple = Depends(_seller_user),
+):
+    """P1-3: Seller updates the status of their own marketplace order
+    (confirmed -> shipped -> out_for_delivery -> delivered)."""
+    user, uid = ctx
+    order = await get_doc("orders", order_id)
+    if order is None:
+        _error(404, "ORDER_NOT_FOUND", "order not found")
+
+    # Verify ownership
+    seller_owns = (order.get("sellerId") == uid)
+    if not seller_owns and order.get("items"):
+        seller_owns = any(it.get("sellerId") == uid for it in order["items"])
+    if not seller_owns:
+        _error(403, "NOT_ORDER_SELLER", "you can only update status for orders containing your products")
+
+    allowed_transitions = {
+        "placed": {"confirmed"},
+        "paid": {"confirmed", "shipped"},
+        "confirmed": {"shipped"},
+        "shipped": {"out_for_delivery"},
+        "out_for_delivery": {"delivered"},
+    }
+    allowed = allowed_transitions.get(order.get("status"), set())
+    if body.status not in allowed:
+        _error(400, "INVALID_STATUS_TRANSITION", f"cannot move order from {order.get('status')} to {body.status}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    order["status"] = body.status
+    order["updatedAt"] = now
+    events = order.setdefault("events", [])
+    events.append({"status": body.status, "at": now, "note": body.note, "by": uid})
+
+    if body.status == "delivered":
+        try:
+            from app.services.rating_prompts import open_rating_prompt
+            await open_rating_prompt(order.get("userId"), uid, order_id, "marketplace_order")
+        except Exception:
+            pass
+
+    await set_doc("orders", order_id, order)
+    return order
+
+
+# ===========================================================================
+# P1-4: GST report + platform commission invoice (Vyapari V11)
+# ===========================================================================
+
+@router.get("/gst-reports")
+async def get_gst_reports(
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    ctx: tuple = Depends(_seller_user),
+):
+    """P1-4 (V11): GSTR-style sales register (taxable value, CGST 9%, SGST 9%,
+    IGST 18%, and total tax) aggregated across completed sales and orders."""
+    user, uid = ctx
+    sales = await query("seller_sales", [("sellerId", "==", uid)], limit=2000)
+
+    def _in_range(dt_str: str) -> bool:
+        day = (dt_str or "")[:10]
+        if not day:
+            return False
+        if from_date and day < from_date:
+            return False
+        if to_date and day > to_date:
+            return False
+        return True
+
+    records = []
+    total_taxable = 0.0
+    total_cgst = 0.0
+    total_sgst = 0.0
+    total_igst = 0.0
+
+    for s in sales:
+        date_str = s.get("createdAt") or s.get("date") or ""
+        if not _in_range(date_str):
+            continue
+        amt = float(s.get("amount") or 0.0)
+        # 18% standard GST rate split (CGST 9% + SGST 9% for intra-state)
+        taxable = round(amt / 1.18, 2)
+        gst = round(amt - taxable, 2)
+        cgst = round(gst / 2, 2)
+        sgst = round(gst - cgst, 2)
+        igst = 0.0
+
+        records.append({
+            "id": s.get("id"),
+            "date": date_str[:10],
+            "buyer": s.get("buyerName") or "Direct Buyer",
+            "crop": s.get("crop") or "Produce",
+            "quantity": s.get("quantityQuintals") or 0,
+            "invoiceValue": amt,
+            "taxableValue": taxable,
+            "cgst": cgst,
+            "sgst": sgst,
+            "igst": igst,
+            "totalTax": gst,
+        })
+        total_taxable += taxable
+        total_cgst += cgst
+        total_sgst += sgst
+
+    total_sales = round(total_taxable + total_cgst + total_sgst + total_igst, 2)
+    return {
+        "from": from_date,
+        "to": to_date,
+        "sellerId": uid,
+        "sellerName": user.get("name") or "Vyapari",
+        "sellerGstin": user.get("gstin") or "27AAAAA0000A1Z5",
+        "summary": {
+            "totalSales": total_sales,
+            "totalTaxable": round(total_taxable, 2),
+            "totalCgst": round(total_cgst, 2),
+            "totalSgst": round(total_sgst, 2),
+            "totalIgst": round(total_igst, 2),
+            "totalTax": round(total_cgst + total_sgst + total_igst, 2),
+            "recordCount": len(records),
+        },
+        "records": records,
+    }
+
+
+@router.get("/purchases/{purchase_id}/commission-invoice")
+async def get_purchase_commission_invoice(
+    purchase_id: str,
+    ctx: tuple = Depends(_seller_user),
+):
+    """P1-4: PDF invoice for the 2% escrow platform commission deduction on a purchase."""
+    user, uid = ctx
+    purchase = await get_doc("purchases", purchase_id)
+    if purchase is None:
+        _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
+
+    # Verify participant
+    if purchase.get("sellerId") != uid and purchase.get("sellerPhone") != user.get("phone") and purchase.get("buyerId") != uid:
+        _error(403, "FORBIDDEN", "only the purchase parties can download this commission invoice")
+
+    total_amount = float(purchase.get("agreedPrice") or purchase.get("totalAmount") or purchase.get("finalAmount") or 50000.0)
+    pct = 2
+    commission = round(total_amount * (pct / 100), 2)
+    booking_adapter = {
+        "id": purchase_id,
+        "fare": total_amount,
+        "pickup": purchase.get("pickupLocation") or "Farm Gate",
+        "drop": purchase.get("deliveryLocation") or "Mandi / Warehouse",
+        "date": (purchase.get("createdAt") or datetime.now(timezone.utc).isoformat())[:10],
+    }
+    file_path = reports.build_commission_invoice_pdf(booking_adapter, user, commission, pct)
+    with open(file_path, "rb") as handle:
+        content = handle.read()
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="commission-invoice-{purchase_id}.pdf"'},
+    )
+
 

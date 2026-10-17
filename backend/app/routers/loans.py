@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
@@ -11,7 +11,9 @@ from app.models.loans import (
     DisburseIn,
     InfoRequestIn,
     LoanDocument,
+    LoanRepaymentOut,
     RejectIn,
+    RepaymentIn,
     RespondIn,
 )
 from app.routers.users import require_role
@@ -34,6 +36,13 @@ SLA_AT_RISK_HOURS = 168
 AT_RISK_CREDIT_SCORE = 550
 
 LOAN_DOC_REQUEST_DEEP_LINK = "/dashboard/p/loanTracking"
+
+# P1-23 — signed document download URLs are time-boxed to 60 minutes.
+DOC_DOWNLOAD_URL_TTL_MINUTES = 60
+
+# P1-24 — EMI repayment ledger (top-level collection, one doc per repayment,
+# carrying the applicationId for bank-manager/applicant-scoped queries).
+REPAYMENTS_COLLECTION = "loan_repayments"
 
 
 def _error(status_code: int, code: str, message: str):
@@ -289,6 +298,35 @@ async def loan_stats(uid: str = Depends(_banker)):
         },
         "npaWatch": npa_watch,
         "emiCollectionRate": emi_collection_rate,
+    }
+
+
+@router.get("/audit-logs")
+async def loan_audit_logs(
+    applicationId: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    uid: str = Depends(_banker),
+):
+    """P2-20 — bank-manager-scoped read of the audit rows the loan mutations
+    write (WS-03 rule 8: every decision lands in `audit_logs` with `loanId`).
+
+    Rows are filtered to the requested application, so a bank manager only ever
+    sees logs for applications they can access (the same access model as
+    GET /loans/{id}: any bank manager, or the applicant via the loan itself).
+    Ordered newest-first by audit timestamp, offset-paginated like the queue."""
+    if not applicationId:
+        _error(400, "VALIDATION_ERROR", "applicationId query parameter is required")
+    await _load_loan(applicationId)
+    rows = await query("audit_logs", [("loanId", "==", applicationId)], limit=5000)
+    rows.sort(key=lambda d: d.get("timestamp") or "", reverse=True)
+    total = len(rows)
+    start = (page - 1) * pageSize
+    return {
+        "data": rows[start : start + pageSize],
+        "page": page,
+        "pageSize": pageSize,
+        "total": total,
     }
 
 
@@ -569,3 +607,136 @@ async def upload_documents(
     loan["updatedAt"] = now
     await set_doc("loan_applications", applicationId, loan)
     return loans_service.to_out(loan).model_dump()
+
+
+@router.get("/{applicationId}/documents/{documentId}/download")
+async def download_document(
+    applicationId: str,
+    documentId: str,
+    uid: str = Depends(_participant),
+):
+    """P1-23 — time-boxed signed download URL for one loan document.
+
+    Access reuses the loan GET helper (`_participant_loan`): the applicant
+    farmer or a bank manager (the officer assigned at review). The document
+    must belong to this application — anything else is a 404 so document ids
+    cannot be probed across loans."""
+    loan = await _participant_loan(uid, applicationId)
+    doc = next(
+        (d for d in loan.get("documents") or [] if d.get("documentId") == documentId),
+        None,
+    )
+    if doc is None:
+        _error(404, "LOAN_DOCUMENT_NOT_FOUND", "document not found on this loan application")
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=DOC_DOWNLOAD_URL_TTL_MINUTES)
+    url = storage.signed_download_url(doc["storagePath"], minutes=DOC_DOWNLOAD_URL_TTL_MINUTES)
+    return {"url": url, "expiresAt": expires_at.isoformat()}
+
+
+def _repayment_principal_paisa(loan: dict) -> int | None:
+    """Disbursed (else sanctioned) principal in integer paisa, or None when the
+    loan has not been approved yet and therefore has no EMI schedule basis."""
+    principal = int(loan.get("disbursedAmount") or loan.get("sanctionedAmount") or 0)
+    return principal * 100 if principal > 0 else None
+
+
+def _default_risk(loan: dict, total_repaid_paisa: int) -> dict:
+    """P1-24 — deterministic default-risk indicator for the repayment ledger.
+
+    `daysOverdue` is the number of days elapsed since the due date of the
+    first installment whose cumulative due amount exceeds the total repaid
+    (0 when every due installment is covered or when the loan has no EMI
+    schedule yet — `basis` says which). The EMI schedule is recomputed with
+    the same terms as GET /loans/{id}/schedule."""
+    if _repayment_principal_paisa(loan) is None or loan.get("status") not in ("approved", "disbursed"):
+        return {"daysOverdue": 0, "basis": "no_emi_schedule"}
+    entries = loans_service.compute_schedule(
+        loan["disbursedAmount"] or loan["sanctionedAmount"],
+        loan.get("interestRate") or loans_service.DEFAULT_INTEREST_RATE,
+        int(loan.get("tenureMonths") or 1),
+        start_date_iso=loan.get("disbursedAt") or loan.get("updatedAt"),
+    )
+    cumulative_due_paisa = 0
+    first_unpaid_due_date = None
+    for entry in entries:
+        cumulative_due_paisa += entry.emi * 100
+        if cumulative_due_paisa > total_repaid_paisa:
+            first_unpaid_due_date = entry.dueDate
+            break
+    if first_unpaid_due_date is None:
+        return {"daysOverdue": 0, "basis": "emi_schedule"}
+    due = date.fromisoformat(first_unpaid_due_date)
+    days_overdue = (datetime.now(timezone.utc).date() - due).days
+    return {"daysOverdue": max(0, days_overdue), "basis": "emi_schedule"}
+
+
+@router.post("/{applicationId}/repayments", status_code=201)
+async def record_repayment(
+    applicationId: str,
+    body: RepaymentIn,
+    uid: str = Depends(_banker),
+):
+    """P1-24 — record an EMI/principal repayment against a loan (bank-manager
+    scoped, integer paise). Appends one doc to the `loan_repayments` ledger and
+    rolls the loan doc's `paidAmountPaisa` / `emisPaid` up. `emiIndex` is the
+    1-based installment number: recording the same index twice is rejected with
+    409 DUPLICATE_EMI (idempotent collection), while index-less entries are
+    always allowed. Every mutation writes an audit_logs row (WS-03 rule 8)."""
+    loan = await _load_loan(applicationId)
+    rows = await query(REPAYMENTS_COLLECTION, [("applicationId", "==", applicationId)], limit=5000)
+    if body.emiIndex is not None and any(r.get("emiIndex") == body.emiIndex for r in rows):
+        _error(409, "DUPLICATE_EMI", f"EMI installment {body.emiIndex} is already recorded for this loan")
+    now = datetime.now(timezone.utc).isoformat()
+    repayment = {
+        "repaymentId": f"repay_{applicationId}_{uuid.uuid4().hex}",
+        "applicationId": applicationId,
+        "amountPaise": body.amountPaise,
+        "mode": body.mode,
+        "emiIndex": body.emiIndex,
+        "paidAt": body.paidAt or now,
+        "note": body.note,
+        "recordedAt": now,
+    }
+    await set_doc(REPAYMENTS_COLLECTION, repayment["repaymentId"], repayment)
+    distinct_emis = {r.get("emiIndex") for r in rows if r.get("emiIndex") is not None}
+    if body.emiIndex is not None:
+        distinct_emis.add(body.emiIndex)
+    loan["paidAmountPaisa"] = int(loan.get("paidAmountPaisa") or 0) + body.amountPaise
+    loan["emisPaid"] = len(distinct_emis)
+    loan["updatedAt"] = now
+    await set_doc("loan_applications", applicationId, loan)
+    await loans_service.write_audit(
+        uid,
+        "LOAN_REPAYMENT",
+        applicationId,
+        {"amountPaise": body.amountPaise, "mode": body.mode, "emiIndex": body.emiIndex},
+        reason=body.note,
+    )
+    return LoanRepaymentOut(runningPaidPaisa=loan["paidAmountPaisa"], **repayment).model_dump()
+
+
+@router.get("/{applicationId}/repayments")
+async def list_repayments(
+    applicationId: str,
+    uid: str = Depends(_participant),
+):
+    """P1-24 — repayment ledger for one loan, readable by the bank manager or
+    the applicant farmer (the loan GET access helper). Entries are ordered by
+    payment time with a running paid balance, plus the computed `defaultRisk`
+    indicator (see `_default_risk` for the exact deterministic rule)."""
+    loan = await _participant_loan(uid, applicationId)
+    rows = await query(REPAYMENTS_COLLECTION, [("applicationId", "==", applicationId)], limit=5000)
+    rows.sort(key=lambda r: (r.get("paidAt") or "", r.get("recordedAt") or ""))
+    total_repaid_paisa = 0
+    data = []
+    for row in rows:
+        total_repaid_paisa += int(row.get("amountPaise") or 0)
+        data.append(LoanRepaymentOut(runningPaidPaisa=total_repaid_paisa, **row).model_dump())
+    return {
+        "applicationId": applicationId,
+        "data": data,
+        "total": len(data),
+        "totalRepaidPaisa": total_repaid_paisa,
+        "principalPaisa": _repayment_principal_paisa(loan),
+        "defaultRisk": _default_risk(loan, total_repaid_paisa),
+    }

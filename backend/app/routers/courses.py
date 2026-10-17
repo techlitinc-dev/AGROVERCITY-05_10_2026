@@ -1,12 +1,16 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.courses import (
+    AssignmentCreateIn,
+    AssignmentSubmissionIn,
+    BatchSessionCreateIn,
     CourseCreateIn,
+    CourseEnquiryCreateIn,
     CourseEnrollIn,
     CourseLesson,
     CourseModule,
@@ -16,10 +20,17 @@ from app.models.courses import (
     CourseReviewIn,
     CourseUpdateIn,
     LessonProgressIn,
+    PurchaseCancelIn,
+    PurchaseDisputeIn,
+    SessionCheckInIn,
 )
 from app.services import idempotency
 from app.services.coins import InsufficientCoins, spend_coins
-from app.services.payments import create_razorpay_order, verify_razorpay_signature
+from app.services.payments import (
+    create_razorpay_order,
+    refund_razorpay_payment,
+    verify_razorpay_signature,
+)
 from app.services.academy_tasks import emit_learner_discovery_tasks
 from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import emit_task
@@ -1119,3 +1130,354 @@ async def get_purchase_contract(purchase_id: str, user: dict = Depends(_user)):
     if purchase.get("status") != "paid":
         _error(409, "BOOKING_NOT_CONFIRMED", "e-contract is issued on booking confirmation")
     return await _contract_for_purchase(purchase)
+
+
+# ---------------------------------------------------------------------------
+# Booking cancellation with tiered refunds (spec E1/E2)
+# ---------------------------------------------------------------------------
+def _parse_dt(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+async def _booking_start(purchase: dict) -> datetime | None:
+    """When the first live session starts: explicit purchase fields first,
+    else the earliest scheduled session for the booked course."""
+    for key in ("firstSessionAt", "sessionStartAt", "scheduledStartAt", "startsAt"):
+        parsed = _parse_dt(purchase.get(key))
+        if parsed is not None:
+            return parsed
+    sessions = await query(
+        "batch_sessions", [("courseId", "==", purchase.get("courseId"))], limit=200
+    )
+    starts = [parsed for s in sessions if (parsed := _parse_dt(s.get("startsAt"))) is not None]
+    return min(starts) if starts else None
+
+
+def _refund_percent(delta_hours: float | None) -> int:
+    """Published policy: free ≥48h before the first session, 50% at 24–48h,
+    0% inside 24h. With no session on record the conservative default is the
+    full-refund bucket."""
+    if delta_hours is None or delta_hours >= 48:
+        return 100
+    if delta_hours >= 24:
+        return 50
+    return 0
+
+
+@router.post("/courses/purchases/{purchase_id}/cancel")
+async def cancel_purchase(purchase_id: str, body: PurchaseCancelIn, user: dict = Depends(_user)):
+    purchase = await get_doc("course_purchases", purchase_id)
+    if purchase is None:
+        _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
+    is_student = purchase.get("userId") == user["id"]
+    is_instructor = purchase.get("instructorId") == user["id"]
+    if not is_student and not is_instructor:
+        _error(403, "FORBIDDEN", "not your booking")
+    if purchase.get("status") == "cancelled":
+        _error(409, "BOOKING_ALREADY_CANCELLED", "this booking is already cancelled")
+    if purchase.get("status") != "paid":
+        _error(409, "BOOKING_NOT_CONFIRMED", "only confirmed bookings can be cancelled")
+    if purchase.get("disputeId"):
+        _error(409, "DISPUTE_OPEN", "this booking has an open dispute")
+
+    if is_instructor:
+        # E2: instructor cancellation is always a full refund + a strike.
+        percent = 100
+    else:
+        start = await _booking_start(purchase)
+        delta = (start - datetime.now(timezone.utc)).total_seconds() / 3600 if start else None
+        percent = _refund_percent(delta)
+
+    amount_paisa = int(round(float(purchase.get("amountRupees") or 0) * 100))
+    refund_paisa = amount_paisa * percent // 100
+    refund_result = None
+    if refund_paisa > 0 and purchase.get("razorpayPaymentId"):
+        refund_result = await refund_razorpay_payment(purchase["razorpayPaymentId"], refund_paisa)
+
+    now = _now()
+    purchase["status"] = "cancelled"
+    purchase["cancelledBy"] = user["id"]
+    purchase["cancelledAt"] = now
+    purchase["cancelReason"] = body.reason or None
+    purchase["refund"] = {
+        "amountPaisa": refund_paisa,
+        "percent": percent,
+        "at": now,
+        "gatewayRefundId": (refund_result or {}).get("id"),
+    }
+    await set_doc("course_purchases", purchase_id, purchase)
+
+    if is_instructor:
+        from app.services.chat import record_strike
+
+        await record_strike(
+            purchase["instructorId"], "course_cancellation", body.reason or "instructor_cancel"
+        )
+
+    from app.services.notify import notify_user
+
+    counterparty = purchase.get("instructorId") if is_student else purchase.get("userId")
+    await notify_user(
+        counterparty,
+        type="booking_cancelled",
+        title="Course booking cancelled / बुकिंग रद्द",
+        body=f"Booking for {purchase.get('courseTitle') or 'course'} was cancelled"
+        + (f" by the instructor (₹{refund_paisa / 100:.0f} refunded)" if is_instructor else ""),
+        deepLink="/dashboard/p/courses",
+    )
+    return purchase
+
+
+# ---------------------------------------------------------------------------
+# Disputes on a course booking (spec C9/C3)
+# ---------------------------------------------------------------------------
+@router.post("/courses/purchases/{purchase_id}/disputes", status_code=201)
+async def dispute_purchase(purchase_id: str, body: PurchaseDisputeIn, user: dict = Depends(_user)):
+    purchase = await get_doc("course_purchases", purchase_id)
+    if purchase is None:
+        _error(404, "PURCHASE_NOT_FOUND", "purchase not found")
+    is_student = purchase.get("userId") == user["id"]
+    is_instructor = purchase.get("instructorId") == user["id"]
+    if not is_student and not is_instructor:
+        _error(403, "FORBIDDEN", "only the student or instructor of this booking can dispute it")
+    if purchase.get("disputeId"):
+        _error(409, "DISPUTE_ALREADY_OPEN", "this booking already has an open dispute")
+
+    from app.services.disputes import ingest_dispute
+
+    summary = f"[{body.category}] {body.reason}"
+    dispute = await ingest_dispute(
+        "course",
+        purchase_id,
+        {
+            "summary": summary,
+            "evidence": {"openedBy": user["id"], "category": body.category, **(body.evidence or {})},
+        },
+    )
+
+    purchase["disputeId"] = dispute["id"]
+    purchase["payoutFrozen"] = True
+    await set_doc("course_purchases", purchase_id, purchase)
+
+    from app.services.notify import notify_user
+
+    counterparty = purchase.get("instructorId") if is_student else purchase.get("userId")
+    await notify_user(
+        counterparty,
+        type="dispute_opened",
+        title="Dispute opened on a booking / विवाद खोला गया",
+        body=f"A dispute was opened on {purchase.get('courseTitle') or 'a course booking'} ({body.category}). Payout is frozen pending review.",
+        deepLink="/dashboard/p/disputes",
+    )
+    return {
+        "disputeId": dispute["id"],
+        "purchaseId": purchase_id,
+        "status": dispute.get("status"),
+        "category": dispute.get("category"),
+        "payoutFrozen": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Structured pre-booking enquiries (spec F4/T5)
+# ---------------------------------------------------------------------------
+@router.post("/courses/{course_id}/enquiries", status_code=201)
+async def create_course_enquiry(course_id: str, body: CourseEnquiryCreateIn, user: dict = Depends(_user)):
+    course = await _require_course(course_id)
+    if course["instructorId"] == user["id"]:
+        _error(400, "OWN_COURSE", "instructors cannot enquire on their own course")
+    enquiry_id = f"enq_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "id": enquiry_id,
+        "courseId": course_id,
+        "courseTitle": course.get("title") or "",
+        "instructorId": course["instructorId"],
+        "farmerId": user["id"],
+        "farmerName": user.get("name") or "Farmer",
+        "questionTemplate": body.questionTemplate,
+        "details": body.details,
+        "status": "open",
+        "createdAt": _now(),
+    }
+    await set_doc("course_enquiries", enquiry_id, doc)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        course["instructorId"],
+        type="course_enquiry",
+        title="New course enquiry / नया पूछताछ",
+        body=f"{doc['farmerName']}: {body.questionTemplate}",
+        deepLink=f"/dashboard/p/instructor/enquiries",
+    )
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Practical assignments & photo submissions (spec F9/T11)
+# ---------------------------------------------------------------------------
+@router.post("/courses/{course_id}/assignments", status_code=201)
+async def create_assignment(course_id: str, body: AssignmentCreateIn, user: dict = Depends(_user)):
+    course = await _require_course(course_id)
+    if course["instructorId"] != user["id"]:
+        _error(403, "FORBIDDEN", "only the course instructor can create assignments")
+    due_at = None
+    if body.dueAt:
+        if _parse_dt(body.dueAt) is None:
+            _error(422, "VALIDATION_ERROR", "dueAt must be an ISO-8601 timestamp", {"dueAt": "invalid"})
+        due_at = body.dueAt
+    assignment_id = f"asg_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "id": assignment_id,
+        "courseId": course_id,
+        "courseTitle": course.get("title") or "",
+        "instructorId": user["id"],
+        "title": body.title,
+        "instructions": body.instructions,
+        "dueAt": due_at,
+        "maxPhotos": body.maxPhotos,
+        "status": "open",
+        "createdAt": _now(),
+    }
+    await set_doc("course_assignments", assignment_id, doc)
+    return doc
+
+
+@router.post("/assignments/{assignment_id}/submissions", status_code=201)
+async def submit_assignment(assignment_id: str, body: AssignmentSubmissionIn, user: dict = Depends(_user)):
+    assignment = await get_doc("course_assignments", assignment_id)
+    if assignment is None:
+        _error(404, "ASSIGNMENT_NOT_FOUND", "assignment not found")
+    purchase = await get_doc("course_purchases", _purchase_id(user["id"], assignment["courseId"]))
+    if purchase is None or purchase.get("status") != "paid":
+        _error(403, "NOT_ENROLLED", "only enrolled students can submit assignments")
+
+    max_photos = int(assignment.get("maxPhotos") or 3)
+    if len(body.photoUrls) > max_photos:
+        _error(
+            422,
+            "TOO_MANY_PHOTOS",
+            f"this assignment accepts at most {max_photos} photos",
+            {"photoUrls": f"at most {max_photos}"},
+        )
+
+    due_at = _parse_dt(assignment.get("dueAt"))
+    existing = await get_doc("assignment_submissions", f"{assignment_id}_{user['id']}")
+    now = _now()
+    if existing is None and due_at is not None and datetime.now(timezone.utc) > due_at:
+        _error(409, "ASSIGNMENT_DUE_PASSED", "the submission deadline has passed")
+
+    doc = {
+        "id": f"{assignment_id}_{user['id']}",
+        "assignmentId": assignment_id,
+        "courseId": assignment["courseId"],
+        "studentId": user["id"],
+        "studentName": user.get("name") or "Student",
+        "photoUrls": body.photoUrls,
+        "status": "submitted",
+        "submittedAt": now,
+    }
+    if existing is not None:
+        # Resubmit is allowed until the deadline.
+        if due_at is not None and datetime.now(timezone.utc) > due_at:
+            _error(409, "ASSIGNMENT_DUE_PASSED", "the submission deadline has passed")
+        doc["submittedAt"] = existing.get("submittedAt") or now
+        doc["resubmittedAt"] = now
+    await set_doc("assignment_submissions", doc["id"], doc)
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Batch sessions & QR check-in (spec F8/T10)
+# ---------------------------------------------------------------------------
+@router.post("/sessions/{session_id}/check-in")
+async def check_in_session(session_id: str, body: SessionCheckInIn, user: dict = Depends(_user)):
+    session = await get_doc("batch_sessions", session_id)
+    if session is None:
+        _error(404, "SESSION_NOT_FOUND", "session not found")
+    if body.qrToken != session.get("qrToken"):
+        _error(403, "INVALID_QR_TOKEN", "QR token does not match this session")
+
+    batch = await get_doc("course_batches", session.get("batchId") or "")
+    member_ids = (batch or {}).get("memberIds") or []
+    purchase = await get_doc("course_purchases", _purchase_id(user["id"], session["courseId"]))
+    enrolled = purchase is not None and purchase.get("status") == "paid"
+    if user["id"] not in member_ids and not enrolled:
+        _error(403, "NOT_BATCH_MEMBER", "you are not enrolled in this batch")
+
+    attendance = await get_doc("session_attendance", session_id) or {
+        "sessionId": session_id,
+        "sessionDate": (session.get("startsAt") or _now())[:10],
+        "records": [],
+    }
+    records = attendance.get("records", [])
+    if any(r.get("studentId") == user["id"] for r in records):
+        _error(409, "ALREADY_CHECKED_IN", "check-in already recorded for this session")
+    records.append(
+        {
+            "studentId": user["id"],
+            "studentName": user.get("name") or "Student",
+            "status": "present",
+            "verifiedAt": _now(),
+            "method": "qr_scan",
+        }
+    )
+    attendance["records"] = records
+    attendance["totalPresent"] = sum(1 for r in records if r.get("status") == "present")
+    await set_doc("session_attendance", session_id, attendance)
+
+    session["checkedInIds"] = [r["studentId"] for r in records]
+    await set_doc("batch_sessions", session_id, session)
+    return {"sessionId": session_id, "checkedIn": True, "checkedInCount": len(records)}
+
+
+# ---------------------------------------------------------------------------
+# Instructor settlement view (spec T14) — reads the weekly payout cron output.
+# ---------------------------------------------------------------------------
+@router.get("/instructor/settlements")
+async def instructor_settlements(user: dict = Depends(_user)):
+    if not _is_instructor(user):
+        _error(403, "NOT_INSTRUCTOR", "only instructors can view settlements")
+    settlements = await query("settlements", [("entityId", "==", user["id"])], limit=500)
+    rows = []
+    for s in settlements:
+        if s.get("role") != "instructor":
+            continue
+        rows.append(
+            {
+                "settlementId": s.get("id"),
+                "periodStart": s.get("periodStart"),
+                "periodEnd": s.get("periodEnd"),
+                "grossRupees": s.get("grossRupees", 0),
+                "commissionRupees": s.get("commissionRupees", 0),
+                "netRupees": s.get("netRupees", 0),
+                "status": s.get("status"),
+                "payoutStatus": s.get("payoutStatus"),
+                "payoutRef": s.get("payoutRef"),
+                "utr": s.get("payoutRef"),
+                "paidAt": s.get("paidAt"),
+                "onHold": bool(s.get("onHold")),
+                "held": bool(s.get("held")),
+                "holdReason": s.get("holdReason"),
+                "sourceCount": len(s.get("sourceIds") or []),
+            }
+        )
+    rows.sort(key=lambda r: (r.get("periodStart") or "", r.get("settlementId") or ""), reverse=True)
+    return {
+        "data": rows,
+        "total": len(rows),
+        "currency": "INR",
+        "totals": {
+            "grossRupees": sum(r["grossRupees"] for r in rows),
+            "commissionRupees": sum(r["commissionRupees"] for r in rows),
+            "netRupees": sum(r["netRupees"] for r in rows),
+        },
+    }

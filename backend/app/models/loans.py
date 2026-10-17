@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.finance import LoanApplyIn as LoanApplyInBase
 
@@ -108,3 +109,40 @@ class LoanScheduleEntry(BaseModel):
     principal: int
     interest: int
     outstanding: int
+
+
+class RepaymentIn(BaseModel):
+    """P1-24 — EMI repayment ledger entry (bank-manager scoped). Money is
+    integer paise; `mode` is the collection channel; `emiIndex` (1-based
+    installment number) gives per-installment idempotency — recording the same
+    index twice returns 409 DUPLICATE_EMI."""
+
+    amountPaise: int = Field(ge=1)
+    mode: Literal["upi", "nach", "cash", "other"]
+    emiIndex: int | None = Field(default=None, ge=1)
+    paidAt: str | None = None
+    note: str | None = None
+
+    @field_validator("paidAt")
+    @classmethod
+    def _paid_at_must_be_iso(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError("paidAt must be an ISO-8601 timestamp")
+        return value
+
+
+class LoanRepaymentOut(BaseModel):
+    repaymentId: str
+    applicationId: str
+    amountPaise: int
+    mode: str
+    emiIndex: int | None = None
+    paidAt: str
+    note: str | None = None
+    recordedAt: str
+    # cumulative amount repaid across the ledger up to and including this entry
+    runningPaidPaisa: int

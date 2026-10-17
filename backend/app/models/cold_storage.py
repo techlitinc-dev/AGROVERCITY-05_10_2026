@@ -160,6 +160,15 @@ class WarehouseReceipt(BaseModel):
     status: str = "active"
 
 
+class ProviderFeePayVerifyIn(BaseModel):
+    """P2-23: Razorpay checkout verification when a cold-storage provider
+    settles a pending per-booking platform fee (§6.13 ₹50/booking SaaS fee)."""
+
+    razorpayOrderId: str = Field(min_length=1)
+    razorpayPaymentId: str = Field(min_length=1)
+    signature: str = Field(min_length=1)
+
+
 class ColdStorageProviderStats(BaseModel):
     totalCapacityMT: float
     occupiedMT: float

@@ -1,13 +1,15 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.direct import SavedFarmerIn, StandingOrderCreate, StandingOrderUpdate
 from app.routers.analytics import last_12_months, month_key
 from app.routers.users import require_role
+from app.services.reports import build_direct_buyer_statement_pdf
 from app.services.users import get_user
 
 router = APIRouter(prefix="/direct-buyer", tags=["direct-buyer"])
@@ -709,3 +711,121 @@ async def close_standing_order(order_id: str, ctx: tuple = Depends(_direct_buyer
     doc["updatedAt"] = _now_iso()
     await set_doc("standing_orders", order_id, doc)
     return doc
+
+
+@router.get("/statements")
+async def get_buyer_statements(
+    month: Optional[str] = Query(None, description="Month filter in YYYY-MM format"),
+    format: Optional[str] = Query(None, description="'pdf' or 'json'"),
+    ctx: tuple = Depends(_direct_buyer),
+):
+    """P2-15 (B14): Direct buyer monthly commission and purchase statement (JSON or PDF)."""
+    user, uid = ctx
+    purchases = await query("purchases", [("buyerId", "==", uid)], limit=2000)
+    if month:
+        purchases = [
+            p for p in purchases
+            if str(p.get("createdAt") or "").startswith(month)
+        ]
+
+    total_purchases = len(purchases)
+    gross_spend = sum(_billable(p) for p in purchases if p.get("status") != "cancelled")
+    commissions = sum(
+        p.get("commissionAmount") or p.get("escrowFee") or (round(_billable(p) * 0.02, 2))
+        for p in purchases if p.get("status") != "cancelled"
+    )
+    net_paid = sum(_paid(p) for p in purchases)
+
+    line_items = [
+        {
+            "purchaseId": p.get("id"),
+            "createdAt": p.get("createdAt"),
+            "sellerId": p.get("sellerId") or p.get("farmerId"),
+            "commodity": (p.get("item") or {}).get("crop") or p.get("commodity") or "Agri Produce",
+            "quantity": (p.get("item") or {}).get("quantityQuintals") or p.get("quantity") or 0,
+            "rate": (p.get("item") or {}).get("ratePerQuintal") or p.get("agreedRate") or 0,
+            "finalAmount": _billable(p),
+            "status": p.get("status"),
+        }
+        for p in purchases
+    ]
+
+    statement_payload = {
+        "buyerId": uid,
+        "buyerName": user.get("name"),
+        "month": month or "all",
+        "totalPurchases": total_purchases,
+        "grossSpendRupees": round(gross_spend, 2),
+        "escrowCommissionsRupees": round(commissions, 2),
+        "netPaidRupees": round(net_paid, 2),
+        "purchases": line_items,
+    }
+
+    if format == "pdf":
+        pdf_path = build_direct_buyer_statement_pdf(statement_payload, user)
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="statement_{month or "all"}.pdf"'},
+        )
+
+    return statement_payload
+
+
+@router.get("/farmers/{farmer_id}/reliability")
+async def get_farmer_reliability(
+    farmer_id: str,
+    ctx: tuple = Depends(_direct_buyer),
+):
+    """P2-16 (B10): Farmer reliability score for direct buyers (show-up, dispute rate, quality)."""
+    user, uid = ctx
+    farmer = await get_user(farmer_id)
+    if farmer is None:
+        _error(404, "FARMER_NOT_FOUND", "farmer not found")
+
+    seller_purchases = await query("purchases", [("sellerId", "==", farmer_id)], limit=1000)
+    farmer_purchases = await query("purchases", [("farmerId", "==", farmer_id)], limit=1000)
+    all_purchases_dict = {p["id"]: p for p in (seller_purchases + farmer_purchases) if "id" in p}
+    all_purchases = list(all_purchases_dict.values())
+
+    completed = [p for p in all_purchases if p.get("status") == "completed"]
+    no_shows = [
+        p for p in all_purchases
+        if p.get("status") == "no_show_farmer" or p.get("noShow") is True
+    ]
+    cancelled = [p for p in all_purchases if p.get("status") == "cancelled"]
+
+    scheduled = len(completed) + len(no_shows)
+    show_up_rate = round(100.0 * len(completed) / scheduled, 1) if scheduled else 100.0
+
+    disputes = await query("disputes", [("respondentId", "==", farmer_id)], limit=500)
+    dispute_count = len(disputes)
+
+    rating_stats = farmer.get("farmerRatingStats") or {}
+    avg_rating = rating_stats.get("average") or (4.8 if len(completed) > 0 else 5.0)
+
+    rating_component = (avg_rating / 5.0) * 100.0
+    dispute_penalty = min(dispute_count * 15.0, 50.0)
+    score = round(max(0.0, min(100.0, (show_up_rate * 0.5) + (rating_component * 0.5) - dispute_penalty)), 1)
+
+    tier = "elite" if score >= 90.0 else ("reliable" if score >= 75.0 else "probation")
+
+    return {
+        "farmerId": farmer_id,
+        "name": farmer.get("name"),
+        "phone": farmer.get("phone"),
+        "reliabilityScore": score,
+        "tier": tier,
+        "metrics": {
+            "totalTrades": len(all_purchases),
+            "completedTrades": len(completed),
+            "noShows": len(no_shows),
+            "cancelledTrades": len(cancelled),
+            "showUpRatePercent": show_up_rate,
+            "disputeCount": dispute_count,
+            "averageRating": avg_rating,
+        },
+    }
+

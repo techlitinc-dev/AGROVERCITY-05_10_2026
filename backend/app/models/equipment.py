@@ -101,3 +101,44 @@ class DamageClaimIn(BaseModel):
     claimPaisa: int | None = Field(default=None, gt=0)
     beforePhotoUrls: list[str] = []
     afterPhotoUrls: list[str] = []
+
+
+class EquipmentDepositIn(BaseModel):
+    """Owner collects a security deposit against a booking: the Razorpay
+    payment is signature-verified before the deposit is marked held."""
+    amountRupees: float = Field(gt=0)
+    razorpayOrderId: str = Field(min_length=1)
+    razorpayPaymentId: str = Field(min_length=1)
+    signature: str = Field(min_length=1)
+
+
+class EquipmentDepositForfeitIn(BaseModel):
+    deductionPaisa: int | None = Field(default=None, ge=0)
+    claimNote: str = ""
+    claimPhotoUrls: list[str] = []
+
+
+class EquipmentPaymentOrderIn(BaseModel):
+    amountPaisa: int | None = Field(default=None, gt=0)
+
+
+class EquipmentPaymentVerifyIn(BaseModel):
+    razorpayOrderId: str = Field(min_length=1)
+    razorpayPaymentId: str = Field(min_length=1)
+    signature: str = Field(min_length=1)
+
+
+class DemandPostQuoteIn(BaseModel):
+    rateRupees: float | None = Field(default=None, gt=0)
+    message: str = ""
+    availableFrom: str | None = None
+    availableTo: str | None = None
+    equipmentId: str | None = None
+
+
+class EquipmentPricingRulesIn(BaseModel):
+    minBillingRupees: float | None = Field(default=None, ge=0)
+    travelChargePerKmRupees: float | None = Field(default=None, ge=0)
+    idleChargePerHourRupees: float | None = Field(default=None, ge=0)
+    blockedDates: list[str] = []
+    discounts: list[dict] = []
