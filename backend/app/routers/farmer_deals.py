@@ -42,7 +42,9 @@ async def _farmer_user(uid: str = Depends(current_user_id)) -> tuple[dict, str]:
 
 def _matches(user: dict, deal: dict) -> bool:
     target = _last10(user.get("phone", ""))
-    return bool(target) and target == _last10(deal.get("sellerPhone", ""))
+    phone_match = bool(target) and target == _last10(deal.get("sellerPhone", ""))
+    id_match = bool(deal.get("farmerId")) and deal.get("farmerId") == user.get("id")
+    return phone_match or id_match
 
 
 async def _load_deal(user: dict, deal_id: str) -> dict:

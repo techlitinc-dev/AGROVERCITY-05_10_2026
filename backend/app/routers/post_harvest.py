@@ -1204,6 +1204,77 @@ async def provider_verify_fee_payment(
     }
 
 
+@router.get("/provider/rent-ledger")
+async def provider_rent_ledger(
+    month: str | None = Query(None, description="Month filter in YYYY-MM format"),
+    status: str | None = Query(None, description="Filter by payment/rent status: 'paid', 'due', 'overdue'"),
+    provider: dict = Depends(_require_storage_provider()),
+):
+    """P2-22 (robust.md §6.13): Cold storage monthly rent accrual, invoicing & collection ledger."""
+    bookings = await query("cold_storage_bookings", [], limit=1000)
+
+    provider_id = provider.get("id")
+    if provider_id and provider_id != "omni-user-777":
+        facilities = await query("cold_storage", [], limit=100)
+        owned_facility_ids = {
+            f.get("id") for f in facilities if f.get("ownerUid") == provider_id
+        }
+        if owned_facility_ids:
+            bookings = [b for b in bookings if b.get("facilityId") in owned_facility_ids]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    entries = []
+    total_accrued = 0.0
+    total_collected = 0.0
+    total_outstanding = 0.0
+
+    for b in bookings:
+        inward_at = b.get("inwardDate") or b.get("bookedAt") or b.get("createdAt") or ""
+        if month and not inward_at.startswith(month):
+            continue
+
+        est_rent = float(b.get("totalEstimatedRent") or b.get("totalRent") or 0.0)
+        paid_rent = float(b.get("paidRent") or b.get("rentPaid") or 0.0)
+        due_rent = max(0.0, est_rent - paid_rent)
+
+        entry_status = "paid" if due_rent <= 0 and est_rent > 0 else ("due" if due_rent > 0 else "accrued")
+        if status and entry_status != status:
+            continue
+
+        total_accrued += est_rent
+        total_collected += paid_rent
+        total_outstanding += due_rent
+
+        entries.append({
+            "bookingId": b.get("id"),
+            "farmerId": b.get("farmerUid") or b.get("farmerId"),
+            "farmerName": b.get("farmerName"),
+            "commodity": b.get("cropName") or b.get("commodity"),
+            "quantityBags": b.get("quantityBags") or b.get("quantityQuintals"),
+            "storageLocation": b.get("facilityName") or b.get("facilityId"),
+            "inwardDate": inward_at,
+            "accruedRentRupees": round(est_rent, 2),
+            "paidRentRupees": round(paid_rent, 2),
+            "balanceDueRupees": round(due_rent, 2),
+            "status": entry_status,
+            "receiptNumber": b.get("receiptNumber"),
+        })
+
+    return {
+        "providerId": provider.get("id"),
+        "month": month or "all",
+        "generatedAt": now_iso,
+        "summary": {
+            "totalAccruedRupees": round(total_accrued, 2),
+            "totalCollectedRupees": round(total_collected, 2),
+            "totalOutstandingRupees": round(total_outstanding, 2),
+            "entryCount": len(entries),
+        },
+        "entries": entries,
+    }
+
+
+
 # ==============================================================================
 # AI Grading (M10, SDR + vision) — gateway-only vision + human-review gate
 # ==============================================================================

@@ -874,6 +874,55 @@ async def provider_stats(provider: dict = Depends(_require_insurance_provider)):
     }
 
 
+@router.get("/provider/stats/export")
+async def provider_stats_export(
+    format: str = Query("csv", description="'csv' or 'json'"),
+    provider: dict = Depends(_require_insurance_provider),
+):
+    """P2-21: Reinsurer / compliance export of provider stats and policy/claim metrics."""
+    stats = await provider_stats(provider)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if format == "json":
+        return {
+            "providerId": provider["id"],
+            "exportedAt": now_iso,
+            **stats,
+        }
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Agrovercity Insurance Provider - Reinsurer & Compliance Export"])
+    writer.writerow(["Provider ID", provider.get("id"), "Exported At", now_iso])
+    writer.writerow([])
+    writer.writerow(["Metric", "Value"])
+    writer.writerow(["Total Policies", stats["totalPolicies"]])
+    writer.writerow(["Active Policies", stats["activePolicies"]])
+    writer.writerow(["Total Sum Insured (INR)", stats["totalSumInsured"]])
+    writer.writerow(["Total Farmer Premium (INR)", stats["totalFarmerPremium"]])
+    writer.writerow(["Total Govt Subsidy (INR)", stats["totalGovtSubsidy"]])
+    writer.writerow(["Total Claims", stats["totalClaims"]])
+    writer.writerow(["Approved Claims", stats["approvedClaims"]])
+    writer.writerow(["Disbursed Claims", stats["disbursedClaims"]])
+    writer.writerow(["Total Disbursed (INR)", stats["totalClaimDisbursed"]])
+    writer.writerow(["Loss Ratio (%)", f"{stats['lossRatioPercent']}%"])
+    writer.writerow(["Avg Cycle Time (Hours)", stats["avgCycleTimeHours"]])
+    writer.writerow([])
+    writer.writerow(["Crop Breakdown", "Policies Count"])
+    for crop, count in stats.get("byCrop", {}).items():
+        writer.writerow([crop, count])
+    writer.writerow([])
+    writer.writerow(["Calamity Breakdown", "Claims Count"])
+    for cal, count in stats.get("byCalamity", {}).items():
+        writer.writerow([cal, count])
+
+    csv_content = output.getvalue()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="insurance_compliance_export.csv"'},
+    )
+
+
 @router.post("/provider/rates", status_code=201)
 async def provider_create_rate(
     body: RateCreateIn,

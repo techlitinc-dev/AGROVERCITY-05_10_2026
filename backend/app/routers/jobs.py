@@ -2,6 +2,7 @@
 # (0 22 * * * IST) with the X-Cron-Secret header — scheduler setup belongs to
 # docs/deployment/backend-deploy.md.
 import logging
+import uuid
 from datetime import date, datetime, timezone, timedelta
 
 from fastapi import APIRouter, Header, HTTPException

@@ -99,6 +99,53 @@ async def update_user_status_sop(
     return await _set_user_status(uid, body.status, ctx)
 
 
+# ===========================================================================
+# P2-25: User roster export (SOP-02 §3) — must precede /users/{uid}
+# ===========================================================================
+@router.get("/users/export")
+async def export_user_roster(
+    format: str = Query("json", description="json or csv"),
+    profile: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    user: dict = Depends(current_admin_user),
+):
+    """P2-25 (SOP-02 §3): Export user roster for state agriculture department audits."""
+    users = await query("users", None, limit=5000)
+    if profile:
+        users = [u for u in users if profile in (u.get("profiles") or []) or u.get("activeProfile") == profile]
+    if status:
+        users = [u for u in users if u.get("status") == status]
+
+    rows = []
+    for u in users:
+        rows.append({
+            "uid": u.get("id"),
+            "name": u.get("fullName") or u.get("name") or "",
+            "phone": u.get("phone") or "",
+            "primaryProfile": u.get("primaryProfile") or "farmer",
+            "state": u.get("state") or "",
+            "district": u.get("district") or "",
+            "village": u.get("village") or "",
+            "landAreaAcres": u.get("landAreaAcres") or 0.0,
+            "status": u.get("status") or "active",
+            "createdAt": u.get("createdAt") or "",
+        })
+
+    if format.lower() == "csv":
+        import io, csv
+        out = io.StringIO()
+        if rows:
+            writer = csv.DictWriter(out, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        return Response(
+            content=out.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="user_roster_audit.csv"'},
+        )
+    return {"users": rows, "total": len(rows), "generatedAt": datetime.now(timezone.utc).isoformat()}
+
+
 @router.get("/users/{uid}")
 async def get_user_details(uid: str, user: dict = Depends(current_admin_user)):
     """Full profile details + linked personas + role profile subcollection data (SOP-02)."""
@@ -296,51 +343,3 @@ async def update_security_policy(
         existing, new_policy, ctx["reason"], ctx["ip"],
     )
     return new_policy
-
-
-# ===========================================================================
-# P2-25: User roster export (SOP-02 §3)
-# ===========================================================================
-
-@router.get("/users/export")
-async def export_user_roster(
-    format: str = Query("json", description="json or csv"),
-    profile: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
-    user: dict = Depends(current_admin_user),
-):
-    """P2-25 (SOP-02 §3): Export user roster for state agriculture department audits."""
-    users = await query("users", None, limit=5000)
-    if profile:
-        users = [u for u in users if profile in (u.get("profiles") or []) or u.get("activeProfile") == profile]
-    if status:
-        users = [u for u in users if u.get("status") == status]
-
-    rows = []
-    for u in users:
-        rows.append({
-            "uid": u.get("id"),
-            "name": u.get("fullName") or u.get("name") or "",
-            "phone": u.get("phone") or "",
-            "primaryProfile": u.get("primaryProfile") or "farmer",
-            "state": u.get("state") or "",
-            "district": u.get("district") or "",
-            "village": u.get("village") or "",
-            "landAreaAcres": u.get("landAreaAcres") or 0.0,
-            "status": u.get("status") or "active",
-            "createdAt": u.get("createdAt") or "",
-        })
-
-    if format.lower() == "csv":
-        import io, csv
-        out = io.StringIO()
-        if rows:
-            writer = csv.DictWriter(out, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
-        return Response(
-            content=out.getvalue(),
-            media_type="text/csv",
-            headers={"Content-Disposition": 'attachment; filename="user_roster_audit.csv"'},
-        )
-    return {"users": rows, "total": len(rows), "generatedAt": datetime.now(timezone.utc).isoformat()}

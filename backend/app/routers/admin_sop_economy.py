@@ -903,7 +903,12 @@ async def get_women_impact_report(user: dict = Depends(current_admin_user)):
 @router.get("/tree/requests/{request_id}/survival")
 async def get_sapling_survival(request_id: str, user: dict = Depends(current_admin_user)):
     """P2-32 (SOP-21): Sapling survival and geo-tagged inspection tracking."""
-    req = await get_doc("tree_requests", request_id)
+    req = await get_doc("tree_requests", request_id) or await get_doc("sapling_requests", request_id)
+    if req is None:
+        # Check query across sapling_requests
+        sr = await query("sapling_requests", [("id", "==", request_id)], limit=1)
+        if sr:
+            req = sr[0]
     if req is None:
         _error(404, "NOT_FOUND", "tree request not found")
     inspections = await query("tree_survival_checks", [("requestId", "==", request_id)], limit=100)
