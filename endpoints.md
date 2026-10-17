@@ -29,6 +29,9 @@
 | POST | `/auth/logout` | Invalidate session. (AppState: `logout`) | all |
 | POST | `/auth/register` | Complete registration wizard. Body: `{ name, phone, state, district, tehsil, village, landAreaAcres, soilType, irrigationType, crops[], mpin, profiles[], primaryProfile }`. Returns user + tokens. (AppState: `completeRegistration`) | public |
 | PUT | `/users/me/farm-boundary` | Save farm geofence. Body: `{ farmBoundaryPoints: [{lat, lng}], landAreaAcres, khasraNumber? }`. (AppState: `confirmFarmMap`) | farmer |
+| POST | `/auth/firebase-verify` | Exchange Firebase Phone Auth ID token for API session tokens. Body: `{ idToken }`. Returns `{ accessToken, refreshToken, isNewUser, user }`. (Preferred client OTP verification method) | public |
+| POST | `/auth/mpin/set` | Set initial 4-digit MPIN for authenticated user. Body: `{ mpin }`. | all |
+| POST | `/auth/mpin/verify` | Verify 4-digit MPIN for 2FA / step-up authorization. Body: `{ mpin }`. Returns `{ verified: true }`. | all |
 
 ## 2. User Profile & Multi-Profile
 
@@ -41,7 +44,9 @@
 | POST | `/users/me/profiles/{type}/activate` | Switch active profile. Returns profile meta + `defaultHomeRoute`. (AppState: `switchProfile`) | all |
 | PUT | `/users/me/profiles/{type}/primary` | Star a profile as primary. | all |
 | PUT | `/users/me/settings` | `{ language, womenMode, highContrast, darkMode }`. | all |
-| GET | `/users/me/dashboard/{profileType}` | Persona home payload: metric pills, quick actions, live activity list (leases/trips/ledger/fleet/deals per role). | all |
+| GET | `/users/me/dashboard/{profileType}` | Persona home payload: metric pills, quick actions, live activity list (leases/trips/ledger/fleet/deals per role). (P2-1) | all |
+| POST | `/users/me/data-export` | Request full personal data export archive (DPDP Act compliance). Returns `{ exportId, status: "pending" }`. | all |
+| GET | `/users/me/data-export/latest` | Get status and signed download URL for user's latest data export archive. Returns `{ exportId, status, downloadUrl?, expiresAt? }`. | all |
 
 ## 3. Reference & Geo
 
@@ -73,6 +78,13 @@
 | POST | `/chatbot/handoff` | Request human expert. Body: `{ sessionId, reason }` → `{ expertName, contactChannel, etaMinutes }`; sends chat history + farm data to expert. | all |
 | GET | `/weather?lat=&lng=` | Weather strip: `{ tempC, rainProbability, condition, radarAvailable, forecast[] }` (proxy to IMD/OpenWeather). | all |
 | POST | `/tasks/urgent/complete` | Mark Today's Action done → `{ agriCoinsEarned: 50, newBalance }`. (AppState: `markUrgentTaskDone`) | farmer |
+| POST | `/advisory/sowing-intent` | Submit seasonal crop sowing intention for regional saturation mapping. Body: `{ crop, areaAcres, sowingDate, district }`. | farmer |
+| GET | `/advisory/disease-scans` | Historical leaf disease scans with diagnoses, severity, and treatments. | farmer |
+| POST | `/advisory/crop-plan` | Generate personalized AI agronomic crop calendar and advisory plan. Body: `{ crop, sowingDate, landAreaAcres, soilType, irrigationType }`. | farmer |
+| POST | `/advisory/crop-plan/confirm` | Confirm and save crop calendar to user urgent tasks. Body: `{ planId }`. | farmer |
+| POST | `/chatbot/expert-handoff` | Dedicated endpoint for human expert handoff request. Body: `{ sessionId, reason }` → `{ expertName, contactChannel, etaMinutes }`. (Synonym of `/chatbot/handoff`) | all |
+| GET | `/chatbot/experts` | Directory of available agronomy & veterinary experts with live availability status. | all |
+| POST | `/uploads` | Multipart file upload (`files[]` → Storage URL) for course media, podcasts, KYC, diary receipts, and evidence. (P0-8) | all |
 
 ## 6. Marketplace (Agri Inputs)
 
@@ -84,6 +96,23 @@
 | GET | `/cart` · POST `/cart/items` · PUT `/cart/items/{productId}` · DELETE `/cart/items/{productId}` | Cart CRUD. Body: `{ productId, quantity }`. (AppState: addToCart/removeFromCart/clearCart, cartTotal) | farmer, landlord, transporter, seller |
 | POST | `/orders` | Place order. Body: `{ items[], paymentMethod (upi/cod/bnpl), deliveryAddress, idempotencyKey }`. Returns `{ orderId, total, bnplSchedule? }`. | farmer, landlord, transporter, seller |
 | GET | `/orders` · GET `/orders/{id}` | Order history/detail with delivery status. | farmer, landlord, transporter, seller |
+| GET | `/orders/{id}/bnpl-schedule` | View persisted BNPL installment payment schedule and due dates for an order. (P2-17) | farmer, landlord, transporter, seller, customer |
+| POST | `/seller/team/invites` | Invite team sub-account member. Body: `{ phone, name, role: manager|cashier|dispatcher }`. (P1-2) | seller |
+| GET | `/seller/team/members` | List active team sub-account members with permissions. (P1-2) | seller |
+| PUT | `/seller/team/members/{id}/role` | Update team member role / permissions. Body: `{ role }`. (P1-2) | seller |
+| DELETE | `/seller/team/members/{id}` | Revoke and remove team member sub-account. (P1-2) | seller |
+| PATCH | `/seller/orders/{id}/status` | Update fulfillment status of own mall order (`confirmed → shipped → out_for_delivery → delivered`). (P1-3) | seller |
+| GET | `/seller/gst-reports` | Monthly GST sales register and tax liability report (`?from=&to=&format=csv|json`). (P1-4) | seller |
+| GET | `/seller/purchases/{id}/commission-invoice` | Platform commission invoice PDF/JSON for 2% escrow deduction. (P1-4) | seller |
+| POST | `/seller/stock` | Add manual produce stock inventory entry. Body: `{ crop, quantityQuintals, ratePerQuintal, warehouseLocation? }`. | seller |
+| POST | `/seller/stock/from-purchase/{id}` | Convert delivered in-app B2B purchase into live warehouse stock. | seller |
+| GET | `/seller/stock` | List current inventory stock entries with available and reserved quantities. | seller |
+| POST | `/seller/stock/{id}/adjust` | Signed stock adjustment with reason. Body: `{ deltaQuintals, reason: spoilage|shrinkage|recount }`. | seller |
+| GET | `/seller/cashflow` | Unified cashflow analytics combining in-app sales and offline credit book. | seller |
+| GET | `/saved-searches` · POST `/saved-searches` | List / save discovery filter criteria. Body: `{ query, category?, maxPrice?, district? }`. (P2-3) | all |
+| DELETE | `/saved-searches/{id}` | Delete saved search filter. (P2-3) | all |
+| POST | `/saved-searches/{id}/alerts` | Toggle harvest-window and new-listing push alerts for a saved search. (P2-3) | all |
+| POST | `/market/lots/{id}/relist` | Relist lot with priority badge following counterparty no-show. (P2-4) | farmer |
 
 ## 7. Buyer Contracts & Transport
 
@@ -97,6 +126,26 @@
 | POST | `/transport/bookings` | Book vehicle. Body: `{ vehicleType, distanceKm, pickup, drop, date }`. | farmer, seller |
 | GET | `/transport/bookings?status=` | Trip list for transporter dashboard (vehicle no., route, fare, status). | transporter |
 | PATCH | `/transport/bookings/{id}` | Update trip status (accepted/en-route/delivered/cancelled). | transporter |
+| POST | `/transport/bookings/{id}/payments` | Capture trip fare payment / advance into escrow hold. Body: `{ amount, method, reference? }`. (P0-1) | farmer, seller, transporter |
+| POST | `/transport/bookings/{id}/escrow/release` | Release trip fare escrow to transporter on verified delivery. (P0-1) | farmer, seller, admin |
+| GET | `/transport/wallet` | Transporter balance, pending escrow holds, lifetime earnings and TDS summary. (P0-1) | transporter |
+| POST | `/transport/payouts` | Withdraw available wallet balance to verified primary bank account / UPI. Body: `{ amountPaise }`. (P0-1) | transporter |
+| GET | `/transport/ratings` | Transporter received ratings, feedback reviews, and aggregate star rating. (P1-27) | transporter |
+| POST | `/transport/bookings/{id}/stops` | Add intermediate waypoint / drop stop for multi-drop milk runs. Body: `{ stopNumber, location, contactPhone, notes? }`. (P2-36) | transporter |
+| POST | `/transport/bookings/{id}/stops/{stop_no}/pod` | Submit proof of delivery for intermediate stop. Multipart `file` + `{ recipientName, signatureData? }`. (P2-36) | transporter |
+| POST | `/transport/bookings/{id}/breakdown` | Report mid-trip vehicle breakdown: triggers load re-matching and pro-rata fare adjustment. Body: `{ reason, location, requiresTow? }`. (P2-37) | transporter |
+| GET | `/transport/loads/matched` | Personalized load recommendations based on current location and vehicle capacity. (P2-38) | transporter |
+| GET | `/transport/fare-trends` | Historical and seasonal per-km fare trends by route. `?pickup=&drop=&vehicleType=`. (P2-38) | transporter, farmer, seller |
+| GET | `/transport/compliance` | Transporter compliance card: active strikes, suspension cooldown timer, penalty rules. (P2-39) | transporter |
+| POST | `/transport/instant-bookings` | Instant vehicle booking from live nearby map. Body: `{ vehicleId, pickup, drop, scheduledTime }`. | farmer, seller |
+| GET | `/transport/nearby-vehicles` | Real-time map pins of available transport vehicles within radius. `?lat=&lng=&radiusKm=`. | farmer, seller |
+| POST | `/transport/vehicles/{id}/location` | Fleet GPS telematics ping. Body: `{ lat, lng, speed?, availableNow? }`. | transporter |
+| POST | `/transport/bookings/{id}/assign-driver` | Reassign trip to another verified fleet driver. Body: `{ driverId, driverName, driverPhone }`. | transporter |
+| POST | `/transport/bookings/{id}/inspection` | Pre-trip vehicle safety inspection report. Body: `{ odometerKm, tyreCondition, cleanCargoArea: bool }`. | transporter |
+| PUT | `/transport/vehicles/{id}` | Partial update of own vehicle (perKmRate, baseFare, homeLocation, availableNow; resets docStatus to pending). | transport |
+| GET | `/transport/drivers/{id}/analytics` | Fleet-owner per-driver performance analytics: total/completed/cancelled trips, gross earnings, average rating. | transport |
+| POST | `/transport/loads` | Farmer posts load to load board `{ crop, quantityQuintals, packaging?, vehicleType?, pickup, drop, targetFare?, urgent? }` (urgent notifies nearby verified drivers). | farmer |
+| GET | `/transport/loads` | Open load board for transporters to browse and bid; sorted by urgent first, then date. | transport, farmer, seller |
 
 ## 8. P&L, Farm Diary & Break-even
 
@@ -160,6 +209,10 @@
 | POST | `/loans/{applicationId}/disburse` | `approved → disbursed`. Body `{ disbursementRef, disbursedAmount? }` (defaults to `sanctionedAmount`); stores `disbursedAt`; notifies farmer; audit. | bankManager |
 | GET | `/loans/{applicationId}/schedule` | Reducing-balance EMI schedule — integer ₹ entries `{ installmentNo, dueDate, emi, principal, interest, outstanding }` (monthly rest, due 1st of each month, final outstanding exactly 0). Approved/disbursed loans use sanctioned terms; otherwise requested amount + 12% default. | farmer, bankManager |
 | POST | `/loans/{applicationId}/documents` | Multipart upload of 1..n files (`files[]`, JPG/PNG/PDF, ≤5 MB each) to Storage (`loandocs/{uid}/…`); appends `documents[]` → 201. Owner farmer only. | farmer |
+| GET | `/loans/{id}/documents/{documentId}/download` | Generate time-boxed signed URL for banker to download applicant KYC/land records. (P1-23) | bankManager, admin |
+| POST | `/loans/{id}/repayments` | Record EMI repayment transaction. Body: `{ amount, paymentMode, transactionRef, repaymentDate }`. (P1-24) | bankManager, farmer |
+| GET | `/loans/{id}/repayments` | EMI repayment ledger: scheduled installments, paid installments, overdue penalties. (P1-24) | bankManager, farmer |
+| GET | `/loans/audit-logs` | Banker's own underwriting decision trail and sanction log (`?applicationId=&page=`). (P2-20) | bankManager |
 
 ## 11c. Loan Management — Superadmin Console (SOP-14)
 
@@ -169,6 +222,7 @@
 |---|---|---|---|
 | GET | `/admin/finance/loans?status=&page=&pageSize=` | Loan application underwriting queue: optional `status` filter over `loan_applications`, `createdAt` desc, envelope `{ data, page, pageSize, total }` of `LoanApplicationOut`. | admin |
 | PUT | `/admin/finance/loans/{applicationId}/status` | Advance status along the loan state machine. Body `{ status, note? }` — `status` must be a `LoanStatus` (422 `VALIDATION_ERROR` otherwise); 409 `LOAN_INVALID_TRANSITION` on illegal jumps; 404 `LOAN_NOT_FOUND`; timeline + `audit_logs` entry; returns updated `LoanApplicationOut`. | admin |
+| GET | `/admin/finance/credit-scores` | Aggregated credit score tier distribution histogram and default risk factors across applicants. (P2-19) | bankManager, superadmin |
 
 ## 12. Crop Insurance (PMFBY / RWBCIS)
 
@@ -193,6 +247,9 @@
 | POST | `/insurance/provider/claims/{id}/disburse` | Direct Benefit Transfer (DBT) payout `{ dbtTransactionId?, bankAccountLast4? }` to beneficiary account. | insuranceProvider, admin |
 | GET | `/insurance/provider/stats` | Executive KPI dashboard: policies, active coverage, pending claims, disbursed payouts, loss ratios. | insuranceProvider, admin |
 | POST | `/insurance/provider/rates` | Publish new actuarial rate card entry for schemes. | insuranceProvider, admin |
+| POST | `/insurance/provider/claims/{id}/payout-approval-request` | Submit claim payout for dual-admin sign-off when exceeding ₹50,000 threshold. Body: `{ proposedAmount, justification }`. (P0-14) | insuranceProvider, admin |
+| GET | `/insurance/provider/claims/{id}/payout-approval-request` | Dual-signoff approval status and maker-checker audit trail for a claim. (P0-14) | insuranceProvider, admin |
+| GET | `/insurance/provider/stats/export` | Export insurer portfolio metrics, loss ratio, and claims roster (CSV/JSON). (P2-21) | insuranceProvider, superadmin |
 
 
 ## 13. Land Records (7/12 Utara)
@@ -214,6 +271,30 @@
 | POST | `/equipment/slots/{id}/waitlist` | Join waitlist. | farmer |
 | GET | `/equipment/owner/fleet` | Owner fleet status (bookings, fares, utilization) for equipment dashboard. | equipOwner |
 | POST | `/equipment` · PUT `/equipment/{id}` | Owner: add/manage machines & slot templates. | equipOwner |
+| POST | `/equipment/bookings/{id}/deposit` | Authorize / capture security deposit hold for equipment booking. Body: `{ amountPaise, paymentMethod }`. (P0-4) | farmer |
+| POST | `/equipment/bookings/{id}/deposit/forfeit` | Forfeit security deposit towards documented machinery damage. Body: `{ forfeitAmountPaise, reason, evidenceUrls[] }`. (P0-4) | equipmentOwner, admin |
+| POST | `/equipment/bookings/{id}/counter/accept` | Farmer or owner accepts negotiated counter-offer rate. (P1-5) | farmer, equipmentOwner |
+| POST | `/equipment/bookings/{id}/counter/decline` | Decline counter-offer rate with reason. Body: `{ reason? }`. (P1-5) | farmer, equipmentOwner |
+| GET | `/equipment/bookings/{id}/chat-room` | Booking-scoped chat room between farmer and equipment owner (unlocked upon confirmation). (P1-6) | farmer, equipmentOwner |
+| POST | `/equipment/bookings/{id}/payments/order` | Create gateway payment order for booking advance/deposit hold. (P1-7) | farmer |
+| POST | `/equipment/demand-posts/{id}/quotes` | Equipment owner submits custom rate quote on farmer's public demand post. Body: `{ rateRupeesPerHour, terms?, availableFrom }`. (P2-5) | equipmentOwner |
+| PUT | `/equipment/{id}/pricing-rules` | Configure dynamic pricing, peak hours, minimum billing hours, and travel charges. Body: `{ minHours, travelChargePerKm, peakMultiplier }`. (P2-6) | equipmentOwner |
+| GET | `/equipment/owner/tds-statements` | Equipment rental owner annual/quarterly TDS deduction certificates and statements. (P2-7) | equipmentOwner |
+| GET | `/admin/equipment/damage-claims` | Superadmin triage queue for equipment damage reports and deposit forfeiture appeals. (P1-8) | admin |
+| POST | `/equipment/demand-posts` | Farmer posts equipment requirement `{ machineType, acres?, dateFrom, dateTo, budgetPerHourRupees?, notes? }`. | farmer, farmLandlord, seller |
+| GET | `/equipment/demand-posts` | Browse open farmer machinery demand posts with machineType/location filters. | all |
+| DELETE | `/equipment/demand-posts/{id}` | Delete own equipment demand post. | all |
+| POST | `/equipment/bookings/{bookingId}/contract` | Owner generates legal rental agreement contract with rate and terms. | equipmentRental |
+| GET | `/equipment/bookings/{bookingId}/contract` | Rental contract document details with version history. | all |
+| POST | `/equipment/bookings/{bookingId}/contract/esign` | MPIN digital signature on equipment rental contract `{ mpin, consentTimestamp }`. | all |
+| GET | `/equipment/bookings/{bookingId}/contract/pdf` | Download signed equipment rental contract PDF. | all |
+| POST | `/equipment/bookings/{bookingId}/payments` | In-app advance or balance payment towards booking. | all |
+| POST | `/equipment/bookings/{bookingId}/refund` | Owner issues refund to farmer `{ amountRupees, reason }`. | equipmentRental |
+| GET | `/equipment/bookings/{bookingId}/invoice` | Formal booking invoice PDF/JSON with platform commission and tax breakdown. | all |
+| POST | `/equipment/bookings/{bookingId}/disputes` | Raise equipment damage or non-performance dispute with 72h resolution SLA. | all |
+| GET | `/equipment/disputes/{disputeId}` · GET `/equipment/disputes` | Track dispute cases, evidence timeline, and remaining SLA hours. | all |
+| POST | `/equipment/disputes/{disputeId}/evidence` | Submit photos and mechanical repair estimates for open dispute. | all |
+| POST | `/equipment/bookings/{bookingId}/approve` | Owner approves booking and dispatches automated SMS confirmation. | equipmentRental |
 
 ## 15. FPO Engine
 
@@ -302,6 +383,8 @@ Gaushala management (`livestock_gaushala.py`; requires a gaushala profile — mo
 | GET | `/livestock/gaushala/dashboard` | Aggregates: headcount, byCategory, occupancy %, active adoptions, month donations/expenses. | dairyManager |
 | GET | `/livestock/gaushala/analytics?month=` | Last-6-months `monthly[]` (`{ month, expenses, donations, adoptions, adoptionAmount, intakes }`), `expenseByCategory` for the month, `cattleByStatus` inventory split. | dairyManager |
 | GET | `/livestock/gaushala/receipts` | Issued 80G receipts (adoption/donation), newest first — `eightyGEligible`, `certificateNumber`. | dairyManager |
+| POST | `/livestock/gaushala/donations/{id}/pay` | Complete gateway payment for gaushala donation prior to 80G certificate issuance. Body: `{ paymentMethod, reference }`. (P0-12) | all |
+| POST | `/livestock/gaushala/adoptions/{id}/pay` | Complete cow adoption sponsorship payment prior to 80G tax receipt generation. Body: `{ paymentMethod, reference }`. (P0-12) | all |
 
 Doctor / vet network (`livestock_vets.py`; vet workspace requires a claimed vet profile via `POST /livestock/vets/claim`):
 
@@ -327,6 +410,42 @@ Doctor / vet network (`livestock_vets.py`; vet workspace requires a claimed vet 
 | GET | `/livestock/vet/campaigns/{id}` | Campaign detail + enrollments + count. | farmer, seller, dairyManager |
 | POST | `/livestock/vet/campaigns/{id}/enroll` | Enroll own animal `{ animalId }` (403 other owner's animal, 409 `ALREADY_ENROLLED`/`CAMPAIGN_CLOSED`); FCM reminder. | farmer, seller, dairyManager |
 | POST | `/livestock/vet/campaigns/{id}/mark-vaccinated` | Mark animal vaccinated `{ animalId }` — enrollment → `vaccinated`; FCM to farmer (404 `ENROLLMENT_NOT_FOUND`). | dairyManager, vet |
+| POST | `/dairy-manager/collections/otp/send` | Issue OTP to member-farmer mobile for collection verification. Body: `{ collectionId, phone }`. (P0-7) | dairyManager |
+| POST | `/dairy-manager/collections/otp/verify` | Verify member-farmer OTP to legally anchor milk intake and ledger payment. Body: `{ collectionId, otp }`. (P0-7) | dairyManager |
+| POST | `/dairy-manager/collections/qr` | Generate dynamic QR code for farm-gate milk collection handover. Body: `{ collectionId }`. (P1-13) | dairyManager |
+| POST | `/dairy-manager/collections/qr/scan` | Scan collection QR code to sync collection data between manager and farmer ledgers. Body: `{ qrData }`. (P1-13) | farmer, dairyManager |
+| POST | `/dairy/purchases/{id}/contract/esign` | OTP-anchored e-signature of bulk milk procurement term sheet and quality specs. (P1-14) | dairyManager, milkSeller |
+| POST | `/dairy-manager/routes/{id}/status` | Update milk procurement route lifecycle: `planned → dispatched → completed|cancelled`. (P2-9) | dairyManager |
+| PUT | `/livestock/dairy/agents/{agent_uid}` | Update field collection agent assignment, assigned route IDs, and active status. (P2-10) | dairyManager |
+| GET | `/dairy-manager/pickup-slots` · POST `/dairy-manager/pickup-slots/{slot_id}/book` | Dairy center pickup slot calendar and time-slot booking. (P2-11) | dairyManager, farmer |
+| GET | `/dairy/commission-statements` | Monthly milk procurement commission and collection settlement statement (PDF/CSV). (P2-12) | dairyManager |
+| GET | `/dairy/farmers/{farmer_id}/reliability` | Member-farmer reliability scorecard: show-up rate, FAT/SNF consistency, dispute count. (P2-13) | dairyManager |
+| POST | `/livestock/appointments/{id}/pay` | Authorize / pay veterinary consultation booking fee into escrow hold. Body: `{ paymentMethod }`. (P0-13) | farmer, seller |
+| GET | `/livestock/vets/me/settlements` | Vet doctor payout settlement rows, consultation fees earned, and platform deductions. (P1-28) | vet |
+| POST | `/livestock/vets/me/payouts` | Request payout of accumulated veterinary consultation earnings to bank account. (P1-28) | vet |
+| GET | `/dairy/dairies/{managerId}` | Public dairy center profile card (capacity, operating chilling units, pickup routes). | all |
+| GET | `/dairy/farmers/{farmerId}` | Member-farmer public dairy profile and supply track record. | all |
+| GET | `/dairy/farmer/home` | Farmer-facing dairy home dashboard: daily collections, FAT/SNF rates, milk payment dues. | farmer |
+| GET | `/dairy/dashboard` | Dairy manager operational dashboard: today's live demands, recent collections, inventory in chilling tanks. | dairyManager |
+| GET | `/dairy/farmer/ratings` | Farmer review scores and quality ratings from dairy centers. | farmer |
+| GET | `/dairy/batches` · GET `/dairy/batches/{id}` | Bulk milk procurement batch records with aggregated quality grades. | dairyManager |
+| GET | `/dairy/demands` · POST `/dairy/demands` | Browse or create bulk milk procurement requirements. | dairyManager, all |
+| GET | `/dairy/demands/{id}` | Procurement demand detail view with received bids. | all |
+| POST | `/dairy/demands/{id}/close` | Close procurement demand post. | dairyManager |
+| POST | `/dairy/demands/{id}/bids` · GET `/dairy/demands/{id}/bids` | Submit bid or view supplier bids on milk procurement requirement. | milkSeller, dairyManager |
+| POST | `/dairy/bids/{id}/accept` | Accept supplier bid and create formal procurement purchase agreement. | dairyManager |
+| POST | `/dairy/purchases/{id}/advance` | Record advance payment towards bulk milk procurement purchase. | dairyManager |
+| POST | `/dairy/purchases/{id}/deliver` | Confirm delivery of milk tanker at dairy processing center. | dairyManager |
+| POST | `/dairy/purchases/{id}/qc` | Record dock lab quality assessment (FAT%, SNF%, adulteration screen) and finalize purchase value. | dairyManager |
+| GET | `/dairy/ratings` | Public ratings and feedback reviews of registered dairy centers. | all |
+| GET | `/dairy/demands/browse` | Public board of open milk procurement demands from dairy centers. | all |
+| GET | `/dairy/bids/browse` | Open bids placed on dairy procurement requirements. | dairyManager, milkSeller |
+| POST | `/dairy/standing-orders` · GET `/dairy/standing-orders` · PUT `/dairy/standing-orders/{id}` · POST `/dairy/standing-orders/{id}/close` | Create, browse, update, or close recurring milk supply standing orders. | dairyManager |
+| GET | `/dairy/standing/browse` | Public feed of standing milk procurement requirements. | all |
+| GET | `/dairy/purchases/{purchaseId}/receipt` | Formal milk procurement receipt with quantity, FAT/SNF readings, and gross payout. | all |
+| GET | `/dairy/commission-structure` | Platform commission rates and escrow settlement timelines for dairy trade. | dairyManager |
+| GET | `/dairy/purchases/{purchaseId}/chat-room` | Dedicated procurement negotiation chat thread unlocked upon order confirmation. | all |
+| POST | `/dairy-manager/bids/{bidId}/accept` | Dairy manager one-click acceptance of supplier procurement bid. | dairyManager |
 
 > `MilkCollectionIn` (§`livestock.py` procurement) gained optional `memberId` + `quality`. `AnimalIn` gained optional `gaushalaId` — when the caller manages that gaushala, the animal is registered as its cattle (`ownerType: "gaushala"`, `cattleStatus: "in-shelter"`, intake event recorded; 404 `GAUSHALA_NOT_FOUND` otherwise); `Animal` responses now carry `gaushalaId`/`cattleStatus`/`events`. The `dairyManager` persona (8th profile) is the livestock-domain super-manager. The superadmin console for this domain is live — see §28.19 (SOP-19: `/admin/livestock/vets`, `/admin/livestock/vets/{id}/verify`, `/admin/livestock/gaushalas`, `/admin/livestock/orders`).
 
@@ -396,7 +515,13 @@ Referral flow: invite = +100 coins immediately (reason `referral`). Registering 
 | POST | `/post-harvest/grade` | AI quality grading. Multipart produce images → `{ grade, uniformityPercent, shelfLifeDays, recommendedPrice }`. | farmer, seller |
 | GET | `/women/shg` · POST `/women/shg/deposit` | SHG group `{ memberCount, corpus, loanFund, monthlyDeposit }`; record deposit. | farmer (women mode) |
 | GET | `/women/home-enterprise` | Home enterprise income lines `[{ product, monthlyProfit }]`. | farmer (women mode) |
-| GET | `/dashboard/home` | Aggregated farmer home: weather, urgent task, vyapari rates, banners — single call to hydrate dashboard. | all |
+| GET | `/dashboard/home` | Aggregated daily home payload: weather strip, urgent action task, aaj ke bhav vyapari rates, active banners, and persona metrics in a single low-latency call. (P1-1) | all |
+| GET | `/post-harvest/receipts/{receipt_number}/certificate` | Verifiable electronic Negotiable Warehouse Receipt (e-NWR) PDF with QR verification code for bank loan collateral. (P1-29) | farmer, bankManager, public |
+| GET | `/post-harvest/provider/rent-ledger` | Monthly cold storage chamber rent accruals, dues, and payment statuses (`?month=&status=`). (P2-22) | coldStorageProvider |
+| GET | `/post-harvest/provider/fees` | Platform SaaS usage fee ledger (per-booking fee audit). (P2-23) | coldStorageProvider, admin |
+| POST | `/post-harvest/provider/fees/{id}/pay` | Pay cold storage platform fees. Body: `{ paymentMethod, reference }`. (P2-23) | coldStorageProvider |
+| POST | `/admin/cold-storage/facilities/{id}/verify` | Superadmin WDRA compliance audit and cold chain partner facility verification. (P1-30) | admin |
+| GET | `/admin/cold-storage/bookings` | Superadmin reservation audit across all cold storage chambers to prevent overbooking. (P2-24) | admin |
 | POST | `/sync` | Offline queue replay. Body: `{ operations: [{ idempotencyKey, method, path, body, queuedAt }] }` → per-op results. | all |
 | GET | `/notifications` · PUT `/notifications/read-all` · POST `/notifications/{id}/read` | Own notifications with paged envelope, mark-read operations. **Shipped — see §24.** | all |
 
@@ -427,6 +552,39 @@ Referral flow: invite = +100 coins immediately (reason `referral`). Registering 
 | GET | `/finance/loans` | Own loan applications, newest first — now the full `LoanApplicationOut` (applicationNumber, timeline, documents, sanctioned/disbursal fields). | farmer |
 | POST | `/jobs/settlements/run` | Nightly settlement aggregation (Cloud Scheduler, header `X-Cron-Secret`; empty `CRON_SECRET` in dev = allow). Body: `{ periodStart?, periodEnd? }` (default last ISO week) → `{ created, updated }`. Commission config `platform_config/settlements` `{ transportPct: 10, equipmentRentalPct: 12, brokerPct: 2 }`. | cron |
 | GET | `/transport/settlements` · `/equipment/settlements` · `/broker/settlements` | Own settlement rows `{ id, periodStart, periodEnd, grossRupees, commissionRupees, netRupees, status, sourceIds[] }`, newest period first. Other personas → 403 `FORBIDDEN_ROLE`. | transport / equipmentRental / broker |
+| POST | `/land/leases/{id}/esign` | Landlord and tenant MPIN-anchored digital signature of formal lease agreement. Body: `{ signatureData, consentTimestamp, mpin }`. (P0-2) | farmer, farmLandlord |
+| POST | `/land/leases/{id}/escrow/fund` | Tenant farmer funds lease security/rent escrow wallet. Body: `{ amountPaise, paymentMethod }`. (P0-3) | farmer |
+| POST | `/land/leases/{id}/milestones/{index}/release` | Release lease milestone payment from escrow to landlord minus commission. (P0-3) | farmer, admin |
+| GET | `/land/settlements` | Landlord payout dashboard: escrow releases, platform fee breakdown, and bank disbursements. (P1-25) | farmLandlord |
+| POST | `/land/leases/{id}/chat-room` | Secure lease-scoped chat channel between landlord and tenant. (P1-26) | farmer, farmLandlord |
+| GET | `/land/profit-dashboard` | Landlord profit analytics: rental income by plot, occupancy rate, expense deductions. | farmLandlord |
+| GET | `/land/analytics` | Portfolio analytics across all owned land plots and active lease contracts. | farmLandlord |
+| GET | `/land/leases/{id}/milestones` · POST `/land/leases/{id}/milestones` | Milestone payment schedule for lease. | farmLandlord, farmer |
+| PUT | `/land/leases/{id}/milestones/{index}` | Update milestone state / due date. | farmLandlord, farmer |
+| GET | `/land/lease-requests/mine` | Farmer's sent lease applications and negotiation status. | farmer |
+| POST | `/land/lease-requests/{request_id}/counter` | Submit structured counter-offer on lease rent/terms (max 5 rounds). | farmer, farmLandlord |
+| GET | `/land/leases/{lease_id}/ledger` | Rent ledger export (CSV/PDF) with payment dates, bank refs, and tax TDS. | farmer, farmLandlord |
+| GET | `/rent-payments/{payment_id}/receipt` | Downloadable rent payment receipt with landlord digital seal. | farmer, farmLandlord |
+| POST | `/land/leases/{lease_id}/disputes` | Open formal land leasing dispute (boundary, non-payment, water rights). | farmer, farmLandlord |
+| GET | `/land/summary` | Landlord portfolio summary: total acres, leased acres, annual rental yield. | farmLandlord |
+| POST | `/land/listings/{listing_id}/photos` · DELETE `/land/listings/{listing_id}/photos/{photo_id}` | Upload or remove plot demarcation and drone survey photos. | farmLandlord |
+| PUT | `/land/listings/{listing_id}/availability` | Toggle listing open/paused availability state. | farmLandlord |
+| POST | `/land/listings/{listing_id}/view` | Record prospective tenant listing view event. | farmer |
+| GET | `/land/leases/{lease_id}/handover` | Plot handover inspection checklist and initial soil condition report. | farmer, farmLandlord |
+| POST | `/land/plots/{plot_id}/expenses` · GET `/land/plots/{plot_id}/expenses` | Log and track plot maintenance expenses (fencing, bunding, soil preparation). | farmLandlord |
+| POST | `/land/leases/{lease_id}/harvest-declarations` · GET `/land/leases/{lease_id}/harvest-declarations` | Tenant farmer declares seasonal crop harvest for crop-share leases. | farmer, farmLandlord |
+| POST | `/land/leases/{lease_id}/harvest-declarations/{decl_id}/settle` | Settle crop-share revenue distribution between landlord and tenant. | farmLandlord |
+| GET | `/land/profit-dashboard/export` | Export 12-month landlord profit and tax breakdown (CSV format). | farmLandlord |
+| POST | `/land/listings/{listing_id}/reviews` · GET `/land/listings/{listing_id}/reviews` | Post and view tenant reviews of leased agricultural land. | farmer, farmLandlord |
+| GET | `/land/price-suggestion` | Fair market rent suggestion based on soil type, water source, and village historical leases. | farmer, farmLandlord |
+| POST | `/land/listings/{listing_id}/boost` | Featured listing boost (priority ranking in search results). | farmLandlord |
+| POST | `/land/listings/{listing_id}/save` · DELETE `/land/listings/{listing_id}/save` · GET `/land/saved-listings` | Bookmark/save land listings and view saved bookmarks. | farmer |
+| POST | `/land/listings/{listing_id}/waitlist` · DELETE `/land/listings/{listing_id}/waitlist` · GET `/land/waitlist/mine` | Join or leave tenant waitlist for leased land plots. | farmer |
+| GET | `/land/leads` · POST `/land/leads/{lead_id}/status` · POST `/land/leads/{lead_id}/notes` · DELETE `/land/leads/{lead_id}` | Landlord tenant CRM: lead pipeline, contact notes, and status transitions. | farmLandlord |
+| GET | `/land/tenancies` | Current active tenancies overview with tenant details and plot allocations. | farmLandlord |
+| GET | `/land/rent/dues` | Aggregate unpaid rent and upcoming due dates across all active leases. | farmLandlord |
+| POST | `/land/leases/{lease_id}/renew` · GET `/land/leases/{lease_id}/renewals` · POST `/land/lease-renewals/{renewal_id}/respond` | Lease renewal proposals, negotiation, and extension decisions. | farmer, farmLandlord |
+| POST | `/land/leases/{lease_id}/terminate` | Early mutual lease termination request with settlement terms. | farmer, farmLandlord |
 
 ---
 
@@ -456,6 +614,7 @@ Referral flow: invite = +100 coins immediately (reason `referral`). Registering 
 | GET | `/analytics/customer` | Customer dashboard: `{ totalSpent, totalOrders, ordersByStatus, monthlySpend: [{month, amount}] (12m), categorySpend: [{category, amount}], topProducts: [{productId, title, quantity, amount}] (top 5), wishlistCount, activeCoupons, pendingReturns }`. Spend = `finalTotal` (fallback `total`) of non-cancelled orders; coupon discounts are prorated across line items. | all |
 | GET | `/analytics/seller` | Seller storefront dashboard: `{ revenue, ordersCount, itemsSold, aov, monthlyRevenue (12m), topProducts (top 5), categoryBreakdown: [{category, revenue}], lowStock: [{productId, title, stock}] (stock < 10), returnRate, recentOrders: [{id, total, status, createdAt}] (last 10) }`. 403 `FORBIDDEN_ROLE` for non-sellers. | seller |
 | GET | `/admin/analytics/emarket` | Admin E-Market KPIs: `{ gmv, totalOrders, totalCustomers, totalSellers, aov, monthlyGmv (12m), ordersByStatus, categoryShare: [{category, revenue}], topProducts: [{id, title, revenue, orders}] (top 5), topSellers: [{sellerId, name, revenue, orders}] (top 5), returnRate, couponUsage: {issued, used} }`. 403 `FORBIDDEN_ADMIN` for non-admins. | admin |
+| PUT | `/customer/subscriptions/{id}` | Manage standing order subscription: pause for vacation, resume, modify quantity or delivery day. Body: `{ status: paused|active, qtyKg?, deliveryWindow? }`. (P2-18) | customer, all |
 
 ---
 
@@ -497,6 +656,29 @@ Referral flow: invite = +100 coins immediately (reason `referral`). Registering 
 | POST | `/purchases/{id}/cancel` | Allowed from `confirmed`/`advancePaid`/`pickupScheduled` → `cancelled` + event (400 `INVALID_STATUS_TRANSITION` from `inTransit` onwards). Body `{ reason? }`. | buyer or farmer |
 | POST | `/purchases/{id}/rate` | `completed` only (409 `NOT_COMPLETED`); one rating per side (**409 `ALREADY_RATED`**). Body `{ target: farmer\|buyer, rating: 1-5, review? }` — the directBuyer rates the farmer, the farmer rates the buyer, anyone else → 403. Stored on `rating.buyerToFarmer` / `rating.farmerToBuyer`. | buyer / farmer |
 | GET | `/purchases/{id}/invoice` | `{ purchaseId, number: "INV-XXXXXXXX-YYMM", issuedAt }`; 404 `INVOICE_NOT_FOUND` until the purchase is completed (via full QC or dispute resolution). | buyer or farmer |
+| POST | `/purchases/{id}/disputes` | Trade party raises formal dispute on purchase (damages, weight discrepancy, no-show). Freezes escrow. Body: `{ category, reason, requestedAmountPaise? }`. (P0-10) | directBuyer, farmer, seller |
+| GET | `/purchases/{id}/disputes` | List disputes filed on a purchase with status and evidence. (P0-10) | directBuyer, farmer, seller |
+| POST | `/purchases/{id}/disputes/{dispute_id}/evidence` | Upload photo or weighbridge slip evidence for active dispute. (P0-10) | directBuyer, farmer, seller |
+| GET | `/purchases/{id}/invoice.pdf` | Download official GST tax invoice PDF with GSTIN, CGST/SGST/IGST breakdown and digital seal. (P1-21) | directBuyer, farmer, seller |
+| POST | `/jobs/demands/standing/run` | Scheduled job: planner generating periodic purchase orders from recurring standing demands. (P1-22) | cron, admin |
+| GET | `/direct-buyer/statements` | Monthly procurement and spend statement export (PDF/JSON). `?month=&format=pdf|json`. (P2-15) | directBuyer |
+| GET | `/direct-buyer/farmers/{farmer_id}/reliability` | Farmer supplier reliability profile: fulfillment rate, QC grade pass rate, dispute history. (P2-16) | directBuyer |
+| GET | `/direct-buyer/farmers/{farmerId}` | Public farmer profile card with address, active crops, and verified supplier badge. | directBuyer |
+| GET | `/direct-buyer/buyers/{buyerId}` | Public direct buyer profile card with corporate credentials, monthly demand, and payment reputation. | all |
+| GET | `/direct-buyer/farmer/home` | Farmer direct buyer procurement home: matched open demands, active B2B orders. | farmer |
+| GET | `/direct-buyer/dashboard` | Buyer home: today's live demands, pending quotes, active deliveries, upcoming fulfillment dates. | directBuyer |
+| GET | `/direct-buyer/farmer/ratings` · GET `/direct-buyer/buyer/ratings` | Two-sided trade ratings and counterparty reviews. | directBuyer, farmer |
+| POST | `/direct-buyer/standing-orders` · GET `/direct-buyer/standing-orders` | Create or list recurring procurement standing orders (e.g. 5 MT weekly onions). | directBuyer |
+| PUT | `/direct-buyer/standing-orders/{id}` · POST `/direct-buyer/standing-orders/{id}/close` | Edit or terminate standing order schedule. | directBuyer |
+| GET | `/demands/browse` | Live public feed of all open buyer purchase requirements enriched with buyer credentials. | all |
+| GET | `/demands/standing` | Live public feed of open recurring standing demands. | all |
+| GET | `/market/lots/{id}/offers` | Farmer lot bid board: all incoming buyer offers ranked by net rate and counterparty rating. | farmer |
+| GET | `/purchases/{id}/receipt` | Customer transaction receipt with trade quantity, rate, and platform fee breakdown. | all |
+| GET | `/purchases/{id}/chat-room` | Secure in-app negotiation chat thread unlocked upon order confirmation. | all |
+| GET | `/direct-buyer/ratings` | Public buyer ratings and corporate trade reviews. | all |
+| GET | `/direct-buyer/farmer-posts` | Farmer harvest lot posts matching buyer's procurement criteria. | directBuyer |
+| GET | `/direct-buyer/commission-structure` | Platform fee structure and volume discount tiers for bulk B2B trade. | directBuyer |
+| POST | `/chat/direct` | Open a 1:1 chat room with trade counterparty resolved from booking, lot, or demand. | all |
 
 **Purchase status map** (mirrors the order lifecycle): `confirmed → advancePaid → pickupScheduled → inTransit → delivered → completed`, with `delivered → qcDisputed → completed` as the dispute branch; `cancelled` is terminal from `confirmed`/`advancePaid`/`pickupScheduled`. Money movement is recorded in the `payments` ledger (advance/balance/full), not as statuses.
 
@@ -511,6 +693,7 @@ Referral flow: invite = +100 coins immediately (reason `referral`). Registering 
 | GET | `/notifications?page=&pageSize=` | Own notifications (`userId ==` caller) from collection `notifications`, `createdAt` desc, paged envelope `{ data: [{ id, userId, title, body, type, read, createdAt }], page, pageSize, total }`; empty → 200 `{ data: [] }`; `pageSize` default 20. | all |
 | PUT | `/notifications/read-all` | Mark all own **unread** notifications read (`read: true` + `readAt`) → `{ updated: n }`. | all |
 | POST | `/notifications/{id}/read` | Mark one own notification read → `{ ok: true }`; **404 `NOT_FOUND`** when the doc is missing or belongs to another user. | all |
+| POST | `/notifications/read` | Mark batch of notifications read via ID list. Body: `{ ids: string[] }`. | all |
 | POST | `/notifications` | Create a notification (used by backend modules and tests). Body `{ userId, title, body, type? = "general" }` (title/body required) → 201, id `ntf_` + hex, `read: false`, `createdAt` now. | all |
 | GET | `/women/garden-plans` | Nutrition-garden plan recommendations: `{ data: [{ id, category, items: [{ name, vernacularName, nutrition, companion, daysToHarvest }] }] }` — categories Leafy Greens (पालक/मेथी/धनिया/तांदूळ), Vegetables (टमाटर/गाजर/वांगी/भेंडी), Trees/Perennials (शेवगा/पपई/पेरू/कढीपत्ता). | all |
 | GET | `/women/backyard-livestock` | Backyard livestock health tracker sample: `{ data: [{ id, animal, vernacularName, count, yieldLabel, vaccine, vaccineDue }] }` (cow/गाय, buffalo/म्हैस, hen/कोंबडी, goat/शेळी/बकरी); `vaccineDue` is an ISO date computed relative to today. | all |
@@ -543,6 +726,14 @@ Referral flow: invite = +100 coins immediately (reason `referral`). Registering 
 | POST | `/farmer/deals/{id}/messages` | Counter-offer / reply. Body `DealMessageCreate` but `senderRole` is forced to `seller`, `senderId` = caller, `senderName` from the user doc → 201; notifies the broker (counter-offer includes `amountOffer` when present). 404 unless matched. | farmer |
 | POST | `/farmer/deals/{id}/respond` | One-tap decision. Body `{ action: accept\|decline, reason? }`. `accept` only from `contract_issued` → `status: accepted` (sets `sellerUid` when absent); `decline` from `negotiating`/`contract_issued` → `status: cancelled` + `cancelReason`. Any other current status → **409 `INVALID_STATE`**. Accept notifies the broker. → 200 full deal doc; 404 `DEAL_NOT_FOUND` unless matched. | farmer |
 | POST | `/farmer/deals/{id}/evidence` | Same as the broker evidence endpoint (multipart `file` + `kind`), ownership = phone match (404 `DEAL_NOT_FOUND` otherwise). | farmer |
+| POST | `/broker/deals/{id}/release-payout` | Release deal escrow payout to farmer following 48h delivery inspection window. (P0-5) | broker, admin |
+| GET | `/broker/deals/{id}/contract` | Legal e-contract document and digital signature audit log. (P0-6) | broker, farmer |
+| POST | `/farmer/deals/{id}/accept` | Farmer e-signs and accepts broker deal terms with MPIN authorization. Body: `{ mpin, signatureData?, consentTimestamp? }`. (P0-6) | farmer |
+| POST | `/broker/deals/{id}/milestones` · GET `/broker/deals/{id}/milestones` | Add / track deal delivery milestone events (`departed | arrived | loading | in_transit | weighed | delivered`). (P1-9) | broker, farmer |
+| POST | `/broker/deals/{id}/chat-room` | Open dedicated in-app deal chat thread between broker and farmer seller. (P1-10) | broker, farmer |
+| POST | `/farmer/deals/{id}/disputes` · GET `/farmer/deals/{id}/disputes` | Farmer raises dispute on deal (payment delay, weighbridge mismatch). Freezes escrow payout. (P1-11) | farmer |
+| PUT | `/broker/deals/{id}/vehicle` | Assign transport vehicle details with masked license plate storage (`MH 12 •• 3456`). Body: `{ vehicleType, vehicleNumber, driverName }`. (P1-12) | broker |
+| GET | `/broker/deals/{id}/receipt` | Downloadable GST transaction receipt PDF for farmer and broker records. (P2-8) | broker, farmer |
 
 Deal status map: `negotiating → contract_issued → accepted → in_transit → completed` with `cancelled` terminal (`decline` from `negotiating`/`contract_issued`, broker DELETE anytime). Settlements for the broker role aggregate completed deals by `grossAmount` (see §21 `/jobs/settlements/run`, `/broker/settlements`).
 
@@ -622,6 +813,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | POST | `/admin/auth/users/{uid}/reset-mpin` | Admin force MPIN reset — issues a 6-digit `mpinResetOtp` on the user doc. (console path) | superadmin, compliance_officer |
 | POST | `/admin/auth/users/{uid}/revoke-sessions` | Revoke all refresh tokens and sessions for a user. (console path) | superadmin, compliance_officer |
 | PUT | `/admin/auth/users/{uid}/status` | Update account status (`active`/`suspended`/`locked`/`banned`; 409 `STATUS_ALREADY_SET`). (alias of `POST /admin/users/{uid}/status`) | admin |
+| PUT | `/admin/auth/security-policy` | Configure global auth security flags: 2FA/MPIN mandatory thresholds, session timeout. (P1-37) | superadmin |
 
 ### 28.2 User Management & Personas (SOP-02)
 
@@ -632,6 +824,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | PUT | `/admin/users/{uid}/status` | Set user account status (same writer as §28.1; alias of `POST /admin/users/{uid}/status`). | admin |
 | PUT | `/admin/users/{uid}/personas` | Manage linked personas — add/remove + role-profile upserts; ≥1 persona must remain (409 `LAST_PROFILE`, 409 `PROFILE_ALREADY_LINKED`). | admin |
 | GET | `/admin/users/{uid}/farm-map` | Farm boundary polygon coordinates + land plots + imported land records. | admin |
+| GET | `/admin/users/export` | Export full user roster with persona breakdowns for government compliance audits (CSV/Excel). (P2-25) | superadmin |
 
 ### 28.3 KYC Verification & Vault (SOP-03)
 
@@ -650,6 +843,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | POST | `/admin/rates/{id}/approve` | Approve rate update — goes live on the mobile vyapari feed (`vyapari_rates`, cache invalidated). | admin |
 | POST | `/admin/rates/{id}/reject` | Reject rate update with explanation back to the trader. | admin |
 | POST | `/admin/mandi/sync` | Trigger manual Agmarknet/eNAM sync job; records a `cron_job_logs` row either way. | admin |
+| POST | `/admin/mandi/rates` | Manual mandi modal rate entry or override for mandis with broken government feeds. Body: `{ mandiId, commodity, modalPrice, arrivals }`. (P1-31) | admin |
 
 ### 28.5 Produce Lots & B2B Procurement (SOP-05)
 
@@ -668,6 +862,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | PUT | `/admin/marketplace/products/{id}` | Update product pricing and inventory (422 when discounted price > MRP). | admin |
 | GET | `/admin/marketplace/orders` | List orders with delivery (`status`) and payment (`paymentStatus` from refund/Razorpay flags) columns. | admin |
 | POST | `/admin/marketplace/orders/{id}/refund` | Trigger refund for a cancelled order (Razorpay when paid online, manual otherwise; > ₹10,000 routes via maker-checker). (alias of `POST /admin/orders/{id}/refund`) | admin |
+| POST | `/admin/marketplace/products/{id}/certificates` · GET `/admin/marketplace/products/{id}/certificates` | Upload and verify Agmark/Ministry QR authenticity certificates for input products. (P1-36) | admin |
 
 ### 28.7 Buyer Contracts & Escrow (SOP-07)
 
@@ -686,6 +881,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | POST | `/admin/transport/vehicles/{id}/verify` | Approve vehicle commercial papers. (console path) | superadmin, operations_lead |
 | GET | `/admin/transport/bookings` | List active and historical bookings with lot snapshot enrichment, newest first. | admin |
 | PUT | `/admin/transport/bookings/{id}/status` | Manual intervention in trip status — same `ALLOWED_TRANSITIONS` machine and side effects as the transporter flow (waypoint log, chat unlock on accept, POD + two-way rating prompts on delivery, party notifications; 409 `ILLEGAL_TRANSITION`). | admin |
+| GET | `/admin/transport/pricing-rules` · PUT `/admin/transport/pricing-rules` | Global transport pricing engine rules: base fares, per-km slab rates by vehicle class and district, surge bands. (P1-32) | superadmin |
 
 ### 28.9 Equipment & Slot Management (SOP-09)
 
@@ -695,6 +891,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | PUT | `/admin/equipment/{id}/verify` | Approve machine for public booking — flips `docStatus: verified` so it appears in the farmer browse surface (409 `ALREADY_VERIFIED`). | admin |
 | GET | `/admin/equipment/bookings` | List slot bookings and waitlist entries (`status=waitlist` for waitlist only, `all` for both). | admin |
 | DELETE | `/admin/equipment/bookings/{id}` | Admin force cancellation with auto-refund of paid amounts — releases the slot, promotes the waitlist head, notifies farmer + owner (409 when already cancelled). | admin |
+| GET | `/admin/equipment/damage-claims` | Machinery damage reports queue and security deposit forfeiture review console. (P1-8) | admin |
 
 ### 28.10 Land Leasing & Disputes (SOP-10)
 
@@ -722,6 +919,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | GET | `/admin/chatbot/handoffs` | Queue of escalated expert handoff tickets with 24-h SLA due/breached flags. | admin |
 | POST | `/admin/chatbot/handoffs/{id}/assign` | Assign agronomist to a support thread (queued/assigned only, 409 `TICKET_NOT_ASSIGNABLE`); FCM to the farmer. | admin |
 | PUT | `/admin/chatbot/prompt-config` | Update LLM system prompt and parameters (`platform_config/chatbot`) — always requires a second admin. (console path) | superadmin, content_moderator |
+| GET | `/admin/chatbot/satisfaction` | Chatbot conversation satisfaction ratings, CSAT analytics, and expert handoff metrics. (P2-31) | admin |
 
 ### 28.13 Farm Diary & P&L Oversight (SOP-13)
 
@@ -756,6 +954,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | GET | `/admin/land-records/status` | Revenue-portal gateway health and latency (`gateway_health` probe rows). (alias of `GET /admin/land-records/health`) | superadmin, operations_lead, agronomist |
 | POST | `/admin/land-records/seed` | Seed verified village 7/12 records into the `land_records_712` cache. | superadmin, operations_lead |
 | GET | `/admin/land-records/audit-log` | Audit trail of user 7/12 imports (from `users/{uid}.landRecords`). | superadmin, operations_lead, agronomist |
+| GET | `/admin/land-records/audit-log/export` | Export land ownership 7/12 verification logs for state revenue department reporting. (P2-26) | superadmin |
 
 ### 28.17 Water Resources & Irrigation (SOP-17)
 
@@ -764,6 +963,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | PUT | `/admin/water/canal-schedule` | Update canal rotation timetable for a canal division (upsert into `canal_schedules`). | superadmin, operations_lead |
 | POST | `/admin/water/groundwater-readings` | Batch ingest CGWB station water-table readings (`cgwb_stations`, one latest doc per station). | superadmin, operations_lead |
 | PUT | `/admin/water/subsidy-rules` | Update PMKSY subsidy parameters (`platform_config/pmksy` admin-owned override store). | superadmin, operations_lead |
+| GET | `/admin/water/usage-stats` | Cluster-wide agricultural water usage and irrigation efficiency reporting. (P2-28) | superadmin |
 
 ### 28.18 FPO Verification & Pool Management (SOP-18)
 
@@ -773,6 +973,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | POST | `/admin/fpo/verify/{id}` | Approve FPO credential verification — sets `status` + farmer-facing `verification_status`. (alias of `POST /admin/fpos/{id}/verify`) | admin |
 | POST | `/admin/fpo/pools` | Create platform-sponsored group-buy pool (`fpo_pools`). | admin |
 | PUT | `/admin/fpo/pools/{id}/status` | Close pool / change status (`open`/`closed`/`cancelled`) — closing generates a supplier purchase-order ref. | admin |
+| GET | `/admin/fpo/{id}/financials` | FPO financial oversight: annual turnover, patronage dividends, collective maintenance funds. (P2-29) | superadmin |
 
 ### 28.19 Livestock, Vet & Dairy Network (SOP-19)
 
@@ -782,6 +983,8 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | POST | `/admin/livestock/vets/{id}/verify` | Verify vet credentials/license — sets the WS-06 `credentialStatus` the vet workspace gates on. (alias of `POST /admin/vets/{id}/verify`) | admin |
 | GET | `/admin/livestock/gaushalas` | List Gaushalas with computed offerings and panchagavya products joined. | admin |
 | GET | `/admin/livestock/orders` | Audit dairy + manure orders across the network, each row tagged `source: milk_sale\|manure\|dairy_product`. | admin |
+| POST | `/admin/nurseries/{id}/verify` | Approve registered plant nursery for certified government sapling distribution. (P1-35) | superadmin |
+| GET | `/admin/livestock/dairy/rate-charts` | Oversight of FAT/SNF rate charts and 80G tax receipt issuance across milk hubs. (P2-34) | superadmin |
 
 ### 28.20 Content CMS, Live Channels & Workshops (SOP-20)
 
@@ -800,6 +1003,8 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | GET | `/admin/tree/requests` | List pending sapling requests — collection-group scan over top-level + per-user `sapling_requests`. | admin |
 | PUT | `/admin/tree/requests/{id}/status` | Approve, dispatch, or reject a request — `pending→approved\|rejected`, `approved→dispatched\|rejected` (409 `INVALID_STATUS_TRANSITION`; rejection reason required). | admin |
 | GET | `/admin/tree/ngos` | Manage partner NGO directory (`ngos`). | admin |
+| GET | `/admin/tree/requests/{id}/survival` | Field sapling survival tracking and geotagged verification records. (P2-32) | admin |
+| PUT | `/admin/biofuel-trees/{id}` | Update commercial biofuel tree economics, yield factors, and buyback prices. (P2-33) | superadmin |
 
 ### 28.22 Gamification Economy & Referrals (SOP-22)
 
@@ -809,6 +1014,7 @@ Contract status map (targeted): `offered → active` (farmer MPIN accept) with `
 | POST | `/admin/gamification/rewards` | Add new voucher to the rewards store (`reward_coupons`). | admin |
 | GET | `/admin/referrals/audit` | Referral fraud detection report — duplicate invited phones (device farms), top referrers, open fraud holds, coupons. | admin |
 | DELETE | `/admin/ratings/{id}` | Remove abusive or defamatory rating (soft delete) and re-curate the provider's public aggregate. | admin |
+| GET | `/admin/platform-config/coins` · PUT `/admin/platform-config/coins` | AgriCoins economy configuration: earn rates, daily limits, redemption ceilings, tiers. (P1-34) | superadmin |
 
 ### 28.23 Climate Resilience & Cold Storage (SOP-23)
 
@@ -832,6 +1038,7 @@ Both 24-* SOP files are served from the real `shg_groups` / `gruh_udyog_*` / `ho
 | GET | `/admin/women/shg` | List registered SHGs and corpus totals, with `totals` block (counts + corpus/loan-fund paisa). | admin |
 | POST | `/admin/women/shg/verify` | Approve SHG official registration — body `{shgId}`; same verify writer as the 24a path. | admin |
 | GET | `/admin/women/enterprises` | Review home enterprise product lines (`home_enterprises`) with owner names and profit totals. | admin |
+| GET | `/admin/women/impact-report` | Socio-economic impact report on women-led micro-enterprises and SHG bank corpus. (P2-30) | superadmin |
 
 ### 28.25 Financial Settlements & Automated Jobs (SOP-25)
 
@@ -844,6 +1051,10 @@ The two 25-* SOP files are identical; all paths are the phase-07 settlement cons
 | POST | `/admin/jobs/settlements/run` | Trigger manual settlement batch run (default last ISO week). (console path) | superadmin, finance_admin |
 | GET | `/admin/platform-config/commissions` | Read current commission rates (`platform_config/settlements` — transport/equipmentRental/broker %). (console path; read-side companion to the SOP-listed PUT) | superadmin, finance_admin |
 | PUT | `/admin/platform-config/commissions` | Update commission rates. (console path) | superadmin, finance_admin |
+| POST | `/admin/disputes/{id}/settlement` | Admin dispute resolution ruling with automated money movement: split payout, refunds, penalties. (P0-15) | superadmin |
+| POST | `/admin/settlements/holds` | Place suspicious transaction or pending settlement on legal administrative hold. Body: `{ lineId, reason }`. (P1-38) | superadmin |
+| GET | `/admin/platform-config/penalties` · PUT `/admin/platform-config/penalties` | Penalty matrix configuration and SLA forfeiture rules. (P1-33) | superadmin |
+| GET | `/admin/reports/financial` | Comprehensive financial reporting: GST invoices, TDS deductions, platform commission ledger. (P2-27) | superadmin |
 
 ### 28.26 System Config, Broadcasts & Moderation (SOP-26)
 
@@ -855,6 +1066,7 @@ The two 25-* SOP files are identical; all paths are the phase-07 settlement cons
 | GET | `/admin/reports` | List reported users and content for moderation (`user_reports` queue, status/module filters). | admin |
 | POST | `/admin/reports/{id}/resolve` | Resolve report with `warning`/`ban`/`dismiss` — `ban` suspends the reported user account (409 `REPORT_ALREADY_RESOLVED`). | admin |
 | GET | `/admin/analytics/summary` | Global platform KPI dashboard summary — users/personas, marketplace + e-market GMV, active leases, pending KYC/claims/settlements, transport bookings, open reports; no hardcoded constants. | admin |
+| GET | `/admin/notification-templates` · PUT `/admin/notification-templates` | Notification template CMS: edit push/SMS message copy and language localization. (P2-35) | superadmin |
 
 ### 28.27 Instructor Courses (SOP-27)
 
@@ -878,6 +1090,213 @@ From `features/farm_e-market_customer.md` §D.1 — chat threads are created ser
 - **None.** Every path listed in the SOP §5 tables (SOP-01…SOP-27) is implemented — all 111 are documented above (112 rows: §28.25 also lists the read-side `GET /admin/platform-config/commissions` companion to the SOP-listed PUT); nothing had to be omitted.
 - Doc-vs-code collection naming (same behaviour, real backing collections): SOP-05 `procurements` → `purchases`; SOP-11 `advisory_scans` → `disease_scans`; SOP-16 import audit reads `users/{uid}.landRecords` (the doc's `imported_records` subcollection has no writer); both SOP-24 families read `shg_groups` (the 24a `women_shgs` collection has no writer); SOP-13 aggregates `users/{uid}/diary_entries`.
 - Maker-checker thresholds differ by module: claim payouts > ₹50,000 (`PAYOUT_DUAL_SIGNOFF_PAISE`, SOP-15) vs the platform-wide > ₹10,000 (`MAKER_CHECKER_THRESHOLD_PAISE`) used by order refunds, penny-drop overrides and coin adjustments.
+
+---
+
+## 29. Courses & Instructor Hub (Krishi Gurukul)
+
+> Training, agronomy masterclasses, and vocational farming workshops. Instructors create courses (`courses`), manage student enquiry funnels (`course_enquiries`), schedule batch sessions (`teacher_batches`), assign homework (`course_assignments`), issue verified certificates, and receive weekly automated settlements. Farmers enroll, access syllabus and video lessons, submit field photos for homework grading, join doubt-solving chat rooms, and cancel or dispute bookings with policy-governed escrow refunds.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/courses` | Search / browse course catalog. Filter by `?category=`, `?language=`, `?mode=online|on-farm|centre-based|hybrid`, `?page=`. | all |
+| POST | `/courses` | Instructor creates course draft. Body: `{ title, vernacularTitle?, category, description?, priceRupees, mode, location?, syllabus[], requirements[] }`. | instructor, teacher |
+| GET | `/courses/{id}` | Course detail view: syllabus, schedule, instructor bio, ratings. | all |
+| GET | `/courses/{id}/curriculum` | Full public lesson-by-lesson curriculum with video durations. | all |
+| GET | `/courses/{id}/progress` | Enrolled farmer's per-course completion status `{ completedLessons[], progressPercent, certificateEligible }`. | farmer, student |
+| POST | `/courses/{id}/chat` | 1:1 doubt-solving chat with the course instructor. | farmer, instructor |
+| GET | `/courses/{id}/reviews` · POST `/courses/{id}/reviews` | Student ratings and testimonials for course. | all |
+| POST | `/courses/{id}/enroll` | Book course seat with gateway payment / AgriCoins voucher. | farmer, student |
+| GET | `/courses/purchases/{id}/contract` | E-contract of confirmed course booking (schedule, location, refund policy). | farmer, instructor |
+| POST | `/courses/purchases/{id}/cancel` | Policy-bound booking cancellation & tiered refund (≥48h: 100%, 24-48h: 50%, <24h: 0%). (P0-9) | farmer, instructor |
+| POST | `/courses/purchases/{id}/disputes` | Student raises formal dispute on course booking (freeze instructor payout). Body: `{ category, reason, evidenceUrls[] }`. (P0-11) | farmer, student |
+| POST | `/courses/{id}/enquiries` | Farmer submits structured enquiry intake for custom workshop/training. Body: `{ questionTemplate, details }`. (P1-15) | farmer |
+| POST | `/teachers/enquiries/{id}/counter` | Instructor offers customized quote / fee counter with TTL expiry. Body: `{ quotedFeeRupees, note, ttlHours }`. (P1-16) | instructor |
+| POST | `/teachers/enquiries/{id}/accept` | Farmer accepts negotiated training enquiry counter-offer before TTL expires. (P1-16) | farmer |
+| POST | `/teachers/batches/{id}/sessions` | Schedule training session date/time for course batch. Body: `{ title, sessionDate, startTime, endTime, venueOrLink }`. (P1-17) | instructor |
+| POST | `/sessions/{id}/check-in` | Farmer QR self check-in / attendance confirmation for training session. Body: `{ qrCodeToken }`. (P1-17) | farmer, student |
+| POST | `/courses/{id}/assignments` | Instructor posts field assignment / task. Body: `{ title, instructions, maxScore?, deadline }`. (P1-18) | instructor |
+| POST | `/assignments/{id}/submissions` | Farmer submits assignment with field photos (1–3 images). Body: `{ photos[], notes? }`. (P1-18) | farmer, student |
+| PUT | `/teachers/availability` | Instructor sets working availability, blackout calendar, and 1-on-1 advisory slots. Body: `{ blackoutDates[], oneOnOneSlots[] }`. (P1-19) | instructor |
+| POST | `/teachers/certificates/{id}/revoke` | Revoke issued course completion certificate with reason code. (P1-20) | instructor, admin |
+| GET | `/instructor/settlements` | Instructor periodic payout ledger with gross course fees, platform deductions, and UTR transfer refs. (P2-14) | instructor |
+| GET | `/teachers/{id}/card` | Public instructor credential card (verified credentials, students taught, rating). | all |
+| POST | `/teachers/me/credentials` | Upload teaching qualification certificates and domain experience letters. | instructor |
+| GET | `/teachers/home` | Instructor dashboard: active batches, enrolled students, pending assignments to grade. | instructor |
+| GET | `/teachers/payments/history` | Per-booking payment transactions ledger from course purchases. | instructor |
+| GET | `/teachers/commission-structure` | Transparent view of platform commission tiers and payout schedules. | instructor |
+| GET | `/teachers/feedback` | All student reviews and feedback received across all instructor courses. | instructor |
+| GET | `/teachers/students/{studentId}` | Enrolled student profile, course progress, submitted assignments, and certification history. | instructor |
+| POST | `/teachers/chat/open` | Open dedicated 1:1 mentorship and doubt-solving window with enrolled student. | instructor |
+| GET | `/teachers/chat/rooms` | List all active student mentorship chat rooms with unread message counts. | instructor |
+| GET | `/teachers/certificates/{certificateId}/download` | Download GyanSetu / Agrovercity co-branded course certificate with SHA-256 tamper-evident hash. | public |
+| GET | `/teachers/earnings` | Instructor gross/net earnings ledger itemized by course and scheduled payout dates. | instructor |
+| GET | `/teachers/certificates/verify/{certificateId}` | Public certificate verification endpoint for employers and third parties. | public |
+
+---
+
+## 30. Dudh Dairy & Milk Seller (Household Milk Subscription & Daily Notebook)
+
+> Digital diary ("खाता") and subscription management for local milk producers and micro-dairies delivering daily to retail households and tea stalls. Eliminates paper notebooks with deterministic daily marking (`mdlv_{clientId}_{date}`), automated month-end billing, missed-delivery tracking, and customer balance ledgers.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| POST | `/milk-seller/clients` | Add household milk subscriber. Body: `{ name, phone, address, defaultQuantityLiters, ratePerLiter, deliverySlot: morning|evening, milkType: cow|buffalo|mix }`. | milkSeller |
+| GET | `/milk-seller/clients` | List milk clients with outstanding balance and status filter (`?status=active|archived|all`). | milkSeller |
+| GET | `/milk-seller/clients/{id}` | Client detail: contract terms, recent 10 deliveries, monthly billing summary. | milkSeller |
+| PUT | `/milk-seller/clients/{id}` | Update client terms (rates, quantity, slot, address, active/archived status). | milkSeller |
+| DELETE | `/milk-seller/clients/{id}` | Archive client (preserves historical deliveries and billing statements). | milkSeller |
+| GET | `/milk-seller/clients/{id}/calendar` | Monthly punch-card calendar view (`?month=YYYY-MM`): delivered/missed/holiday days, daily liters, and running total. | milkSeller |
+| POST | `/milk-seller/deliveries` | Record single delivery entry. Body: `{ clientId, date, status: delivered|missed|holiday, quantityLiters?, ratePerLiter?, note? }`. Deterministic update if re-posted. | milkSeller |
+| POST | `/milk-seller/deliveries/bulk` | Mark daily deliveries for entire route in one single batch. Body: `{ date, entries: [{ clientId, status, quantityLiters? }], markUnlistedMissed?: bool }`. (Supports `Idempotency-Key`) | milkSeller |
+| GET | `/milk-seller/deliveries` | Search delivery ledger entries by client, date range, and status. | milkSeller |
+| GET | `/milk-seller/deliveries/{id}` | Single delivery entry detail. | milkSeller |
+| PUT | `/milk-seller/deliveries/{id}` | Correct delivery entry (quantity, rate, status) while preserving audit history. | milkSeller |
+| DELETE | `/milk-seller/deliveries/{id}` | Remove errant delivery entry. | milkSeller |
+| POST | `/milk-seller/bills/generate` | Auto-generate monthly invoice from verified delivery ledger. Body: `{ clientId, month: "YYYY-MM", adjustmentsRupees?: 0 }`. | milkSeller |
+| GET | `/milk-seller/bills` | List generated bills across clients (`?month=&clientId=&status=draft|sent|partial|paid`). | milkSeller |
+| GET | `/milk-seller/bills/{id}` | Full monthly statement itemized by date, missed days, payments received, and prior dues. | milkSeller |
+| POST | `/milk-seller/bills/{id}/send` | Send digital bill to client via SMS / WhatsApp notification. | milkSeller |
+| POST | `/milk-seller/bills/{id}/payments` | Record customer cash/UPI payment. Body: `{ amount, method: cash|upi|bank, paidAt? }`. Auto-updates bill status to `partial` or `paid`. | milkSeller |
+| GET | `/milk-seller/analytics` | Business intelligence: monthly liters produced, revenue collected, collection rate %, client churn. | milkSeller |
+
+---
+
+## 31. Exporter Persona — Global Agri Trade Desk
+
+> End-to-end B2B export workflow for international agri-commodity exporters, trading houses, and overseas buyers. Manages global RFQs (`exporter_rfqs`), export seller quotes (`exporter_quotes`), export contracts (`exporter_orders`), APEDA / FSSAI / phytosanitary compliance documents, customs clearance, and container shipping milestones.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/exporter/profile` · PUT `/exporter/profile` | Exporter enterprise profile: IEC code, APEDA registration, GSTIN, export port, target countries. | exporter |
+| GET | `/exporter/dashboard` | Trade desk dashboard: active RFQs, quotes awaiting acceptance, open shipments, customs holds. | exporter |
+| POST | `/exporter/rfqs` | Create export Request For Quotation. Body: `{ crop, variety, quantityMT, targetPriceUSD?, packaging, destinationPort, incoterms: FOB|CIF|CFR, deliveryDeadline }`. | exporter |
+| GET | `/exporter/rfqs` | Exporter's own RFQs with quote counts and fulfillment progress. | exporter |
+| GET | `/exporter/rfqs/browse` | Public board for verified sellers/FPOs to browse open export purchase requirements. | seller, exporter, fpo |
+| GET | `/exporter/rfqs/{id}` | Detailed RFQ specification sheet and received supplier quotes. | exporter, seller |
+| PUT | `/exporter/rfqs/{id}` · DELETE `/exporter/rfqs/{id}` | Update or close open RFQ. | exporter |
+| POST | `/exporter/quotes` | Supplier / FPO submits quotation against export RFQ. Body: `{ rfqId, ratePerMT, availableQuantityMT, validityDays, incotermsOffered }`. | seller, fpo |
+| GET | `/exporter/quotes` | Quotes received on own RFQs or submitted quotes. | exporter, seller |
+| GET | `/exporter/quotes/{id}` | Quote details and negotiation history. | exporter, seller |
+| POST | `/exporter/quotes/{id}/accept` | Accept quote: auto-creates binding Export Contract Order (`exporter_orders`) and opens escrow. | exporter |
+| POST | `/exporter/quotes/{id}/reject` | Reject quote with reason. | exporter |
+| POST | `/exporter/quotes/{id}/counter` | Single-round counter-offer on export quote rate. | exporter |
+| GET | `/exporter/orders` | Export contracts and container shipment tracker across lifecycle stages. | exporter, seller |
+| GET | `/exporter/orders/{id}` | Complete export order file: packing list, Bill of Lading, phytosanitary certs, container status. | exporter, seller |
+| POST | `/exporter/orders/{id}/advance` | Record Letter of Credit (LC) / bank advance payment. | exporter |
+| POST | `/exporter/orders/{id}/inspection` | Third-party quality inspection report upload (SGS/Bureau Veritas). | exporter, seller |
+| POST | `/exporter/orders/{id}/shipping` | Record ocean shipping dispatch: vessel name, container number, BL number, port of departure. | exporter, seller |
+| POST | `/exporter/orders/{id}/customs` | Record export customs clearance status and shipping bill number. | exporter |
+| POST | `/exporter/orders/{id}/deliver` | Confirm port of destination arrival and container discharge. | exporter |
+| POST | `/exporter/orders/{id}/complete` | Release export escrow payout following final destination acceptance. | exporter |
+| GET | `/exporter/orders/{id}/invoice` | Export commercial invoice and packing list (PDF/JSON). | exporter, seller |
+| GET | `/exporter/contracts/templates` | Standard international trade contract templates (GAFTA, FOSFA, Agrovercity Standard). | exporter |
+| GET | `/exporter/compliance/documents` · POST `/exporter/compliance/documents` | Upload and verify statutory export certificates (APEDA, FSSAI, Phytosanitary, Certificate of Origin). | exporter |
+| GET | `/exporter/analytics` | Export volume by commodity, top destination ports, FX realizations, container transit times. | exporter |
+| POST | `/exporter/rfqs/{id}/close` · POST `/exporter/rfqs/{id}/reopen` | Close or reopen an international export RFQ. | exporter |
+| POST | `/exporter/rfqs/{id}/quotes` · GET `/exporter/rfqs/{id}/quotes` | Submit or review seller quotes with rate, grade, and delivery window. | seller, exporter |
+| GET | `/exporter/quotes/mine` | Seller's submitted quotes across all export RFQs. | seller |
+| POST | `/exporter/orders/{id}/status` | Transition export shipment lifecycle: `confirmed → sourcing → packed → pickedUp → inTransit → customsCleared → delivered`. | exporter |
+| PUT | `/exporter/orders/{id}/shipment` | Assign shipping line, container type (dry/reefer), container numbers, and vessel name. | exporter |
+| POST | `/exporter/orders/{id}/shipment/events` | Record logistics milestone event (`gateIn`, `loaded`, `departed`, `arrived`, `customsHold`, `cleared`). | exporter |
+| POST | `/exporter/orders/{id}/documents` · GET `/exporter/orders/{id}/documents` · DELETE `/exporter/orders/{id}/documents/{docId}` | Upload, review, or remove export compliance documents (commercial invoice, phytosanitary, bill of lading). | exporter, seller |
+| POST | `/exporter/orders/{id}/lc` | Record Letter of Credit (LC) bank guarantee details (LC number, issuing bank, expiry). | exporter |
+| POST | `/exporter/orders/{id}/remittances` | Record international FX remittance (TT/LC/advance wire) against export contract. | exporter |
+| GET | `/exporter/orders/{id}/finance` | Order financial statement: total contract value, supplier payments, pending balances. | exporter |
+| GET | `/exporter/suppliers` · POST `/exporter/suppliers/{sellerId}/save` · DELETE `/exporter/suppliers/{sellerId}/saved` · GET `/exporter/suppliers/saved` | Manage trusted supplier network and browse saved verified exporters. | exporter |
+
+---
+
+## 32. Equipment Rental Hub & Fleet Verification
+
+> Extended machinery rental platform features: owner business verification badges, unverified operator blacklists, preventive maintenance logging, dynamic pricing rules, and custom machinery demand quote responses.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| POST | `/equipment-rental/verification/documents` | Upload business verification credentials (PAN, RC book, tractor chassis photo). | equipmentOwner |
+| GET | `/equipment-rental/verification/status` | Current verification review state and assigned verification badge. | equipmentOwner |
+| GET | `/equipment-rental/badge` | Public verified owner badge payload shown to farmers during machine browsing. | all |
+| POST | `/equipment-rental/blacklist` | Blacklist disruptive or defaulting user from booking owner's fleet. Body: `{ userId, reason? }`. | equipmentOwner |
+| GET | `/equipment-rental/blacklist` | List currently blacklisted farmers / contractors. | equipmentOwner |
+| DELETE | `/equipment-rental/blacklist/{userId}` | Remove user from blacklist. | equipmentOwner |
+| POST | `/equipment-rental/operators` · GET `/equipment-rental/operators` | Manage licensed equipment operators and tractor drivers. | equipmentOwner |
+| PUT | `/equipment-rental/operators/{id}` · DELETE `/equipment-rental/operators/{id}` | Update operator details or remove from fleet. | equipmentOwner |
+| POST | `/equipment-rental/maintenance` · GET `/equipment-rental/maintenance` | Log routine service, oil change, tyre replacement, and machinery repair logs. | equipmentOwner |
+| PUT | `/equipment-rental/maintenance/{id}` · DELETE `/equipment-rental/maintenance/{id}` | Update maintenance entry status or cost. | equipmentOwner |
+| GET | `/equipment-rental/pricing-rules` · PUT `/equipment-rental/pricing-rules` | Configure peak season surge multipliers, weekend rates, and minimum operating hours. | equipmentOwner |
+| POST | `/equipment/{equipment_id}/quote` | Submit custom quotation for machinery rental job. | equipmentOwner |
+| POST | `/equipment-rental/reports` · GET `/equipment-rental/reports` | Report user misconduct, machinery mishandling, or payment default. | equipmentRental |
+| GET | `/equipment-rental/risk/farmers` | Farmer reliability and default-risk signals based on past equipment bookings. | equipmentRental |
+| GET | `/equipment-rental/demand-heatmap` | Regional machinery demand concentration and underserved farm clusters. | equipmentRental |
+| GET | `/equipment-rental/ranking/explain` | Marketplace ranking breakdown and visibility factor audit for own fleet. | equipmentRental |
+| GET | `/equipment-rental/recommendations` | Machine fleet expansion suggestions based on unmet seasonal demand. | equipmentRental |
+| GET | `/equipment-rental/monitoring/bookings` | Real-time monitoring of active machine hours, operator status, and field location. | equipmentRental |
+| GET | `/equipment-rental/settlements` | Weekly rental settlement disbursements, platform deductions, and hold releases. | equipmentRental |
+| GET | `/equipment-rental/commission` | Equipment rental commission policy tiers and seasonal rate cards. | equipmentRental |
+| GET | `/equipment-rental/policies` | Rental platform cancellation, damage liability, and deposit forfeiture rules. | equipmentRental |
+| GET | `/equipment-rental/reminders` | Automated machinery maintenance alerts, RTO road tax renewals, and insurance expiry countdowns. | equipmentRental |
+
+---
+
+## 33. Resale Marketplace (Farm Machinery & Vehicles)
+
+> Secondary market for verified pre-owned agricultural equipment (tractors, combine harvesters, rotavators, power tillers, borewell rigs). Sellers list pre-owned equipment with RC verification, hour-meter photos, and inspection logs. Buyers browse verified listings and submit escrow-backed purchase inquiries.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| POST | `/resale-listings` | Create pre-owned equipment listing. Body: `{ title, machineryType, brand, modelYear, hoursUsed, priceRupees, location, rcAvailable: bool, photos[] }`. | seller, farmer, equipmentOwner |
+| GET | `/resale-listings` | Browse public resale marketplace with machine type, brand, price, and distance filters. | all |
+| GET | `/resale-listings/mine` | Seller's own pre-owned equipment listings and received buyer inquiries. | seller, farmer, equipmentOwner |
+| GET | `/resale-listings/{id}` | Detailed machine listing: mechanical health inspection, tyre life %, service records, RC status. | all |
+| PUT | `/resale-listings/{id}` | Update price, availability status, or description of own resale listing. | seller, farmer, equipmentOwner |
+| DELETE | `/resale-listings/{id}` | Close or delete listing once sold or delisted. | seller, farmer, equipmentOwner |
+| POST | `/resale-listings/{id}/inquire` | Buyer submits formal purchase offer / inspection visit request. Body: `{ offerAmountRupees?, message, preferredInspectionDate? }`. | all |
+| POST | `/resale-listings/{id}/book` | Buyer confirms instant purchase / booking of machinery listing with escrow deposit. | directBuyer, seller, exporter |
+
+---
+
+## 34. WebRTC Audio & Video Calling
+
+> Real-time peer-to-peer audio/video calling infrastructure for Kisan Mitra expert consultations, veterinarian telemedicine, and high-value B2B trade negotiations.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| POST | `/calls/initiate` | Initiate WebRTC call session. Body: `{ calleeId, callType: audio|video, context: consultation|trade|support, refId? }`. Returns `{ callId, iceServers[], signalingRoom }`. | all |
+| POST | `/calls/{call_id}/signal` | Exchange SDP offer/answer and ICE candidate signaling payloads. Body: `{ signalType: offer|answer|candidate, payload }`. | all |
+| POST | `/calls/{call_id}/end` | Terminate call session and log duration. Body: `{ reason: normal|declined|busy|failed }`. | all |
+| GET | `/calls/active` | Check current active incoming or ongoing calls for the authenticated user. | all |
+| GET | `/calls/history` | Historical call log: participants, timestamp, duration seconds, consultation context. | all |
+| GET | `/calls/{call_id}` | Detailed call summary doc with quality metrics and consultation recording reference (if enabled). | all |
+| POST | `/calls` | Context-scoped one-click call trigger (trade, vehicle, or advisory). Handles number proxy masking. | all |
+| POST | `/calls/{id}/answer` · POST `/calls/{id}/decline` | Callee updates ringing call status to ongoing or declined. | all |
+| GET | `/calls` | Call history log with duration and context references. | all |
+
+---
+
+## 35. SaaS Billing & Subscriptions
+
+> Persona plan catalog and recurring SaaS subscription management for enterprise Direct Buyers, large FPOs, Exporters, and high-volume Transporters.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| GET | `/billing/plans` | Catalog of available subscription tiers (`starter`, `pro`, `enterprise`) with feature entitlements. | all |
+| GET | `/billing/subscription` | Current authenticated user/organization subscription status, billing cycle, and usage limits. | all |
+| POST | `/billing/subscription/upgrade` | Upgrade or switch subscription tier with Razorpay recurring mandate or pre-paid order. | all |
+| POST | `/billing/subscription/cancel` | Cancel auto-renewal of subscription at the end of the current billing cycle. | all |
+| GET | `/billing/subscriptions` | Full historical subscription ledger with plan snapshots and renewal states. | all |
+| POST | `/billing/subscribe` | Subscribe to paid plan tier with billing period activation. | all |
+
+---
+
+## 36. AI Power Engines
+
+> Microservice inference endpoints providing specialized agricultural machine learning models: B2B offer scoring, agro-meteorological spray window classification, and regional commodity demand forecasting.
+
+| Method | Endpoint | Description | Roles |
+|---|---|---|---|
+| POST | `/ai-power/trade/offer-score` | ML scoring of trade offers against real-time mandi spreads, distance, and counterparty credit rating. Body: `{ lotId, offerPrice, quantity, counterpartyId }`. Returns `{ attractivenessScore: 0-100, recommendation: accept|counter|reject, fairPricePaise }`. | all |
+| POST | `/ai-power/advisory/spray-window` | Classify optimal pesticide/fungicide spray window based on hourly wind speed, rain probability, and humidity. Body: `{ lat, lng, crop, pesticideCategory }`. Returns `{ windowStatus: optimal|marginal|unsafe, hourlyForecast[] }`. | all |
+| POST | `/ai-power/demand/forecast` | Predict regional mandi arrival surges and buyer demand across 15-day and 30-day horizons. Body: `{ district, crop, horizonDays }`. Returns `{ predictedDemandMT, arrivalTrend: increasing|stable|decreasing, priceConfidenceInterval }`. | all |
 
 ---
 
