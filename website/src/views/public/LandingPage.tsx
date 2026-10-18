@@ -104,6 +104,155 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm10', commodity: 'Groundnut', variety: 'Bold #TG37A', mandi: 'Gondal', state: 'Gujarat', category: 'oilseeds', modalPrice: 6150, msp: 6377, trendPercentage: 1.1, arrivalsQ: 5600 },
 ];
 
+const ParticleNetworkCanvas: React.FC = () => {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    let width = (canvas.width = canvas.parentElement?.clientWidth || window.innerWidth);
+    let height = (canvas.height = canvas.parentElement?.clientHeight || 750);
+
+    const handleResize = () => {
+      if (!canvas) return;
+      width = canvas.width = canvas.parentElement?.clientWidth || window.innerWidth;
+      height = canvas.height = canvas.parentElement?.clientHeight || 750;
+    };
+    window.addEventListener('resize', handleResize);
+
+    const mouse = { x: -1000, y: -1000, radius: 160 };
+    const handleMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    };
+    const handleMouseLeave = () => {
+      mouse.x = -1000;
+      mouse.y = -1000;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+
+    interface Particle {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      radius: number;
+      color: string;
+      alpha: number;
+      glow: number;
+    }
+
+    const palette = [
+      'rgba(52, 211, 153, ', // Emerald
+      'rgba(45, 212, 191, ', // Teal
+      'rgba(251, 191, 36, ', // Amber
+      'rgba(167, 243, 208, ', // Mint
+    ];
+
+    const count = Math.min(Math.floor(width / 16), 85);
+    const particles: Particle[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const r = Math.random() * 2.2 + 1;
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        vx: (Math.random() - 0.5) * 0.7,
+        vy: (Math.random() - 0.5) * 0.7,
+        radius: r,
+        color: palette[Math.floor(Math.random() * palette.length)],
+        alpha: Math.random() * 0.6 + 0.3,
+        glow: Math.random() * 8 + 4,
+      });
+    }
+
+    const maxDistance = 125;
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      // Connect particles to each other
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < maxDistance) {
+            const alpha = (1 - dist / maxDistance) * 0.22;
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(52, 211, 153, ${alpha})`;
+            ctx.lineWidth = 0.85;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Connect particles to mouse
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const dx = mouse.x - p.x;
+        const dy = mouse.y - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < mouse.radius) {
+          const alpha = (1 - dist / mouse.radius) * 0.5;
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(251, 191, 36, ${alpha})`;
+          ctx.lineWidth = 1.2;
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(mouse.x, mouse.y);
+          ctx.stroke();
+        }
+
+        // Particle physics
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
+
+        // Render glowing particle node
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `${p.color}${p.alpha})`;
+        ctx.shadowColor = p.color.includes('251') ? '#fbbf24' : '#34d399';
+        ctx.shadowBlur = p.glow;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full pointer-events-none z-0 opacity-80"
+    />
+  );
+};
+
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { switchPersona, isAuthenticated, user, activePersona } = useAuthStore();
@@ -521,80 +670,11 @@ export const LandingPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-emerald-500 selection:text-white">
-      {/* Sticky Secondary Sub-Nav for Landing Page Quick Navigation */}
-      <div className="sticky top-16 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs hidden md:block">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between text-xs font-semibold">
-          <div className="flex items-center gap-6 overflow-x-auto no-scrollbar py-0.5">
-            <a href="#hero" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <Sprout className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Overview</span>
-            </a>
-            <a href="#mandi-ticker" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-              <span>Live Mandi Radar</span>
-            </a>
-            <a href="#personas-matrix" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-sky-600" />
-              <span>20 Personas Matrix</span>
-            </a>
-            <a href="#core-engines" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-teal-600" />
-              <span>6 Technology Engines</span>
-            </a>
-            <a href="#simulator" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <Calculator className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Farm ROI Simulator</span>
-            </a>
-            <a href="#ai-doctor" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <Bot className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Vision AI Doctor</span>
-            </a>
-            <a href="#compliance" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>National Compliance</span>
-            </a>
-            <a href="#faqs" className="text-slate-600 hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-              <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
-              <span>FAQs</span>
-            </a>
-          </div>
+      {/* 1. HERO SECTION WITH LIVING AGRITECH PARTICLE NETWORK */}
+      <section id="hero" className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-emerald-950 to-slate-900 text-white pt-16 pb-20 lg:pt-20 lg:pb-28">
+        {/* Living Interactive Agritech Particle Canvas */}
+        <ParticleNetworkCanvas />
 
-          <div className="flex items-center gap-2">
-            <Link
-              to={isAuthenticated ? `/${user?.activePersona || activePersona || 'farmer'}` : '/farmer'}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-xs transition-all hover:scale-105"
-            >
-              <span>{isAuthenticated ? 'Open Dashboard' : 'Launch Cockpit'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Active Session Sticky Alert (when user is logged in) */}
-      {isAuthenticated && user && (
-        <div className="bg-emerald-950 border-b border-emerald-800 text-white px-4 py-3 sticky top-16 md:top-[6.5rem] z-20 shadow-md">
-          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-slate-200">
-                Logged in as <strong className="text-white font-black">{user.name}</strong> • Active Role:{' '}
-                <strong className="text-emerald-300 capitalize">{user.activePersona || activePersona}</strong>
-              </span>
-            </div>
-            <Link
-              to={`/${user.activePersona || activePersona || 'farmer'}`}
-              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black flex items-center gap-1.5 shadow-xs transition-all hover:scale-105"
-            >
-              <span>Go to My Dashboard Cockpit</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* 1. HERO SECTION */}
-      <section id="hero" className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-emerald-950 to-slate-900 text-white pt-12 pb-20 lg:pt-16 lg:pb-28">
         {/* Ambient Gradient Glow Orbs */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[700px] h-[700px] bg-emerald-500/15 rounded-full blur-[140px] pointer-events-none" />
         <div className="absolute top-10 left-10 w-96 h-96 bg-teal-500/10 rounded-full blur-[100px] pointer-events-none" />
