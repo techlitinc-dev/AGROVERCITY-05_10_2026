@@ -81,9 +81,9 @@ export const Navbar: React.FC = () => {
         {/* Logo / Brand */}
         <div className="flex items-center gap-3">
           <Link
-            to={isAuthenticated ? `/${activePersona || 'farmer'}` : '/'}
+            to="/"
             className="flex items-center gap-2.5 group"
-            title={isAuthenticated ? 'Go to My Dashboard' : 'Agrovercity OS Home'}
+            title="Agrovercity OS Home"
           >
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
               <Sprout className="w-6 h-6" />

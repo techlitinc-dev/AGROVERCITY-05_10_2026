@@ -106,7 +106,7 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { switchPersona, isAuthenticated } = useAuthStore();
+  const { switchPersona, isAuthenticated, user, activePersona } = useAuthStore();
   const { t } = useI18nStore();
 
   const [mandiPrices, setMandiPrices] = useState<CommodityBenchmark[]>(BENCHMARK_MANDI);
@@ -561,15 +561,37 @@ export const LandingPage: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <Link
-              to="/farmer"
+              to={isAuthenticated ? `/${user?.activePersona || activePersona || 'farmer'}` : '/farmer'}
               className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-xs transition-all hover:scale-105"
             >
-              <span>Launch Cockpit</span>
+              <span>{isAuthenticated ? 'Open Dashboard' : 'Launch Cockpit'}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
       </div>
+
+      {/* Active Session Sticky Alert (when user is logged in) */}
+      {isAuthenticated && user && (
+        <div className="bg-emerald-950 border-b border-emerald-800 text-white px-4 py-3 sticky top-16 md:top-[6.5rem] z-20 shadow-md">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-slate-200">
+                Logged in as <strong className="text-white font-black">{user.name}</strong> • Active Role:{' '}
+                <strong className="text-emerald-300 capitalize">{user.activePersona || activePersona}</strong>
+              </span>
+            </div>
+            <Link
+              to={`/${user.activePersona || activePersona || 'farmer'}`}
+              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black flex items-center gap-1.5 shadow-xs transition-all hover:scale-105"
+            >
+              <span>Go to My Dashboard Cockpit</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* 1. HERO SECTION */}
       <section id="hero" className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-emerald-950 to-slate-900 text-white pt-12 pb-20 lg:pt-16 lg:pb-28">
@@ -608,10 +630,14 @@ export const LandingPage: React.FC = () => {
             {/* Action Buttons */}
             <div className="pt-4 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
               <Link
-                to="/farmer"
+                to={isAuthenticated ? `/${user?.activePersona || activePersona || 'farmer'}` : '/farmer'}
                 className="px-8 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-extrabold text-sm sm:text-base shadow-xl shadow-emerald-950/60 flex items-center gap-2.5 transition-all transform hover:-translate-y-1 hover:shadow-emerald-500/30"
               >
-                <span>Launch Farmer Cockpit</span>
+                <span>
+                  {isAuthenticated
+                    ? `Open ${user?.name ? user.name.split(' ')[0] + "'s" : 'My'} Cockpit`
+                    : 'Launch Farmer Cockpit'}
+                </span>
                 <ArrowRight className="w-5 h-5" />
               </Link>
 
