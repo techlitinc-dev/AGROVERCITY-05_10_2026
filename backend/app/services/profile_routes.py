@@ -153,14 +153,22 @@ ACCESS_MAP: dict[str, set[str]] = {
 }
 
 ACCESS_MAP["transporter"] = ACCESS_MAP["transport"]
+ACCESS_MAP["landlord"] = ACCESS_MAP["farmLandlord"]
+ACCESS_MAP["farm landlord"] = ACCESS_MAP["farmLandlord"]
+ACCESS_MAP["farm_landlord"] = ACCESS_MAP["farmLandlord"]
+ACCESS_MAP["equipmentOwner"] = ACCESS_MAP["equipmentRental"]
 
 DEFAULT_HOME: dict[str, str] = {
     "farmer": "home",
     "farmLandlord": "landlordHome",
+    "landlord": "landlordHome",
+    "farm landlord": "landlordHome",
+    "farm_landlord": "landlordHome",
     "transport": "transportHome",
     "transporter": "transportHome",
     "seller": "sellerHome",
     "equipmentRental": "equipmentOwnerHome",
+    "equipmentOwner": "equipmentOwnerHome",
     "broker": "brokerHome",
     "instructor": "instructorHome",
     "dairyManager": "dairyManagerHome",

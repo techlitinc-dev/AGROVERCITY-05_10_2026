@@ -179,7 +179,7 @@ fi
 
 # --- 2. Backend API ---------------------------------------------------------
 echo "==> Starting backend API on http://localhost:8000 (logs: .run-logs/backend.log)"
-setsid bash -c 'cd "$1" && while true; do .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000; sleep 1; done' \
+setsid bash -c 'cd "$1" && while true; do .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 || true; sleep 1; done' \
   _ "$ROOT/backend" > "$LOG_DIR/backend.log" 2>&1 &
 PIDS+=($!)
 # NOTE: real Firestore — do NOT set FIRESTORE_EMULATOR_HOST here.

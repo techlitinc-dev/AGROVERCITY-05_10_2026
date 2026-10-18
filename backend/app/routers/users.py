@@ -23,6 +23,7 @@ from app.models.user import (
     UserSettingsUpdate,
     UserUpdateRequest,
     VALID_PROFILES,
+    normalize_profile,
 )
 from app.services import consents as consents_service
 from app.services import onboarding_seed
@@ -50,20 +51,25 @@ def _error(status_code: int, code: str, message: str):
 
 
 def require_role(user: dict, *roles: str):
-    active = user.get("activeProfile")
-    if active in roles:
+    raw_active = user.get("activeProfile") or ""
+    active = normalize_profile(raw_active)
+    norm_roles = {normalize_profile(r) for r in roles} | set(roles)
+    if active in norm_roles or raw_active in norm_roles:
         return
     aliases = {
         "transporter": "transport",
         "transport": "transporter",
         "farm_landlord": "farmLandlord",
+        "landlord": "farmLandlord",
+        "farm landlord": "farmLandlord",
         "equipment_owner": "equipmentRental",
+        "equipmentOwner": "equipmentRental",
         "equipmentRental": "equipmentRental",
         "dairy_manager": "dairyManager",
         "milk_seller": "milkSeller",
         "teacher": "instructor",
     }
-    if aliases.get(active) in roles:
+    if aliases.get(raw_active) in norm_roles or aliases.get(active) in norm_roles:
         return
     _error(403, "FORBIDDEN_ROLE", "insufficient role for this action")
 
@@ -264,12 +270,14 @@ async def put_farm_boundary(body: FarmBoundaryRequest, uid: str = Depends(curren
 @router.post("/me/profiles")
 async def link_profile(body: LinkProfileRequest, uid: str = Depends(current_user_id)):
     user = await _require_user(uid)
-    if body.profileType not in VALID_PROFILES:
+    canonical = normalize_profile(body.profileType)
+    if canonical not in VALID_PROFILES and body.profileType not in VALID_PROFILES:
         _error(422, "INVALID_PROFILE_TYPE", "unknown profile type")
     linked = user.get("linkedProfiles", [])
-    if body.profileType in linked:
+    target = canonical if canonical in VALID_PROFILES else body.profileType
+    if target in linked or body.profileType in linked:
         _error(409, "PROFILE_ALREADY_LINKED", "profile already linked")
-    linked.append(body.profileType)
+    linked.append(target)
     user["linkedProfiles"] = linked
     await set_doc("users", uid, user)
     return await _with_role_profiles(user)
@@ -278,17 +286,23 @@ async def link_profile(body: LinkProfileRequest, uid: str = Depends(current_user
 @router.delete("/me/profiles/{profile_type}")
 async def unlink_profile(profile_type: str, uid: str = Depends(current_user_id)):
     user = await _require_user(uid)
+    canonical = normalize_profile(profile_type)
     linked = user.get("linkedProfiles", [])
-    if profile_type not in linked:
+    target = None
+    for candidate in (profile_type, canonical):
+        if candidate in linked:
+            target = candidate
+            break
+    if not target:
         _error(404, "PROFILE_NOT_LINKED", "profile is not linked")
     if len(linked) == 1:
         _error(409, "LAST_PROFILE", "कम से कम एक प्रोफाइल आवश्यक है")
-    linked.remove(profile_type)
+    linked.remove(target)
     user["linkedProfiles"] = linked
-    if user.get("activeProfile") == profile_type:
+    if user.get("activeProfile") in (profile_type, canonical):
         primary = user.get("primaryProfile")
         user["activeProfile"] = primary if primary in linked else linked[0]
-    if user.get("primaryProfile") == profile_type:
+    if user.get("primaryProfile") in (profile_type, canonical):
         user["primaryProfile"] = linked[0]
     await set_doc("users", uid, user)
     return await _with_role_profiles(user)
@@ -363,17 +377,20 @@ async def put_my_consents(body: ConsentsIn, uid: str = Depends(current_user_id))
 @router.post("/me/profiles/{profile_type}/activate")
 async def activate_profile(profile_type: str, uid: str = Depends(current_user_id)):
     user = await _require_user(uid)
+    canonical = normalize_profile(profile_type)
     linked = user.setdefault("linkedProfiles", [])
-    if profile_type not in linked:
-        if profile_type in VALID_PROFILES:
-            linked.append(profile_type)
+    if profile_type not in linked and canonical not in linked:
+        if canonical in VALID_PROFILES or profile_type in VALID_PROFILES:
+            target = canonical if canonical in VALID_PROFILES else profile_type
+            linked.append(target)
         else:
             _error(404, "PROFILE_NOT_LINKED", "profile is not linked")
-    user["activeProfile"] = profile_type
+    target_active = canonical if (canonical in linked or canonical in VALID_PROFILES) else profile_type
+    user["activeProfile"] = target_active
     await set_doc("users", uid, user)
     return {
-        "activeProfile": profile_type,
-        "defaultHomeRoute": DEFAULT_HOME[profile_type],
+        "activeProfile": target_active,
+        "defaultHomeRoute": DEFAULT_HOME.get(target_active, DEFAULT_HOME.get(profile_type, "home")),
         "user": user,
     }
 
@@ -381,9 +398,16 @@ async def activate_profile(profile_type: str, uid: str = Depends(current_user_id
 @router.put("/me/profiles/{profile_type}/primary")
 async def set_primary_profile(profile_type: str, uid: str = Depends(current_user_id)):
     user = await _require_user(uid)
-    if profile_type not in user.get("linkedProfiles", []):
+    canonical = normalize_profile(profile_type)
+    linked = user.get("linkedProfiles", [])
+    target = None
+    for candidate in (profile_type, canonical):
+        if candidate in linked:
+            target = candidate
+            break
+    if not target:
         _error(404, "PROFILE_NOT_LINKED", "profile is not linked")
-    user["primaryProfile"] = profile_type
+    user["primaryProfile"] = target
     await set_doc("users", uid, user)
     return await _with_role_profiles(user)
 
@@ -393,13 +417,15 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
     """P2-1 (endpoints.md §2): Persona home payload for the active/chosen profile
     (metric pills, quick actions, live activity list)."""
     user = await _require_user(uid)
-    if profile_type not in VALID_PROFILES:
+    canonical = normalize_profile(profile_type)
+    if canonical not in VALID_PROFILES and profile_type not in VALID_PROFILES:
         _error(422, "INVALID_PROFILE_TYPE", f"unknown profile type '{profile_type}'")
 
+    ptype = canonical if canonical in VALID_PROFILES else profile_type
     pills = []
     quick_actions = []
 
-    if profile_type == "farmer":
+    if ptype == "farmer":
         lots = await query("market_lots", [("farmerId", "==", uid)], limit=20)
         pills = [
             {"label": "Active Lots", "value": len([l for l in lots if l.get("status") == "open"])},
@@ -411,7 +437,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "check_mandi", "title": "Mandi Rates / मंडी भाव", "route": "/mandi"},
             {"id": "book_tractor", "title": "Book Equipment / मशीन बुक करें", "route": "/equipment"},
         ]
-    elif profile_type == "farmLandlord":
+    elif ptype in ("farmLandlord", "landlord", "farm landlord"):
         plots = await query(f"users/{uid}/land_plots", limit=50)
         pills = [
             {"label": "Plots Owned", "value": len(plots)},
@@ -423,7 +449,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "lease_requests", "title": "Lease Requests / पट्टा अनुरोध", "route": "/land/requests"},
             {"id": "view_712", "title": "7/12 Records / 7/12 देखें", "route": "/land-records"},
         ]
-    elif profile_type == "transporter":
+    elif ptype in ("transporter", "transport"):
         pills = [
             {"label": "Active Trips", "value": 1},
             {"label": "Wallet Balance", "value": "₹14,500"},
@@ -434,7 +460,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "my_trips", "title": "My Trips / मेरी यात्राएं", "route": "/transport/trips"},
             {"id": "payout", "title": "Withdraw Balance / पैसे निकालें", "route": "/transport/wallet"},
         ]
-    elif profile_type == "seller":
+    elif ptype == "seller":
         pills = [
             {"label": "Today's Orders", "value": 5},
             {"label": "Active Products", "value": 12},
@@ -445,7 +471,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "team", "title": "Team Accounts / टीम सदस्य", "route": "/seller/team"},
             {"id": "gst_report", "title": "GST Invoices / टैक्स रिपोर्ट", "route": "/seller/gst"},
         ]
-    elif profile_type == "broker":
+    elif ptype == "broker":
         pills = [
             {"label": "Active Deals", "value": 3},
             {"label": "Escrow Held", "value": "₹1,85,000"},
@@ -455,7 +481,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "create_deal", "title": "New Deal / नया सौदा", "route": "/broker/deals/new"},
             {"id": "deal_chat", "title": "Deal Messages / संदेश", "route": "/broker/messages"},
         ]
-    elif profile_type == "dairyManager":
+    elif ptype == "dairyManager":
         pills = [
             {"label": "Today's Milk", "value": "1,420 L"},
             {"label": "Avg FAT", "value": "4.2%"},
@@ -465,7 +491,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "record_collection", "title": "Record Milk / दूध संकलन", "route": "/dairy/collect"},
             {"id": "rate_chart", "title": "Rate Chart / दर सूची", "route": "/dairy/rate-chart"},
         ]
-    elif profile_type == "teacher":
+    elif ptype in ("teacher", "instructor"):
         pills = [
             {"label": "Enrolled Students", "value": 48},
             {"label": "Active Batches", "value": 2},
@@ -475,7 +501,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "new_session", "title": "Schedule Class / सत्र बनाएं", "route": "/teacher/sessions/new"},
             {"id": "enquiries", "title": "Student Enquiries / पूछताछ", "route": "/teacher/enquiries"},
         ]
-    elif profile_type == "directBuyer":
+    elif ptype == "directBuyer":
         pills = [
             {"label": "Standing Demands", "value": 2},
             {"label": "Active Demands", "value": 4},
@@ -485,7 +511,7 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
             {"id": "post_demand", "title": "Post Demand / मांग दर्ज करें", "route": "/demands/new"},
             {"id": "standing_order", "title": "Standing Order / आवर्ती मांग", "route": "/direct-buyer/standing"},
         ]
-    elif profile_type == "equipmentRental":
+    elif ptype in ("equipmentRental", "equipmentOwner", "equipment_owner"):
         pills = [
             {"label": "Listed Machines", "value": 3},
             {"label": "Booked Slots", "value": 4},
@@ -498,11 +524,11 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
     else:
         pills = [
             {"label": "Status", "value": "Active"},
-            {"label": "Profile", "value": profile_type.capitalize()},
+            {"label": "Profile", "value": ptype.capitalize()},
             {"label": "Verification", "value": "Verified"},
         ]
         quick_actions = [
-            {"id": "home", "title": "Dashboard Home", "route": f"/{profile_type}/dashboard"},
+            {"id": "home", "title": "Dashboard Home", "route": f"/{ptype}/dashboard"},
         ]
 
     live_activity = [
@@ -510,8 +536,8 @@ async def get_persona_dashboard(profile_type: str, uid: str = Depends(current_us
     ]
 
     return {
-        "profileType": profile_type,
-        "defaultHomeRoute": DEFAULT_HOME.get(profile_type, "/dashboard"),
+        "profileType": ptype,
+        "defaultHomeRoute": DEFAULT_HOME.get(ptype, DEFAULT_HOME.get(canonical, "/dashboard")),
         "metricPills": pills,
         "quickActions": quick_actions,
         "liveActivity": live_activity,

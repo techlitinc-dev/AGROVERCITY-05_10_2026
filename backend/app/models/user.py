@@ -2,7 +2,111 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-VALID_PROFILES = {"farmer", "farmLandlord", "transport", "transporter", "seller", "equipmentRental", "broker", "instructor", "dairyManager", "milkSeller", "customer", "directBuyer", "exporter", "bankManager", "insuranceProvider", "coldStorageProvider"}
+VALID_PROFILES = {
+    "farmer",
+    "farmLandlord",
+    "landlord",
+    "farm landlord",
+    "farm_landlord",
+    "transport",
+    "transporter",
+    "seller",
+    "equipmentRental",
+    "equipmentOwner",
+    "equipment_owner",
+    "broker",
+    "instructor",
+    "dairyManager",
+    "milkSeller",
+    "customer",
+    "directBuyer",
+    "exporter",
+    "bankManager",
+    "insuranceProvider",
+    "coldStorageProvider",
+    "vet",
+    "fpoManager",
+    "womenShg",
+    "gaushalaManager",
+    "superadmin",
+}
+
+PROFILE_ALIASES: dict[str, str] = {
+    "landlord": "farmLandlord",
+    "farm landlord": "farmLandlord",
+    "farm_landlord": "farmLandlord",
+    "farmlandlord": "farmLandlord",
+    "farmlandlord": "farmLandlord",
+    "transport": "transporter",
+    "transporter": "transporter",
+    "equipmentowner": "equipmentRental",
+    "equipment_owner": "equipmentRental",
+    "equipment owner": "equipmentRental",
+    "equipmentOwner": "equipmentRental",
+    "equipmentrental": "equipmentRental",
+    "equipment_rental": "equipmentRental",
+    "equipment rental": "equipmentRental",
+    "equipmentRental": "equipmentRental",
+    "dairymanager": "dairyManager",
+    "dairy_manager": "dairyManager",
+    "dairy manager": "dairyManager",
+    "dairyManager": "dairyManager",
+    "milkseller": "milkSeller",
+    "milk_seller": "milkSeller",
+    "milk seller": "milkSeller",
+    "milkSeller": "milkSeller",
+    "directbuyer": "directBuyer",
+    "direct_buyer": "directBuyer",
+    "direct buyer": "directBuyer",
+    "directBuyer": "directBuyer",
+    "bankmanager": "bankManager",
+    "bank_manager": "bankManager",
+    "bank manager": "bankManager",
+    "bankManager": "bankManager",
+    "insuranceprovider": "insuranceProvider",
+    "insurance_provider": "insuranceProvider",
+    "insurance provider": "insuranceProvider",
+    "insuranceProvider": "insuranceProvider",
+    "coldstorageprovider": "coldStorageProvider",
+    "cold_storage_provider": "coldStorageProvider",
+    "cold storage provider": "coldStorageProvider",
+    "coldstorage": "coldStorageProvider",
+    "cold_storage": "coldStorageProvider",
+    "coldStorage": "coldStorageProvider",
+    "coldStorageProvider": "coldStorageProvider",
+    "fpomanager": "fpoManager",
+    "fpo_manager": "fpoManager",
+    "fpo manager": "fpoManager",
+    "fpo": "fpoManager",
+    "fpoManager": "fpoManager",
+    "womenshg": "womenShg",
+    "women_shg": "womenShg",
+    "women shg": "womenShg",
+    "womenShg": "womenShg",
+    "gaushalamanager": "gaushalaManager",
+    "gaushala_manager": "gaushalaManager",
+    "gaushala manager": "gaushalaManager",
+    "gaushala": "gaushalaManager",
+    "gaushalaManager": "gaushalaManager",
+    "superadmin": "superadmin",
+    "admin": "superadmin",
+    "teacher": "instructor",
+}
+
+
+def normalize_profile(ptype: str | None) -> str:
+    if not ptype:
+        return ""
+    p = str(ptype).strip()
+    if p in PROFILE_ALIASES:
+        return PROFILE_ALIASES[p]
+    lower_p = p.lower()
+    if lower_p in PROFILE_ALIASES:
+        return PROFILE_ALIASES[lower_p]
+    compact = lower_p.replace(" ", "").replace("_", "").replace("-", "")
+    if compact in PROFILE_ALIASES:
+        return PROFILE_ALIASES[compact]
+    return p
 
 
 class FarmBoundaryPoint(BaseModel):

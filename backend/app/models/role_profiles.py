@@ -103,10 +103,14 @@ class BankManagerRoleProfile(BaseModel):
 
 ROLE_PROFILE_MODELS: dict[str, type[BaseModel]] = {
     "transport": TransportRoleProfile,
+    "transporter": TransportRoleProfile,
     "seller": SellerRoleProfile,
     "farmLandlord": FarmLandlordRoleProfile,
+    "landlord": FarmLandlordRoleProfile,
+    "farm landlord": FarmLandlordRoleProfile,
     "broker": BrokerRoleProfile,
     "equipmentRental": EquipmentRentalRoleProfile,
+    "equipmentOwner": EquipmentRentalRoleProfile,
     "instructor": InstructorRoleProfile,
     "dairyManager": DairyManagerRoleProfile,
     "milkSeller": MilkSellerRoleProfile,

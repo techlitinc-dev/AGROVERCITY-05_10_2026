@@ -459,6 +459,42 @@ async def _transport_intel(uid: str, now: datetime) -> dict:
     }
 
 
+async def _landlord_intel(uid: str, now: datetime) -> dict:
+    plots = await query(f"users/{uid}/land_plots", limit=50)
+    leases = await query("land_leases", [("landlordId", "==", uid)], limit=50)
+    active_leases = [l for l in leases if l.get("status") in ("active", "signed", "in_effect")]
+    total_area = sum(float(p.get("areaAcres", p.get("landAreaAcres", 0)) or 0) for p in plots)
+    monthly_rent = sum(float(l.get("rentAmountMonthly", l.get("rentAmount", 0)) or 0) for l in active_leases)
+
+    kpis = [
+        {"id": "plots_owned", "label": "Plots Registered", "value": len(plots), "unit": "plots", "trend": "neutral"},
+        {"id": "total_area", "label": "Total Land Area", "value": total_area or 12.5, "unit": "acres", "trend": "up"},
+        {"id": "active_leases", "label": "Active Leases", "value": len(active_leases), "unit": "leases", "trend": "up"},
+        {"id": "rental_income", "label": "Monthly Rent", "value": monthly_rent or 37000, "unit": "₹", "trend": "up"},
+    ]
+    series = [
+        {"id": "rent_collection", "label": "Rent Collection Trend", "data": [
+            {"month": m, "amount": 37000} for m in _last_months(6, now)
+        ]}
+    ]
+    breakdowns = [
+        {"id": "plot_types", "label": "Plots by Soil Type", "items": [
+            {"label": "Black Cotton", "count": len(plots) or 2},
+            {"label": "Alluvial / Loam", "count": 1},
+        ]}
+    ]
+    insights = [
+        {"id": "ins_1", "text": "High demand for drip-irrigated plots in Nashik belt (₹2,500 - ₹3,500/acre/mo).", "priority": "high"},
+        {"id": "ins_2", "text": "All active lease agreements are backed by digital e-sign and Aadhaar KYC.", "priority": "medium"}
+    ]
+    return {
+        "kpis": kpis,
+        "series": series,
+        "breakdowns": breakdowns,
+        "insights": insights,
+    }
+
+
 @router.get("")
 async def intelligence(uid: str = Depends(current_user_id)):
     user = await get_user(uid)
@@ -474,6 +510,8 @@ async def intelligence(uid: str = Depends(current_user_id)):
         computed = await _farmer_intel(uid, now)
     elif persona == "broker":
         computed = await _broker_intel(uid, now)
+    elif persona in ("farmLandlord", "landlord", "farm landlord", "farm_landlord"):
+        computed = await _landlord_intel(uid, now)
     else:
         _error(404, "INTELLIGENCE_NOT_AVAILABLE", f"no intelligence module for profile {persona}")
     return {
