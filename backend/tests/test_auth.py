@@ -241,6 +241,7 @@ async def test_otp_rate_limit_429(client, user_store, fake_redis, monkeypatch):
         return fake_redis
 
     monkeypatch.setattr("app.core.ratelimit.get_redis", _fake)
+    monkeypatch.setattr("app.core.config.settings.env", "prod")
     user_store["users/uid-1"] = {"id": "uid-1", "phone": "+919812345678"}
     for attempt in range(1, 7):
         resp = await client.post("/v1/auth/mpin/reset", json={"idToken": "any", "newMpin": "9876"})

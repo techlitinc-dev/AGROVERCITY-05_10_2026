@@ -10,7 +10,7 @@ router = APIRouter(tags=["weather"])
 
 
 @router.get("/weather")
-async def get_weather(lat: float, lng: float, uid: str = Depends(current_user_id)):
+async def get_weather(lat: float = 20.0, lng: float = 73.8, uid: str = Depends(current_user_id)):
     key = f"weather:{round(lat, 1)}:{round(lng, 1)}"
     cached = await cache_get(key)
     if cached is not None:
