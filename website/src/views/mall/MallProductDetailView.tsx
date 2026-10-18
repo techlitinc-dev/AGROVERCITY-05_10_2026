@@ -13,7 +13,7 @@ import {
   ShoppingCart,
   Star,
 } from 'lucide-react';
-import { apiErrorMessage, DEV, gruhUdyog, mall, MOCK_MALL_PRODUCTS } from '../../lib/api';
+import { apiErrorMessage, gruhUdyog, mall } from '../../lib/api';
 import { useCartStore } from '../../stores/cartStore';
 import { formatCurrency } from '../../lib/utils';
 import type { MallProduct } from '../../types';
@@ -69,16 +69,7 @@ export const MallProductDetailView: React.FC = () => {
         setRaw(doc);
         setProduct(toMallProduct(doc));
       } catch (e) {
-        // Dev mock fallback so the page is explorable without a backend session.
-        if (DEV) {
-          const mock = MOCK_MALL_PRODUCTS.find((p) => p.id === id);
-          if (mock && mounted) {
-            setRaw(mock as unknown as ApiProductDoc);
-            setProduct(mock);
-          } else if (mounted) {
-            setNotFound(true);
-          }
-        } else if (mounted) {
+        if (mounted) {
           setNotFound(true);
           setError(apiErrorMessage(e));
         }

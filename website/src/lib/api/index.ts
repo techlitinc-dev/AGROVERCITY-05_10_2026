@@ -114,6 +114,7 @@ export { ads } from './ads';
 export { appConfig } from './appConfig';
 export { advisory } from './advisory';
 export { ratings } from './ratings';
+export { exporter } from './exporter';
 
 import { auth } from './auth';
 import { mandi } from './mandi';

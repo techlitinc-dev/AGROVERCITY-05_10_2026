@@ -35,8 +35,8 @@ const EMPTY_CLIENT = {
   notes: '',
 };
 
-export const MilkSellerDesk: React.FC = () => {
-  const [tab, setTab] = useState<Tab>('clients');
+export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'deliveries' }) => {
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [clients, setClients] = useState<Record<string, unknown>[]>([]);
   const [deliveries, setDeliveries] = useState<Record<string, unknown>[]>([]);
   const [bills, setBills] = useState<Record<string, unknown>[]>([]);

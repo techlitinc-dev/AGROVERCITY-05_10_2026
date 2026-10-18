@@ -20,6 +20,8 @@ import { MallRouteElements } from './views/mall/routes';
 import { CommunityRouteElements } from './views/community/routes';
 import { SharedRouteElements } from './views/shared/routes';
 import { AdminRouteElements } from './views/admin/routes';
+import { ExporterRouteElements } from './views/exporter/routes';
+import { MilkSellerRouteElements } from './views/milkseller/routes';
 
 const LoadingFallback: React.FC = () => (
   <div className="min-h-[50vh] flex flex-col items-center justify-center space-y-3">
@@ -40,9 +42,11 @@ export const App: React.FC = () => {
           {TransporterRouteElements()}
           {SellerRouteElements()}
           {EquipmentRouteElements()}
+          {ExporterRouteElements()}
           {DirectBuyerRouteElements()}
           {BrokerRouteElements()}
           {DairyRouteElements()}
+          {MilkSellerRouteElements()}
           {LivestockRouteElements()}
           {AcademyRouteElements()}
           {FinanceRouteElements()}

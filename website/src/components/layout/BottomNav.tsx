@@ -29,9 +29,9 @@ export const BottomNav: React.FC = () => {
             end={tab.to === getPersonaHomePath()}
             className={({ isActive }) =>
               cn(
-                'flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all',
+                'flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all active:scale-95 hover-lift',
                 isActive
-                  ? 'text-emerald-700 font-bold'
+                  ? 'text-emerald-700 font-extrabold scale-105'
                   : 'text-slate-500 hover:text-slate-800 font-medium'
               )
             }

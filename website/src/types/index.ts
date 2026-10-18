@@ -8,6 +8,11 @@ export type PersonaType =
   | 'equipmentOwner'
   | 'broker'
   | 'dairyManager'
+  | 'milkSeller'
+  | 'vet'
+  | 'fpoManager'
+  | 'womenShg'
+  | 'exporter'
   | 'instructor'
   | 'directBuyer'
   | 'customer'
@@ -475,4 +480,92 @@ export interface ChatMessage {
   senderRole: string;
   text: string;
   timestamp: string;
+}
+
+export interface ExportRfq {
+  id: string;
+  commodity: string;
+  variety?: string;
+  quantityMt: number;
+  targetPriceUsd?: number;
+  incoterm: 'CIF' | 'FOB' | 'CFR' | 'EXW';
+  destinationCountry: string;
+  destinationPort: string;
+  originPort?: string;
+  packagingSpecs?: string;
+  requiredCertifications?: string[];
+  inspectionAgency?: string;
+  status: 'open' | 'closed' | 'cancelled';
+  quotesCount?: number;
+  validUntil?: string;
+  createdAt: string;
+}
+
+export interface ExportQuote {
+  id: string;
+  rfqId: string;
+  sellerId: string;
+  sellerName: string;
+  pricePerMtUsd: number;
+  quantityMt: number;
+  incotermOffered: string;
+  shipmentLeadDays: number;
+  originPort: string;
+  packagingOffered: string;
+  inspectionOffered: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ExportOrder {
+  id: string;
+  rfqId?: string;
+  quoteId?: string;
+  exporterId: string;
+  sellerId: string;
+  sellerName?: string;
+  commodity: string;
+  variety?: string;
+  quantityMt: number;
+  pricePerMtUsd: number;
+  totalAmountUsd: number;
+  incoterm: string;
+  destinationCountry: string;
+  destinationPort: string;
+  originPort: string;
+  status:
+    | 'confirmed'
+    | 'sourcing'
+    | 'packed'
+    | 'pickedUp'
+    | 'inTransit'
+    | 'customsCleared'
+    | 'shipped'
+    | 'delivered'
+    | 'cancelled';
+  shipmentDetails?: {
+    containerNumber?: string;
+    vesselName?: string;
+    voyageNumber?: string;
+    blNumber?: string;
+    etd?: string;
+    eta?: string;
+  };
+  lcDetails?: {
+    lcNumber?: string;
+    issuingBank?: string;
+    amountUsd?: number;
+    expiryDate?: string;
+    status?: 'draft' | 'opened' | 'accepted' | 'negotiated';
+  };
+  documents?: {
+    id: string;
+    docType: string;
+    title: string;
+    fileUrl: string;
+    verified: boolean;
+    issuedAt?: string;
+  }[];
+  createdAt: string;
 }

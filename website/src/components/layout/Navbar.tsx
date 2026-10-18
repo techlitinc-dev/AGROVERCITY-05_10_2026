@@ -21,7 +21,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useNotificationStore } from '../../stores/notificationStore';
-import { useI18nStore } from '../../lib/i18n';
+import { useI18nStore, SUPPORTED_LANGUAGES } from '../../lib/i18n';
 import type { PersonaType } from '../../types';
 import { cn } from '../../lib/utils';
 
@@ -35,6 +35,7 @@ export const Navbar: React.FC = () => {
 
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
 
   // Load the real inbox once after login so the bell badge reflects unread count.
   useEffect(() => {
@@ -50,14 +51,19 @@ export const Navbar: React.FC = () => {
     { id: 'transporter', label: 'Transporter (गाड़ी / लॉजिस्टिक्स)', icon: '🚚' },
     { id: 'seller', label: 'Agri Vyapari (दुकानदार / इनपुट)', icon: '🏪' },
     { id: 'equipmentOwner', label: 'Equipment Owner (यंत्र मालिक)', icon: '🚜' },
+    { id: 'exporter', label: 'International Exporter (अंतर्राष्ट्रीय निर्यातक)', icon: '🚢' },
     { id: 'directBuyer', label: 'Direct Buyer (थोक खरीदार)', icon: '🏢' },
     { id: 'broker', label: 'Agri Broker / Dalal (दलाल)', icon: '🤝' },
     { id: 'dairyManager', label: 'Dairy Manager (दुग्ध डेयरी)', icon: '🥛' },
+    { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
+    { id: 'vet', label: 'Veterinary Doctor (पशु चिकित्सक)', icon: '🩺' },
+    { id: 'fpoManager', label: 'FPO / Cooperative Manager (एफपीओ प्रबंधक)', icon: '🌾' },
+    { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG (महिला गृह उद्योग)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
     { id: 'bankManager', label: 'Bank Manager (ऋण प्रबंधक)', icon: '🏦' },
     { id: 'insuranceProvider', label: 'Insurance Provider (बीमा डेस्क)', icon: '📑' },
     { id: 'coldStorageProvider', label: 'Cold Storage (शीतगृह)', icon: '❄️' },
-    { id: 'gaushalaManager', label: 'Gaushala & Vet (गौशाला/डॉक्टर)', icon: '🐄' },
+    { id: 'gaushalaManager', label: 'Gaushala Sanctuary (गौशाला)', icon: '🐄' },
     { id: 'customer', label: 'E-Market Customer (उपभोक्ता)', icon: '🛍️' },
     { id: 'superadmin', label: 'Superadmin Console (SOP 01-27)', icon: '⚡' },
   ];
@@ -149,15 +155,65 @@ export const Navbar: React.FC = () => {
 
         {/* Right Action Icons: Language, Coins, Notifications, Cart, Profile */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Language Toggle */}
-          <button
-            onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors"
-            title="Switch Language"
-          >
-            <Globe className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{language === 'en' ? 'हिन्दी' : 'EN'}</span>
-          </button>
+          {/* Language Selector Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all hover-lift"
+              title="Select Language (9 Languages Supported)"
+            >
+              <Globe className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+              <span>{SUPPORTED_LANGUAGES.find((l) => l.code === language)?.nativeName ?? 'English'}</span>
+              <ChevronDown className={cn("w-3 h-3 text-slate-400 transition-transform", langDropdownOpen && "rotate-180")} />
+            </button>
+
+            {langDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setLangDropdownOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 z-50 animate-scale-up">
+                  <div className="px-3 py-1.5 border-b border-slate-100 mb-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Choose Language / भाषा चुनें
+                    </p>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto space-y-0.5 px-1">
+                    {SUPPORTED_LANGUAGES.map((lang) => {
+                      const isSelected = language === lang.code;
+                      return (
+                        <button
+                          key={lang.code}
+                          onClick={() => {
+                            setLanguage(lang.code);
+                            setLangDropdownOpen(false);
+                          }}
+                          className={cn(
+                            'w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs transition-colors',
+                            isSelected
+                              ? 'bg-emerald-50 text-emerald-900 font-bold'
+                              : 'text-slate-700 hover:bg-slate-50 font-medium'
+                          )}
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-900">{lang.nativeName}</span>
+                              <span className="text-[10px] text-slate-400 font-normal">({lang.name})</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400">{lang.region}</p>
+                          </div>
+                          {isSelected && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Kisan Coins Badge */}
           {isAuthenticated && user && (

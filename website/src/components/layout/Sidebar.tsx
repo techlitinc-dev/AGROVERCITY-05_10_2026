@@ -27,7 +27,15 @@ import {
   Radio,
   FileSpreadsheet,
   Award,
-  Users
+  Users,
+  Ship,
+  Calendar,
+  Stethoscope,
+  Syringe,
+  Snowflake,
+  Boxes,
+  Heart,
+  Scale
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../lib/utils';
@@ -124,13 +132,126 @@ export const Sidebar: React.FC = () => {
       case 'equipmentOwner':
         return [
           {
-            title: 'Equipment Console',
+            title: 'Equipment Suite',
             items: [
               { to: '/equipment', label: 'Fleet Overview', icon: LayoutDashboard },
               { to: '/equipment/fleet', label: 'Machinery Registry', icon: Wrench },
-              { to: '/equipment/calendar', label: 'Hourly Slot Calendar', icon: BookOpen },
               { to: '/equipment/bookings', label: 'Incoming Bookings', icon: FileCheck },
-              { to: '/equipment/roi', label: 'Maintenance & ROI', icon: DollarSign },
+              { to: '/equipment/claims', label: 'Damage Claims', icon: ShieldAlert },
+              { to: '/equipment/settlements', label: 'Settlements & P&L', icon: DollarSign },
+              { to: '/equipment/market', label: 'Rental Heatmap & Intel', icon: TrendingUp },
+            ],
+          },
+        ];
+
+      case 'exporter':
+        return [
+          {
+            title: 'Global Export Hub',
+            items: [
+              { to: '/exporter', label: 'Export Cockpit', icon: LayoutDashboard },
+              { to: '/exporter/rfqs', label: 'International RFQs', icon: Ship },
+              { to: '/exporter/orders', label: 'Shipping & LC Orders', icon: Package },
+              { to: '/exporter/suppliers', label: 'APEDA Farm Cooperatives', icon: Users },
+              { to: '/exporter/analytics', label: 'Forex & Trade Stats', icon: TrendingUp },
+            ],
+          },
+        ];
+
+      case 'milkSeller':
+        return [
+          {
+            title: 'Milk Vendor Desk',
+            items: [
+              { to: '/milkSeller', label: 'Daily Delivery Punch-Sheet', icon: Milk },
+              { to: '/milkSeller/clients', label: 'Customer Passbooks', icon: Users },
+              { to: '/milkSeller/bills', label: 'Monthly Billing & Pay', icon: DollarSign },
+              { to: '/milkSeller/analytics', label: 'Delivery Analytics', icon: TrendingUp },
+            ],
+          },
+        ];
+
+      case 'vet':
+        return [
+          {
+            title: 'Veterinary Workspace',
+            items: [
+              { to: '/vet', label: 'Clinical Cockpit', icon: LayoutDashboard },
+              { to: '/vet/appointments', label: 'Appointments Queue', icon: Calendar },
+              { to: '/vet/schedule', label: 'Weekly Schedule Editor', icon: BookOpen },
+              { to: '/vet/campaigns', label: 'Vaccination Drives', icon: Syringe },
+              { to: '/vet/records', label: 'Animal Health History', icon: Stethoscope },
+              { to: '/vet/earnings', label: 'Consultation Ledger & DBT', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'gaushalaManager':
+        return [
+          {
+            title: 'Gaushala Sanctuary',
+            items: [
+              { to: '/gaushalaManager', label: 'Gaushala Dashboard', icon: LayoutDashboard },
+              { to: '/gaushalaManager/cattle', label: 'Cattle Herd Registry', icon: Heart },
+              { to: '/gaushalaManager/adoptions', label: '80G Donations & Adoptions', icon: Gift },
+              { to: '/gaushalaManager/receipts', label: 'Receipts Register', icon: FileText },
+              { to: '/gaushalaManager/expenses', label: 'Fodder & Expenses', icon: DollarSign },
+              { to: '/gaushalaManager/vets', label: 'Vet Network Camps', icon: ShieldAlert },
+            ],
+          },
+        ];
+
+      case 'customer':
+        return [
+          {
+            title: 'Krishi Shopping Mall',
+            items: [
+              { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
+              { to: '/mall', label: 'Shop Fresh & Inputs', icon: ShoppingBag },
+              { to: '/mall/orders', label: 'My Orders & Delivery', icon: Package },
+              { to: '/mall/subscriptions', label: 'Farm Subscriptions', icon: Calendar },
+              { to: '/mall/wallet', label: 'Wallet & Cashback', icon: DollarSign },
+              { to: '/mall/wishlist', label: 'Saved Wishlist', icon: Heart },
+            ],
+          },
+        ];
+
+      case 'coldStorageProvider':
+        return [
+          {
+            title: 'Post-Harvest Warehousing',
+            items: [
+              { to: '/coldStorageProvider', label: 'Facility Dashboard', icon: LayoutDashboard },
+              { to: '/coldStorageProvider/facilities', label: 'Chambers & Temperature', icon: Snowflake },
+              { to: '/coldStorageProvider/bookings', label: 'Inward & Release Bookings', icon: Boxes },
+              { to: '/coldStorageProvider/fees', label: 'Rent Ledger & e-NWR Fees', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'fpoManager':
+        return [
+          {
+            title: 'FPO Collective Console',
+            items: [
+              { to: '/fpoManager', label: 'FPO Cockpit', icon: LayoutDashboard },
+              { to: '/fpo/pools', label: 'Produce Pooling Batches', icon: Layers },
+              { to: '/fpo/machinery', label: 'Custom Hiring Center', icon: Wrench },
+              { to: '/fpo/directory', label: 'Federation Directory', icon: Building2 },
+            ],
+          },
+        ];
+
+      case 'womenShg':
+        return [
+          {
+            title: 'Mahila Gruh Udyog',
+            items: [
+              { to: '/womenShg', label: 'Enterprise Dashboard', icon: LayoutDashboard },
+              { to: '/womenShg/products', label: 'Cottage Catalog', icon: Store },
+              { to: '/womenShg/batches', label: 'Production Batches', icon: Package },
+              { to: '/womenShg/certs', label: 'FSSAI Certifications', icon: Award },
+              { to: '/womenShg/savings', label: 'SHG Savings & Micro-Loan', icon: Landmark },
             ],
           },
         ];
@@ -168,6 +289,7 @@ export const Sidebar: React.FC = () => {
               { to: '/dairy', label: 'Milk Collection Desk', icon: Milk },
               { to: '/dairy/members', label: 'Member Passbook', icon: Users },
               { to: '/dairy/batches', label: 'Payout Batches', icon: DollarSign },
+              { to: '/dairy/rates', label: 'FAT / SNF Rate Chart', icon: TrendingUp },
               { to: '/dairy/gaushala', label: 'Gaushala & 80G Receipts', icon: Building2 },
               { to: '/dairy/vets', label: 'VetNet & Vaccinations', icon: ShieldAlert },
             ],
@@ -248,7 +370,7 @@ export const Sidebar: React.FC = () => {
                 end={item.to === `/${activePersona}` || item.to === '/admin'}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all',
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all hover-lift',
                     isActive
                       ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'

@@ -13,7 +13,7 @@ import {
   Wallet,
   FileSearch,
 } from 'lucide-react';
-import { loans, apiErrorMessage, DEV, MOCK_LOANS } from '../../lib/api';
+import { loans, apiErrorMessage } from '../../lib/api';
 import { StatCard } from '../../components/common/StatCard';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
@@ -74,20 +74,8 @@ export const BankManagerDeskView: React.FC = () => {
       setRows(data);
       setTotal(num(envelope?.total, data.length));
     } catch (e) {
-      if (DEV) {
-        // Dev mock fallback so the desk is explorable without the backend.
-        const needle = q.toLowerCase();
-        setRows(
-          (MOCK_LOANS as unknown as LoanRow[]).filter(
-            (l) => !st || str(l.status).replace(/_([a-z])/g, (_, c) => c.toUpperCase()) === st
-          ).filter((l) => !needle || str(l.farmerName).toLowerCase().includes(needle))
-        );
-        setTotal(MOCK_LOANS.length);
-        setError(null);
-      } else {
-        setError(apiErrorMessage(e));
-        setRows([]);
-      }
+      setError(apiErrorMessage(e));
+      setRows([]);
     } finally {
       setLoading(false);
     }

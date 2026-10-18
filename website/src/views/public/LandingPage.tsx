@@ -17,24 +17,40 @@ import {
   Scale,
   Milk,
 } from 'lucide-react';
-import { MOCK_MANDI_PRICES } from '../../lib/api';
+import { mandi } from '../../lib/api';
 import { formatCurrency } from '../../lib/utils';
+import type { MandiPrice } from '../../types';
 
 export const LandingPage: React.FC = () => {
+  const [mandiPrices, setMandiPrices] = React.useState<MandiPrice[]>([]);
+
+  React.useEffect(() => {
+    void mandi.prices().then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setMandiPrices(data as MandiPrice[]);
+      }
+    }).catch(() => undefined);
+  }, []);
+
   const personas = [
     { id: 'farmer', title: 'Kisan / Farmer', desc: 'Direct B2B crop selling, live mandi rates, KCC loans, PMFBY insurance, and farm diary.', icon: '🌾' },
     { id: 'landlord', title: 'Farm Landlord', desc: 'Register agricultural plots, 7/12 sync, 5-round lease negotiation, and escrow rent.', icon: '🏡' },
     { id: 'transporter', title: 'Transporter', desc: 'Freight load board, live auction bids, detention waiting fees, and digital bilty.', icon: '🚚' },
     { id: 'seller', title: 'Agri Vyapari', desc: 'Storefront input catalog, mall order dispatch, farmer procurement, and POS khata.', icon: '🏪' },
     { id: 'equipmentOwner', title: 'Equipment Owner', desc: 'List tractors, harvesters, hourly slot booking templates, and damage claims.', icon: '🚜' },
+    { id: 'exporter', title: 'International Agri Exporter', desc: 'Global tender RFQs, Phytosanitary and APEDA certificates, ocean container tracking, and LC finance.', icon: '🚢' },
     { id: 'directBuyer', title: 'Direct Buyer', desc: 'Post institutional demands, contract farming, gate QC inspection, and instant invoices.', icon: '🏢' },
     { id: 'broker', title: 'Broker / Dalal', desc: 'Matchmaking deal desk, farmer/buyer pipelines, and digital brokerage ledger.', icon: '🤝' },
     { id: 'dairyManager', title: 'Dairy Manager', desc: 'FAT/SNF milk testing & chart pricing, member passbooks, and automated payout batches.', icon: '🥛' },
+    { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', desc: 'Door-to-door customer delivery punch-sheet, daily milk records, and monthly automated billing.', icon: '🫗' },
+    { id: 'vet', title: 'Veterinary Doctor & Specialist', desc: 'Livestock health records, tele-consultation queue, mass vaccination campaigns, and clinical ledger.', icon: '🩺' },
+    { id: 'fpoManager', title: 'FPO & Cooperative Leader', desc: 'Collective produce pooling batches, custom hiring machinery centers, and MSP bulk trading.', icon: '🌾' },
+    { id: 'womenShg', title: 'Mahila Gruh Udyog & SHG', desc: 'Home micro-enterprises, cottage pickles & papad catalog, FSSAI compliance, and SHG monthly savings.', icon: '🪔' },
     { id: 'instructor', title: 'Gurukul Instructor', desc: 'Upload agri video lessons, run farmer training workshops, and monetize expertise.', icon: '🎓' },
     { id: 'bankManager', title: 'Bank Manager', desc: 'Underwrite KCC and agri loans, 7/12 land appraisal, and digital disbursal tracking.', icon: '🏦' },
     { id: 'insuranceProvider', title: 'Crop Insurance Desk', desc: 'Process PMFBY crop loss claims, assign surveyors, and trigger DBT disbursals.', icon: '📑' },
     { id: 'coldStorageProvider', title: 'Cold Storage Owner', desc: 'Chamber temperature monitoring, warehouse bookings, and e-NWR receipt issuance.', icon: '❄️' },
-    { id: 'gaushalaManager', title: 'Gaushala & VetNet', desc: 'Cattle registry, cow adoption programs, 80G tax-exempt receipts, and veterinary visits.', icon: '🐄' },
+    { id: 'gaushalaManager', title: 'Gaushala & Sanctuary', desc: 'Cattle registry, cow adoption programs, 80G tax-exempt receipts, and veterinary visits.', icon: '🐄' },
     { id: 'customer', title: 'E-Market Customer', desc: 'Shop authentic farmer produce, organic grains, spices, seeds, and gardening tools.', icon: '🛍️' },
     { id: 'superadmin', title: 'Superadmin Console', desc: 'All 27 SOP operational consoles, fraud queues, price approvals, and platform governance.', icon: '⚡' },
   ];
@@ -107,19 +123,25 @@ export const LandingPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {MOCK_MANDI_PRICES.map((m) => (
+          {(mandiPrices.length > 0 ? mandiPrices.slice(0, 5) : [
+            { id: 'm1', commodity: 'Soybean', variety: 'Yellow', mandi: 'Latur', modalPrice: 4850, trendPercentage: 2.4 },
+            { id: 'm2', commodity: 'Cotton', variety: 'Medium Staple', mandi: 'Rajkot', modalPrice: 7200, trendPercentage: -1.2 },
+            { id: 'm3', commodity: 'Wheat', variety: 'Sharbati', mandi: 'Sehore', modalPrice: 2850, trendPercentage: 0.8 },
+            { id: 'm4', commodity: 'Onion', variety: 'Red', mandi: 'Lasalgaon', modalPrice: 2400, trendPercentage: 5.6 },
+            { id: 'm5', commodity: 'Basmati', variety: '1121 Pusa', mandi: 'Karnal', modalPrice: 3950, trendPercentage: 1.5 },
+          ]).map((m) => (
             <div
               key={m.id}
-              className="p-3 rounded-xl bg-slate-50 border border-slate-200/60 hover:border-emerald-300 transition-colors"
+              className="p-3 rounded-2xl bg-slate-50 border border-slate-200/60 hover:border-emerald-300 transition-all hover-lift"
             >
               <div className="flex justify-between items-start">
                 <span className="font-bold text-xs text-slate-900">{m.commodity}</span>
                 <span
                   className={`text-[10px] font-bold ${
-                    m.trendPercentage >= 0 ? 'text-emerald-700' : 'text-rose-600'
+                    (m.trendPercentage ?? 0) >= 0 ? 'text-emerald-700' : 'text-rose-600'
                   }`}
                 >
-                  {m.trendPercentage >= 0 ? `+${m.trendPercentage}%` : `${m.trendPercentage}%`}
+                  {(m.trendPercentage ?? 0) >= 0 ? `+${m.trendPercentage}%` : `${m.trendPercentage}%`}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">{m.mandi}</p>
@@ -132,14 +154,14 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 15 Personas Showcase Grid */}
+      {/* 20 Personas Showcase Grid */}
       <section className="space-y-6">
         <div className="text-center max-w-2xl mx-auto space-y-2">
           <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
             Ecosystem Matrix
           </span>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-            Dedicated Workspaces for All 15 Agri Personas
+            Dedicated Workspaces for All 20 Agri Personas
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
             Tailored journeys, state machine workflows, and role-gated tooling designed specifically for Indian agriculture.

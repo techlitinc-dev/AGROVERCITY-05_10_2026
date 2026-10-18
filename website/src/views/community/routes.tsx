@@ -21,5 +21,18 @@ export const CommunityRouteElements = () => (
     <Route path="/community/cold" element={<ColdStorageView />} />
     <Route path="/community/fpo" element={<FpoHubView />} />
     <Route path="/community/trees" element={<TreePlantationView />} />
+
+    {/* Dedicated Persona Aliases */}
+    <Route path="/fpoManager" element={<FpoHubView />} />
+    <Route path="/fpo/pools" element={<FpoHubView />} />
+    <Route path="/fpo/machinery" element={<FpoHubView />} />
+    <Route path="/fpo/directory" element={<FpoHubView />} />
+
+    <Route path="/womenShg" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/products" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/batches" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/certs" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/savings" element={<WomenGruhUdyogView />} />
+    <Route path="/gruhUdyog" element={<WomenGruhUdyogView />} />
   </>
 );
