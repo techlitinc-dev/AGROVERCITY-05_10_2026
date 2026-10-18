@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   X,
   Bell,
+  Stethoscope,
 } from 'lucide-react';
 import { dashboard, mandi, intelligence, notifications, apiErrorMessage } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
@@ -260,7 +261,20 @@ export const FarmerHome: React.FC = () => {
       </div>
 
       {/* Quick Launchpad Buttons */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <Link
+          to="/farmer/crop-doctor"
+          className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200/90 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all flex items-center gap-3"
+        >
+          <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-xs">
+            <Stethoscope className="w-5 h-5" />
+          </div>
+          <div>
+            <h5 className="font-bold text-xs text-slate-900">AI Crop Doctor</h5>
+            <p className="text-[10px] text-emerald-700 font-semibold">Scan leaf & disease</p>
+          </div>
+        </Link>
+
         <Link
           to="/farmer/lots"
           className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all flex items-center gap-3"
@@ -309,7 +323,7 @@ export const FarmerHome: React.FC = () => {
           </div>
           <div>
             <h5 className="font-bold text-xs text-slate-900">Farm Diary</h5>
-            <p className="text-[10px] text-slate-400">P&L & break-even</p>
+            <p className="text-[10px] text-slate-400">P&L & cashbook</p>
           </div>
         </Link>
       </div>

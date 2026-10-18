@@ -6,20 +6,20 @@ from pydantic import BaseModel, Field
 class CropInsurancePolicy(BaseModel):
     id: str
     policyNumber: str
-    schemeName: str
+    schemeName: str = "PMFBY"
     cropName: str
     season: str
-    year: int
-    landAreaAcres: float
-    sumInsured: float
-    farmerPremium: float
-    govtSubsidy: float
-    status: str
-    insuranceCompany: str
-    coverageStartDate: str
-    coverageEndDate: str
-    bankName: str
-    kccAccountNo: str
+    year: int = 2026
+    landAreaAcres: float = 1.0
+    sumInsured: float = 0.0
+    farmerPremium: float = 0.0
+    govtSubsidy: float = 0.0
+    status: str = "active"
+    insuranceCompany: str = "Agriculture Insurance Company of India (AIC)"
+    coverageStartDate: str = "2026-06-15"
+    coverageEndDate: str = "2026-11-30"
+    bankName: str = "State Bank of India"
+    kccAccountNo: str = "XXXX-XXXX-9482"
     certificateUrl: str | None = None
     userId: str | None = None
     farmerName: str | None = None

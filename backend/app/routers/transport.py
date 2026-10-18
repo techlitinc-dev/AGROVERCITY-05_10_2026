@@ -945,15 +945,26 @@ async def list_bookings(
     status: str | None = None,
     page: int = 1,
     pageSize: int = 20,
-    uid: str = Depends(_transporter),
+    uid: str = Depends(_viewer),
 ):
+    user = await get_user(uid)
+    user_persona = (user or {}).get("activeProfile") or "farmer"
     docs = await query("transport_bookings", [], limit=1000)
-    vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
-    vehicle_ids = {v["id"] for v in vehicles}
-    docs = [
-        d for d in docs
-        if d.get("status") == "requested" or d.get("vehicleId") in vehicle_ids or d.get("transporterId") == uid
-    ]
+    if user_persona in ("farmer", "seller", "directBuyer"):
+        docs = [
+            d for d in docs
+            if d.get("farmerId") == uid
+            or d.get("userId") == uid
+            or d.get("requesterId") == uid
+            or not d.get("farmerId")
+        ]
+    else:
+        vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
+        vehicle_ids = {v["id"] for v in vehicles}
+        docs = [
+            d for d in docs
+            if d.get("status") == "requested" or d.get("vehicleId") in vehicle_ids or d.get("transporterId") == uid
+        ]
     if status:
         docs = [d for d in docs if d.get("status") == status]
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)

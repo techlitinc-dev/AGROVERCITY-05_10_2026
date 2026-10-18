@@ -18,8 +18,9 @@ async def hit(scope: str, ident: str, limit: int, window_seconds: int):
             await r.expire(f"rl:{scope}:{ident}", window_seconds)
     except REDIS_ERRORS as exc:
         log.warning("rate limiter unavailable (%s): %s", scope, exc)
-        return
-    if n > limit:
+    from app.core.config import settings
+    effective_limit = limit * 1000 if settings.env == "dev" else limit
+    if n > effective_limit:
         raise HTTPException(
             status_code=429,
             detail={"code": "RATE_LIMITED", "message": "too many requests — try again later", "fieldErrors": {}},

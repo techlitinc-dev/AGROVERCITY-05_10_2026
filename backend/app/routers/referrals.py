@@ -89,6 +89,7 @@ async def _build_referred_list(uid: str) -> list[ReferredUser]:
 
 
 @router.get("", response_model=ReferralsResponse)
+@router.get("/summary", response_model=ReferralsResponse)
 async def get_referrals(uid: str = Depends(current_user_id)):
     user = await get_user(uid)
     if user is None:

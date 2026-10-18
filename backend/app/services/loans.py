@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.core.db import get_doc, set_doc
-from app.models.loans import LoanApplicationOut, LoanScheduleEntry
+from app.models.loans import LoanApplicationOut, LoanDocument, LoanScheduleEntry
 from app.services.ai import config_store, decision_log, gateway, outcomes as ai_outcomes, question_sets
 from app.services.ai.privacy import build_loan_prescreen_state
 from app.services.notifications import send_fcm_to_user
@@ -140,11 +140,27 @@ def compute_schedule(
 
 
 def to_out(loan: dict) -> LoanApplicationOut:
+    raw_docs = loan.get("documents") or []
+    norm_docs = []
+    for d in raw_docs:
+        if isinstance(d, dict):
+            norm_docs.append(
+                LoanDocument(
+                    documentId=str(d.get("documentId") or d.get("id") or "doc_1"),
+                    name=str(d.get("name") or "Document"),
+                    storagePath=str(d.get("storagePath") or "vault/doc"),
+                    uploadedAt=str(d.get("uploadedAt") or loan.get("createdAt") or datetime.now(timezone.utc).isoformat()),
+                    referenceNo=d.get("referenceNo"),
+                )
+            )
+        elif isinstance(d, LoanDocument):
+            norm_docs.append(d)
+
     return LoanApplicationOut(
         applicationId=loan.get("applicationId") or loan.get("id", ""),
-        amount=loan.get("amount", 0),
-        tenureMonths=loan.get("tenureMonths", 0),
-        purpose=loan.get("purpose", ""),
+        amount=float(loan.get("amount") or loan.get("amountRequested") or 0),
+        tenureMonths=int(loan.get("tenureMonths") or 0),
+        purpose=loan.get("purpose") or loan.get("loanType") or "Kisan Credit Card (KCC)",
         status=loan.get("status", "submitted"),
         createdAt=loan.get("createdAt", ""),
         applicationNumber=loan.get("applicationNumber"),
@@ -156,14 +172,14 @@ def to_out(loan: dict) -> LoanApplicationOut:
         bankAccountId=loan.get("bankAccountId"),
         bankAccountLast4=loan.get("bankAccountLast4"),
         bankIfsc=loan.get("bankIfsc"),
-        sanctionedAmount=loan.get("sanctionedAmount"),
+        sanctionedAmount=loan.get("sanctionedAmount") or (int(loan["amountApproved"]) if "amountApproved" in loan else None),
         interestRate=loan.get("interestRate"),
         disbursementRef=loan.get("disbursementRef"),
         disbursedAt=loan.get("disbursedAt"),
         rejectionReason=loan.get("rejectionReason"),
         assignedOfficerId=loan.get("assignedOfficerId"),
         assignedOfficerName=loan.get("assignedOfficerName"),
-        documents=loan.get("documents") or [],
+        documents=norm_docs,
         timeline=loan.get("timeline") or [],
         note=loan.get("note"),
         updatedAt=loan.get("updatedAt"),

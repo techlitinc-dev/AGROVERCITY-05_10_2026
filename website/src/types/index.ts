@@ -36,6 +36,7 @@ export interface UserProfile {
   hasMpin: boolean;
   avatarUrl?: string;
   farmSizeAcres?: number;
+  gatNumber?: string;
   kisanCoins: number;
 }
 

@@ -10,6 +10,11 @@ import {
   Trash2,
   Sparkles,
   LineChart as LineChartIcon,
+  Truck,
+  Calculator,
+  DollarSign,
+  ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -20,7 +25,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { mandi, advisory, priceAlerts, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency } from '../../lib/utils';
@@ -46,6 +51,7 @@ export const MandiPricesView: React.FC = () => {
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [forecast, setForecast] = useState<Record<string, unknown> | null>(null);
   const [compareRows, setCompareRows] = useState<unknown[]>([]);
+  const [arbitrageQty, setArbitrageQty] = useState<number>(30);
   const [saturation, setSaturation] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
@@ -99,7 +105,7 @@ export const MandiPricesView: React.FC = () => {
     Promise.all([
       mandi.history({ commodity: chartCommodity }),
       mandi.forecast({ commodity: chartCommodity }),
-      mandi.compare({ commodity: chartCommodity }),
+      mandi.compare({ crop: chartCommodity, commodity: chartCommodity, quantityQuintals: arbitrageQty }),
     ])
       .then(([history, fc, cmp]) => {
         if (!active) return;
@@ -115,7 +121,8 @@ export const MandiPricesView: React.FC = () => {
         setChartData(points);
         setForecast(asRecord(fc));
         const cmpRec = asRecord(cmp);
-        setCompareRows(asArray(cmpRec.mandis ?? cmpRec.rows ?? cmpRec.comparison ?? cmp));
+        const list = asArray((cmp as any)?.data ?? cmpRec.data ?? cmpRec.mandis ?? cmpRec.rows ?? cmpRec.comparison ?? cmp);
+        setCompareRows(list);
       })
       .catch(() => {
         if (!active) return;
@@ -127,7 +134,7 @@ export const MandiPricesView: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [chartCommodity]);
+  }, [chartCommodity, arbitrageQty]);
 
   const filteredPrices = prices.filter((p) => {
     const matchesCrop = selectedCrop === 'All' || p.commodity.toLowerCase().includes(selectedCrop.toLowerCase());
@@ -330,40 +337,128 @@ export const MandiPricesView: React.FC = () => {
           </div>
         </div>
 
-        {/* Mandi comparison for the selected commodity */}
-        {compareRows.length > 0 && (
-          <div className="pt-2">
-            <h4 className="font-bold text-xs text-slate-900 mb-2">
-              {chartCommodity} — Mandi-wise Comparison (Top Yards)
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {compareRows.slice(0, 6).map((row, i) => {
+        {/* Mandi Arbitrage & Net In-Hand Profit Engine */}
+        <div className="pt-4 border-t border-slate-100 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                <Calculator className="w-3 h-3 text-emerald-600" />
+                <span>Mandi Arbitrage & Net Profit Engine • Gat 312 Pimpalgaon</span>
+              </div>
+              <h4 className="font-extrabold text-sm text-slate-900 mt-1">
+                {chartCommodity} — In-Hand Profit Comparison Across APMC Yards
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Calculates actual bank payout after deducting diesel, freight haulage, and APMC hamali charges.
+              </p>
+            </div>
+
+            {/* Quantity Selector */}
+            <div className="flex items-center gap-2 self-start sm:self-auto bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+              <span className="text-[11px] font-bold text-slate-500 pl-2">Lot:</span>
+              {[15, 30, 50, 100].map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setArbitrageQty(q)}
+                  className={`px-3 py-1 text-xs font-bold rounded-xl transition-all ${
+                    arbitrageQty === q
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  {q} Qtl
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {compareRows.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {compareRows.slice(0, 4).map((row, i) => {
                 const r = asRecord(row);
                 const modal = asNum(r.modalPrice ?? r.price ?? r.modal, 0);
-                const trend = asNum(r.trendPercentage ?? r.trend ?? r.changePercent, 0);
+                const transport = asNum(r.transportCost ?? r.transportFare ?? r.transport_fare_paisa, 0);
+                const grossSale = modal * arbitrageQty;
+                const netProfit = asNum(r.netProfit ?? (grossSale - transport), grossSale - transport);
+                const isBest = i === 0;
+
                 return (
-                  <div key={i} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between text-xs">
-                    <div>
-                      <p className="font-bold text-slate-900 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                        {asStr(r.mandi ?? r.name ?? r.mandiName, 'Mandi')}
-                      </p>
-                      <p className="text-[10px] text-slate-400">{asStr(r.district, '')}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-extrabold text-slate-900">{modal > 0 ? formatCurrency(modal) : '—'}</span>
-                      {trend !== 0 && (
-                        <span className={`block text-[10px] font-bold ${trend >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {trend >= 0 ? '+' : ''}{trend}%
+                  <div
+                    key={i}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
+                      isBest
+                        ? 'bg-gradient-to-b from-emerald-50/80 to-white border-emerald-400 shadow-md ring-1 ring-emerald-400/30'
+                        : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                    }`}
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h5 className="font-extrabold text-xs text-slate-900 flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                            <span>{asStr(r.mandiName ?? r.mandi ?? r.name, 'Mandi APMC')}</span>
+                          </h5>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            {asStr(r.commodity ?? chartCommodity, chartCommodity)}
+                          </span>
+                        </div>
+                        {isBest && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white flex-shrink-0">
+                            ★ Max Profit
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 py-2 border-y border-slate-100 text-[11px]">
+                        <div className="flex justify-between text-slate-600">
+                          <span>Mandi Rate:</span>
+                          <span className="font-bold text-slate-900">{formatCurrency(modal)} /q</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Gross Value ({arbitrageQty} Qtl):</span>
+                          <span className="font-semibold text-slate-800">{formatCurrency(grossSale)}</span>
+                        </div>
+                        <div className="flex justify-between text-rose-700">
+                          <span>Transport & Haulage:</span>
+                          <span className="font-semibold">- {formatCurrency(transport)}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Net In-Hand Profit / निव्वळ नफा:
                         </span>
-                      )}
+                        <div className="text-xl font-black text-emerald-800">
+                          {formatCurrency(netProfit)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 flex gap-1.5">
+                      <Link
+                        to="/farmer/transport"
+                        className="flex-1 py-2 px-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] text-center transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Truck className="w-3 h-3" /> Book Transport
+                      </Link>
+                      <Link
+                        to="/farmer/lots"
+                        className="py-2 px-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-[10px] text-center transition-colors"
+                        title="List lot at this price"
+                      >
+                        Sell Lot
+                      </Link>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="p-6 bg-slate-50 rounded-2xl text-center text-xs text-slate-400 font-semibold">
+              Loading real-time mandi arbitrage candidates...
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filter and Search Bar */}

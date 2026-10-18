@@ -26,11 +26,13 @@ const VaultView = lazy(() => import('./VaultView').then((m) => ({ default: m.Vau
 const ReferralsView = lazy(() => import('./ReferralsView').then((m) => ({ default: m.ReferralsView })));
 const KisanCoinsView = lazy(() => import('../community/KisanCoinsView').then((m) => ({ default: m.KisanCoinsView })));
 const DairyHome = lazy(() => import('../dairy/DairyHome').then((m) => ({ default: m.DairyHome })));
+const AiCropDoctorView = lazy(() => import('./AiCropDoctorView').then((m) => ({ default: m.AiCropDoctorView })));
 
 /** 1. Farmer / Kisan Hub (18 journeys) */
 export const FarmerRouteElements = () => (
   <>
     <Route path="/farmer" element={<FarmerHome />} />
+    <Route path="/farmer/crop-doctor" element={<AiCropDoctorView />} />
     <Route path="/farmer/mandi" element={<MandiPricesView />} />
     <Route path="/farmer/lots" element={<ProduceLotsView />} />
     <Route path="/farmer/demands" element={<BuyerDemandsView />} />

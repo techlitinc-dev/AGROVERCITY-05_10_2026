@@ -62,7 +62,7 @@
 |---|---|---|---|
 | GET | `/mandi/prices?crop=&district=&lat=&lng=&page=` | List `MandiPrice[]`: `{ id, mandiName, distanceKm, commodity, variety, minPrice, maxPrice, modalPrice, msp, trend, changePercent, arrivalsQuintals, updatedAt }`. Source: **Agmarknet/eNAM**. | farmer, seller, broker |
 | GET | `/mandi/vyapari-rates?crops=` | "Aaj ke Bhav" widget: `VyapariRate[]` `{ id, crop, rateDisplay, priceChange, changeDir, mandiName, vyapariCount, lastUpdated }`. Source: vyapari partner portal, Agmarknet fallback; refreshed 2-hourly 06:00–20:00; server caches for offline reads. | farmer, seller, broker |
-| GET | `/mandi/compare?crop=&quantityQuintals=&lat=&lng=` | Smart Mandi Selection: per-mandi `{ mandiName, modalPrice, transportCost, netProfit }` ranked. | farmer, seller, broker |
+| GET | `/mandi/compare?crop=&commodity=&quantityQuintals=&lat=&lng=` | Smart Mandi Selection: per-mandi `{ mandiName, modalPrice, transportCost, netProfit }` ranked after transport deduction. Accepts `crop` or `commodity` aliases. | farmer, seller, broker |
 | GET | `/mandi/list` | Mandi directory (names, locations) for filters. | farmer, seller, broker |
 
 ## 5. AI Advisory & Chatbot
@@ -70,7 +70,7 @@
 | Method | Endpoint | Description | Roles |
 |---|---|---|---|
 | POST | `/advisory/saturation` | Market saturation check. Body: `{ crop, district, lat, lng, radiusKm }`. Returns `{ sowingCount, radiusKm, expectedArrivalIncrease, riskLevel (green/yellow/red), predictedPrice, predictedDate, alternativeCrops: [{crop, expectedPrice}] }`. Privacy: aggregate counts only, opt-in. | farmer |
-| POST | `/advisory/disease-scan` | Leaf disease detection. Multipart image upload. Returns `PestDisease[]`: `{ diseaseName, crop, pathogen, confidence, symptoms, chemicalTreatment, organicTreatment, dosage, estimatedCost }`. | farmer |
+| POST | `/advisory/disease-scan` | Leaf disease detection & Vision AI Crop Doctor. Multipart form with `image` (file), optional `plotId` and `cropHint` (Soybean, Onion, Wheat, Cotton, Tomato, etc.). Returns `PestDisease[]`: `{ diseaseName, crop, pathogen, confidence, symptoms, chemicalTreatment, organicTreatment, dosage, estimatedCost, sprayWindowSync }`. Persists to `disease_scans`. | farmer |
 | GET | `/advisory/pest-radar?lat=&lng=&radiusKm=5` | Nearby pest/disease outbreak alerts `[{ disease, crop, distanceKm, riskLevel, reportedAt }]`. | farmer |
 | POST | `/advisory/npk` | NPK recommendation. Body: `{ n, p, k, crop, soilType }` → fertilizer plan. (Can be client-side; keep for consistency.) | farmer |
 | POST | `/chatbot/messages` | Send message to Kisan Mitra. Body: `{ text?, audioUrl?, language, sessionId }`. Returns `KisanMitraMessage`: `{ id, sender, text, timestamp, quickReplies[], richCardType, richCardData }`. Backend: OpenRouter LLM + Sarvam AI STT; 24 h session memory. | all |
@@ -79,7 +79,7 @@
 | GET | `/weather?lat=&lng=` | Weather strip: `{ tempC, rainProbability, condition, radarAvailable, forecast[] }` (proxy to IMD/OpenWeather). | all |
 | POST | `/tasks/urgent/complete` | Mark Today's Action done → `{ agriCoinsEarned: 50, newBalance }`. (AppState: `markUrgentTaskDone`) | farmer |
 | POST | `/advisory/sowing-intent` | Submit seasonal crop sowing intention for regional saturation mapping. Body: `{ crop, areaAcres, sowingDate, district }`. | farmer |
-| GET | `/advisory/disease-scans` | Historical leaf disease scans with diagnoses, severity, and treatments. | farmer |
+| GET | `/advisory/disease-scans` | Historical leaf disease scans with diagnoses, severity, dual chemical/organic treatments, and plot tracking. (In-memory sorted newest first, avoiding cloud composite index). | farmer |
 | POST | `/advisory/crop-plan` | Generate personalized AI agronomic crop calendar and advisory plan. Body: `{ crop, sowingDate, landAreaAcres, soilType, irrigationType }`. | farmer |
 | POST | `/advisory/crop-plan/confirm` | Confirm and save crop calendar to user urgent tasks. Body: `{ planId }`. | farmer |
 | POST | `/chatbot/expert-handoff` | Dedicated endpoint for human expert handoff request. Body: `{ sessionId, reason }` → `{ expertName, contactChannel, etaMinutes }`. (Synonym of `/chatbot/handoff`) | all |
@@ -257,7 +257,7 @@
 | Method | Endpoint | Description | Roles |
 |---|---|---|---|
 | GET | `/land-records/search?gatNumber=&village=&district=&type=712|8A` | Search by Gat (alphanumeric 1–20) or village (min 3 chars, fuzzy). Returns `LandRecord712[]`: `{ gatNumber, village, district, ownerName, khataNumber, totalAreaHectares, totalAreaAcres, landClass, ferfarNumber, cropHistory }`. Source: **mahabhulekh.maharashtra.gov.in / Aaple Sarkar**; multi-match disambiguation. | farmer, landlord |
-| GET | `/land-records/{id}/pdf` | Official PDF (view/download/share). | farmer, landlord |
+| GET | `/land-records/{id}/pdf` | Official Government of Maharashtra e-Mahabhulekh 7/12 extract PDF (generates high-fidelity ReportLab bilingual 7/12 land title document with QR code, village/gat/owner details, crop history, and legal seal). | farmer, landlord |
 | POST | `/land-records/{id}/import` | Auto-store area/owner/soil/crop-history into farm profile & P&L. (AppState: `search712Records` + auto-store) | farmer, landlord |
 
 ## 14. Equipment Rental (Yantra Time-Slots)
@@ -484,7 +484,7 @@ Doctor / vet network (`livestock_vets.py`; vet workspace requires a claimed vet 
 | POST | `/gamification/redeem` | Redeem `{rewardType, coins}` (coins must equal the catalog cost) → `{voucherCode, coins, balance, reward, redeemedAt}`; writes coin_ledger + redeemed_rewards + notification. **400 INSUFFICIENT_COINS / VALIDATION_ERROR.** | all |
 | GET | `/gamification/ledger` | Coin earn/spend history, paged envelope `{data:[{id, amount, reason, refId, balanceAfter, at}], page, pageSize, total}` (newest first). | all |
 | GET | `/gamification/leaderboard?period=all\|month` | Top coin earners from `gamification_ledger` → `{data:[{rank, userId, name, village, coinsEarned, isMe}], myRank:{rank, coinsEarned}\|null, period}`. | all |
-| GET | `/referrals` | `{referralCode, shareLink, shareMessage, stats:{invited, joined, totalEarnedCoins}, milestones:[{count, rewardCoins, achieved}], referred:[{name, phone, status: invited\|joined, invitedAt, joinedAt, rewardCoins}], leaderboard:[{rank, userId, name, village, referralCount, isMe}], myRank}`. | all |
+| GET | `/referrals` · `/referrals/summary` | `{referralCode, shareLink, shareMessage, stats:{invited, joined, totalEarnedCoins}, milestones:[{count, rewardCoins, achieved}], referred:[{name, phone, status: invited|joined, invitedAt, joinedAt, rewardCoins}], leaderboard:[{rank, userId, name, village, referralCount, isMe}], myRank}`. `/referrals/summary` is an alias for high-speed dashboard widgets. | all |
 | POST | `/referrals/invite` | Invite `{name, phone (E.164)}` → 201 `{invite, referralCode, shareLink, shareMessage, agriCoinsEarned: 100, stats, milestones}`; **409 ALREADY_INVITED** on duplicate phone, **400 VALIDATION_ERROR** on bad phone. (AppState: `inviteFarmer`) | all |
 
 Referral flow: invite = +100 coins immediately (reason `referral`). Registering with a valid `referralCode` records `referral_attributions/{referredUid}` (status `joined`) + `referralCodeUsed` on the new user, awards the referrer +100 (reason `referral`), flips any matching `referrals/{uid}/invited/{phone}` doc to `joined`, and pays milestone bonuses (1→50, 5→150, 10→500; reason `referral_milestone`) with a notification per milestone. Referred user earns nothing at registration.

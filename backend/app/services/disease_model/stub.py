@@ -3,7 +3,7 @@ from app.services.disease_model.base import DiseaseModelAdapter
 
 
 class StubDiseaseModel(DiseaseModelAdapter):
-    async def scan(self, image_bytes: bytes) -> list[PestDisease]:
+    async def scan(self, image_bytes: bytes, crop_hint: str | None = None) -> list[PestDisease]:
         return [
             PestDisease(
                 diseaseName="Early Blight",

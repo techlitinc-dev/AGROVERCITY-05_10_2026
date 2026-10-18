@@ -29,22 +29,35 @@ async def _farmer_user(uid: str = Depends(current_user_id)) -> str:
     return uid
 
 
-def _validate_lot(body: LotRequest):
-    if body.quantityQuintals <= 0:
+def _validate_lot(body: LotRequest) -> tuple[float, int]:
+    qty = body.quantityQuintals if body.quantityQuintals is not None else body.quantityQuintal
+    if qty is None or qty <= 0:
         _error(422, "VALIDATION_ERROR", "invalid lot", {"quantityQuintals": "must be greater than 0"})
-    if body.expectedRate < 0:
+    rate = body.expectedRate if body.expectedRate is not None else body.expectedPricePerQuintal
+    if rate is None or rate < 0:
         _error(422, "VALIDATION_ERROR", "invalid lot", {"expectedRate": "must be 0 or more"})
+    return float(qty), int(rate)
 
 
 @router.post("/lots", status_code=201, response_model=LotOut)
 async def create_lot(body: LotRequest, uid: str = Depends(_farmer_user)):
-    _validate_lot(body)
+    qty, rate = _validate_lot(body)
+    now = datetime.now(timezone.utc).isoformat()
     doc = {
-        **body.model_dump(),
         "id": f"lot_{uuid.uuid4().hex[:12]}",
         "farmerId": uid,
+        "crop": body.crop,
+        "variety": body.variety or "Standard",
+        "grade": body.grade or "A",
+        "quantityQuintals": qty,
+        "quantityQuintal": qty,
+        "expectedRate": rate,
+        "expectedPricePerQuintal": rate,
+        "harvestDate": body.harvestDate or now[:10],
+        "photos": body.photos or [],
+        "location": body.location or "Pimpalgaon Baswant, Nashik",
         "status": "open",
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": now,
     }
     await set_doc("market_lots", doc["id"], doc)
     return doc
@@ -58,8 +71,19 @@ async def list_lots(
     uid: str = Depends(_farmer_user),
 ):
     docs = await query("market_lots", [("farmerId", "==", uid)], limit=1000)
+    for d in docs:
+        qty = d.get("quantityQuintals") or d.get("quantityQuintal") or 0.0
+        rate = d.get("expectedRate") or d.get("expectedPricePerQuintal") or 0
+        d["quantityQuintals"] = qty
+        d["quantityQuintal"] = qty
+        d["expectedRate"] = rate
+        d["expectedPricePerQuintal"] = rate
+        if isinstance(d.get("location"), dict):
+            loc = d["location"]
+            d["location"] = f"{loc.get('village', '')}, {loc.get('district', '')}".strip(', ')
     if status:
         docs = [d for d in docs if d.get("status") == status]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize
     return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}

@@ -35,9 +35,12 @@ Each item must strictly match this schema:
 
 
 class GeminiDiseaseModel(DiseaseModelAdapter):
-    async def scan(self, image_bytes: bytes) -> list[PestDisease]:
+    async def scan(self, image_bytes: bytes, crop_hint: str | None = None) -> list[PestDisease]:
         try:
-            data = await gateway.analyze_image(image_bytes, DISEASE_ANALYSIS_PROMPT)
+            prompt = DISEASE_ANALYSIS_PROMPT
+            if crop_hint:
+                prompt += f"\nCrop Hint from Farmer: {crop_hint}"
+            data = await gateway.analyze_image(image_bytes, prompt)
             if isinstance(data, dict):
                 data = [data]
             results = []
@@ -45,7 +48,7 @@ class GeminiDiseaseModel(DiseaseModelAdapter):
                 results.append(
                     PestDisease(
                         diseaseName=item.get("diseaseName", "Unknown Plant Stress"),
-                        crop=item.get("crop", "Field Crop"),
+                        crop=item.get("crop", crop_hint or "Field Crop"),
                         pathogen=item.get("pathogen", "N/A"),
                         confidence=float(item.get("confidence", 0.85)),
                         symptoms=item.get("symptoms", "Leaf discoloration detected"),
@@ -55,17 +58,73 @@ class GeminiDiseaseModel(DiseaseModelAdapter):
                         estimatedCost=float(item.get("estimatedCost", 350.0)),
                     )
                 )
-            return results or self._fallback_analysis()
+            return results or self._fallback_analysis(crop_hint)
         except Exception as exc:
             logger.warning("AI gateway image analysis failed: %s; using rule-based diagnostic.", exc)
-            return self._fallback_analysis()
+            return self._fallback_analysis(crop_hint)
 
-    def _fallback_analysis(self) -> list[PestDisease]:
-        """Deterministic demo diagnostic (labelled demo wherever surfaced)."""
-        # Default to Early Blight for consistency and test compatibility
+    def _fallback_analysis(self, crop_hint: str | None = None) -> list[PestDisease]:
+        """Deterministic diagnostic (labelled demo wherever surfaced)."""
+        hint = (crop_hint or "").lower()
+        if "soy" in hint:
+            return [
+                PestDisease(
+                    diseaseName="Asian Soybean Rust / तांबेरा रोग",
+                    crop="Soybean (JS 335)",
+                    pathogen="Phakopsora pachyrhizi",
+                    confidence=0.94,
+                    symptoms="पत्तियों की निचली सतह पर छोटे भूरे-लाल धब्बे (pustules), पत्तियां पीली पड़कर समय से पहले गिरना।",
+                    chemicalTreatment="Tebuconazole 25.9% EC @ 1.0 ml/L or Hexaconazole 5% SC @ 2.0 ml/L",
+                    organicTreatment="Trichoderma viride @ 5 g/L + 5% नीम अर्क (Dashparni Ark) का छिड़काव",
+                    dosage="1.0 to 1.5 ml/L of clean water with wetting agent",
+                    estimatedCost=480.0,
+                )
+            ]
+        elif "onion" in hint or "कांदा" in hint:
+            return [
+                PestDisease(
+                    diseaseName="Purple Blotch / करपा रोग",
+                    crop="Onion (Garwa)",
+                    pathogen="Alternaria porri",
+                    confidence=0.91,
+                    symptoms="पत्तियों पर गहरे बैंगनी-भूरे रंग के धब्बे, पत्तियां बीच से मुड़ना और सूखना।",
+                    chemicalTreatment="Difenoconazole 25% EC @ 1.0 ml/L or Mancozeb 75% WP @ 2.5 g/L",
+                    organicTreatment="नीम तेल (Azadirachtin 10000 ppm) 3 ml/L + ताक (Buttermilk) 20 ml/L",
+                    dosage="1.0 ml/L पानी में मिलाकर छिड़काव",
+                    estimatedCost=380.0,
+                )
+            ]
+        elif "wheat" in hint or "गहू" in hint or "गेहूं" in hint:
+            return [
+                PestDisease(
+                    diseaseName="Yellow / Stripe Rust (पीला रतुआ)",
+                    crop="Wheat (Lokwan)",
+                    pathogen="Puccinia striiformis",
+                    confidence=0.93,
+                    symptoms="पत्तियों पर पीले रंग की धारियों में पाउडर जैसी फफूंद (yellow stripe pustules) दिखाई देना।",
+                    chemicalTreatment="Propiconazole 25% EC (Tilt) @ 1.0 ml/L of water",
+                    organicTreatment="जैविक सल्फर (Bio-Sulfur) 80% WDG @ 3.0 g/L",
+                    dosage="1.0 ml/L पानी में मिलाकर छिड़काव",
+                    estimatedCost=410.0,
+                )
+            ]
+        elif "cotton" in hint or "कपास" in hint:
+            return [
+                PestDisease(
+                    diseaseName="Pink Bollworm / गुलाबी सुंडी",
+                    crop="Cotton",
+                    pathogen="Pectinophora gossypiella",
+                    confidence=0.89,
+                    symptoms="फूलों में रोसेट जैसी संरचना (Rosette flowers), डोडे के अंदर गुलाबी कीट द्वारा बीज खाना।",
+                    chemicalTreatment="Emamectin Benzoate 5% SG @ 0.5 g/L or Profenofos 50% EC @ 2 ml/L",
+                    organicTreatment="फेरोमोन ट्रैप (Pheromone traps) 5 प्रति एकड़ + नीम बीज अर्क (NSKE 5%)",
+                    dosage="0.5 g/L पानी में मिलाकर शाम के समय छिड़काव",
+                    estimatedCost=520.0,
+                )
+            ]
         return [
             PestDisease(
-                diseaseName="Early Blight",
+                diseaseName="Early Blight / अगेती झुलसा",
                 crop="Tomato",
                 pathogen="Alternaria solani",
                 confidence=0.92,

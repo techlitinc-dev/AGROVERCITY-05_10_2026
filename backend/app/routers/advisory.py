@@ -145,6 +145,7 @@ async def sowing_intent(body: SowingIntentIn, user: dict = Depends(_farmer)):
 async def disease_scan(
     image: UploadFile = File(...),
     plotId: str | None = Form(None),
+    cropHint: str | None = Form(None),
     user: dict = Depends(_farmer),
 ):
     data = await storage.validate_upload(image)
@@ -166,7 +167,7 @@ async def disease_scan(
             "scanId": None,
         }
 
-    results = await get_disease_adapter().scan(data)
+    results = await get_disease_adapter().scan(data, crop_hint=cropHint)
     demo = settings.ai_provider == "shim"
     top = results[0] if results else None
     confidence = float(top.confidence) if top else 0.0
@@ -235,14 +236,8 @@ async def disease_scans(
     filters = [("farmerId", "==", user["id"])]
     if plotId is not None:
         filters.append(("plotId", "==", plotId))
-    docs = await query_cursor(
-        "disease_scans",
-        filters,
-        order_field="createdAt",
-        descending=True,
-        cursor_value=cursor,
-        limit=limit,
-    )
+    docs = await query("disease_scans", filters, limit=limit)
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     next_cursor = docs[-1]["createdAt"] if len(docs) == limit else None
     return {
         "data": [

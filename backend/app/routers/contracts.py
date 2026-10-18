@@ -381,17 +381,26 @@ async def list_contract_templates():
 
 @router.get("/mine")
 async def my_contracts(
-    role: str = "buyer",
+    role: str | None = None,
     status: str | None = None,
     user: dict = Depends(_contract_viewer),
 ):
     uid = user["id"]
-    if role == "buyer":
+    user_persona = user.get("activeProfile") or "farmer"
+    effective_role = role or ("buyer" if user_persona in ("directBuyer", "exporter") else "farmer")
+    if effective_role == "buyer":
         require_role(user, "directBuyer", "seller", "exporter")
         docs = await query("contracts", [("buyerId", "==", uid)], limit=1000)
-    elif role == "farmer":
-        require_role(user, "farmer")
-        docs = await query("contracts", [("farmerId", "==", uid)], limit=1000)
+    elif effective_role == "farmer":
+        require_role(user, "farmer", "seller")
+        docs = await query("contracts", [], limit=1000)
+        docs = [
+            d for d in docs
+            if d.get("farmerId") == uid
+            or d.get("acceptedBy") == uid
+            or not d.get("farmerId")
+            or d.get("status") in ("open", "offered", "accepted")
+        ]
     else:
         _error(422, "VALIDATION_ERROR", "role must be buyer or farmer", {"role": "must be buyer or farmer"})
     if status:

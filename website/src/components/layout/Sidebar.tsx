@@ -52,6 +52,7 @@ export const Sidebar: React.FC = () => {
             title: 'Kisan Core Hub',
             items: [
               { to: '/farmer', label: 'Farmer Cockpit', icon: LayoutDashboard },
+              { to: '/farmer/crop-doctor', label: 'AI Crop Doctor (रोग निदान)', icon: Stethoscope },
               { to: '/farmer/mandi', label: 'Live Mandi Prices', icon: TrendingUp },
               { to: '/farmer/lots', label: 'Sell Produce Lots', icon: Package },
               { to: '/farmer/demands', label: 'Buyer Demands', icon: Layers },

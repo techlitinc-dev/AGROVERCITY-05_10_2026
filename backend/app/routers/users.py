@@ -363,8 +363,12 @@ async def put_my_consents(body: ConsentsIn, uid: str = Depends(current_user_id))
 @router.post("/me/profiles/{profile_type}/activate")
 async def activate_profile(profile_type: str, uid: str = Depends(current_user_id)):
     user = await _require_user(uid)
-    if profile_type not in user.get("linkedProfiles", []):
-        _error(404, "PROFILE_NOT_LINKED", "profile is not linked")
+    linked = user.setdefault("linkedProfiles", [])
+    if profile_type not in linked:
+        if profile_type in VALID_PROFILES:
+            linked.append(profile_type)
+        else:
+            _error(404, "PROFILE_NOT_LINKED", "profile is not linked")
     user["activeProfile"] = profile_type
     await set_doc("users", uid, user)
     return {

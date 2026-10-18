@@ -41,6 +41,19 @@ _RECORDS = [
         ferfarNumber="F-318",
         cropHistory="प्याज, टमाटर (2025)",
     ),
+    LandRecord712(
+        id="rec-312",
+        gatNumber="312",
+        village="Pimpalgaon Baswant",
+        district="Nashik",
+        ownerName="तुषार चौधरी (Tushar Chaudhari)",
+        khataNumber="312/A",
+        totalAreaHectares=1.82,
+        totalAreaAcres=4.5,
+        landClass="बागायत (विहीर व ठिबक)",
+        ferfarNumber="F-892/2026",
+        cropHistory="सोयाबीन (JS-335), कांदा (गरवा 2026)",
+    ),
 ]
 
 

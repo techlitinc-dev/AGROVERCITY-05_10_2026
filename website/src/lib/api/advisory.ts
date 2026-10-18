@@ -11,8 +11,8 @@ export const advisory = {
     post<unknown>('/advisory/sowing-intent', payload),
 
   /** POST /advisory/disease-scan */
-  diseaseScan: (payload: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>('/advisory/disease-scan', payload),
+  diseaseScan: (payload: FormData | Record<string, unknown>): Promise<any> =>
+    post<any>('/advisory/disease-scan', payload),
 
   /** GET /advisory/disease-scans */
   diseaseScans: (): Promise<unknown[]> => readList<unknown[]>('/advisory/disease-scans'),

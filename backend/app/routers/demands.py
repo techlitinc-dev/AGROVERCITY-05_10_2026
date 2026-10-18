@@ -100,11 +100,17 @@ async def _buyer_summary(buyer_id: str) -> dict:
     buyer = await get_user(buyer_id) or {}
     role_profile = await get_doc(f"users/{buyer_id}/role_profiles", "directBuyer") or {}
     purchases = await query("purchases", [("buyerId", "==", buyer_id)], limit=1000)
-    stars = [
-        (p.get("rating") or {}).get("farmerToBuyer", {}).get("rating")
-        for p in purchases
-        if (p.get("rating") or {}).get("farmerToBuyer")
-    ]
+    stars = []
+    for p in purchases:
+        rating_obj = p.get("rating")
+        if isinstance(rating_obj, dict):
+            fb = rating_obj.get("farmerToBuyer")
+            if isinstance(fb, dict):
+                r = fb.get("rating")
+                if isinstance(r, (int, float)):
+                    stars.append(r)
+            elif isinstance(fb, (int, float)):
+                stars.append(fb)
     cases = await query("kyc_cases", [("userId", "==", buyer_id)], limit=50)
     kyc_verified = any(
         c.get("persona") == "directBuyer" and c.get("status") == "verified" for c in cases

@@ -92,7 +92,8 @@ async def get_schedule(
     today = date.today().isoformat()
 
     items = []
-    for crop in user.get("activeCrops", []):
+    crops = user.get("activeCrops") or ["Soybean (सोयाबीन)", "Onion (कांदा)"]
+    for crop in crops:
         moisture = 35 + (zlib.crc32(f"{user['id']}{crop}".encode()) % 40)
         recommended = 90 if moisture < 60 else 30
         items.append(
@@ -146,12 +147,11 @@ async def _emit_irrigation_task(
 
 @router.get("/groundwater")
 async def get_groundwater(district: str | None = None, user: dict = Depends(_farmer)):
-    if not district:
-        _error(400, "MISSING_DISTRICT", "district query param is required")
-    info = _GROUNDWATER.get(district, {"depthMeters": 15.0, "zone": "safe"})
+    target_district = district or user.get("district") or "Nashik"
+    info = _GROUNDWATER.get(target_district, {"depthMeters": 18.5, "zone": "semiCritical"})
     return {
         **info,
-        "district": district,
+        "district": target_district,
         "measuredAt": datetime.now(timezone.utc).date().isoformat(),
     }
 

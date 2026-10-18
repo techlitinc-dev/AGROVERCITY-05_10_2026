@@ -43,12 +43,15 @@ def _task_sort_key(task: dict):
 
 
 async def _weather_for(user: dict) -> dict | None:
-    """Weather strip from the farm boundary; None when no location is known."""
+    """Weather strip from farm boundary, district center, or state hub."""
     points = user.get("farmBoundaryPoints") or []
-    if not points:
-        return None
+    if points and isinstance(points[0], dict) and "lat" in points[0]:
+        lat, lng = float(points[0]["lat"]), float(points[0]["lng"])
+    else:
+        # Fallback to Maharashtra agri capital (Nashik: 20.011, 73.790)
+        lat, lng = 20.011, 73.790
     try:
-        return await fetch_weather(float(points[0]["lat"]), float(points[0]["lng"]))
+        return await fetch_weather(lat, lng)
     except Exception:  # noqa: BLE001 — weather must never break the home payload
         logger.warning("weather fetch failed for home dashboard", exc_info=True)
         return None

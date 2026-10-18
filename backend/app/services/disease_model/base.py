@@ -5,5 +5,5 @@ from app.models.advisory import PestDisease
 
 class DiseaseModelAdapter(ABC):
     @abstractmethod
-    async def scan(self, image_bytes: bytes) -> list[PestDisease]:
+    async def scan(self, image_bytes: bytes, crop_hint: str | None = None) -> list[PestDisease]:
         ...

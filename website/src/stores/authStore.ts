@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import type { UserProfile, PersonaType } from '../types';
-import type { AuthTokens } from '../lib/api';
-import { auth } from '../lib/api';
+import { auth, users, type AuthTokens } from '../lib/api';
 
 interface AuthState {
   user: UserProfile | null;
@@ -118,6 +117,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       activePersona: user.activePersona,
       isAuthenticated: true,
     });
+    if (user.activePersona) {
+      users.activateProfile(user.activePersona).catch(() => undefined);
+    }
   },
 
   logout: () => {
@@ -137,6 +139,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   switchPersona: (persona) => {
     localStorage.setItem(PERSONA_KEY, persona);
+    users.activateProfile(persona).catch(() => undefined);
     set((state) => {
       const updatedUser = state.user ? { ...state.user, activePersona: persona } : null;
       if (updatedUser) {
