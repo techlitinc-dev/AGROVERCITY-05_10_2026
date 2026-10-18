@@ -17,6 +17,7 @@ import {
   LifeBuoy,
   MessageCircle,
   FileCheck2,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
@@ -79,7 +80,11 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
         {/* Logo / Brand */}
         <div className="flex items-center gap-3">
-          <Link to="/" className="flex items-center gap-2.5 group">
+          <Link
+            to={isAuthenticated ? `/${activePersona || 'farmer'}` : '/'}
+            className="flex items-center gap-2.5 group"
+            title={isAuthenticated ? 'Go to My Dashboard' : 'Agrovercity OS Home'}
+          >
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
               <Sprout className="w-6 h-6" />
             </div>
@@ -99,13 +104,23 @@ export const Navbar: React.FC = () => {
           </Link>
         </div>
 
-        {/* Persona Switcher Dropdown (Highlighted Centerpiece) */}
+        {/* Persona Switcher & Direct Dashboard Link */}
         {isAuthenticated && (
-          <div className="relative">
-            <button
-              onClick={() => setPersonaDropdownOpen(!personaDropdownOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/80 rounded-2xl text-xs sm:text-sm font-bold text-emerald-900 transition-all shadow-xs"
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/${activePersona || 'farmer'}`}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all hover:scale-105"
+              title="Go to Active Dashboard Cockpit"
             >
+              <LayoutDashboard className="w-3.5 h-3.5" />
+              <span>My Dashboard</span>
+            </Link>
+
+            <div className="relative">
+              <button
+                onClick={() => setPersonaDropdownOpen(!personaDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/80 rounded-2xl text-xs sm:text-sm font-bold text-emerald-900 transition-all shadow-xs"
+              >
               <span className="text-base sm:text-lg">
                 {personaOptions.find((o) => o.id === activePersona)?.icon || '🌾'}
               </span>
@@ -151,7 +166,8 @@ export const Navbar: React.FC = () => {
               </>
             )}
           </div>
-        )}
+        </div>
+      )}
 
         {/* Right Action Icons: Language, Coins, Notifications, Cart, Profile */}
         <div className="flex items-center gap-2 sm:gap-3">

@@ -8,7 +8,13 @@ import { AiChatbotDrawer } from '../common/AiChatbotDrawer';
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
-  const isPublicLanding = location.pathname === '/' || location.pathname === '/legal';
+  const isFullWidthPage =
+    location.pathname === '/' ||
+    location.pathname === '/landing' ||
+    location.pathname === '/legal' ||
+    location.pathname === '/login' ||
+    location.pathname === '/register' ||
+    location.pathname === '/onboarding';
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-emerald-500 selection:text-white">
@@ -16,7 +22,7 @@ export const AppShell: React.FC = () => {
       <Navbar />
 
       {/* Main Body with Responsive Sidebar and Dynamic Content */}
-      {isPublicLanding ? (
+      {isFullWidthPage ? (
         <main className="flex-1 min-w-0 overflow-x-hidden">
           <Outlet />
         </main>
@@ -34,7 +40,7 @@ export const AppShell: React.FC = () => {
       <AiChatbotDrawer />
 
       {/* Mobile Bottom Navigation Bar */}
-      {!isPublicLanding && <BottomNav />}
+      {!isFullWidthPage && <BottomNav />}
     </div>
   );
 };
