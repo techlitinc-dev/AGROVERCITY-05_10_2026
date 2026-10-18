@@ -7,8 +7,12 @@ export interface AuthTokens {
 }
 
 export interface OtpSendResult {
-  success: boolean;
-  message: string;
+  success?: boolean;
+  message?: string;
+  otpSessionId?: string;
+  devOtp?: string;
+  expiresInSec?: number;
+  resendAfterSec?: number;
 }
 
 export interface OtpVerifyResult extends AuthTokens {
@@ -27,8 +31,12 @@ export const auth = {
     post<OtpSendResult>('/auth/otp/send', { phone }),
 
   /** POST /auth/otp/verify — returns tokens + isNewUser flag. */
-  verifyOtp: (phone: string, otp: string): Promise<OtpVerifyResult> =>
-    post<OtpVerifyResult>('/auth/otp/verify', { phone, otp }),
+  verifyOtp: (phone: string, otp: string, otpSessionId?: string): Promise<OtpVerifyResult> =>
+    post<OtpVerifyResult>('/auth/otp/verify', {
+      phone,
+      otp,
+      ...(otpSessionId ? { otpSessionId } : {}),
+    }),
 
   /** POST /auth/login — MPIN login. */
   loginWithMpin: (phone: string, mpin: string): Promise<OtpVerifyResult> =>

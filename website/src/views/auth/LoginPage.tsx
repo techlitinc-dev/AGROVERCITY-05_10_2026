@@ -37,6 +37,8 @@ const personaHome = (persona: PersonaType): string => PERSONA_HOME[persona] || '
 export const LoginPage: React.FC = () => {
   const [phone, setPhone] = useState('9876543210');
   const [step, setStep] = useState<'phone' | 'otp' | 'mpin'>('phone');
+  const [otpSessionId, setOtpSessionId] = useState<string>('');
+  const [devOtp, setDevOtp] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +54,13 @@ export const LoginPage: React.FC = () => {
     setMessage(null);
     try {
       const res = await auth.requestOtp(phone);
-      setMessage(res.message || `OTP sent to +91 ${phone}.`);
+      if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
+      if (res.devOtp) {
+        setDevOtp(res.devOtp);
+        setMessage(`OTP sent! (Dev Auto-OTP: ${res.devOtp})`);
+      } else {
+        setMessage(res.message || `OTP sent to +91 ${phone}.`);
+      }
       setStep('otp');
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -65,7 +73,7 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await auth.verifyOtp(phone, otp);
+      const res = await auth.verifyOtp(phone, otp, otpSessionId);
       if (res.isNewUser) {
         navigate('/register', { state: { phone } });
         return;
@@ -192,6 +200,19 @@ export const LoginPage: React.FC = () => {
                 Change mobile number
               </button>
             </div>
+
+            {devOtp && (
+              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between">
+                <span>Dev OTP: <strong className="font-mono text-sm tracking-wider">{devOtp}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => handleVerifyOtp(devOtp)}
+                  className="px-2 py-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold text-[11px] transition-colors"
+                >
+                  Quick Fill & Verify
+                </button>
+              </div>
+            )}
 
             <OtpField length={6} onComplete={handleVerifyOtp} disabled={loading} />
 

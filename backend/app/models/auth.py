@@ -12,7 +12,7 @@ class OtpSendRequest(BaseModel):
 class OtpVerifyRequest(BaseModel):
     phone: str
     otp: str
-    otpSessionId: str
+    otpSessionId: str | None = None
 
 
 class PhoneMpinLoginRequest(BaseModel):
