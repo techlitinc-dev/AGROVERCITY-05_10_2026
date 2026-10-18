@@ -21,8 +21,11 @@ from app.models.auth import (
     MpinResetRequest,
     MpinSetRequest,
     MpinVerifyRequest,
+    OnboardingRequest,
     OtpSendRequest,
     OtpVerifyRequest,
+    PhoneCheckRequest,
+    PhoneCheckResponse,
     PhoneMpinLoginRequest,
     QuickLoginRequest,
     RefreshRequest,
@@ -90,6 +93,75 @@ async def _issue_session(uid: str, user_agent: str | None) -> dict:
     except Exception:
         pass  # Redis optional in dev; sessions list degrades to empty
     return pair
+
+
+@router.post("/check", response_model=PhoneCheckResponse)
+async def check_phone_status(body: PhoneCheckRequest):
+    """Check whether a phone number is registered in Firebase Firestore and has an MPIN set.
+    Allows UI to route directly to MPIN login for returning users (no OTP), or OTP for first-time onboarding."""
+    phone = _normalize_phone(body.phone)
+    if not phone:
+        _error(422, "VALIDATION_ERROR", "valid phone number is required")
+    users = await query("users", [("phone", "==", phone)])
+    if not users:
+        return PhoneCheckResponse(exists=False, hasMpin=False)
+    user_with_mpin = next((u for u in users if u.get("mpinHash")), None)
+    active_user = user_with_mpin or users[0]
+    return PhoneCheckResponse(
+        exists=True,
+        hasMpin=user_with_mpin is not None,
+        name=active_user.get("name") or active_user.get("vernacularName"),
+        preferredLanguage=active_user.get("preferredLanguage") or active_user.get("language") or "en",
+        activeProfile=active_user.get("activeProfile") or active_user.get("primaryProfile") or "farmer",
+    )
+
+
+@router.post("/onboard", response_model=AuthResponse, response_model_exclude_none=True)
+async def onboard_user(
+    body: OnboardingRequest,
+    user_agent: str | None = Header(None),
+):
+    """Simple, streamlined onboarding for first-time agricultural users.
+    Saves MPIN and basic profile directly into Firebase Firestore 'users' collection."""
+    phone = _normalize_phone(body.phone)
+    if not phone:
+        _error(422, "VALIDATION_ERROR", "valid phone number is required")
+    validate_mpin_format(body.mpin)
+
+    uid = f"user_{phone.replace('+', '')[-10:]}"
+    user, is_new = await upsert_user_from_firebase(uid, phone)
+
+    persona = body.persona or "farmer"
+    user.update(
+        {
+            "name": body.name.strip(),
+            "phone": phone,
+            "state": body.state,
+            "district": body.district,
+            "village": body.village,
+            "primaryProfile": persona,
+            "activeProfile": persona,
+            "linkedProfiles": [persona] if persona not in user.get("linkedProfiles", []) else user.get("linkedProfiles"),
+            "mpinHash": hash_mpin(body.mpin),
+            "language": body.language or "en",
+            "preferredLanguage": body.language or "en",
+            "landAreaAcres": body.farmSizeAcres or user.get("landAreaAcres", 0.0),
+        }
+    )
+    await set_doc("users", uid, user)
+
+    try:
+        await onboarding_seed.seed_for_persona(uid, persona)
+    except Exception:
+        pass
+
+    pair = await _issue_session(uid, user_agent)
+    return AuthResponse(
+        accessToken=pair["accessToken"],
+        refreshToken=pair["refreshToken"],
+        isNewUser=is_new,
+        user=_public_user(user),
+    )
 
 
 @router.post("/login", response_model=AuthResponse, response_model_exclude_none=True)

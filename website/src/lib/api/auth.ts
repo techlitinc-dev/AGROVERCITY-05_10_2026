@@ -24,6 +24,26 @@ export interface RegisterResult extends AuthTokens {
   user: UserProfile;
 }
 
+export interface PhoneCheckResult {
+  exists: boolean;
+  hasMpin: boolean;
+  name?: string | null;
+  preferredLanguage?: string | null;
+  activeProfile?: string | null;
+}
+
+export interface OnboardPayload {
+  phone: string;
+  name: string;
+  mpin: string;
+  persona?: string;
+  state?: string;
+  district?: string;
+  village?: string;
+  language?: string;
+  farmSizeAcres?: number;
+}
+
 /** Auth namespace. Token contract: { accessToken, refreshToken, user } — no fabricated `token`. */
 export const auth = {
   /** POST /auth/otp/send */
@@ -37,6 +57,14 @@ export const auth = {
       otp,
       ...(otpSessionId ? { otpSessionId } : {}),
     }),
+
+  /** POST /auth/check — checks whether phone exists in Firestore and has MPIN configured. */
+  checkPhone: (phone: string): Promise<PhoneCheckResult> =>
+    post<PhoneCheckResult>('/auth/check', { phone }),
+
+  /** POST /auth/onboard — easy 1-step onboarding with MPIN and persona saved directly to Firestore. */
+  onboard: (payload: OnboardPayload): Promise<OtpVerifyResult> =>
+    post<OtpVerifyResult>('/auth/onboard', payload),
 
   /** POST /auth/login — MPIN login. */
   loginWithMpin: (phone: string, mpin: string): Promise<OtpVerifyResult> =>

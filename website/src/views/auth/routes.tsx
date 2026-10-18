@@ -9,6 +9,7 @@ export const AuthRouteElements = () => (
   <>
     <Route path="/login" element={<LoginPage />} />
     <Route path="/register" element={<RegisterPage />} />
+    <Route path="/onboarding" element={<RegisterPage />} />
     <Route path="/profiles" element={<ProfileSwitchPage />} />
   </>
 );

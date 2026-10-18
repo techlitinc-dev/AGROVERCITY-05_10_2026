@@ -20,6 +20,30 @@ class PhoneMpinLoginRequest(BaseModel):
     mpin: str
 
 
+class PhoneCheckRequest(BaseModel):
+    phone: str
+
+
+class PhoneCheckResponse(BaseModel):
+    exists: bool
+    hasMpin: bool
+    name: str | None = None
+    preferredLanguage: str | None = None
+    activeProfile: str | None = None
+
+
+class OnboardingRequest(BaseModel):
+    phone: str
+    name: str
+    mpin: str
+    persona: str = "farmer"
+    state: str = "Maharashtra"
+    district: str = "Nashik"
+    village: str = ""
+    language: str = "en"
+    farmSizeAcres: float | None = None
+
+
 class TokenPair(BaseModel):
     accessToken: str
     refreshToken: str

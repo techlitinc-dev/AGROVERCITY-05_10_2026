@@ -36,6 +36,7 @@ const personaHome = (persona: PersonaType): string => PERSONA_HOME[persona] || '
 
 export const LoginPage: React.FC = () => {
   const [phone, setPhone] = useState('9876543210');
+  const [userName, setUserName] = useState<string | null>(null);
   const [step, setStep] = useState<'phone' | 'otp' | 'mpin'>('phone');
   const [otpSessionId, setOtpSessionId] = useState<string>('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
@@ -46,9 +47,45 @@ export const LoginPage: React.FC = () => {
   const { login } = useAuthStore();
   const navigate = useNavigate();
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (phone.length < 10) return;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      // 1. Check if user exists in Firebase Firestore and already has an MPIN configured
+      const check = await auth.checkPhone(phone);
+      if (check.exists && check.hasMpin) {
+        // Returning user with MPIN: Go directly to 4-digit MPIN login (ZERO OTP!)
+        setUserName(check.name || null);
+        setMessage(
+          check.name
+            ? `Welcome back, ${check.name}! Enter your 4-digit security MPIN.`
+            : 'Enter your 4-digit security MPIN to login.'
+        );
+        setStep('mpin');
+      } else {
+        // First-time user or MPIN not set: Send OTP for one-time phone verification
+        setUserName(check.name || null);
+        const res = await auth.requestOtp(phone);
+        if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
+        if (res.devOtp) {
+          setDevOtp(res.devOtp);
+          setMessage(`First-time verification OTP sent. (Dev Auto-OTP: ${res.devOtp})`);
+        } else {
+          setMessage(res.message || `Verification OTP sent to +91 ${phone}.`);
+        }
+        setStep('otp');
+      }
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendOtpFallback = async () => {
     setLoading(true);
     setError(null);
     setMessage(null);
@@ -59,7 +96,7 @@ export const LoginPage: React.FC = () => {
         setDevOtp(res.devOtp);
         setMessage(`OTP sent! (Dev Auto-OTP: ${res.devOtp})`);
       } else {
-        setMessage(res.message || `OTP sent to +91 ${phone}.`);
+        setMessage(`OTP sent to +91 ${phone}.`);
       }
       setStep('otp');
     } catch (err) {
@@ -141,7 +178,7 @@ export const LoginPage: React.FC = () => {
 
         {/* Step 1: Phone Entry */}
         {step === 'phone' && (
-          <form onSubmit={handleSendOtp} className="space-y-4">
+          <form onSubmit={handlePhoneSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                 Mobile Number (10 Digits)
@@ -167,29 +204,39 @@ export const LoginPage: React.FC = () => {
               disabled={loading || phone.length < 10}
               className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <span>{loading ? 'Sending OTP...' : 'Get OTP Verification'}</span>
+              <span>{loading ? 'Checking account...' : 'Continue / आगे बढ़ें'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            <div className="text-center pt-2">
+            <div className="flex items-center justify-between pt-2 text-xs">
               <button
                 type="button"
                 onClick={() => {
                   setError(null);
                   setStep('mpin');
                 }}
-                className="text-xs font-bold text-emerald-700 hover:underline inline-flex items-center gap-1"
+                className="font-bold text-emerald-700 hover:underline inline-flex items-center gap-1"
               >
-                <Lock className="w-3.5 h-3.5" /> Or Login with 4-Digit MPIN
+                <Lock className="w-3.5 h-3.5" /> Direct MPIN Login
+              </button>
+              <button
+                type="button"
+                onClick={handleSendOtpFallback}
+                className="text-slate-500 hover:text-slate-700 font-medium hover:underline"
+              >
+                Send OTP
               </button>
             </div>
           </form>
         )}
 
-        {/* Step 2: 6-Digit OTP */}
+        {/* Step 2: 6-Digit OTP (One-time first login) */}
         {step === 'otp' && (
           <div className="space-y-5 text-center">
             <div>
+              <div className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200 mb-2">
+                One-Time First Login Verification
+              </div>
               <p className="text-xs text-slate-600">
                 OTP sent to <strong>+91 {phone}</strong>
               </p>
@@ -217,27 +264,77 @@ export const LoginPage: React.FC = () => {
             <OtpField length={6} onComplete={handleVerifyOtp} disabled={loading} />
 
             {loading && <p className="text-xs text-emerald-700 font-semibold animate-pulse">Verifying credentials...</p>}
+
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => setStep('mpin')}
+                className="text-xs text-slate-500 font-semibold hover:underline"
+              >
+                Already have an MPIN? Enter MPIN
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Step 3: MPIN Pad */}
+        {/* Step 3: MPIN Pad (Fast returning user login) */}
         {step === 'mpin' && (
           <div className="space-y-4">
             <p className="text-center text-xs text-slate-600">
-              Enter MPIN for <strong>+91 {phone}</strong>
+              Account: <strong>+91 {phone}</strong>
             </p>
             <MpinPad
               onSuccess={handleVerifyMpin}
-              title="Enter Security MPIN"
-              subtitle="Quick 4-digit PIN authentication"
+              title={userName ? `Welcome back, ${userName}!` : 'Enter 4-Digit MPIN'}
+              subtitle="Quick 1-second login with security PIN"
             />
-            <div className="text-center">
+            <div className="flex items-center justify-between text-xs px-2 pt-1">
               <button
                 type="button"
                 onClick={() => setStep('phone')}
-                className="text-xs text-slate-500 font-semibold hover:underline"
+                className="text-slate-500 font-semibold hover:underline"
               >
-                Back to Phone OTP
+                Change Number
+              </button>
+              <button
+                type="button"
+                onClick={handleSendOtpFallback}
+                className="text-emerald-700 font-bold hover:underline"
+              >
+                Forgot MPIN? Verify via OTP
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Dev Quick Logins */}
+        {import.meta.env.DEV && (
+          <div className="pt-3 border-t border-slate-100">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center">
+              Quick Dev Logins (MPIN: 1234)
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPhone('9975721517');
+                  void handleVerifyMpin('1234');
+                }}
+                className="p-2 rounded-xl border border-emerald-100 bg-emerald-50/50 hover:bg-emerald-100/60 text-left text-[11px] transition-colors"
+              >
+                <div className="font-bold text-emerald-950">🌾 Tushar Chaudhari</div>
+                <div className="text-[10px] text-slate-500">9975721517 • Farmer</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPhone('8888888888');
+                  void handleVerifyMpin('1234');
+                }}
+                className="p-2 rounded-xl border border-sky-100 bg-sky-50/50 hover:bg-sky-100/60 text-left text-[11px] transition-colors"
+              >
+                <div className="font-bold text-sky-950">🏪 Dev Vyapari</div>
+                <div className="text-[10px] text-slate-500">8888888888 • Seller</div>
               </button>
             </div>
           </div>
