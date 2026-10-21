@@ -14,6 +14,8 @@ RULES = """You are a real user of the Agrovercity app (see PERSONA). You are NOT
 - Never invent endpoint paths. If a search returns nothing, that itself is noteworthy — say so in reason.
 - After a successful POST/PUT, re-read with a GET to confirm it persisted.
 - For things that take time (payments, settlements), use poll with the GET endpoint and a needle.
+- Do NOT re-fetch information you already have — act on it. Re-checking the same price/list twice is a wasted step.
+- Say 'done' only when the WHOLE goal is achieved (lot created, order paid, answer found) — never after just one step of it.
 - If blocked twice in a row, change approach; if truly stuck, give_up with the blocker.
 - Think in your own language; respond ONLY with the JSON action."""
 
@@ -29,19 +31,25 @@ class Agent:
         if self.mock:
             return dict(self.mock)
         last_err = None
-        for _ in range(int(self.cfg.get("llm_retries", 2)) + 1):
+        no_temp = False                    # provider quirks: e.g. Kimi Code allows only temperature=1
+        attempts = int(self.cfg.get("llm_retries", 2)) + 1
+        for _ in range(attempts):
             try:
-                r = await self.llm.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "system", "content": system},
-                              {"role": "user", "content": user_msg}],
-                    temperature=float(self.cfg.get("llm_temperature", 0.4)),
-                    max_tokens=int(self.cfg.get("llm_max_tokens", 240)),
-                    response_format={"type": "json_object"})
+                kwargs = {"model": self.model,
+                          "messages": [{"role": "system", "content": system},
+                                       {"role": "user", "content": user_msg}],
+                          "max_tokens": int(self.cfg.get("llm_max_tokens", 800)),
+                          "response_format": {"type": "json_object"}}
+                temp = self.cfg.get("llm_temperature")
+                if temp is not None and not no_temp:
+                    kwargs["temperature"] = float(temp)
+                r = await self.llm.chat.completions.create(**kwargs)
                 self.budget.charge(r.usage)
                 return extract_json(r.choices[0].message.content)
             except Exception as e:          # provider hiccup — backoff retry
                 last_err = e
+                if "temperature" in str(e).lower() and not no_temp:
+                    no_temp = True          # retry once without temperature, then keep it off
         return {"action": "wait", "reason": f"llm error: {type(last_err).__name__}"}
 
     async def run(self, persona_card: str, goal: str, system_prefix: str,
@@ -79,10 +87,12 @@ class Agent:
             else:
                 call = self.tools.call(act.get("endpoint_id", ""), act.get("params"))
                 obs = json.dumps(call, ensure_ascii=False)
-                op_t = (act.get("endpoint_id", ""), call.get("status"))
-                last_calls.append(op_t)
-                last_calls = last_calls[-3:]
-                if len(last_calls) == 3 and len(set(last_calls)) == 1:
+                sig = (act.get("endpoint_id", ""),
+                       json.dumps(act.get("params"), sort_keys=True, ensure_ascii=False),
+                       call.get("status"))
+                last_calls.append(sig)
+                last_calls = last_calls[-4:]
+                if len(last_calls) == 4 and len(set(last_calls)) == 1:
                     return {"outcome": "stuck_repeat", "steps": step, "act": act}
                 if act.get("expectation") and self.tools.log:
                     self.tools.log[-1]["expectation"] = str(act["expectation"])[:200]

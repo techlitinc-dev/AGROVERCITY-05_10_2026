@@ -50,7 +50,9 @@ def analyze() -> dict:
     security = []
     per_run: list[dict] = []
 
+    run_persona = {}                     # meta filename → persona, for evidence attribution
     for meta_p, meta, log, deb in runs:
+        run_persona[meta_p.name] = meta["scenario"].get("persona", "?")
         scn, outcome = meta["scenario"], meta.get("outcome", {})
         pid = scn.get("persona", "?")
         per = {"id": scn.get("id"), "persona": pid, "mode": scn.get("mode"),
@@ -123,8 +125,17 @@ def analyze() -> dict:
                 add(str(what)[:110], "bug-suspicion", sev.get("default", 1),
                     {"persona": pid, "run": name, "kind": "blocker"})
     for m in mismatches:
-        add(f"{m['op']}: expected '{m['expected']}' got {m['got']}", "expectation-mismatch",
-            sev.get("default", 1), {"persona": "?", "run": m["run"], "kind": "mismatch"})
+        key = f"mismatch:{m['op']}:{m['got']}"
+        e = board.setdefault(key, {"title": f"{m['op']}: agent expected success but got {m['got']} (403=role scope? 404=missing? 422=validation?)",
+                                   "class": "expectation-mismatch", "personas": set(),
+                                   "runs": 0, "evidence": [], "examples": []})
+        e["runs"] += 1
+        if len(e["examples"]) < 3:
+            e["examples"].append(m["expected"][:120])
+        ev_runs = {x.get("run") for x in e["evidence"]}
+        if m["run"] not in ev_runs and len(e["evidence"]) < 3:
+            e["evidence"].append({"persona": run_persona.get(m["run"], "?"),
+                                  "run": m["run"], "kind": "mismatch"})
     for sp in suspicions:
         add(f"dataflow: created {sp['created']} not visible via {sp['read_via']}",
             "dataflow-suspicion", sev.get("default", 1),
@@ -153,6 +164,7 @@ def analyze() -> dict:
                   and n5 <= slo_cfg.get("max_5xx", 0))
         friction.append({"scenario": per["id"], "persona": per["persona"],
                          "outcome": per["outcome"], "steps": per["steps"],
+                         "short_done": bool(per["outcome"] == "done" and per["steps"] < 6),
                          "retry_ops": dict(Counter(k for k, v in retries.items()
                                                    if any(r.get("op_id") == k for r in log))),
                          "p95_ms": p95(lats), "slo_ok": slo_ok,

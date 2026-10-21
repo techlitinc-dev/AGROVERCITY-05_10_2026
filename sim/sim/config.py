@@ -5,6 +5,12 @@ from pathlib import Path
 
 import yaml
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent          # sim/
 CONFIG_DIR = ROOT / "config"
 RUNS_DIR = ROOT / "runs"

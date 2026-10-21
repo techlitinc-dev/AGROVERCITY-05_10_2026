@@ -44,13 +44,25 @@ def resolve(client: httpx.Client, base: str, persona: str) -> dict:
     return ident
 
 
+def _activate_profile(client: httpx.Client, base: str, token: str, persona: str):
+    """quick-login seeds land on arbitrary activeProfiles (e.g. customer → coldStorageProvider),
+    which produces false 403 floods. Force-activate the persona's own profile."""
+    try:
+        client.post(f"{base}/v1/users/me/profiles/{persona}/activate",
+                    headers={"Authorization": f"Bearer {token}"}, timeout=15)
+    except Exception:
+        pass
+
+
 def _try_quick_login(client: httpx.Client, base: str, persona: str) -> dict:
     try:
         r = client.post(f"{base}/v1/auth/quick-login",
                         json={"persona": persona, "mpin": DEV_MPIN}, timeout=20)
         if r.status_code == 200:
             d = r.json()
-            return {"uid": (d.get("user") or {}).get("id"), "token": d["accessToken"],
+            token = d["accessToken"]
+            _activate_profile(client, base, token, persona)
+            return {"uid": (d.get("user") or {}).get("id"), "token": token,
                     "exp": time.time() + TTL_S, "via": "quick-login"}
         return {"blocked": True, "reason": f"quick-login {r.status_code}"}
     except Exception as e:
@@ -70,7 +82,9 @@ def _try_dev_otp(client: httpx.Client, base: str, persona: str) -> dict:
                         json={"phone": phone, "otp": dev_otp, "otpSessionId": sid}, timeout=20)
         if v.status_code == 200:
             d = v.json()
-            return {"uid": (d.get("user") or {}).get("id"), "token": d["accessToken"],
+            token = d["accessToken"]
+            _activate_profile(client, base, token, persona)
+            return {"uid": (d.get("user") or {}).get("id"), "token": token,
                     "exp": time.time() + TTL_S, "via": "dev-otp"}
         return {"blocked": True, "reason": f"otp/verify {v.status_code}"}
     except Exception as e:
