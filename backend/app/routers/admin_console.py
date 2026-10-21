@@ -675,7 +675,10 @@ async def put_water_schedule(
 
 @router.get("/cold-storages")
 async def list_cold_storages(user: dict = Depends(require_admin_role("superadmin", "operations_lead"))):
-    return {"data": _sorted(await query("cold_storages", None, limit=1000))}
+    rows = await query("cold_storages", None, limit=1000)
+    if not rows:
+        rows = await query("cold_storage", None, limit=1000)
+    return {"data": _sorted(rows)}
 
 
 class ColdStorageIn(BaseModel):
@@ -1076,21 +1079,33 @@ async def list_nurseries(user: dict = Depends(require_admin_role("superadmin", "
 
 
 class NewsIn(BaseModel):
-    title: str = Field(..., min_length=2)
-    body: str = ""
-    breaking: bool = False
+    title: Optional[str] = Field(default=None)
+    vernacularTitle: Optional[str] = None
+    summary: Optional[str] = None
+    body: Optional[str] = ""
+    content: Optional[str] = None
+    category: Optional[str] = None
+    isBreaking: Optional[bool] = None
+    breaking: Optional[bool] = False
+    audioText: Optional[str] = None
+    source: Optional[str] = None
+    status: Optional[str] = None
     scheduledAt: Optional[str] = None
 
 
 @router.get("/content/news")
 async def list_news(user: dict = Depends(require_admin_role("superadmin", "content_moderator"))):
-    return {"data": _sorted(await query("agri_news", None, limit=1000))}
+    docs = await query("news", None, limit=1000)
+    if not docs:
+        docs = await query("agri_news", None, limit=1000)
+    return {"data": _sorted(docs)}
 
 
 @router.post("/content/news")
 async def create_news(body: NewsIn, ctx: dict = Depends(admin_mutation_context), _role: dict = Depends(require_admin_role("superadmin", "content_moderator"))):
     news_id = f"news_{uuid4().hex[:12]}"
     doc = {**body.model_dump(), "id": news_id, "status": "published", "createdAt": _now()}
+    await set_doc("news", news_id, doc)
     await set_doc("agri_news", news_id, doc)
     await log_admin_action(ctx["admin"], "content", "news.create", news_id, None, doc, ctx["reason"], ctx["ip"])
     return {"success": True, "news": doc}
@@ -1098,14 +1113,32 @@ async def create_news(body: NewsIn, ctx: dict = Depends(admin_mutation_context),
 
 @router.put("/content/news/{news_id}")
 async def update_news(news_id: str, body: NewsIn, ctx: dict = Depends(admin_mutation_context), _role: dict = Depends(require_admin_role("superadmin", "content_moderator"))):
-    doc = await get_doc("agri_news", news_id)
+    doc = await get_doc("news", news_id)
+    coll = "news"
+    if doc is None:
+        doc = await get_doc("agri_news", news_id)
+        coll = "agri_news"
     if doc is None:
         _err(404, "NOT_FOUND", "news not found")
     previous = dict(doc)
     doc.update({k: v for k, v in body.model_dump().items() if v is not None})
-    await set_doc("agri_news", news_id, doc)
+    await set_doc(coll, news_id, doc)
     await log_admin_action(ctx["admin"], "content", "news.update", news_id, previous, doc, ctx["reason"], ctx["ip"])
     return {"success": True, "news": doc}
+
+
+@router.delete("/content/news/{news_id}")
+async def delete_news(news_id: str, ctx: dict = Depends(admin_mutation_context), _role: dict = Depends(require_admin_role("superadmin", "content_moderator"))):
+    doc = await get_doc("news", news_id)
+    coll = "news"
+    if doc is None:
+        doc = await get_doc("agri_news", news_id)
+        coll = "agri_news"
+    if doc is None:
+        _err(404, "NOT_FOUND", "news not found")
+    await delete_doc(coll, news_id)
+    await log_admin_action(ctx["admin"], "content", "news.delete", news_id, doc, None, ctx["reason"], ctx["ip"])
+    return {"success": True, "id": news_id}
 
 
 class ModerateChannelIn(BaseModel):

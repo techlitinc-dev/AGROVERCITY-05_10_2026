@@ -155,6 +155,15 @@ async def list_claims(
     """Claims by status across all farmers — same real data as
     GET /admin/insurance/claims (top-level `insurance_claims` desk)."""
     docs = await query("insurance_claims", None, limit=2000)
+    for u in await query("users", [], limit=1000):
+        uid = u.get("id") or u.get("uid")
+        if uid:
+            for c in await query(f"users/{uid}/insurance_claims", [], limit=100):
+                c["userId"] = uid
+                c["farmerName"] = u.get("name") or "Kisan"
+                c["farmerPhone"] = u.get("phone")
+                if not any(d.get("id") == c.get("id") for d in docs):
+                    docs.append(c)
     if status:
         docs = [d for d in docs if d.get("status") == status]
     rows = _sorted(docs, field="submittedAt")

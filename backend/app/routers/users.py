@@ -61,6 +61,8 @@ def _error(status_code: int, code: str, message: str):
 
 
 def require_role(user: dict, *roles: str):
+    if user.get("isAdmin") or user.get("adminRole") or user.get("activeProfile") == "admin":
+        return
     raw_active = user.get("activeProfile") or ""
     active = normalize_profile(raw_active)
     norm_roles = {normalize_profile(r) for r in roles} | set(roles)

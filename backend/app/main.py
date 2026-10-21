@@ -17,6 +17,7 @@ from app.data.livestock_seed import seed_livestock
 from app.data.schemes_seed import seed_schemes
 from app.data.tree_seed import seed_tree
 from app.data.seasonal_seed import seed_seasonal
+from app.data.superadmin_seed import seed_superadmin
 from app.services.ai.config_store import seed_ai_config
 from app.services.billing import seed_plans
 from app.routers import (
@@ -341,6 +342,7 @@ async def startup():
     await seed_courses()
     await seed_ai_config()
     await seed_plans()
+    await seed_superadmin()
 
 
 # TODO(day-later): remove or keep env-gated permanently before release.

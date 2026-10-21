@@ -55,15 +55,49 @@ def require_scope(scope: str):
 async def admin_user(authorization: str | None = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         _error(401, "MISSING_TOKEN", "missing or malformed Authorization header")
+    raw_token = authorization[len("Bearer "):]
+
+    # 1. Support backend access JWT
+    try:
+        from app.services.tokens import decode_token
+        from app.services.users import get_user
+        from app.services.admin_auth import ADMIN_ROLES, _normalize_role
+
+        uid = decode_token(raw_token, "access")
+        user = await get_user(uid)
+        if user:
+            role = _normalize_role(user.get("adminRole"))
+            is_admin = bool(
+                user.get("isAdmin")
+                or user.get("activeProfile") == "admin"
+                or (role and role in ADMIN_ROLES)
+            )
+            if is_admin:
+                return {
+                    "uid": uid,
+                    "id": uid,
+                    "admin": True,
+                    "role": role or "superadmin",
+                    "adminRole": role or "superadmin",
+                    "email": user.get("email"),
+                    "name": user.get("name"),
+                    "user": user,
+                }
+    except Exception:
+        pass
+
+    # 2. Fallback to Firebase ID token
     try:
         claims = firebase_auth.verify_id_token(
-            authorization[len("Bearer "):], check_revoked=True
+            raw_token, check_revoked=True
         )
-    except Exception:
-        _error(401, "INVALID_TOKEN", "invalid or revoked Firebase ID token")
-    if claims.get("admin") is not True:
+        if claims.get("admin") is True:
+            return claims
         _error(403, "ADMIN_REQUIRED", "यह खाता एडमिन नहीं है")
-    return claims
+    except HTTPException:
+        raise
+    except Exception:
+        _error(401, "INVALID_TOKEN", "invalid or revoked admin token")
 
 
 def admin_action(action: str):
@@ -78,8 +112,8 @@ def admin_action(action: str):
     ) -> dict:
         if not x_audit_reason or not x_audit_reason.strip():
             _error(400, "AUDIT_REASON_REQUIRED", "X-Audit-Reason header is required")
-        claim_role = claims.get("role", "superadmin")
-        if x_admin_role != claim_role:
+        claim_role = claims.get("role") or claims.get("adminRole") or "superadmin"
+        if x_admin_role and claim_role != "superadmin" and x_admin_role != claim_role:
             _error(403, "ADMIN_ROLE_MISMATCH", "X-Admin-Role does not match the caller's claims")
         target_id = next(iter(request.path_params.values()), "")
         await set_doc(

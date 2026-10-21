@@ -478,6 +478,8 @@ async def list_cold_storage_facilities(
 ):
     """SOP-23: directory of registered cold chains (`cold_storages`)."""
     rows = await query("cold_storages", None, limit=1000)
+    if not rows:
+        rows = await query("cold_storage", None, limit=1000)
     if status:
         rows = [r for r in rows if r.get("status") == status]
     return _envelope(_sorted_newest(rows), page, pageSize)

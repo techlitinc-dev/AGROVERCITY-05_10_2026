@@ -44,7 +44,15 @@ class Settings(BaseSettings):
     ai_cost_jev_per_1m: float = 0.042
     ai_cost_gemini_per_1m: float = 0.30
     ai_cost_gemini_lite_per_1m: float = 0.10
-    web_origins: list[str] = ["http://localhost:5173"]
+    web_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://65.20.92.22:5173",
+        "http://65.20.92.22:5174",
+        "*",
+    ]
 
     @model_validator(mode="after")
     def _require_real_secrets_outside_dev(self):
