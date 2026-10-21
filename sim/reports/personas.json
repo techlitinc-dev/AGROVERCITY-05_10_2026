@@ -1,0 +1,822 @@
+[
+ {
+  "persona": "bankManager",
+  "name": "Branch Manager SBI Agri",
+  "scenario": "bank-loan-pipeline",
+  "goal": "Review a KCC loan application from a farmer with a good profile, approve it, disburse, and verify the repayment schedule exists.",
+  "outcome": "done",
+  "steps": 7,
+  "satisfaction": 2,
+  "quote": "I can read the file, but where are the approve and disburse buttons? I cannot clear this loan from the queue with GET calls alone.",
+  "timeline": [
+   {
+    "step": 1,
+    "action": "GET /v1/loans/queue",
+    "target": "review_queue_v1_loans_queue_get",
+    "status": 200,
+    "result": "{\"data\": [{\"applicationId\": \"kcc_sbi_loan_312\", \"amount\": 150000.0, \"tenureMonths\": 12, \"purpose\": \"Kisan Credit Card (K",
+    "latency_ms": 791
+   },
+   {
+    "step": 2,
+    "action": "GET /v1/loans/kcc_sbi_loan_312",
+    "target": "get_loan_v1_loans__applicationId__get",
+    "status": 200,
+    "result": "{\"applicationId\": \"kcc_sbi_loan_312\", \"amount\": 150000.0, \"tenureMonths\": 12, \"purpose\": \"Kisan Credit Card (KCC)\", \"sta",
+    "latency_ms": 40
+   },
+   {
+    "step": 3,
+    "action": "GET /v1/loans/kcc_sbi_loan_312/schedule",
+    "target": "loan_schedule_v1_loans__applicationId__schedule_get",
+    "status": 200,
+    "result": "{\"data\": [{\"installmentNo\": 1, \"dueDate\": \"2026-11-01\", \"emi\": 12772, \"principal\": 12272, \"interest\": 500, \"outstanding\"",
+    "latency_ms": 45
+   },
+   {
+    "step": 4,
+    "action": "GET /v1/finance/loans",
+    "target": "list_loans_v1_finance_loans_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 22
+   }
+  ],
+  "touched": [
+   "finance",
+   "loans"
+  ],
+  "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json"
+ },
+ {
+  "persona": "customer",
+  "name": "Priya Sharma",
+  "scenario": "customer-buy-basket",
+  "goal": "Buy a weekly vegetable basket from the mall, pay from your wallet, track the order, and rate the delivery.",
+  "outcome": "step_cap",
+  "steps": 30,
+  "satisfaction": 1,
+  "quote": "Bhai, itni der se product list aur prod-3 ghumake thak gayi, par mall wala weekly vegetable basket mila hi nahi — app ne dukaan ki jagah beej aur khad dikha di!",
+  "timeline": [
+   {
+    "step": 1,
+    "action": "GET /v1/products",
+    "target": "list_products_v1_products_get",
+    "status": 200,
+    "result": "{\"data\": [{\"batchNo\": \"IFFCO-DAP-2026-993\", \"title\": \"IFFCO Nano DAP (500 ml Bottle)\", \"bnplAvailable\": true, \"category\"",
+    "latency_ms": 408
+   },
+   {
+    "step": 2,
+    "action": "GET /v1/products/prod-3",
+    "target": "get_product_v1_products__product_id__get",
+    "status": 200,
+    "result": "{\"batchNo\": \"SEM-ABH-88301-GEN\", \"title\": \"Seminis Tomato Seeds - Abhinav (10g)\", \"bnplAvailable\": true, \"category\": \"Se",
+    "latency_ms": 25
+   },
+   {
+    "step": 3,
+    "action": "searched",
+    "target": "Mujhe mall se weekly vegetable basket lena hai, pehle check karta hoon ki aisa koi product ya endpoint hai bhi ya nahi.",
+    "result": "found"
+   },
+   {
+    "step": 4,
+    "action": "searched",
+    "target": "Pehli search se kuch clear nahi mila, ab specifically 'mall' aur 'vegetable basket' wale endpoints ya products dhoondta hoon.",
+    "result": "found"
+   },
+   {
+    "step": 5,
+    "action": "searched",
+    "target": "Mall se weekly vegetable basket ka option dhoondhna hai, koi mall-specific product list endpoint ho sakta hai.",
+    "result": "found"
+   },
+   {
+    "step": 6,
+    "action": "searched",
+    "target": "Ab 'mall', 'vegetable', 'basket', 'wallet' aur 'market' type endpoints dhoondhta hoon taaki sahi jagah weekly vegetable basket mil sake.",
+    "result": "found"
+   },
+   {
+    "step": 7,
+    "action": "GET /v1/market/lots/browse",
+    "target": "browse_lots_v1_market_lots_browse_get",
+    "status": 200,
+    "result": "{\"data\": [{\"statusReason\": \"www\", \"expectedRate\": 4900, \"village\": \"Pimpalgaon Baswant\", \"statusUpdatedBy\": \"admin-root\"",
+    "latency_ms": 217
+   },
+   {
+    "step": 8,
+    "action": "GET /v1/products",
+    "target": "list_products_v1_products_get",
+    "status": 200,
+    "result": "{\"data\": [{\"batchNo\": \"IFFCO-DAP-2026-993\", \"title\": \"IFFCO Nano DAP (500 ml Bottle)\", \"bnplAvailable\": true, \"category\"",
+    "latency_ms": 408
+   },
+   {
+    "step": 9,
+    "action": "GET /v1/products/prod-3",
+    "target": "get_product_v1_products__product_id__get",
+    "status": 200,
+    "result": "{\"batchNo\": \"SEM-ABH-88301-GEN\", \"title\": \"Seminis Tomato Seeds - Abhinav (10g)\", \"bnplAvailable\": true, \"category\": \"Se",
+    "latency_ms": 22
+   },
+   {
+    "step": 10,
+    "action": "searched",
+    "target": "Mujhe 'weekly vegetable basket' wala product chahiye mall se, isliye exact term search kar rahi hoon.",
+    "result": "found"
+   },
+   {
+    "step": 11,
+    "action": "searched",
+    "target": "Lot ID yaad hai (lot_2ff7400d70d3), uska detail dekhna hai taaki confirm karoon ki yeh weekly vegetable basket hai mall se.",
+    "result": "found"
+   },
+   {
+    "step": 12,
+    "action": "searched",
+    "target": "Lot ID lot_2ff7400d70d3 ka detail dekhna hai, 'get lot' ya 'market/lots/{lot_id}' endpoint dhoondh rahi hoon.",
+    "result": "found"
+   },
+   {
+    "step": 13,
+    "action": "GET /v1/market/lots/lot_2ff7400d70d3",
+    "target": "get_lot_v1_market_lots__lot_id__get",
+    "status": 200,
+    "result": "{\"expectedRate\": 4900, \"village\": \"Pimpalgaon Baswant\", \"farmerId\": \"EWYuwJIr5JMPbFajKE9AclBpWnf2\", \"crop\": \"Soybean (JS",
+    "latency_ms": 17
+   },
+   {
+    "step": 14,
+    "action": "searched",
+    "target": "List products endpoint ke query params jaanne hain, taaki 'weekly vegetable basket' mall se dhoondh sakoon.",
+    "result": "found"
+   },
+   {
+    "step": 15,
+    "action": "GET /v1/products",
+    "target": "list_products_v1_products_get",
+    "status": 200,
+    "result": "{\"data\": [{\"batchNo\": \"IFFCO-DAP-2026-993\", \"title\": \"IFFCO Nano DAP (500 ml Bottle)\", \"bnplAvailable\": true, \"category\"",
+    "latency_ms": 375
+   },
+   {
+    "step": 16,
+    "action": "GET /v1/products/prod-3",
+    "target": "get_product_v1_products__product_id__get",
+    "status": 200,
+    "result": "{\"batchNo\": \"SEM-ABH-88301-GEN\", \"title\": \"Seminis Tomato Seeds - Abhinav (10g)\", \"bnplAvailable\": true, \"category\": \"Se",
+    "latency_ms": 26
+   },
+   {
+    "step": 17,
+    "action": "searched",
+    "target": "Mall se weekly vegetable basket dhoondhne ke liye sahi endpoint search kar rahi hoon, kyunki generic product list mein seeds/fertilizer hi aa rahe hain.",
+    "result": "found"
+   },
+   {
+    "step": 18,
+    "action": "GET /v1/products",
+    "target": "list_products_v1_products_get",
+    "status": 200,
+    "result": "{\"data\": [{\"batchNo\": \"IFFCO-DAP-2026-993\", \"title\": \"IFFCO Nano DAP (500 ml Bottle)\", \"bnplAvailable\": true, \"category\"",
+    "latency_ms": 448
+   },
+   {
+    "step": 19,
+    "action": "searched",
+    "target": "Mall se weekly vegetable basket ke liye koi endpoint dhoondh rahi hoon — abhi tak product list sirf seeds/fertilizer de rahi hai.",
+    "result": "found"
+   },
+   {
+    "step": 20,
+    "action": "GET /v1/products",
+    "target": "list_products_v1_products_get",
+    "status": 200,
+    "result": "{\"page\": 1, \"pageSize\": 20, \"total\": 0}",
+    "latency_ms": 430
+   },
+   {
+    "step": 21,
+    "action": "GET /v1/products/prod-3",
+    "target": "get_product_v1_products__product_id__get",
+    "status": 200,
+    "result": "{\"batchNo\": \"SEM-ABH-88301-GEN\", \"title\": \"Seminis Tomato Seeds - Abhinav (10g)\", \"bnplAvailable\": true, \"category\": \"Se",
+    "latency_ms": 25
+   },
+   {
+    "step": 22,
+    "action": "searched",
+    "target": "Mall se weekly vegetable basket available hai ya nahi, yeh check kar rahi hoon — product list mein abhi seeds/fertilizer dikh rahe hain.",
+    "result": "found"
+   },
+   {
+    "step": 23,
+    "action": "searched",
+    "target": "Mall, basket, ya vegetable se related koi endpoint hai kya, ek baar aur specific search karti hoon.",
+    "result": "found"
+   },
+   {
+    "step": 24,
+    "action": "searched",
+    "target": "Mall ya basket wala product dhoondhna hai, kyunki abhi list mein kuch nahi dikh raha. Specific search kar leti hoon.",
+    "result": "found"
+   },
+   {
+    "step": 25,
+    "action": "searched",
+    "target": "Mall wali weekly vegetable basket kharidne ke liye pehle product dhoondhna padega. 'basket' ya 'weekly' keyword se endpoint ya product check karti hoon.",
+    "result": "found"
+   },
+   {
+    "step": 26,
+    "action": "GET /v1/products",
+    "target": "list_products_v1_products_get",
+    "status": 200,
+    "result": "{\"data\": [{\"batchNo\": \"IFFCO-DAP-2026-993\", \"title\": \"IFFCO Nano DAP (500 ml Bottle)\", \"bnplAvailable\": true, \"category\"",
+    "latency_ms": 417
+   }
+  ],
+  "touched": [
+   "lots",
+   "marketplace"
+  ],
+  "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json"
+ },
+ {
+  "persona": "farmer",
+  "name": "Ramesh Patel",
+  "scenario": "farmer-sell-wheat",
+  "goal": "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer.",
+  "outcome": "step_cap",
+  "steps": 30,
+  "satisfaction": 1,
+  "quote": "Bhai, baar baar tamatar ka daam dikhata raha, mujhe toh Anand ka gehu bechna tha, param samajh nahi aaya toh lot banane tak kabhi pahuncha hi nahi!",
+  "timeline": [
+   {
+    "step": 1,
+    "action": "searched",
+    "target": "Pahle Anand mandi me wheat ka aaj ka rate dekhna hai, kaunse params chahiye pata karun.",
+    "result": "found"
+   },
+   {
+    "step": 2,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 70
+   },
+   {
+    "step": 3,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 46
+   },
+   {
+    "step": 4,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 38
+   },
+   {
+    "step": 5,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 35
+   },
+   {
+    "step": 6,
+    "action": "searched",
+    "target": "Baar baar tomato ka rate aa raha hai, mujhe Anand ka gehu ka rate chahiye. Endpoint ke query params dekhne hain.",
+    "result": "found"
+   },
+   {
+    "step": 7,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 37
+   },
+   {
+    "step": 8,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 31
+   },
+   {
+    "step": 9,
+    "action": "searched",
+    "target": "Pahle sahi tareeke se Anand ka gehun ka bhav dekhna hai, parameters kya hain pata karo.",
+    "result": "no matches"
+   },
+   {
+    "step": 10,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 35
+   },
+   {
+    "step": 11,
+    "action": "searched",
+    "target": "Bhai, baar baar tamatar ka rate aa raha hai, mujhe Anand mandi ka gehu ka rate chahiye. Endpoint mein kaunse filter lagte hain, ye dekhna hai.",
+    "result": "found"
+   },
+   {
+    "step": 12,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 42
+   },
+   {
+    "step": 13,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 28
+   },
+   {
+    "step": 14,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 39
+   },
+   {
+    "step": 15,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 85
+   },
+   {
+    "step": 16,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 32
+   },
+   {
+    "step": 17,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 34
+   },
+   {
+    "step": 18,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 41
+   },
+   {
+    "step": 19,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 39
+   },
+   {
+    "step": 20,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 85
+   },
+   {
+    "step": 21,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 32
+   },
+   {
+    "step": 22,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 24
+   },
+   {
+    "step": 23,
+    "action": "GET /v1/mandi/prices",
+    "target": "list_prices_v1_mandi_prices_get",
+    "status": 200,
+    "result": "{\"data\": [{\"trend\": \"up\", \"mandiName\": \"Pimpalgaon Baswant APMC\", \"minPrice\": 1600, \"modalPrice\": 1950, \"commodity\": \"To",
+    "latency_ms": 32
+   },
+   {
+    "step": 24,
+    "action": "searched",
+    "target": "Anand ka mandi id aur price API ke query params jaanana hai, taaki sahi tarah se ghehu ka rate check kar saku.",
+    "result": "found"
+   },
+   {
+    "step": 25,
+    "action": "GET /v1/mandi/list",
+    "target": "mandi_list_v1_mandi_list_get",
+    "status": 200,
+    "result": "{\"data\": [{\"id\": \"mandi-1\", \"name\": \"Pimpalgaon Baswant APMC\", \"district\": \"Nashik\", \"state\": \"Maharashtra\"}, {\"id\": \"ma",
+    "latency_ms": 62
+   }
+  ],
+  "touched": [
+   "mandi"
+  ],
+  "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json"
+ },
+ {
+  "persona": "seller",
+  "name": "Mahesh Vyapari",
+  "scenario": "seller-procure-and-sell",
+  "goal": "Check mandi rates for onion, find a farmer lot worth buying, agree a purchase, then record today's shop sales on the POS.",
+  "outcome": "step_cap",
+  "steps": 30,
+  "satisfaction": 1,
+  "quote": "Baar-baar same endpoint daba ke bhi pyaaj ka bhav nahi aaya, sirf tamatar dikha raha hai — time barbaad ho gaya aur kharidari bhi nahi ho paayi.",
+  "timeline": [
+   {
+    "step": 1,
+    "action": "searched",
+    "target": "मुझे पहले onion के mandi rates देखने हैं — कौनसा lot खरीदना फायदेमंद है ये तय करने के लिए।",
+    "result": "found"
+   },
+   {
+    "step": 2,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 24
+   },
+   {
+    "step": 3,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 28
+   },
+   {
+    "step": 4,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 15
+   },
+   {
+    "step": 5,
+    "action": "searched",
+    "target": "Pyaaj ka bhav dekhna hai; tomato ka rate aa raha hai, onion ka nahi. Search karoon sahi endpoint ya filter.",
+    "result": "found"
+   },
+   {
+    "step": 6,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 19
+   },
+   {
+    "step": 7,
+    "action": "GET /v1/market/lots/browse",
+    "target": "browse_lots_v1_market_lots_browse_get",
+    "status": 200,
+    "result": "{\"data\": [{\"location\": {\"district\": \"Nashik\", \"state\": \"Maharashtra\", \"village\": \"Pimpalgaon\"}, \"grade\": \"A\", \"expectedR",
+    "latency_ms": 41
+   },
+   {
+    "step": 8,
+    "action": "GET /v1/market/lots/lot_4066b5d46ebb",
+    "target": "get_lot_v1_market_lots__lot_id__get",
+    "status": 200,
+    "result": "{\"id\": \"lot_4066b5d46ebb\", \"location\": {\"state\": \"Maharashtra\", \"district\": \"Y\", \"village\": \"X\"}, \"expectedRate\": 1500, ",
+    "latency_ms": 15
+   },
+   {
+    "step": 9,
+    "action": "searched",
+    "target": "Mujhe pehle onion ke mandi rates dekhne hain, koi direct endpoint nahi dikh raha, search karta hoon.",
+    "result": "found"
+   },
+   {
+    "step": 10,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 14
+   },
+   {
+    "step": 11,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 18
+   },
+   {
+    "step": 12,
+    "action": "searched",
+    "target": "Onion ke liye mandi rates chahiye, endpoint mein query params kya hain dekhna hai.",
+    "result": "found"
+   },
+   {
+    "step": 13,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 15
+   },
+   {
+    "step": 14,
+    "action": "searched",
+    "target": "Onion ke mandi rates ke liye query params kya hain, is endpoint mein filter hai ya nahi — dekhna hai.",
+    "result": "found"
+   },
+   {
+    "step": 15,
+    "action": "searched",
+    "target": "Onion rate ke liye endpoint mein kya query params hain, schema dekhna hai taaki sahi filter laga sakein.",
+    "result": "found"
+   },
+   {
+    "step": 16,
+    "action": "searched",
+    "target": "Onion rate nikaalne ke liye endpoint ke query params dekhne hain, bina sahi filter ke tamatar hi aa raha hai.",
+    "result": "found"
+   },
+   {
+    "step": 17,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 22
+   },
+   {
+    "step": 18,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 13
+   },
+   {
+    "step": 19,
+    "action": "searched",
+    "target": "Onion ke rate ke liye endpoint mein query params kya hain — bina sahi filter ke sirf tamatar dikha raha hai. Pehle schema dekh loon taaki ₹/kg sahi mile.",
+    "result": "found"
+   },
+   {
+    "step": 20,
+    "action": "GET /v1/mandi/vyapari-rates",
+    "target": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "status": 200,
+    "result": "{\"data\": [{\"vyapariCount\": 3, \"priceChange\": \"₹2\", \"changeDir\": \"up\", \"rateDisplay\": \"₹24/kg\", \"crop\": \"Tomato (टमाटर)\",",
+    "latency_ms": 17
+   }
+  ],
+  "touched": [
+   "lots",
+   "mandi"
+  ],
+  "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json"
+ },
+ {
+  "persona": "transporter",
+  "name": "Suresh Vaghela",
+  "scenario": "transporter-run-trip",
+  "goal": "Find a load Rajkot to Ahmedabad for my pickup, quote/accept it, run the trip with the OTP handover, and check my wallet after.",
+  "outcome": "step_cap",
+  "steps": 30,
+  "satisfaction": 1,
+  "quote": "Bhai, itna ghumaya transporter banne ke liye, load list tak nahi khula, OTP toh door ki baat hai, ye app direct bata nahi sakta tha ke pehle profile activate karni hai?",
+  "timeline": [
+   {
+    "step": 1,
+    "action": "GET /v1/transport/loads",
+    "target": "list_open_loads_v1_transport_loads_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 46
+   },
+   {
+    "step": 2,
+    "action": "GET /v1/transport/profile",
+    "target": "get_transporter_profile_v1_transport_profile_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 30
+   },
+   {
+    "step": 3,
+    "action": "searched",
+    "target": "403 FORBIDDEN_ROLE aa raha hai transporter endpoint pe, Shayad mere role kuch aur hai ya sahi endpoint missing hai. Search kar leta hoon available transporter/load endpoints.",
+    "result": "found"
+   },
+   {
+    "step": 4,
+    "action": "GET /v1/transport/wallet",
+    "target": "transport_wallet_v1_transport_wallet_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 33
+   },
+   {
+    "step": 5,
+    "action": "searched",
+    "target": "transporter endpoints 403 de rahe hain, shayad role galat hai. Pehle apna profile/role check karne wala endpoint dhoondta hoon.",
+    "result": "found"
+   },
+   {
+    "step": 6,
+    "action": "searched",
+    "target": "Transporter endpoints 403 de rahe hain, role check karna hai. Profile ya user/role dikhane wala endpoint dhoond raha hoon.",
+    "result": "found"
+   },
+   {
+    "step": 7,
+    "action": "searched",
+    "target": "Transporter sab endpoints 403 aa raha hai, toh pehle apna user role ya profile check karne ka endpoint dhoondna padega.",
+    "result": "found"
+   },
+   {
+    "step": 8,
+    "action": "GET /v1/transport/loads",
+    "target": "list_open_loads_v1_transport_loads_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 15
+   },
+   {
+    "step": 9,
+    "action": "GET /v1/transport/profile",
+    "target": "get_transporter_profile_v1_transport_profile_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 14
+   },
+   {
+    "step": 10,
+    "action": "searched",
+    "target": "Transporter endpoints sab 403 bole role galat hai. Ab search karke dekhna padega ki role badalne ya transporter register karne ka koi endpoint hai ya nahi.",
+    "result": "found"
+   },
+   {
+    "step": 11,
+    "action": "searched",
+    "target": "Transporter banna ya role update karne ka endpoint dhoondh raha hoon, bina role sahi kare trip nahi kar sakta.",
+    "result": "found"
+   },
+   {
+    "step": 12,
+    "action": "searched",
+    "target": "Bhai transporter banna ka endpoint dhoondh raha hoon, profile/update ya onboarding wala.",
+    "result": "found"
+   },
+   {
+    "step": 13,
+    "action": "searched",
+    "target": "Role 403 aa raha hai, register endpoint ka schema dekhna padega ki transporter role ka option hai ya nahi.",
+    "result": "found"
+   },
+   {
+    "step": 14,
+    "action": "searched",
+    "target": "Role ka issue hai — register endpoint mein transporter role ka option check karta hoon.",
+    "result": "found"
+   },
+   {
+    "step": 15,
+    "action": "searched",
+    "target": "Bhai transporter banne ke liye register endpoint ka schema dekhna hai, body mein kya kya dalna hai.",
+    "result": "found"
+   },
+   {
+    "step": 16,
+    "action": "searched",
+    "target": "Transporter banne ka sahi endpoint dhoondhna hai, role update ya onboarding wala.",
+    "result": "found"
+   },
+   {
+    "step": 17,
+    "action": "GET /v1/transport/loads",
+    "target": "list_open_loads_v1_transport_loads_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 15
+   },
+   {
+    "step": 18,
+    "action": "searched",
+    "target": "Pehle transporter role lena padega, list loads 403 aa raha hai. Update profile endpoint ka schema dekh loon.",
+    "result": "found"
+   },
+   {
+    "step": 19,
+    "action": "PUT /v1/transport/profile",
+    "target": "update_transporter_profile_v1_transport_profile_put",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 16
+   },
+   {
+    "step": 20,
+    "action": "searched",
+    "target": "Bhai, load dekhne me FORBIDDEN_ROLE aa raha hai, lagta hai transporter role set nahi hai. Search karta hoon kaise transporter register/ban sakte hain.",
+    "result": "found"
+   },
+   {
+    "step": 21,
+    "action": "searched",
+    "target": "Bhai, pehle load list nahi mila role issue se. Ab dekhna padega transporter role kaise activate karein ya register kaise karein.",
+    "result": "found"
+   },
+   {
+    "step": 22,
+    "action": "PUT /v1/users/me/profiles/transporter/primary",
+    "target": "set_primary_profile_v1_users_me_profiles__profile_type__primary_put",
+    "status": 200,
+    "result": "{\"tehsil\": \"Chandwad\", \"soilType\": \"काली मिट्टी (Black Cotton)\", \"language\": \"en\", \"primaryProfile\": \"transporter\", \"ref",
+    "latency_ms": 172
+   },
+   {
+    "step": 23,
+    "action": "GET /v1/transport/loads",
+    "target": "list_open_loads_v1_transport_loads_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 17
+   },
+   {
+    "step": 24,
+    "action": "GET /v1/transport/profile",
+    "target": "get_transporter_profile_v1_transport_profile_get",
+    "status": 403,
+    "result": "{\"error\": {\"code\": \"FORBIDDEN_ROLE\", \"message\": \"insufficient role for this action\"}}",
+    "latency_ms": 17
+   },
+   {
+    "step": 25,
+    "action": "searched",
+    "target": "Bhai, do baar 403 aa gaya transporter role ka, ab profile setup ya transporter verification wale endpoint dhoondhna padega.",
+    "result": "found"
+   },
+   {
+    "step": 26,
+    "action": "searched",
+    "target": "Bhai, transporter profile ban to gaya par 403 aa raha hai, koi verification ya onboarding endpoint dhundhta hoon jisse transporter activate ho sake.",
+    "result": "found"
+   },
+   {
+    "step": 27,
+    "action": "searched",
+    "target": "Bhai transporter banne ke liye profile activate karna baaki hai, user/me profiles ya onboarding endpoints dhoondh raha hoon.",
+    "result": "found"
+   },
+   {
+    "step": 28,
+    "action": "POST /v1/users/me/profiles/transporter/activate",
+    "target": "activate_profile_v1_users_me_profiles__profile_type__activate_post",
+    "status": 200,
+    "result": "{\"activeProfile\": \"transporter\", \"defaultHomeRoute\": \"transportHome\", \"user\": {\"tehsil\": \"Chandwad\", \"soilType\": \"काली म",
+    "latency_ms": 39
+   }
+  ],
+  "touched": [
+   "transport",
+   "users"
+  ],
+  "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+ }
+]

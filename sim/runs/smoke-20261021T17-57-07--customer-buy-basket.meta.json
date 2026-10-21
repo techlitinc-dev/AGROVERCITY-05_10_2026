@@ -1,0 +1,34 @@
+{
+ "run_id": "smoke-20261021T17-57-07",
+ "scenario": {
+  "id": "customer-buy-basket",
+  "persona": "customer",
+  "suite": "smoke",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Buy a weekly vegetable basket from the mall, pay from your wallet, track the order, and rate the delivery.",
+  "checkpoints": [
+   "basket in cart",
+   "order placed and paid",
+   "tracking viewed",
+   "rating submitted"
+  ],
+  "tags": [
+   "core",
+   "commerce",
+   "money"
+  ],
+  "ease_focus": "checkout in under a minute, tracking that a non-technical user understands"
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 30
+ },
+ "budget": {
+  "usd": 0.0913,
+  "calls": 127,
+  "in_tokens": 377369,
+  "out_tokens": 57865,
+  "cached_tokens": 0
+ }
+}

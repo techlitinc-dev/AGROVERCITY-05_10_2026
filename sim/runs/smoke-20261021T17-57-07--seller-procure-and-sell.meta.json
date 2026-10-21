@@ -1,0 +1,34 @@
+{
+ "run_id": "smoke-20261021T17-57-07",
+ "scenario": {
+  "id": "seller-procure-and-sell",
+  "persona": "seller",
+  "suite": "smoke",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Check mandi rates for onion, find a farmer lot worth buying, agree a purchase, then record today's shop sales on the POS.",
+  "checkpoints": [
+   "rates viewed",
+   "lot shortlisted",
+   "purchase agreed",
+   "POS sale recorded"
+  ],
+  "tags": [
+   "core",
+   "trade",
+   "money"
+  ],
+  "ease_focus": "a shopkeeper has 2 minutes between customers; every screen counts"
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 30
+ },
+ "budget": {
+  "usd": 0.0733,
+  "calls": 99,
+  "in_tokens": 312441,
+  "out_tokens": 44063,
+  "cached_tokens": 0
+ }
+}

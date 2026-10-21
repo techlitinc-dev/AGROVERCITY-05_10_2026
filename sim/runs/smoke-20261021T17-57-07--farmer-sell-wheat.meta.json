@@ -1,0 +1,33 @@
+{
+ "run_id": "smoke-20261021T17-57-07",
+ "scenario": {
+  "id": "farmer-sell-wheat",
+  "persona": "farmer",
+  "suite": "smoke",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer.",
+  "checkpoints": [
+   "mandi price viewed",
+   "lot created with quantity+price",
+   "offer received or solicited",
+   "lot status live/negotiated"
+  ],
+  "tags": [
+   "core",
+   "trade"
+  ],
+  "ease_focus": "can a farmer go from price-check to live lot without help?"
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 30
+ },
+ "budget": {
+  "usd": 0.0685,
+  "calls": 90,
+  "in_tokens": 293224,
+  "out_tokens": 40841,
+  "cached_tokens": 0
+ }
+}

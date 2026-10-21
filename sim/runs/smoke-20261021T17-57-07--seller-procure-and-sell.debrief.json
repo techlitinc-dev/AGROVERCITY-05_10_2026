@@ -1,0 +1,35 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Onion (pyaaj) ke mandi rates nahi mil rahe hain — /v1/mandi/vyapari-rates baar-baar tomato ka rate bhej raha hai",
+   "step": 5,
+   "evidence": "SEARCH 'Pyaaj ka bhav dekhna hai; tomato ka rate aa raha hai, onion ka nahi' aur step 16/19 mein 'bina sahi filter ke tamatar hi aa raha hai'"
+  },
+  {
+   "what": "Lot dekhne ke baad purchase ya negotiation aage nahi badh paaya",
+   "step": 8,
+   "evidence": "GET /v1/market/lots/lot_4066b5d46ebb detail aa gayi par uske baad koi purchase/accept action nahi hai"
+  },
+  {
+   "what": "Aaj ki dukaan ki baaki (POS sales) record karna reh gaya",
+   "step": 0,
+   "evidence": "Goal mein 'record today's shop sales on the POS' tha par trace mein kabhi POS endpoint ya sales entry step nahi aaya"
+  }
+ ],
+ "missing_features": [
+  "mandi rates endpoint mein commodity/crop filter (pyaaj ke liye alag se filter) — step 5, 12, 14, 15, 16, 19",
+  "endpoint ke query params/schema ka documentation — step 12, 14, 15, 19",
+  "Ahmedabad/Gujarat location filter mandi rates mein — step 2, 3, 6, 10, 18",
+  "farmer lot select karne ke baad purchase agreement ya negotiation ka flow — step 7, 8",
+  "dukaan ki roz ki sales record karne wala POS feature — goal"
+ ],
+ "confusing": [
+  "same /v1/mandi/vyapari-rates endpoint ko 10+ baar alag-alag expectation se call karna par har baar same tomato response aana — step 2, 3, 4, 6, 10, 11, 13, 17, 18, 20"
+ ],
+ "unnecessary": [
+  "/v1/mandi/vyapari-rates ko 11 baar same tarah se repeat call karna bina kisi naye parameter ke — step 2, 3, 4, 6, 10, 11, 13, 17, 18, 20"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Baar-baar same endpoint daba ke bhi pyaaj ka bhav nahi aaya, sirf tamatar dikha raha hai — time barbaad ho gaya aur kharidari bhi nahi ho paayi."
+}

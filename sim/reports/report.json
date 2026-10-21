@@ -1,0 +1,1141 @@
+{
+ "meta": {
+  "runs": 5,
+  "generated": "2026-10-21 18:01:45",
+  "cost_usd": 0.0913
+ },
+ "executive": {
+  "missing_features": 36,
+  "userflow_obstacles": 8,
+  "dataflow_suspicions": 0,
+  "security": "0/0 passed",
+  "blocked_identities": 0
+ },
+ "missing_features": [
+  {
+   "title": "list_open_loads_v1_transport_loads_get: agent expected success but got 403 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 4,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Open loads list aa jayega, fir Rajkot-Ahmedabad wala select karunga.",
+    "Load list milegi Rajkot-Ahmedabad route ki, phir usme quote kar sakta hoon.",
+    "List of open loads from Rajkot to Ahmedabad milegi, usme se koi pickup load chun lunga."
+   ],
+   "score": 8
+  },
+  {
+   "title": "get_transporter_profile_v1_transport_profile_get: agent expected success but got 403 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 3,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Profile ka status pata chalega - transporter verified hai ya nahi.",
+    "Profile response mein mera status/role aur KYC state dikh jayega.",
+    "transporter profile status aavse, je thi khabar pade ke aagad shu karvu"
+   ],
+   "score": 6
+  },
+  {
+   "title": "GET /v1/finance/loans returned 403 Forbidden",
+   "class": "bug-suspicion",
+   "personas": [
+    "bankManager"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "bankManager",
+     "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "Wallet balance aur wallet payment ka endpoint visibility, kyunki wallet se pay karna tha par koi wallet/paymen",
+   "class": "feature-gap",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "Product nahi milne ki wajah se cart, wallet payment, tracking ya rating tak pahunch hi nahi payi.",
+   "class": "bug-suspicion",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "Wallet balance check nahi ho paya - /v1/transport/wallet 403 tha",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "Wallet check karne bhi 403 mila",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "list_loans_v1_finance_loans_get: agent expected success but got 403 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "bankManager",
+     "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Returns a list of loan applications with statuses so I can identify a pending KCC case for review."
+   ],
+   "score": 3
+  },
+  {
+   "title": "transport_wallet_v1_transport_wallet_get: agent expected success but got 403 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Wallet ka status milega ya phir role error confirm hoga."
+   ],
+   "score": 3
+  },
+  {
+   "title": "Market lots browse bhi weekly vegetable basket wala option nahi dikhaya.",
+   "class": "bug-suspicion",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 2
+  },
+  {
+   "title": "Load search ya filter Rajkot-Ahmedabad ke liye kabhi khula nahi - /v1/transport/loads hamesha 403 raha",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 2
+  },
+  {
+   "title": "Transport loads endpoint 403 FORBIDDEN_ROLE aa raha tha",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 2
+  },
+  {
+   "title": "Transport profile endpoint bhi 403 de raha tha",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 2
+  },
+  {
+   "title": "PUT /v1/transport/profile 403 fail ho gaya",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 2
+  },
+  {
+   "title": "update_transporter_profile_v1_transport_profile_put: agent expected success but got 403 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Profile update hoga aur transporter role activate ho jayega, phir load dekh sakta hoon."
+   ],
+   "score": 2
+  },
+  {
+   "title": "capability not found via search: 'Pahle sahi tareeke se Anand ka gehun ka bhav dekhna hai, parameters kya hain pata karo.'",
+   "class": "feature-gap",
+   "personas": [
+    "?"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "?",
+     "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+     "kind": "zero-search"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "An endpoint or UI action to approve a pending KCC loan application",
+   "class": "feature-gap",
+   "personas": [
+    "bankManager"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "bankManager",
+     "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "An endpoint or UI action to disburse the approved KCC loan",
+   "class": "feature-gap",
+   "personas": [
+    "bankManager"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "bankManager",
+     "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "No approve action was recorded for the KCC loan",
+   "class": "bug-suspicion",
+   "personas": [
+    "bankManager"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "bankManager",
+     "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "No disburse action was recorded after approval",
+   "class": "bug-suspicion",
+   "personas": [
+    "bankManager"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "bankManager",
+     "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Product search/filter by keyword ya category, jaise 'weekly vegetable basket' ya 'mall' se filter kar sakein —",
+   "class": "feature-gap",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Delivery rating endpoint, kyunki delivery ko rate karna tha.",
+   "class": "feature-gap",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Product list /v1/products sirf seeds aur fertilizer dikha raha tha, weekly vegetable basket mall se nahi mila.",
+   "class": "bug-suspicion",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Lot ID lot_2ff7400d70d3 ka detail dekhne par bhi confirm nahi hua ki yeh mall se weekly vegetable basket hai.",
+   "class": "bug-suspicion",
+   "personas": [
+    "customer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "customer",
+     "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Mandi name 'Anand' type karte hi matching mandi ID dikhana",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Commodity 'gehu' ya 'wheat' select karne ka simple dropdown",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Bar bar tomato ka rate aa raha tha, gehu ka nahi - query parameter kaise lagate hain samajh nahi aaya.",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "/v1/mandi/prices endpoint mein sahi params (mandi, commodity, date) ka pata nahi chala, isliye 14 baar bhi cal",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Mandi list se Anand APMC ka sahi mandi ID nahi mila, baar baar /v1/mandi/list call karna pada.",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "mandi rates endpoint mein commodity/crop filter (pyaaj ke liye alag se filter) — step 5, 12, 14, 15, 16, 19",
+   "class": "feature-gap",
+   "personas": [
+    "seller"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "seller",
+     "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "endpoint ke query params/schema ka documentation — step 12, 14, 15, 19",
+   "class": "feature-gap",
+   "personas": [
+    "seller"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "seller",
+     "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Ahmedabad/Gujarat location filter mandi rates mein — step 2, 3, 6, 10, 18",
+   "class": "feature-gap",
+   "personas": [
+    "seller"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "seller",
+     "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Onion (pyaaj) ke mandi rates nahi mil rahe hain — /v1/mandi/vyapari-rates baar-baar tomato ka rate bhej raha h",
+   "class": "bug-suspicion",
+   "personas": [
+    "seller"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "seller",
+     "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Quote/accept load ka option tak nahi pahunch paya",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "OTP handover trip run karne ka flow trace mein nahi dikha",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Role status directly dikhane wala clear endpoint nahi mila, baar-baar search karna pada",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  }
+ ],
+ "stuck": [
+  {
+   "id": "customer-buy-basket",
+   "persona": "customer",
+   "mode": "guided",
+   "outcome": "step_cap",
+   "steps": 30,
+   "goal": "Buy a weekly vegetable basket from the mall, pay from your wallet, track the order, and rate the delivery.",
+   "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+   "pattern": "repeated list_products_v1_products_get (status 200) near end of run"
+  },
+  {
+   "id": "farmer-sell-wheat",
+   "persona": "farmer",
+   "mode": "guided",
+   "outcome": "step_cap",
+   "steps": 30,
+   "goal": "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer.",
+   "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+   "pattern": "repeated mandi_list_v1_mandi_list_get (status 200) near end of run"
+  },
+  {
+   "id": "seller-procure-and-sell",
+   "persona": "seller",
+   "mode": "guided",
+   "outcome": "step_cap",
+   "steps": 30,
+   "goal": "Check mandi rates for onion, find a farmer lot worth buying, agree a purchase, then record today's shop sales on the POS.",
+   "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json",
+   "pattern": "repeated vyapari_rates_v1_mandi_vyapari_rates_get (status 200) near end of run"
+  },
+  {
+   "id": "transporter-run-trip",
+   "persona": "transporter",
+   "mode": "guided",
+   "outcome": "step_cap",
+   "steps": 30,
+   "goal": "Find a load Rajkot to Ahmedabad for my pickup, quote/accept it, run the trip with the OTP handover, and check my wallet after.",
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+   "pattern": "repeated activate_profile_v1_users_me_profiles__profile_type__activate_post (status 200) near end of run"
+  }
+ ],
+ "mismatches": [
+  {
+   "op": "list_loans_v1_finance_loans_get",
+   "expected": "Returns a list of loan applications with statuses so I can identify a pending KCC case for review.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json"
+  },
+  {
+   "op": "list_open_loads_v1_transport_loads_get",
+   "expected": "Open loads list aa jayega, fir Rajkot-Ahmedabad wala select karunga.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "get_transporter_profile_v1_transport_profile_get",
+   "expected": "Profile ka status pata chalega - transporter verified hai ya nahi.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "transport_wallet_v1_transport_wallet_get",
+   "expected": "Wallet ka status milega ya phir role error confirm hoga.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "list_open_loads_v1_transport_loads_get",
+   "expected": "Load list milegi Rajkot-Ahmedabad route ki, phir usme quote kar sakta hoon.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "get_transporter_profile_v1_transport_profile_get",
+   "expected": "Profile response mein mera status/role aur KYC state dikh jayega.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "list_open_loads_v1_transport_loads_get",
+   "expected": "List of open loads from Rajkot to Ahmedabad milegi, usme se koi pickup load chun lunga.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "update_transporter_profile_v1_transport_profile_put",
+   "expected": "Profile update hoga aur transporter role activate ho jayega, phir load dekh sakta hoon.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "list_open_loads_v1_transport_loads_get",
+   "expected": "Open loads list aayega, Rajkot to Ahmedabad route filter laga ke.",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  },
+  {
+   "op": "get_transporter_profile_v1_transport_profile_get",
+   "expected": "transporter profile status aavse, je thi khabar pade ke aagad shu karvu",
+   "got": 403,
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json"
+  }
+ ],
+ "suspicions": [],
+ "failures": [
+  {
+   "op": "list_open_loads_v1_transport_loads_get",
+   "count": 4
+  },
+  {
+   "op": "get_transporter_profile_v1_transport_profile_get",
+   "count": 3
+  },
+  {
+   "op": "list_loans_v1_finance_loans_get",
+   "count": 1
+  },
+  {
+   "op": "transport_wallet_v1_transport_wallet_get",
+   "count": 1
+  },
+  {
+   "op": "update_transporter_profile_v1_transport_profile_put",
+   "count": 1
+  }
+ ],
+ "coverage": {
+  "per_persona": {
+   "transporter": {
+    "must_touch": [
+     "transport",
+     "bookings",
+     "wallet"
+    ],
+    "seen": [
+     "transport",
+     "wallet"
+    ],
+    "ops_hit": 6
+   },
+   "farmer": {
+    "must_touch": [
+     "mandi",
+     "market",
+     "lots",
+     "demands"
+    ],
+    "seen": [
+     "mandi"
+    ],
+    "ops_hit": 2
+   },
+   "bankManager": {
+    "must_touch": [
+     "loans",
+     "applications",
+     "kyc",
+     "finance"
+    ],
+    "seen": [
+     "finance",
+     "loans"
+    ],
+    "ops_hit": 4
+   },
+   "seller": {
+    "must_touch": [
+     "seller",
+     "market",
+     "rates",
+     "pos"
+    ],
+    "seen": [
+     "market",
+     "rates"
+    ],
+    "ops_hit": 3
+   },
+   "customer": {
+    "must_touch": [
+     "marketplace",
+     "orders",
+     "cart",
+     "wallet"
+    ],
+    "seen": [],
+    "ops_hit": 4
+   }
+  },
+  "top_hit_ops": [
+   {
+    "op": "get_lot_v1_market_lots__lot_id__get",
+    "hits": 2
+   },
+   {
+    "op": "browse_lots_v1_market_lots_browse_get",
+    "hits": 2
+   },
+   {
+    "op": "review_queue_v1_loans_queue_get",
+    "hits": 1
+   },
+   {
+    "op": "get_transporter_profile_v1_transport_profile_get",
+    "hits": 1
+   },
+   {
+    "op": "transport_wallet_v1_transport_wallet_get",
+    "hits": 1
+   },
+   {
+    "op": "list_prices_v1_mandi_prices_get",
+    "hits": 1
+   },
+   {
+    "op": "list_loans_v1_finance_loans_get",
+    "hits": 1
+   },
+   {
+    "op": "get_loan_v1_loans__applicationId__get",
+    "hits": 1
+   },
+   {
+    "op": "update_transporter_profile_v1_transport_profile_put",
+    "hits": 1
+   },
+   {
+    "op": "list_open_loads_v1_transport_loads_get",
+    "hits": 1
+   },
+   {
+    "op": "vyapari_rates_v1_mandi_vyapari_rates_get",
+    "hits": 1
+   },
+   {
+    "op": "activate_profile_v1_users_me_profiles__profile_type__activate_post",
+    "hits": 1
+   },
+   {
+    "op": "loan_schedule_v1_loans__applicationId__schedule_get",
+    "hits": 1
+   },
+   {
+    "op": "set_primary_profile_v1_users_me_profiles__profile_type__primary_put",
+    "hits": 1
+   },
+   {
+    "op": "get_product_v1_products__product_id__get",
+    "hits": 1
+   }
+  ],
+  "zero_hit_total": null
+ },
+ "friction": [
+  {
+   "scenario": "bank-loan-pipeline",
+   "persona": "bankManager",
+   "outcome": "done",
+   "steps": 7,
+   "short_done": false,
+   "retry_ops": {},
+   "p95_ms": 45,
+   "slo_ok": true,
+   "satisfaction": 2
+  },
+  {
+   "scenario": "customer-buy-basket",
+   "persona": "customer",
+   "outcome": "step_cap",
+   "steps": 30,
+   "short_done": false,
+   "retry_ops": {
+    "list_products_v1_products_get": 1
+   },
+   "p95_ms": 417,
+   "slo_ok": false,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "farmer-sell-wheat",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 30,
+   "short_done": false,
+   "retry_ops": {
+    "list_prices_v1_mandi_prices_get": 1,
+    "mandi_list_v1_mandi_list_get": 1
+   },
+   "p95_ms": 70,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "seller-procure-and-sell",
+   "persona": "seller",
+   "outcome": "step_cap",
+   "steps": 30,
+   "short_done": false,
+   "retry_ops": {
+    "vyapari_rates_v1_mandi_vyapari_rates_get": 1
+   },
+   "p95_ms": 28,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "transporter-run-trip",
+   "persona": "transporter",
+   "outcome": "step_cap",
+   "steps": 30,
+   "short_done": false,
+   "retry_ops": {},
+   "p95_ms": 39,
+   "slo_ok": true,
+   "satisfaction": 1
+  }
+ ],
+ "security": [],
+ "debriefs": [
+  {
+   "run": "smoke-20261021T17-57-07--bank-loan-pipeline.meta.json",
+   "persona": "bankManager",
+   "scenario": "bank-loan-pipeline",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "No approve action was recorded for the KCC loan",
+     "step": 2,
+     "evidence": "GET /v1/loans/kcc_sbi_loan_312 returned 200 with details, but the trace contains no POST/PUT approve call or status change to approved"
+    },
+    {
+     "what": "No disburse action was recorded after approval",
+     "step": 2,
+     "evidence": "The trace only reads loan details and schedule; there is no disburse endpoint call or status transition to disbursed"
+    },
+    {
+     "what": "GET /v1/finance/loans returned 403 Forbidden",
+     "step": 4,
+     "evidence": "Response was 403 while I expected a list of loan applications with statuses to identify pending KCC cases"
+    }
+   ],
+   "missing_features": [
+    "An endpoint or UI action to approve a pending KCC loan application",
+    "An endpoint or UI action to disburse the approved KCC loan"
+   ],
+   "confusing": [
+    "Fetching /v1/loans/kcc_sbi_loan_312/schedule in step 3 returned 200 before any disburse action was visible, so I could not tell whether the loan was already disbursed or the schedule was pre-generated",
+    "Step 4 returned 403 on /v1/finance/loans even though step 1 on /v1/loans/queue succeeded with similar queue data"
+   ],
+   "unnecessary": [
+    "GET /v1/finance/loans in step 4 was redundant because step 1 already returned the pending loan queue from /v1/loans/queue"
+   ],
+   "satisfaction": 2,
+   "verbatim_frustration": "I can read the file, but where are the approve and disburse buttons? I cannot clear this loan from the queue with GET calls alone."
+  },
+  {
+   "run": "smoke-20261021T17-57-07--customer-buy-basket.meta.json",
+   "persona": "customer",
+   "scenario": "customer-buy-basket",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Product list /v1/products sirf seeds aur fertilizer dikha raha tha, weekly vegetable basket mall se nahi mila.",
+     "step": 1,
+     "evidence": "Steps 1, 8, 15, 18, 20, 26 mein GET /v1/products kiya; trace mein 'generic product list mein seeds/fertilizer hi aa rahe hain' likha hai."
+    },
+    {
+     "what": "Market lots browse bhi weekly vegetable basket wala option nahi dikhaya.",
+     "step": 7,
+     "evidence": "Step 7 mein GET /v1/market/lots/browse kiya, par uske baad bhi searches mein 'seeds/fertilizer' ki shikayat lagi."
+    },
+    {
+     "what": "Lot ID lot_2ff7400d70d3 ka detail dekhne par bhi confirm nahi hua ki yeh mall se weekly vegetable basket hai.",
+     "step": 13,
+     "evidence": "Steps 11-12 mein lot detail dhoondha, step 13 mein GET /v1/market/lots/lot_2ff7400d70d3 kiya, lekin baad mein product list mein wapus seed/fertilizer hi dekhne lagi."
+    },
+    {
+     "what": "Product nahi milne ki wajah se cart, wallet payment, tracking ya rating tak pahunch hi nahi payi.",
+     "step": 26,
+     "evidence": "Trace mein koi POST /cart, payment, order-tracking, ya rating endpoint call nahi hai; last step 26 tak sirf GET /v1/products repeat ho raha tha."
+    }
+   ],
+   "missing_features": [
+    "Product search/filter by keyword ya category, jaise 'weekly vegetable basket' ya 'mall' se filter kar sakein — /v1/products mein query params nahi mile.",
+    "Wallet balance aur wallet payment ka endpoint visibility, kyunki wallet se pay karna tha par koi wallet/payment endpoint trace mein nahi dikhaya.",
+    "Order tracking endpoint, kyunki order place hone ke baad track karna tha.",
+    "Delivery rating endpoint, kyunki delivery ko rate karna tha."
+   ],
+   "confusing": [
+    "Baar-baar GET /v1/products aur GET /v1/products/prod-3 repeat kar rahi thi, yeh samajh nahi aaya ki prod-3 hi weekly vegetable basket hai ya nahi.",
+    "Search queries ka result unclear tha; 'mall' aur 'vegetable basket' ke liye alag-alag search karke bhi sahi endpoint ya product nahi mila."
+   ],
+   "unnecessary": [
+    "GET /v1/products ko 6 baar repeat karna (steps 1, 8, 15, 18, 20, 26) — ek baar dekhne ke baad same seeds/fertilizer list aa rahi thi.",
+    "GET /v1/products/prod-3 ko 4 baar repeat karna (steps 2, 9, 16, 21).",
+    "Same 'mall weekly vegetable basket' wali search ko 8-10 baar repeat karna bina naye result ke."
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Bhai, itni der se product list aur prod-3 ghumake thak gayi, par mall wala weekly vegetable basket mila hi nahi — app ne dukaan ki jagah beej aur khad dikha di!"
+  },
+  {
+   "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json",
+   "persona": "farmer",
+   "scenario": "farmer-sell-wheat",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Bar bar tomato ka rate aa raha tha, gehu ka nahi - query parameter kaise lagate hain samajh nahi aaya.",
+     "step": 6,
+     "evidence": "SEARCH: 'Baar baar tomato ka rate aa raha hai, mujhe Anand ka gehu ka rate chahiye. Endpoint ke query params dekhne hain.'"
+    },
+    {
+     "what": "/v1/mandi/prices endpoint mein sahi params (mandi, commodity, date) ka pata nahi chala, isliye 14 baar bhi call karne par Anand wheat price nahi mila.",
+     "step": 24,
+     "evidence": "SEARCH: 'Anand ka mandi id aur price API ke query params jaanana hai, taaki sahi tarah se ghehu ka rate check kar saku.'"
+    },
+    {
+     "what": "Mandi list se Anand APMC ka sahi mandi ID nahi mila, baar baar /v1/mandi/list call karna pada.",
+     "step": 25,
+     "evidence": "GET /v1/mandi/list expected 'Anand APMC ka mandi ID milega taaki wheat price check kar saku.'"
+    },
+    {
+     "what": "Koi lot create nahi ho saka aur koi offer bhi nahi aaya, kyunki pehla step hi mandi price check karna adhura reh gaya.",
+     "step": 0,
+     "evidence": "Trace mein koi POST /lots ya offer related call nahi hai."
+    }
+   ],
+   "missing_features": [
+    "Hinglish mein endpoint ke required query params batane wali help ya auto-suggest",
+    "Mandi name 'Anand' type karte hi matching mandi ID dikhana",
+    "Commodity 'gehu' ya 'wheat' select karne ka simple dropdown",
+    "Galat params par bhi sahi example wala error message"
+   ],
+   "confusing": [
+    "/v1/mandi/prices baar baar same tarah se call kiya bina params badle, har baar alag expectation rakhi",
+    "Prices aur list endpoints ke beech baar baar switch kiya, pata nahi chala pehle kya karna chahiye",
+    "SEARCH kabhi 200 deta hai toh kabhi 0, samajh nahi aaya ki search kaise kaam karta hai"
+   ],
+   "unnecessary": [
+    "/v1/mandi/prices ko 14 alag-alag steps mein bina sahi params ke repeat karna",
+    "/v1/mandi/list ko 6 baar baar call karna jabki ek baar mein hi list mil sakti thi",
+    "Same 'tomato aata hai' problem ko 2-3 baar search karke duplicate complaint karna"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Bhai, baar baar tamatar ka daam dikhata raha, mujhe toh Anand ka gehu bechna tha, param samajh nahi aaya toh lot banane tak kabhi pahuncha hi nahi!"
+  },
+  {
+   "run": "smoke-20261021T17-57-07--seller-procure-and-sell.meta.json",
+   "persona": "seller",
+   "scenario": "seller-procure-and-sell",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Onion (pyaaj) ke mandi rates nahi mil rahe hain — /v1/mandi/vyapari-rates baar-baar tomato ka rate bhej raha hai",
+     "step": 5,
+     "evidence": "SEARCH 'Pyaaj ka bhav dekhna hai; tomato ka rate aa raha hai, onion ka nahi' aur step 16/19 mein 'bina sahi filter ke tamatar hi aa raha hai'"
+    },
+    {
+     "what": "Lot dekhne ke baad purchase ya negotiation aage nahi badh paaya",
+     "step": 8,
+     "evidence": "GET /v1/market/lots/lot_4066b5d46ebb detail aa gayi par uske baad koi purchase/accept action nahi hai"
+    },
+    {
+     "what": "Aaj ki dukaan ki baaki (POS sales) record karna reh gaya",
+     "step": 0,
+     "evidence": "Goal mein 'record today's shop sales on the POS' tha par trace mein kabhi POS endpoint ya sales entry step nahi aaya"
+    }
+   ],
+   "missing_features": [
+    "mandi rates endpoint mein commodity/crop filter (pyaaj ke liye alag se filter) — step 5, 12, 14, 15, 16, 19",
+    "endpoint ke query params/schema ka documentation — step 12, 14, 15, 19",
+    "Ahmedabad/Gujarat location filter mandi rates mein — step 2, 3, 6, 10, 18",
+    "farmer lot select karne ke baad purchase agreement ya negotiation ka flow — step 7, 8",
+    "dukaan ki roz ki sales record karne wala POS feature — goal"
+   ],
+   "confusing": [
+    "same /v1/mandi/vyapari-rates endpoint ko 10+ baar alag-alag expectation se call karna par har baar same tomato response aana — step 2, 3, 4, 6, 10, 11, 13, 17, 18, 20"
+   ],
+   "unnecessary": [
+    "/v1/mandi/vyapari-rates ko 11 baar same tarah se repeat call karna bina kisi naye parameter ke — step 2, 3, 4, 6, 10, 11, 13, 17, 18, 20"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Baar-baar same endpoint daba ke bhi pyaaj ka bhav nahi aaya, sirf tamatar dikha raha hai — time barbaad ho gaya aur kharidari bhi nahi ho paayi."
+  },
+  {
+   "run": "smoke-20261021T17-57-07--transporter-run-trip.meta.json",
+   "persona": "transporter",
+   "scenario": "transporter-run-trip",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Transport loads endpoint 403 FORBIDDEN_ROLE aa raha tha",
+     "step": 1,
+     "evidence": "GET /v1/transport/loads → 403, same 403 step 8, 17, 23 mein bhi aaya"
+    },
+    {
+     "what": "Transport profile endpoint bhi 403 de raha tha",
+     "step": 2,
+     "evidence": "GET /v1/transport/profile → 403, step 9 aur 24 mein bhi repeat hua"
+    },
+    {
+     "what": "Wallet check karne bhi 403 mila",
+     "step": 4,
+     "evidence": "GET /v1/transport/wallet → 403"
+    },
+    {
+     "what": "PUT /v1/transport/profile 403 fail ho gaya",
+     "step": 19,
+     "evidence": "PUT /v1/transport/profile → 403 | expected profile update hoga aur transporter role activate hoga"
+    }
+   ],
+   "missing_features": [
+    "Load search ya filter Rajkot-Ahmedabad ke liye kabhi khula nahi - /v1/transport/loads hamesha 403 raha",
+    "Quote/accept load ka option tak nahi pahunch paya",
+    "OTP handover trip run karne ka flow trace mein nahi dikha",
+    "Wallet balance check nahi ho paya - /v1/transport/wallet 403 tha",
+    "Role status directly dikhane wala clear endpoint nahi mila, baar-baar search karna pada"
+   ],
+   "confusing": [
+    "Transporter profile primary set karne ke baad bhi /v1/transport/loads 403 aa raha tha - role activate alag step tha",
+    "Same 403 error ko dekhne ke liye baar-baar GET /v1/transport/loads aur profile call kiya",
+    "Bohot saare SEARCH calls ek hi kaam ke liye repeat hue - role/transporter register dhoondhne ke liye"
+   ],
+   "unnecessary": [
+    "Step 1, 8, 17, 23 mein baar-baar same loads endpoint 403 check karna",
+    "Step 2, 9, 24 mein baar-baar same profile endpoint 403 check karna",
+    "Steps 3, 5, 6, 7, 10-16, 18, 20, 21, 25, 26, 27 mein same 'transporter role kaise set karein' search repeat karna"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Bhai, itna ghumaya transporter banne ke liye, load list tak nahi khula, OTP toh door ki baat hai, ye app direct bata nahi sakta tha ke pehle profile activate karni hai?"
+  }
+ ],
+ "searches_no_hit": [
+  {
+   "q": "Pahle sahi tareeke se Anand ka gehun ka bhav dekhna hai, parameters kya hain pata karo.",
+   "run": "smoke-20261021T17-57-07--farmer-sell-wheat.meta.json"
+  }
+ ],
+ "satisfaction_avg": 1.2
+}

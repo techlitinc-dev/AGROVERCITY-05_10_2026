@@ -1,0 +1,34 @@
+{
+ "run_id": "smoke-20261021T17-57-07",
+ "scenario": {
+  "id": "transporter-run-trip",
+  "persona": "transporter",
+  "suite": "smoke",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Find a load Rajkot to Ahmedabad for my pickup, quote/accept it, run the trip with the OTP handover, and check my wallet after.",
+  "checkpoints": [
+   "job found and accepted",
+   "trip started",
+   "POD OTP handed over",
+   "wallet credited"
+  ],
+  "tags": [
+   "core",
+   "logistics",
+   "money"
+  ],
+  "ease_focus": "one-handed, on-road, 2 minutes per interaction"
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 30
+ },
+ "budget": {
+  "usd": 0.0664,
+  "calls": 86,
+  "in_tokens": 282726,
+  "out_tokens": 39958,
+  "cached_tokens": 0
+ }
+}

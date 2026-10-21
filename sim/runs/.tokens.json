@@ -1,0 +1,37 @@
+{
+ "farmer": {
+  "uid": "dev-user-1",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlci0xIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjY5MTY4Mn0.cDqy6BD4U8a520tjp2xM2qpH3lrbRcpwLHgxTrnm4Hg",
+  "exp": 1792684482.2920935,
+  "via": "quick-login",
+  "checked_at": 1792605282.292104
+ },
+ "transporter": {
+  "uid": "omni-user-777",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJvbW5pLXVzZXItNzc3IiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjY5MTY4Mn0.lZm6UIpuRJx_VOi97zdj7WrrvqlJoXj_uFAbiMHjCns",
+  "exp": 1792684482.4079032,
+  "via": "quick-login",
+  "checked_at": 1792605282.4079106
+ },
+ "seller": {
+  "uid": "dev-user-2",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlci0yIiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjY5MTY4Mn0.SXIX2cPucf31ZACHB06qEZbko-Fr28rj5mlWns-N7mQ",
+  "exp": 1792684482.4692914,
+  "via": "quick-login",
+  "checked_at": 1792605282.4692967
+ },
+ "customer": {
+  "uid": "omni-user-777",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJvbW5pLXVzZXItNzc3IiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjY5MTY5Nn0.pgBL5urKVFngpKZG6M7UnVmcsx0NlHk7gvXweASf0fg",
+  "exp": 1792684496.4395869,
+  "via": "quick-login",
+  "checked_at": 1792605296.4395936
+ },
+ "bankManager": {
+  "uid": "dev-user-7",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlci03IiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjY5MTY5OH0.qCAuv3JJvDy5MI-gTXjfB08A70gn0gY5IFWYfDVJunc",
+  "exp": 1792684498.5025034,
+  "via": "quick-login",
+  "checked_at": 1792605298.5025108
+ }
+}

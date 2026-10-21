@@ -1,0 +1,44 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Transport loads endpoint 403 FORBIDDEN_ROLE aa raha tha",
+   "step": 1,
+   "evidence": "GET /v1/transport/loads → 403, same 403 step 8, 17, 23 mein bhi aaya"
+  },
+  {
+   "what": "Transport profile endpoint bhi 403 de raha tha",
+   "step": 2,
+   "evidence": "GET /v1/transport/profile → 403, step 9 aur 24 mein bhi repeat hua"
+  },
+  {
+   "what": "Wallet check karne bhi 403 mila",
+   "step": 4,
+   "evidence": "GET /v1/transport/wallet → 403"
+  },
+  {
+   "what": "PUT /v1/transport/profile 403 fail ho gaya",
+   "step": 19,
+   "evidence": "PUT /v1/transport/profile → 403 | expected profile update hoga aur transporter role activate hoga"
+  }
+ ],
+ "missing_features": [
+  "Load search ya filter Rajkot-Ahmedabad ke liye kabhi khula nahi - /v1/transport/loads hamesha 403 raha",
+  "Quote/accept load ka option tak nahi pahunch paya",
+  "OTP handover trip run karne ka flow trace mein nahi dikha",
+  "Wallet balance check nahi ho paya - /v1/transport/wallet 403 tha",
+  "Role status directly dikhane wala clear endpoint nahi mila, baar-baar search karna pada"
+ ],
+ "confusing": [
+  "Transporter profile primary set karne ke baad bhi /v1/transport/loads 403 aa raha tha - role activate alag step tha",
+  "Same 403 error ko dekhne ke liye baar-baar GET /v1/transport/loads aur profile call kiya",
+  "Bohot saare SEARCH calls ek hi kaam ke liye repeat hue - role/transporter register dhoondhne ke liye"
+ ],
+ "unnecessary": [
+  "Step 1, 8, 17, 23 mein baar-baar same loads endpoint 403 check karna",
+  "Step 2, 9, 24 mein baar-baar same profile endpoint 403 check karna",
+  "Steps 3, 5, 6, 7, 10-16, 18, 20, 21, 25, 26, 27 mein same 'transporter role kaise set karein' search repeat karna"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Bhai, itna ghumaya transporter banne ke liye, load list tak nahi khula, OTP toh door ki baat hai, ye app direct bata nahi sakta tha ke pehle profile activate karni hai?"
+}

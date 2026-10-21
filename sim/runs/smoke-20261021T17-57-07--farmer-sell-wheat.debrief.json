@@ -1,0 +1,43 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Bar bar tomato ka rate aa raha tha, gehu ka nahi - query parameter kaise lagate hain samajh nahi aaya.",
+   "step": 6,
+   "evidence": "SEARCH: 'Baar baar tomato ka rate aa raha hai, mujhe Anand ka gehu ka rate chahiye. Endpoint ke query params dekhne hain.'"
+  },
+  {
+   "what": "/v1/mandi/prices endpoint mein sahi params (mandi, commodity, date) ka pata nahi chala, isliye 14 baar bhi call karne par Anand wheat price nahi mila.",
+   "step": 24,
+   "evidence": "SEARCH: 'Anand ka mandi id aur price API ke query params jaanana hai, taaki sahi tarah se ghehu ka rate check kar saku.'"
+  },
+  {
+   "what": "Mandi list se Anand APMC ka sahi mandi ID nahi mila, baar baar /v1/mandi/list call karna pada.",
+   "step": 25,
+   "evidence": "GET /v1/mandi/list expected 'Anand APMC ka mandi ID milega taaki wheat price check kar saku.'"
+  },
+  {
+   "what": "Koi lot create nahi ho saka aur koi offer bhi nahi aaya, kyunki pehla step hi mandi price check karna adhura reh gaya.",
+   "step": 0,
+   "evidence": "Trace mein koi POST /lots ya offer related call nahi hai."
+  }
+ ],
+ "missing_features": [
+  "Hinglish mein endpoint ke required query params batane wali help ya auto-suggest",
+  "Mandi name 'Anand' type karte hi matching mandi ID dikhana",
+  "Commodity 'gehu' ya 'wheat' select karne ka simple dropdown",
+  "Galat params par bhi sahi example wala error message"
+ ],
+ "confusing": [
+  "/v1/mandi/prices baar baar same tarah se call kiya bina params badle, har baar alag expectation rakhi",
+  "Prices aur list endpoints ke beech baar baar switch kiya, pata nahi chala pehle kya karna chahiye",
+  "SEARCH kabhi 200 deta hai toh kabhi 0, samajh nahi aaya ki search kaise kaam karta hai"
+ ],
+ "unnecessary": [
+  "/v1/mandi/prices ko 14 alag-alag steps mein bina sahi params ke repeat karna",
+  "/v1/mandi/list ko 6 baar baar call karna jabki ek baar mein hi list mil sakti thi",
+  "Same 'tomato aata hai' problem ko 2-3 baar search karke duplicate complaint karna"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Bhai, baar baar tamatar ka daam dikhata raha, mujhe toh Anand ka gehu bechna tha, param samajh nahi aaya toh lot banane tak kabhi pahuncha hi nahi!"
+}

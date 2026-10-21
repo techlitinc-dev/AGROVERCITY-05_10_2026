@@ -1,0 +1,33 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "No approve action was recorded for the KCC loan",
+   "step": 2,
+   "evidence": "GET /v1/loans/kcc_sbi_loan_312 returned 200 with details, but the trace contains no POST/PUT approve call or status change to approved"
+  },
+  {
+   "what": "No disburse action was recorded after approval",
+   "step": 2,
+   "evidence": "The trace only reads loan details and schedule; there is no disburse endpoint call or status transition to disbursed"
+  },
+  {
+   "what": "GET /v1/finance/loans returned 403 Forbidden",
+   "step": 4,
+   "evidence": "Response was 403 while I expected a list of loan applications with statuses to identify pending KCC cases"
+  }
+ ],
+ "missing_features": [
+  "An endpoint or UI action to approve a pending KCC loan application",
+  "An endpoint or UI action to disburse the approved KCC loan"
+ ],
+ "confusing": [
+  "Fetching /v1/loans/kcc_sbi_loan_312/schedule in step 3 returned 200 before any disburse action was visible, so I could not tell whether the loan was already disbursed or the schedule was pre-generated",
+  "Step 4 returned 403 on /v1/finance/loans even though step 1 on /v1/loans/queue succeeded with similar queue data"
+ ],
+ "unnecessary": [
+  "GET /v1/finance/loans in step 4 was redundant because step 1 already returned the pending loan queue from /v1/loans/queue"
+ ],
+ "satisfaction": 2,
+ "verbatim_frustration": "I can read the file, but where are the approve and disburse buttons? I cannot clear this loan from the queue with GET calls alone."
+}

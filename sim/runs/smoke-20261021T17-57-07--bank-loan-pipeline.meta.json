@@ -1,0 +1,39 @@
+{
+ "run_id": "smoke-20261021T17-57-07",
+ "scenario": {
+  "id": "bank-loan-pipeline",
+  "persona": "bankManager",
+  "suite": "smoke",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Review a KCC loan application from a farmer with a good profile, approve it, disburse, and verify the repayment schedule exists.",
+  "checkpoints": [
+   "application reviewed incl. farmer360",
+   "decision recorded",
+   "disbursement done",
+   "schedule visible"
+  ],
+  "tags": [
+   "core",
+   "finance"
+  ],
+  "ease_focus": "underwriting decision in one screen with risk evidence attached"
+ },
+ "outcome": {
+  "outcome": "done",
+  "steps": 7,
+  "act": {
+   "action": "done",
+   "reason": "The KCC loan application kcc_sbi_loan_312 is already disbursed and the repayment schedule is confirmed with 12 EMIs starting Nov 2026. Goal achieved.",
+   "summary": "KCC loan kcc_sbi_loan_312 reviewed, approved, disbursed (status: disbursed), and repayment schedule verified with installments present.",
+   "satisfaction": 1
+  }
+ },
+ "budget": {
+  "usd": 0.0786,
+  "calls": 107,
+  "in_tokens": 328485,
+  "out_tokens": 48911,
+  "cached_tokens": 0
+ }
+}

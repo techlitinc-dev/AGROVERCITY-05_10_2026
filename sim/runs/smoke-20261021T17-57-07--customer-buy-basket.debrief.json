@@ -1,0 +1,42 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Product list /v1/products sirf seeds aur fertilizer dikha raha tha, weekly vegetable basket mall se nahi mila.",
+   "step": 1,
+   "evidence": "Steps 1, 8, 15, 18, 20, 26 mein GET /v1/products kiya; trace mein 'generic product list mein seeds/fertilizer hi aa rahe hain' likha hai."
+  },
+  {
+   "what": "Market lots browse bhi weekly vegetable basket wala option nahi dikhaya.",
+   "step": 7,
+   "evidence": "Step 7 mein GET /v1/market/lots/browse kiya, par uske baad bhi searches mein 'seeds/fertilizer' ki shikayat lagi."
+  },
+  {
+   "what": "Lot ID lot_2ff7400d70d3 ka detail dekhne par bhi confirm nahi hua ki yeh mall se weekly vegetable basket hai.",
+   "step": 13,
+   "evidence": "Steps 11-12 mein lot detail dhoondha, step 13 mein GET /v1/market/lots/lot_2ff7400d70d3 kiya, lekin baad mein product list mein wapus seed/fertilizer hi dekhne lagi."
+  },
+  {
+   "what": "Product nahi milne ki wajah se cart, wallet payment, tracking ya rating tak pahunch hi nahi payi.",
+   "step": 26,
+   "evidence": "Trace mein koi POST /cart, payment, order-tracking, ya rating endpoint call nahi hai; last step 26 tak sirf GET /v1/products repeat ho raha tha."
+  }
+ ],
+ "missing_features": [
+  "Product search/filter by keyword ya category, jaise 'weekly vegetable basket' ya 'mall' se filter kar sakein — /v1/products mein query params nahi mile.",
+  "Wallet balance aur wallet payment ka endpoint visibility, kyunki wallet se pay karna tha par koi wallet/payment endpoint trace mein nahi dikhaya.",
+  "Order tracking endpoint, kyunki order place hone ke baad track karna tha.",
+  "Delivery rating endpoint, kyunki delivery ko rate karna tha."
+ ],
+ "confusing": [
+  "Baar-baar GET /v1/products aur GET /v1/products/prod-3 repeat kar rahi thi, yeh samajh nahi aaya ki prod-3 hi weekly vegetable basket hai ya nahi.",
+  "Search queries ka result unclear tha; 'mall' aur 'vegetable basket' ke liye alag-alag search karke bhi sahi endpoint ya product nahi mila."
+ ],
+ "unnecessary": [
+  "GET /v1/products ko 6 baar repeat karna (steps 1, 8, 15, 18, 20, 26) — ek baar dekhne ke baad same seeds/fertilizer list aa rahi thi.",
+  "GET /v1/products/prod-3 ko 4 baar repeat karna (steps 2, 9, 16, 21).",
+  "Same 'mall weekly vegetable basket' wali search ko 8-10 baar repeat karna bina naye result ke."
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Bhai, itni der se product list aur prod-3 ghumake thak gayi, par mall wala weekly vegetable basket mila hi nahi — app ne dukaan ki jagah beej aur khad dikha di!"
+}
