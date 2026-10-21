@@ -16,6 +16,7 @@ from app.data.insurance_seed import seed_insurance_rates, seed_insurance_schemes
 from app.data.livestock_seed import seed_livestock
 from app.data.schemes_seed import seed_schemes
 from app.data.tree_seed import seed_tree
+from app.data.seasonal_seed import seed_seasonal
 from app.services.ai.config_store import seed_ai_config
 from app.services.billing import seed_plans
 from app.routers import (
@@ -50,6 +51,8 @@ from app.routers import (
     contracts,
     courses,
     coupons,
+    customer_hub,
+    customer_seasonal,
     dairy_manager,
     dairy_hub,
     dashboard,
@@ -62,6 +65,9 @@ from app.routers import (
     equipment_owner,
     equipment_rental,
     finance,
+    follows,
+    geo,
+    farmer_crops,
     farmer_deals,
     faq,
     fpo,
@@ -87,6 +93,7 @@ from app.routers import (
     marketplace,
     milk_seller,
     notifications,
+    nursery,
     orders,
     order_tracking,
     partner_api,
@@ -94,6 +101,8 @@ from app.routers import (
     purchases,
     purchase_settlement,
     payments,
+    pickup,
+    product_alerts,
     privacy,
     user_products,
     pnl,
@@ -176,12 +185,19 @@ app.include_router(order_tracking.router, prefix="/v1")
 app.include_router(demands.router, prefix="/v1")
 app.include_router(offers.router, prefix="/v1")
 app.include_router(purchases.router, prefix="/v1")
+app.include_router(pickup.router, prefix="/v1")
+app.include_router(pickup.admin_router, prefix="/v1")
+app.include_router(nursery.router, prefix="/v1")
+app.include_router(nursery.admin_router, prefix="/v1")
 app.include_router(purchase_settlement.router, prefix="/v1")
 app.include_router(payments.router, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
 app.include_router(calls.router, prefix="/v1")
 app.include_router(direct_buyer.router, prefix="/v1")
 app.include_router(emarket_customer.router, prefix="/v1")
+app.include_router(customer_hub.router, prefix="/v1")
+app.include_router(customer_seasonal.router, prefix="/v1")
+app.include_router(product_alerts.router, prefix="/v1")
 app.include_router(exporter.router, prefix="/v1")
 app.include_router(dairy_manager.router, prefix="/v1")
 app.include_router(dairy_hub.router, prefix="/v1")
@@ -199,8 +215,10 @@ app.include_router(courses.router, prefix="/v1")
 app.include_router(teachers.router, prefix="/v1")
 app.include_router(ads.router, prefix="/v1")
 app.include_router(broker.router, prefix="/v1")
+app.include_router(farmer_crops.router, prefix="/v1")
 app.include_router(farmer_deals.router, prefix="/v1")
 app.include_router(transport.router, prefix="/v1")
+app.include_router(geo.router, prefix="/v1")
 app.include_router(equipment.router, prefix="/v1")
 app.include_router(equipment_owner.router, prefix="/v1")
 app.include_router(equipment_rental.router, prefix="/v1")
@@ -209,12 +227,14 @@ app.include_router(fpo.router, prefix="/v1")
 app.include_router(diary.router, prefix="/v1")
 app.include_router(pnl.router, prefix="/v1")
 app.include_router(finance.router, prefix="/v1")
+app.include_router(follows.router, prefix="/v1")
 app.include_router(loans.router, prefix="/v1")
 app.include_router(land.router, prefix="/v1")
 app.include_router(land_ops.router, prefix="/v1")
 app.include_router(bank_accounts.router, prefix="/v1")
 app.include_router(kyc.router, prefix="/v1")
 app.include_router(billing.router, prefix="/v1")
+app.include_router(billing.admin_router, prefix="/v1")
 app.include_router(jobs.router, prefix="/v1")
 app.include_router(settlements.router, prefix="/v1")
 app.include_router(schemes.router, prefix="/v1")
@@ -316,6 +336,7 @@ async def startup():
     await seed_gyan()
     await seed_livestock()
     await seed_tree()
+    await seed_seasonal()
     await seed_cold_storage()
     await seed_courses()
     await seed_ai_config()

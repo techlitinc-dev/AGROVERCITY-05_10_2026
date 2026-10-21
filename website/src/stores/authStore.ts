@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { UserProfile, PersonaType } from '../types';
 import { auth, users, type AuthTokens } from '../lib/api';
+import { normalizePersona } from '../lib/personas';
 
 interface AuthState {
   user: UserProfile | null;
@@ -41,34 +42,79 @@ export function normalizeUserProfile(rawUser: any): UserProfile {
     };
   }
 
-  const activePersona: PersonaType = (
+  // Handle wrapped payloads e.g. { activeProfile, defaultHomeRoute, user: { ... } }
+  const source =
+    rawUser.user && typeof rawUser.user === 'object'
+      ? { ...rawUser.user, ...rawUser }
+      : rawUser;
+
+  const rawActive =
+    source.activePersona ||
+    source.activeProfile ||
+    source.primaryProfile ||
     rawUser.activePersona ||
     rawUser.activeProfile ||
     rawUser.primaryProfile ||
-    'farmer'
-  ) as PersonaType;
+    'farmer';
+  const activePersona: PersonaType = normalizePersona(rawActive);
 
-  const availablePersonas: PersonaType[] = (
+  const rawAvailable =
+    source.availablePersonas ||
+    source.linkedProfiles ||
+    source.profiles ||
     rawUser.availablePersonas ||
     rawUser.linkedProfiles ||
-    [activePersona]
-  ) as PersonaType[];
+    rawUser.profiles ||
+    [activePersona];
+
+  const availableList = Array.isArray(rawAvailable) ? rawAvailable : [rawAvailable];
+  const availablePersonas: PersonaType[] = Array.from(
+    new Set(availableList.filter(Boolean).map(normalizePersona))
+  );
+
+  if (activePersona && !availablePersonas.includes(activePersona)) {
+    availablePersonas.unshift(activePersona);
+  }
+
+  // Personas the user hid (hide ≠ unlink). Stored backend-side as
+  // `disabledProfiles`; normalise every entry like any other persona alias.
+  const rawDisabled =
+    source.disabledProfiles || source.disabledPersonas || rawUser.disabledProfiles || [];
+  const disabledList = Array.isArray(rawDisabled) ? rawDisabled : [];
+  const disabledPersonas: PersonaType[] = Array.from(
+    new Set(disabledList.filter(Boolean).map(normalizePersona))
+  );
+
+  // Self-heal: if the stored active persona was hidden, fall back to the first
+  // enabled one (primary first when available) — mirrors the backend rule.
+  let effectiveActive = activePersona;
+  if (disabledPersonas.includes(effectiveActive)) {
+    const primaryNorm = normalizePersona(source.primaryProfile || '');
+    const fallback =
+      (primaryNorm && !disabledPersonas.includes(primaryNorm) && availablePersonas.includes(primaryNorm)
+        ? primaryNorm
+        : undefined) ||
+      availablePersonas.find((p) => !disabledPersonas.includes(p)) ||
+      effectiveActive;
+    effectiveActive = fallback;
+  }
 
   return {
-    id: rawUser.id || rawUser.uid || 'usr_default',
-    phone: rawUser.phone ? String(rawUser.phone).replace(/^\+91/, '') : '9876543210',
-    name: rawUser.name || 'Kisan User',
-    state: rawUser.state || 'Maharashtra',
-    district: rawUser.district || 'Nashik',
-    village: rawUser.village || 'Pimpalgaon Baswant',
-    pincode: rawUser.pincode || '422006',
-    activePersona,
+    id: source.id || source.uid || 'usr_default',
+    phone: source.phone ? String(source.phone).replace(/^\+91/, '') : '9876543210',
+    name: source.name || 'Kisan User',
+    state: source.state || 'Maharashtra',
+    district: source.district || 'Nashik',
+    village: source.village || 'Pimpalgaon Baswant',
+    pincode: source.pincode || '422006',
+    activePersona: effectiveActive,
     availablePersonas,
-    kycStatus: rawUser.kycStatus || 'verified',
-    hasMpin: rawUser.hasMpin ?? true,
-    avatarUrl: rawUser.avatarUrl || '',
-    farmSizeAcres: rawUser.farmSizeAcres ?? rawUser.landAreaAcres ?? 4.5,
-    kisanCoins: rawUser.kisanCoins ?? rawUser.agriCoins ?? 15,
+    disabledPersonas,
+    kycStatus: source.kycStatus || 'verified',
+    hasMpin: source.hasMpin ?? true,
+    avatarUrl: source.avatarUrl || '',
+    farmSizeAcres: source.farmSizeAcres ?? source.landAreaAcres ?? 4.5,
+    kisanCoins: source.kisanCoins ?? source.agriCoins ?? 15,
   };
 }
 
@@ -78,7 +124,7 @@ const savedRefreshToken = localStorage.getItem(REFRESH_KEY);
 const rawSavedPersona = localStorage.getItem(PERSONA_KEY);
 const savedPersona: PersonaType =
   rawSavedPersona && rawSavedPersona !== 'undefined' && rawSavedPersona !== 'null'
-    ? (rawSavedPersona as PersonaType)
+    ? normalizePersona(rawSavedPersona)
     : 'farmer';
 
 let savedUser: UserProfile | null = null;
@@ -91,7 +137,7 @@ try {
   savedUser = null;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: savedUser,
   accessToken: savedAccessToken,
   refreshToken: savedRefreshToken,
@@ -138,15 +184,26 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   switchPersona: (persona) => {
-    localStorage.setItem(PERSONA_KEY, persona);
-    users.activateProfile(persona).catch(() => undefined);
+    const norm = normalizePersona(persona);
+    // hidden personas cannot be activated from any UI surface
+    if ((get().user?.disabledPersonas ?? []).includes(norm)) return;
+    localStorage.setItem(PERSONA_KEY, norm);
+    users.activateProfile(norm).catch(() => undefined);
     set((state) => {
-      const updatedUser = state.user ? { ...state.user, activePersona: persona } : null;
+      const updatedUser = state.user
+        ? {
+            ...state.user,
+            activePersona: norm,
+            availablePersonas: state.user.availablePersonas.includes(norm)
+              ? state.user.availablePersonas
+              : [...state.user.availablePersonas, norm],
+          }
+        : null;
       if (updatedUser) {
         localStorage.setItem(USER_KEY, JSON.stringify(updatedUser));
       }
       return {
-        activePersona: persona,
+        activePersona: norm,
         user: updatedUser,
       };
     });

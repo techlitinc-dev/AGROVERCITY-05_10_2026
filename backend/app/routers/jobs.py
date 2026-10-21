@@ -162,6 +162,16 @@ async def release_due_escrow_job(x_cron_secret: str | None = Header(None, alias=
     return await release_due_escrows()
 
 
+@router.post("/customer-escrow/release-due")
+async def release_due_customer_escrow_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """FarmGate deposit auto-release: held customer_order escrows whose 72h
+    inspection window closed without a dispute (same shape as escrow/release-due)."""
+    _check_cron_secret(x_cron_secret)
+    from app.routers.emarket_customer import release_due_customer_escrows
+
+    return await release_due_customer_escrows()
+
+
 async def run_subscription_planner() -> dict:
     """WS-03 task 3.31 — standing-demand planner: every active
     customer_subscriptions doc whose nextRunAt has passed gets one quote
@@ -538,3 +548,251 @@ async def export_ai_decisions_job(x_cron_secret: str | None = Header(None, alias
     from app.services.ai.decision_export import export_expired_decisions
 
     return await export_expired_decisions()
+
+
+@router.post("/women/reminders")
+async def run_women_reminders_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """WomenHub reminders (phase-05 WS-08):
+    (a) SHG members without a deposit doc for the current IST month get one
+        `deposit_due` inbox notification per (group, member, month) — the
+        deterministic doc id makes reruns idempotent.
+    (b) Animal owners with a vaccination due within the next 7 days get one
+        `vaccination_due` notification per (animal, vaccine, due date).
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.core.db import get_doc
+    from app.services.notify import DEEP_LINKS
+
+    _check_cron_secret(x_cron_secret)
+    month = datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m")
+    today = date.today()
+    horizon = (today + timedelta(days=7)).isoformat()
+
+    deposit_reminders = 0
+    groups = await query("shg_groups", [], limit=1000)
+    for group in groups:
+        for member in group.get("members") or []:
+            member_uid = member.get("memberUid")
+            if not member_uid:
+                continue
+            if await get_doc(f"shg_groups/{group['id']}/deposits", f"{month}_{member_uid}"):
+                continue
+            notif_id = f"deposit_due_{group['id']}_{member_uid}_{month}"
+            if await get_doc("notifications", notif_id) is not None:
+                continue
+            await set_doc(
+                "notifications",
+                notif_id,
+                {
+                    "id": notif_id,
+                    "userId": member_uid,
+                    "title": "SHG deposit due / बचत गट जमा बाकी",
+                    "body": (
+                        f"Your ₹{int(group.get('monthlyDepositPaisa', 0) or 0) // 100} "
+                        f"deposit for {group.get('name', '')} ({month}) is pending"
+                    ),
+                    "type": "deposit_due",
+                    "data": {"type": "deposit_due", "deepLink": DEEP_LINKS["deposit_due"]},
+                    "read": False,
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            deposit_reminders += 1
+
+    vaccination_reminders = 0
+    animals = await query("livestock_animals", [], limit=2000)
+    owner_by_tag = {a.get("tagId"): a.get("ownerId") for a in animals if a.get("tagId")}
+    schedules = await query("vaccination_schedules", [], limit=2000)
+    for schedule in schedules:
+        due = schedule.get("nextDueDate")
+        if not due or not (today.isoformat() <= due <= horizon):
+            continue
+        owner = owner_by_tag.get(schedule.get("animalTagId"))
+        if not owner:
+            continue
+        notif_id = (
+            f"vaccination_due_{schedule.get('animalTagId')}_{schedule.get('disease')}_{due}"
+        )
+        if await get_doc("notifications", notif_id) is not None:
+            continue
+        await set_doc(
+            "notifications",
+            notif_id,
+            {
+                "id": notif_id,
+                "userId": owner,
+                "title": "Vaccination due / लस बाकी",
+                "body": f"{schedule.get('disease', '')} vaccination due {due}",
+                "type": "vaccination_due",
+                "data": {"type": "vaccination_due", "deepLink": DEEP_LINKS["vaccination_due"]},
+                "read": False,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        vaccination_reminders += 1
+
+    return {"depositReminders": deposit_reminders, "vaccinationReminders": vaccination_reminders}
+
+
+@router.post("/pickup/reminders")
+async def run_pickup_reminders_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """24h / 2h pickup reminders for scheduled purchase pickups.
+
+    A purchase whose pickup.date falls in [now+23h, now+25h] gets one
+    `pickup_reminder_24h` inbox doc per trade party; [now+1h, now+3h] gets
+    `pickup_reminder_2h`. Doc ids are deterministic per (purchase, window,
+    recipient) so cron reruns never duplicate a reminder.
+    """
+    from app.core.db import get_doc
+    from app.services.notify import DEEP_LINKS
+
+    _check_cron_secret(x_cron_secret)
+    now = datetime.now(timezone.utc)
+    purchases = await query("purchases", [("status", "==", "pickupScheduled")], limit=2000)
+
+    windows = (
+        ("pickup24", "pickup_reminder_24h", now + timedelta(hours=23), now + timedelta(hours=25),
+         "Pickup tomorrow / कल पिकअप"),
+        ("pickup2", "pickup_reminder_2h", now + timedelta(hours=1), now + timedelta(hours=3),
+         "Pickup in ~2 hours / २ तासांत पिकअप"),
+    )
+
+    sent = {"pickup_reminder_24h": 0, "pickup_reminder_2h": 0}
+    scanned = 0
+    for purchase in purchases:
+        raw_date = (purchase.get("pickup") or {}).get("date")
+        if not raw_date:
+            continue
+        try:
+            pickup_at = datetime.fromisoformat(str(raw_date))
+            if pickup_at.tzinfo is None:
+                pickup_at = pickup_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        scanned += 1
+        parties = [p for p in (purchase.get("buyerId"), purchase.get("farmerId")) if p]
+        for prefix, notif_type, window_start, window_end, title in windows:
+            if not (window_start <= pickup_at <= window_end):
+                continue
+            for party_uid in parties:
+                notif_id = f"{prefix}_{purchase['id']}_{party_uid}"
+                if await get_doc("notifications", notif_id) is not None:
+                    continue
+                await set_doc(
+                    "notifications",
+                    notif_id,
+                    {
+                        "id": notif_id,
+                        "userId": party_uid,
+                        "title": title,
+                        "body": (
+                            f"{purchase.get('crop', '')} — {purchase.get('quantity', '')} "
+                            f"{purchase.get('unit', '')} pickup at "
+                            f"{(purchase.get('pickup') or {}).get('date', '')}"
+                        ),
+                        "type": notif_type,
+                        "data": {
+                            "type": notif_type,
+                            "deepLink": DEEP_LINKS.get(notif_type, "/dashboard/p/purchases"),
+                            "purchaseId": purchase["id"],
+                        },
+                        "read": False,
+                        "createdAt": now.isoformat(),
+                    },
+                )
+                sent[notif_type] += 1
+
+    return {
+        "scanned": scanned,
+        "reminders24h": sent["pickup_reminder_24h"],
+        "reminders2h": sent["pickup_reminder_2h"],
+    }
+
+
+@router.post("/saved-search-alerts")
+async def run_saved_search_alerts_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
+    """Saved-search alert delivery (features/Vyapari.md V12): for every saved
+    search with alerts enabled, match lots created in the last 24h against its
+    filters and drop one `saved_search_alert` inbox doc per (search, lot) —
+    deterministic ids keep cron reruns idempotent. Returns {"alerts": n}."""
+    from app.core.db import get_doc
+    from app.services.notify import DEEP_LINKS
+
+    _check_cron_secret(x_cron_secret)
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=24)).isoformat()
+
+    searches = await query("saved_searches", [], limit=1000)
+    lots = await query("market_lots", [], limit=2000)
+    recent_lots = [l for l in lots if str(l.get("createdAt") or "") >= cutoff]
+
+    def _matches(search: dict, lot: dict) -> bool:
+        crop = (search.get("crop") or "").strip().lower()
+        if crop and crop not in (lot.get("crop") or "").lower():
+            return False
+        variety = (search.get("variety") or "").strip().lower()
+        if variety and variety not in (lot.get("variety") or "").lower():
+            return False
+        state = (search.get("state") or "").strip().lower()
+        if state:
+            lot_state = (lot.get("state") or (lot.get("location") or {}).get("state") or "").lower()
+            if lot_state != state:
+                return False
+        min_price = search.get("minPrice")
+        if min_price is not None and float(lot.get("expectedRate") or 0) < float(min_price):
+            return False
+        max_price = search.get("maxPrice")
+        if max_price is not None and float(lot.get("expectedRate") or 0) > float(max_price):
+            return False
+        min_qty = search.get("minQuantityQuintals")
+        if min_qty is not None and float(lot.get("quantityQuintals") or 0) < float(min_qty):
+            return False
+        return True
+
+    alerts = 0
+    for search in searches:
+        if not search.get("alertsEnabled"):
+            continue
+        alert_config = search.get("alertConfig") or {}
+        if alert_config and not alert_config.get("enabled", True):
+            continue
+        owner = search.get("userId") or ""
+        if not owner:
+            continue
+        for lot in recent_lots:
+            if lot.get("farmerId") == owner:
+                continue  # never alert a farmer about their own lot
+            if lot.get("status") != "open":
+                continue  # only live listings are worth an alert
+            if not _matches(search, lot):
+                continue
+            notif_id = f"savedalert_{search['id']}_{lot['id']}"
+            if await get_doc("notifications", notif_id) is not None:
+                continue
+            rate = lot.get("expectedRate") or 0
+            await set_doc(
+                "notifications",
+                notif_id,
+                {
+                    "id": notif_id,
+                    "userId": owner,
+                    "title": "New lot matches your saved search / नवीन लॉट",
+                    "body": (
+                        f"{lot.get('crop', '')} — {lot.get('quantityQuintals', '')} qtl "
+                        f"@ ₹{rate}/qtl near {lot.get('village') or 'your mandi'}"
+                    ),
+                    "type": "saved_search_alert",
+                    "data": {
+                        "type": "saved_search_alert",
+                        "deepLink": DEEP_LINKS.get("saved_search_alert", "/dashboard/p/browseLots"),
+                        "lotId": lot["id"],
+                        "savedSearchId": search["id"],
+                    },
+                    "read": False,
+                    "createdAt": now.isoformat(),
+                },
+            )
+            alerts += 1
+
+    return {"alerts": alerts, "searches": len(searches), "recentLots": len(recent_lots)}

@@ -1,13 +1,19 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class SaturationIn(BaseModel):
-    crop: str
-    district: str
-    lat: float
-    lng: float
+    # `commodity` is accepted as a client-side alias for `crop` (the mandi
+    # price views send the commodity they already have selected).
+    model_config = ConfigDict(populate_by_name=True)
+
+    crop: str = Field(validation_alias=AliasChoices("crop", "commodity"))
+    # All location fields fall back to the farmer's profile when omitted:
+    # district from the user doc, lat/lng from farmBoundaryPoints[0].
+    district: str | None = None
+    lat: float | None = None
+    lng: float | None = None
     radiusKm: int = 10
     shareSowingIntent: bool = True
 

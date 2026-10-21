@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { ScanSearch, Bug, FlaskConical, Target, FileUp } from 'lucide-react';
+import { ScanSearch, Bug, FlaskConical, Target, FileUp, Newspaper, Send, Pencil, Trash2 } from 'lucide-react';
 import { StatusBadge } from '../../../components/common/StatusBadge';
-import { admin } from '../../../lib/api';
+import { admin, apiErrorMessage } from '../../../lib/api';
 import {
   PanelShell,
   DataTable,
@@ -9,6 +9,8 @@ import {
   Btn,
   Field,
   TextInput,
+  TextArea,
+  Select,
   Banner,
   idOf,
   str,
@@ -123,6 +125,7 @@ export const AdvisoryPanel: React.FC = () => {
       </PanelShell>
 
       <SoilTestsCard />
+      <AdvisoryArticlesCard />
       {modal}
     </>
   );
@@ -255,6 +258,233 @@ const SoilTestsCard: React.FC = () => {
                   }
                 >
                   Validate
+                </Btn>
+              </div>
+            ),
+          },
+        ]}
+      />
+      {modal}
+    </PanelShell>
+  );
+};
+
+/** Crop advisory articles CMS — list, create/edit, delete, push to farmers. */
+const AdvisoryArticlesCard: React.FC = () => {
+  const { request, modal } = useReasonModal();
+  const [statusFilter, setStatusFilter] = useState('all');
+  const articles = useAsync(
+    () => admin.advisory.articles({ ...(statusFilter ? { status: statusFilter } : {}) }),
+    [statusFilter]
+  );
+  const [draft, setDraft] = useState<Row | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+
+  const rows = (articles.data ?? []) as Row[];
+
+  const startCreate = () => {
+    setEditingId(null);
+    setDraft({ crop: '', region: '', season: '', title: '', body: '', status: 'draft' });
+    setMsg(null);
+  };
+
+  const startEdit = (r: Row) => {
+    setEditingId(idOf(r));
+    setDraft({
+      crop: str(r, 'crop') === '—' ? '' : str(r, 'crop'),
+      region: str(r, 'region') === '—' ? '' : str(r, 'region'),
+      season: str(r, 'season') === '—' ? '' : str(r, 'season'),
+      title: str(r, 'title'),
+      body: str(r, 'body'),
+      status: str(r, 'status') === 'published' ? 'published' : 'draft',
+    });
+    setMsg(null);
+  };
+
+  const persist = async (reason: string) => {
+    if (!draft) return;
+    const payload = {
+      crop: str(draft, 'crop').trim(),
+      region: str(draft, 'region').trim() || null,
+      season: str(draft, 'season').trim() || null,
+      title: str(draft, 'title').trim(),
+      body: str(draft, 'body').trim(),
+      status: str(draft, 'status') === 'published' ? 'published' : 'draft',
+    };
+    if (editingId) {
+      await admin.advisory.updateArticle(editingId, payload, reason);
+    } else {
+      await admin.advisory.createArticle(payload, reason);
+    }
+    setMsg({ kind: 'success', text: `Article “${payload.title}” ${editingId ? 'updated' : 'created'}.` });
+    setDraft(null);
+    setEditingId(null);
+    articles.reload();
+  };
+
+  const remove = (r: Row) =>
+    request({
+      title: `Delete article ${idOf(r)}`,
+      description: `“${str(r, 'title')}” is soft-deleted (active=false, back to draft).`,
+      confirmLabel: 'Delete article',
+      tone: 'danger',
+      action: (reason) => admin.advisory.deleteArticle(idOf(r), reason),
+      onDone: articles.reload,
+    });
+
+  const push = (r: Row) =>
+    request({
+      title: `Push article to farmers — ${idOf(r)}`,
+      description: `“${str(r, 'title')}” notifies every farmer${str(r, 'region') !== '—' ? ` in ${str(r, 'region')}` : ''}. This cannot be undone.`,
+      confirmLabel: 'Push to farmers',
+      defaultReason: `Advisory push: ${str(r, 'title')}`,
+      action: async (reason) => {
+        const res = asRow(await admin.advisory.pushArticle(idOf(r), reason));
+        setMsg({
+          kind: 'success',
+          text: `Pushed “${str(r, 'title')}” — ${num(res, 'notified') ?? 0} farmers notified.`,
+        });
+        articles.reload();
+      },
+    });
+
+  const canSave =
+    !!draft &&
+    str(draft, 'crop').trim().length > 0 &&
+    str(draft, 'title').trim().length >= 3 &&
+    str(draft, 'body').trim().length >= 3;
+
+  return (
+    <PanelShell
+      title="SOP-11: Advisory Articles CMS"
+      subtitle="Crop advisory articles served to farmers (GET/POST/PUT/DELETE /admin/advisory/articles). Only published articles can be pushed; a push notifies every farmer, region-filtered when the article sets a region."
+      icon={Newspaper}
+      loading={articles.loading}
+      error={articles.error}
+      onRefresh={articles.reload}
+      actions={
+        <div className="flex items-end gap-2">
+          <Field label="Status" className="w-36">
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'published', label: 'Published' },
+                { value: 'draft', label: 'Draft' },
+              ]}
+            />
+          </Field>
+          <Btn tone="primary" onClick={startCreate}>
+            New article
+          </Btn>
+        </div>
+      }
+    >
+      {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
+
+      {draft && (
+        <div className="p-3 border border-emerald-200 bg-emerald-50/40 rounded-2xl space-y-3">
+          <p className="text-xs font-bold text-slate-700">{editingId ? `Edit article ${editingId}` : 'New article'}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <Field label="Crop">
+              <TextInput value={str(draft, 'crop')} onChange={(v) => setDraft({ ...draft, crop: v })} placeholder="Cotton" />
+            </Field>
+            <Field label="Region (optional)">
+              <TextInput value={str(draft, 'region')} onChange={(v) => setDraft({ ...draft, region: v })} placeholder="Nashik / Maharashtra" />
+            </Field>
+            <Field label="Season (optional)">
+              <TextInput value={str(draft, 'season')} onChange={(v) => setDraft({ ...draft, season: v })} placeholder="Kharif" />
+            </Field>
+            <Field label="Status">
+              <Select
+                value={str(draft, 'status') === 'published' ? 'published' : 'draft'}
+                onChange={(v) => setDraft({ ...draft, status: v })}
+                options={[
+                  { value: 'draft', label: 'Draft' },
+                  { value: 'published', label: 'Published' },
+                ]}
+              />
+            </Field>
+            <Field label="Title" className="col-span-2 sm:col-span-4">
+              <TextInput value={str(draft, 'title')} onChange={(v) => setDraft({ ...draft, title: v })} placeholder="Pink bollworm early-warning signs" />
+            </Field>
+            <Field label="Body" className="col-span-2 sm:col-span-4">
+              <TextArea value={str(draft, 'body')} onChange={(v) => setDraft({ ...draft, body: v })} rows={5} placeholder="Article body…" />
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <Btn onClick={() => { setDraft(null); setEditingId(null); }}>Cancel</Btn>
+            <Btn
+              tone="primary"
+              disabled={!canSave}
+              onClick={() =>
+                request({
+                  title: `${editingId ? 'Update' : 'Create'} advisory article`,
+                  defaultReason: `Advisory CMS ${editingId ? 'update' : 'create'}: ${str(draft, 'title')}`,
+                  confirmLabel: 'Save article',
+                  action: persist,
+                })
+              }
+            >
+              Save article (audited)
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      <DataTable
+        rows={rows}
+        empty="No advisory articles yet."
+        columns={[
+          {
+            header: 'Article',
+            cell: (r) => (
+              <div>
+                <p className="font-bold text-slate-900">{str(r, 'title')}</p>
+                <p className="text-[10px] text-slate-400 font-mono">{idOf(r)}</p>
+              </div>
+            ),
+          },
+          {
+            header: 'Scope',
+            cell: (r) => (
+              <div>
+                <p className="text-slate-700">{str(r, 'crop')}</p>
+                <p className="text-[10px] text-slate-400">
+                  {str(r, 'region')}{str(r, 'region') !== '—' && str(r, 'season') !== '—' && ' • '}{str(r, 'season')}
+                </p>
+              </div>
+            ),
+          },
+          { header: 'Status', cell: (r) => <StatusBadge status={str(r, 'status')} /> },
+          {
+            header: 'Pushed',
+            cell: (r) => (
+              <span className="text-[10px] text-slate-400">
+                {str(r, 'lastPushedAt') !== '—' ? `last ${str(r, 'lastPushedAt')}` : 'never'}
+              </span>
+            ),
+          },
+          { header: 'Updated', cell: (r) => <span className="text-slate-500">{str(r, 'updatedAt')}</span> },
+          {
+            header: 'Actions',
+            className: 'text-right',
+            cell: (r) => (
+              <div className="flex justify-end gap-1.5">
+                <Btn onClick={() => startEdit(r)}>
+                  <Pencil className="w-3.5 h-3.5" /> Edit
+                </Btn>
+                <Btn
+                  tone="warn"
+                  disabled={str(r, 'status') !== 'published'}
+                  onClick={() => push(r)}
+                >
+                  <Send className="w-3.5 h-3.5" /> Push to farmers
+                </Btn>
+                <Btn tone="danger" onClick={() => remove(r)}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
                 </Btn>
               </div>
             ),

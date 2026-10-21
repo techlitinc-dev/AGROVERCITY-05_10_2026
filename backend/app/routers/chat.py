@@ -180,23 +180,24 @@ class MessageIn(BaseModel):
 class DirectChatIn(BaseModel):
     """Open a simple direct chat scoped to a listing: the other party is the
     lot's farmer, the demand's buyer, a vehicle's owner, an accepted booking's
-    transporter, a resale listing's seller, an export quote's counterparty, or
-    the counterparty of an accepted purchase (chat opens only after the
-    request is accepted). One stable room per user pair."""
+    transporter, a resale listing's seller, a mall product's seller, an export
+    quote's counterparty, or the counterparty of an accepted purchase (chat
+    opens only after the request is accepted). One stable room per user pair."""
 
     lotId: str = ""
     demandId: str = ""
     vehicleId: str = ""
     bookingId: str = ""
     listingId: str = ""
+    productId: str = ""
     quoteId: str = ""
     purchaseId: str = ""
 
 
 @router.post("/direct")
 async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_id)):
-    if not (body.lotId or body.demandId or body.vehicleId or body.bookingId or body.listingId or body.quoteId or body.purchaseId):
-        _error(422, "VALIDATION_ERROR", "lotId, demandId, vehicleId, bookingId, listingId, quoteId or purchaseId is required")
+    if not (body.lotId or body.demandId or body.vehicleId or body.bookingId or body.listingId or body.productId or body.quoteId or body.purchaseId):
+        _error(422, "VALIDATION_ERROR", "lotId, demandId, vehicleId, bookingId, listingId, productId, quoteId or purchaseId is required")
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
@@ -252,6 +253,16 @@ async def open_direct_chat(body: DirectChatIn, uid: str = Depends(current_user_i
         counterparty_id = listing["sellerId"]
         counterparty = await get_user(counterparty_id) or {}
         crop = listing.get("crop", "")
+    elif body.productId:
+        # Business inquiry to a Krishi Mall product's seller (products coll).
+        product = await get_doc("products", body.productId)
+        if product is None:
+            _error(404, "PRODUCT_NOT_FOUND", "product not found")
+        if product.get("sellerId") == uid:
+            _error(400, "OWN_LISTING", "this is your own product")
+        counterparty_id = product["sellerId"]
+        counterparty = await get_user(counterparty_id) or {}
+        crop = product.get("category", "")
     elif body.quoteId:
         # Export negotiation: the exporter and the quoting seller.
         quote = await get_doc("export_quotes", body.quoteId)

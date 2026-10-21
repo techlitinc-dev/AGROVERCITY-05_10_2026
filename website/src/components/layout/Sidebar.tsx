@@ -35,23 +35,39 @@ import {
   Snowflake,
   Boxes,
   Heart,
-  Scale
+  Scale,
+  Inbox,
+  User,
+  Star,
+  Megaphone,
+  HandCoins,
+  Search,
+  Sprout,
+  Tag,
+  TreePine,
+  Leaf,
+  Bookmark,
+  ArrowLeftRight,
+  ClipboardList,
+  PawPrint,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../lib/utils';
+import { normalizePersona } from '../../lib/personas';
 
 export const Sidebar: React.FC = () => {
   const { activePersona } = useAuthStore();
 
   // Dynamic persona navigation mapping
   const getNavSections = () => {
-    switch (activePersona) {
+    switch (normalizePersona(activePersona)) {
       case 'farmer':
         return [
           {
             title: 'Kisan Core Hub',
             items: [
               { to: '/farmer', label: 'Farmer Cockpit', icon: LayoutDashboard },
+              { to: '/farmer/crops', label: 'My Crops / माझी पिके', icon: Sprout },
               { to: '/farmer/crop-doctor', label: 'AI Crop Doctor (रोग निदान)', icon: Stethoscope },
               { to: '/farmer/mandi', label: 'Live Mandi Prices', icon: TrendingUp },
               { to: '/farmer/lots', label: 'Sell Produce Lots', icon: Package },
@@ -62,6 +78,8 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
               { to: '/farmer/pnl', label: 'P&L Dashboard', icon: DollarSign },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
+              { to: '/farmer/livestock', label: 'Pashu Dhan / पशुधन', icon: PawPrint },
+              { to: '/women/directory', label: 'Mahila Bachat Gat', icon: HandCoins },
             ],
           },
           {
@@ -74,7 +92,7 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/schemes', label: 'Govt Schemes', icon: Gift },
               { to: '/farmer/vault', label: 'Document Vault', icon: Award },
               { to: '/farmer/water', label: 'Water & Weather', icon: Droplets },
-              { to: '/farmer/dairy', label: 'My Dairy Slips', icon: Milk },
+              { to: '/farmer/dairy', label: 'My Milk & Payments / दूध व पैसे', icon: Milk },
             ],
           },
           {
@@ -82,6 +100,8 @@ export const Sidebar: React.FC = () => {
             items: [
               { to: '/farmer/referrals', label: 'Refer & Earn', icon: Users },
               { to: '/farmer/coins', label: 'Kisan Coins', icon: Sparkles },
+              { to: '/community/trees', label: 'Tree Plantation Hub', icon: TreePine },
+              { to: '/community/carbon', label: 'Carbon Footprint & Eco', icon: Leaf },
             ],
           },
         ];
@@ -111,6 +131,14 @@ export const Sidebar: React.FC = () => {
               { to: '/transporter/bilty', label: 'Bilty Generator', icon: FileText },
               { to: '/transporter/settlements', label: 'Trip P&L & Commission', icon: DollarSign },
               { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
+              { to: '/transporter/bookings', label: 'My Bookings', icon: FileCheck },
+              { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
+              { to: '/transporter/profile', label: 'Profile', icon: User },
+              { to: '/transporter/ratings', label: 'Ratings', icon: Star },
+              { to: '/transporter/ads', label: 'Advertisements', icon: Megaphone },
+              { to: '/transporter/ai', label: 'AI Insights', icon: Sparkles },
+              { to: '/transporter/chatbot', label: 'Chatbot', icon: Bot },
+              { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
             ],
           },
         ];
@@ -118,14 +146,40 @@ export const Sidebar: React.FC = () => {
       case 'seller':
         return [
           {
-            title: 'Vyapari Suite',
+            title: 'Vyapari Marketplace',
             items: [
               { to: '/seller', label: 'Vyapari Cockpit', icon: LayoutDashboard },
-              { to: '/seller/catalog', label: 'Storefront Products', icon: Store },
-              { to: '/seller/orders', label: 'Mall Orders', icon: Package },
-              { to: '/seller/procure', label: 'Kisan Procurement & J-Form', icon: FileSpreadsheet },
+              { to: '/seller/profile', label: 'Business Profile', icon: Building2 },
+              { to: '/seller/lots', label: 'Discover Produce Lots', icon: Search },
+              { to: '/seller/purchases', label: 'My Purchases & Pickup', icon: FileCheck },
+              { to: '/seller/direct-buyers', label: 'Direct Buyers Network', icon: Users },
+              { to: '/seller/ai', label: 'AI Insights & Sourcing', icon: Sparkles },
+            ],
+          },
+          {
+            title: 'Trading Operations',
+            items: [
+              { to: '/seller/rates', label: 'Mandi Rates & Arbitrage', icon: Landmark },
+              { to: '/seller/procure', label: 'J-Form Procurement', icon: FileSpreadsheet },
               { to: '/seller/demands', label: 'Post Crop Demands', icon: Layers },
-              { to: '/seller/pos', label: 'Khata Ledger & POS', icon: DollarSign },
+              { to: '/seller/stock', label: 'Stock & Resale Desk', icon: Package },
+              { to: '/seller/pos', label: 'POS & Finance CEO', icon: DollarSign },
+              { to: '/seller/settlements', label: 'Weekly Settlements', icon: HandCoins },
+              { to: '/seller/pnl', label: 'Trader P&L (Buy vs Sell)', icon: TrendingUp },
+              { to: '/seller/ratings', label: 'Rate Farmers & Reviews', icon: Star },
+              { to: '/seller/ads', label: 'Ad Manager & Campaigns', icon: Megaphone },
+              { to: '/seller/diary', label: 'Business Diary & Khata', icon: BookOpen },
+            ],
+          },
+          {
+            title: 'Utilities & Ecosystem',
+            items: [
+              { to: '/seller/chatbot', label: 'Chatbot Support', icon: Bot },
+              { to: '/seller/news', label: 'Agri News Feed', icon: Radio },
+              { to: '/seller/coins', label: 'Coin Rewards Wallet', icon: Award },
+              { to: '/seller/referrals', label: 'Refer & Earn', icon: Gift },
+              { to: '/seller/712', label: '7/12 Land Records', icon: FileText },
+              { to: '/seller/trees', label: 'Tree Plantation Hub', icon: Droplets },
             ],
           },
         ];
@@ -209,10 +263,26 @@ export const Sidebar: React.FC = () => {
             items: [
               { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
               { to: '/mall', label: 'Shop Fresh & Inputs', icon: ShoppingBag },
-              { to: '/mall/orders', label: 'My Orders & Delivery', icon: Package },
-              { to: '/mall/subscriptions', label: 'Farm Subscriptions', icon: Calendar },
-              { to: '/mall/wallet', label: 'Wallet & Cashback', icon: DollarSign },
+              { to: '/customer/produce', label: 'Farm-Fresh Produce', icon: Sprout },
+              { to: '/customer/quotes', label: 'My Quotes & Negotiations', icon: Tag },
+              { to: '/customer/procurements', label: 'FarmGate Procurements', icon: FileSpreadsheet },
+              { to: '/customer/seasonal', label: 'Seasonal & Nutrition Guide', icon: Leaf },
+              { to: '/customer/orders', label: 'My Orders & Delivery', icon: Package },
+              { to: '/customer/demands', label: 'Purchase Requests', icon: ClipboardList },
+              { to: '/customer/subscriptions', label: 'Subscription Veggie Box', icon: Calendar },
               { to: '/mall/wishlist', label: 'Saved Wishlist', icon: Heart },
+            ],
+          },
+          {
+            title: 'Household & Finance',
+            items: [
+              { to: '/customer/diary', label: 'Household Diary', icon: BookOpen },
+              { to: '/customer/finance', label: 'Finance CEO (Household)', icon: Landmark },
+              { to: '/customer/wallet', label: 'Wallet & Cashback', icon: DollarSign },
+              { to: '/customer/coins', label: 'Coin Rewards (Krushi Ratna)', icon: Sparkles },
+              { to: '/customer/trees', label: 'Tree Hub (Plant-a-Tree)', icon: TreePine },
+              { to: '/customer/712', label: '7/12 Land Records', icon: FileSpreadsheet },
+              { to: '/customer/news', label: 'Agri News & Stories', icon: Radio },
             ],
           },
         ];
@@ -249,6 +319,7 @@ export const Sidebar: React.FC = () => {
             title: 'Mahila Gruh Udyog',
             items: [
               { to: '/womenShg', label: 'Enterprise Dashboard', icon: LayoutDashboard },
+              { to: '/women/directory', label: 'Bachat Gat Directory', icon: Users },
               { to: '/womenShg/products', label: 'Cottage Catalog', icon: Store },
               { to: '/womenShg/batches', label: 'Production Batches', icon: Package },
               { to: '/womenShg/certs', label: 'FSSAI Certifications', icon: Award },
@@ -329,6 +400,45 @@ export const Sidebar: React.FC = () => {
               { to: '/insurance', label: 'Claims Intimation Queue', icon: ShieldAlert },
               { to: '/insurance/surveyors', label: 'Surveyor Assignment', icon: Users },
               { to: '/insurance/dbt', label: 'Loss Assessment & DBT', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'nursery':
+        return [
+          {
+            title: 'Nursery Operations',
+            items: [
+              { to: '/nursery', label: 'Nursery Cockpit', icon: LayoutDashboard },
+              { to: '/nursery/profile', label: 'Profile & Shop KYC', icon: Building2 },
+              { to: '/nursery/inventory', label: 'My Plants / Inventory', icon: Sprout },
+              { to: '/nursery/batches', label: 'Batches & Stock In/Out', icon: Package },
+              { to: '/nursery/orders', label: 'Orders Received', icon: FileCheck },
+              { to: '/nursery/ratings', label: 'Reviews & Ratings', icon: Star },
+            ],
+          },
+          {
+            title: 'Growth & Business',
+            items: [
+              { to: '/nursery/offers', label: 'Offers & Discounts', icon: Tag },
+              { to: '/nursery/payouts', label: 'Earnings & Payouts', icon: DollarSign },
+              { to: '/nursery/ai', label: 'AI Analysis & Forecast', icon: Sparkles },
+              { to: '/nursery/diary', label: 'Nursery Care Diary', icon: BookOpen },
+              { to: '/nursery/ads', label: 'Ad Manager', icon: Megaphone },
+              { to: '/nursery/finance', label: 'Finance CEO (P&L)', icon: Landmark },
+            ],
+          },
+          {
+            title: 'Ecosystem & Utilities',
+            items: [
+              { to: '/nursery/shop', label: 'E-Market Shopping', icon: ShoppingBag },
+              { to: '/nursery/chatbot', label: 'Chatbot Support', icon: Bot },
+              { to: '/nursery/gyan', label: 'Gyansetu Learning', icon: GraduationCap },
+              { to: '/nursery/news', label: 'Agri News Feed', icon: Radio },
+              { to: '/nursery/coins', label: 'Coin Rewards Wallet', icon: Award },
+              { to: '/nursery/referrals', label: 'Refer & Earn', icon: Gift },
+              { to: '/nursery/trees', label: 'Tree Plantation Hub', icon: Droplets },
+              { to: '/nursery/land-records', label: '7/12 Land Records', icon: FileText },
             ],
           },
         ];
@@ -465,6 +575,81 @@ export const Sidebar: React.FC = () => {
           >
             <Radio className="w-4 h-4 text-indigo-500" />
             <span>Live Mandi News & Audio</span>
+          </NavLink>
+
+          <NavLink
+            to="/academy/my-learning"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <BookOpen className="w-4 h-4 text-sky-600" />
+            <span>My Learning</span>
+          </NavLink>
+
+          <NavLink
+            to="/academy/instructors"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Users className="w-4 h-4 text-violet-600" />
+            <span>Instructors</span>
+          </NavLink>
+
+          <NavLink
+            to="/payments"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <ArrowLeftRight className="w-4 h-4 text-emerald-600" />
+            <span>Payments & Transactions</span>
+          </NavLink>
+
+          <NavLink
+            to="/ratings"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Star className="w-4 h-4 text-amber-500" />
+            <span>Ratings & Reviews</span>
+          </NavLink>
+
+          <NavLink
+            to="/saved"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Bookmark className="w-4 h-4 text-rose-500" />
+            <span>Saved & Following</span>
           </NavLink>
         </div>
       </div>

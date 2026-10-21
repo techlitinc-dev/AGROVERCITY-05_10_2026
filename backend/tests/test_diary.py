@@ -121,8 +121,8 @@ async def test_report_returns_url(client, user_store, monkeypatch):
     assert body["entryCount"] == 2
 
 
-async def test_forbidden_for_seller(client, user_store):
-    token = seed_user(user_store, active_profile="seller")
+async def test_forbidden_for_broker(client, user_store):
+    token = seed_user(user_store, active_profile="broker")
     resp = await client.get("/v1/diary/entries", headers=auth(token))
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"
@@ -192,8 +192,8 @@ async def test_update_entry_not_found(client, user_store):
     assert resp.json()["error"]["code"] == "ENTRY_NOT_FOUND"
 
 
-async def test_update_forbidden_for_seller(client, user_store):
-    token = seed_user(user_store, active_profile="seller")
+async def test_update_forbidden_for_broker(client, user_store):
+    token = seed_user(user_store, active_profile="broker")
     resp = await client.put("/v1/diary/entries/x", json=ENTRY, headers=auth(token))
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"

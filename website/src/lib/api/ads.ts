@@ -1,4 +1,4 @@
-import { del, post, readList, readOne } from './http';
+import { del, post, put, readList, readOne } from './http';
 
 /** Ads namespace — sponsored listings. */
 export const ads = {
@@ -23,7 +23,7 @@ export const ads = {
 
   /** PUT /ads/{id} */
   update: (adId: string, updates: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>(`/ads/${adId}`, updates),
+    put<unknown>(`/ads/${adId}`, updates),
 
   /** DELETE /ads/{id} */
   remove: (adId: string): Promise<{ success: boolean }> =>

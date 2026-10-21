@@ -79,6 +79,12 @@ export const auth = {
   setMpin: (mpin: string): Promise<{ success: boolean }> =>
     post<{ success: boolean }>('/auth/mpin/set', { mpin }),
 
+  /** Change MPIN while logged in: verify the current MPIN, then store the new one. */
+  changeMpin: async (currentMpin: string, newMpin: string): Promise<{ success: boolean }> => {
+    await post<{ ok: boolean }>('/auth/mpin/verify', { mpin: currentMpin });
+    return post<{ success: boolean }>('/auth/mpin/set', { mpin: newMpin });
+  },
+
   /** POST /auth/mpin/verify — step-up auth; returns verification result. */
   verifyMpin: (mpin: string): Promise<{ verified: boolean }> =>
     post<{ verified: boolean }>('/auth/mpin/verify', { mpin }),

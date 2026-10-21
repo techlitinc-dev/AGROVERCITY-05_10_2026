@@ -69,6 +69,21 @@ MANDI_PRICES = [
         "arrivalsQuintals": 12000,
         "updatedAt": "1 hour ago",
     },
+    {
+        "id": "mandi-5",
+        "mandiName": "Pimpalgaon Baswant APMC",
+        "distanceKm": 4.2,
+        "commodity": "Wheat (गेहूं)",
+        "variety": "Lokwan",
+        "minPrice": 2050,
+        "maxPrice": 2450,
+        "modalPrice": 2250,
+        "msp": 2275,
+        "trend": "flat",
+        "changePercent": "+0.4%",
+        "arrivalsQuintals": 3200,
+        "updatedAt": "20 mins ago",
+    },
 ]
 
 MANDIS = [
@@ -90,7 +105,7 @@ async def main():
         await set_doc("mandi_prices", doc["id"], doc)
     for doc in MANDIS:
         await set_doc("mandis", doc["id"], doc)
-    print("seeded 4 mandi_prices, 4 mandis")
+    print(f"seeded {len(MANDI_PRICES)} mandi_prices, {len(MANDIS)} mandis")
     for doc in VYAPARI_RATES:
         await set_doc("vyapari_rates", doc["id"], doc)
     print("seeded 3 vyapari_rates")

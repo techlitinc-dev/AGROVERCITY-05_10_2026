@@ -107,14 +107,13 @@ export const LoanDetailView: React.FC = () => {
     try {
       const uploaded = (await uploads.upload(file, { folder: 'loans', purpose: 'loan-document' })) as {
         url?: string;
-        fileUrl?: string;
-        name?: string;
+        storagePath?: string;
       };
-      const url = uploaded?.url ?? uploaded?.fileUrl ?? '';
-      await loans.addDocument(id, {
+      await loans.attachDocument(id, {
         name: file.name,
-        url,
+        url: uploaded?.url ?? '',
         type: file.type,
+        storagePath: uploaded?.storagePath,
       });
       const updated = await loans.get(id);
       setLoan(updated);

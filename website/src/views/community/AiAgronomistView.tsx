@@ -1,14 +1,51 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Send, User, Headset, Stethoscope, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { apiErrorMessage, chatbot } from '../../lib/api';
+import { Bot, Send, User, Headset, Stethoscope, AlertCircle, CheckCircle2, Paperclip, X, Mic } from 'lucide-react';
+import { apiErrorMessage, chatbot, uploads } from '../../lib/api';
 import { cn } from '../../lib/utils';
-import { asRecord, asRecords, pickStr, str } from '../shared/records';
+import { asRecord, asRecords, pickStr } from '../shared/records';
 
 interface ChatMsg {
   sender: 'ai' | 'user';
   text: string;
   time: string;
+  /** SR 18 — URL of an attached farm photo (rendered as an image bubble). */
+  imageUrl?: string;
 }
+
+/** Minimal Web Speech API shape — the dom lib ships result types but not the ctor. */
+interface SpeechRecognitionResultEvent {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResult>;
+}
+
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+/** Photos upload via POST /uploads; signed https/blob URLs render, bare storage paths show a chip. */
+const ChatImage: React.FC<{ url: string }> = ({ url }) => {
+  if (/^(https?:|blob:|data:)/.test(url)) {
+    return (
+      <img
+        src={url}
+        alt="Attached farm photo"
+        className="mb-2 max-h-40 rounded-xl border border-slate-200 object-cover"
+      />
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 mb-2 px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[10px] font-bold">
+      <Paperclip className="w-3 h-3" /> Photo attached
+    </span>
+  );
+};
 
 const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -46,7 +83,29 @@ export const AiAgronomistView: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ url: string; preview: string } | null>(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
+  // SR 22 — Web Speech API voice input; hidden when the browser lacks support.
+  const speechSupported =
+    typeof window !== 'undefined' &&
+    Boolean((window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition ||
+      (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const interimRef = useRef('');
+
+  useEffect(
+    () => () => {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // mic cleanup must never throw
+      }
+    },
+    []
+  );
 
   // Load chatbot history on mount (newest last, matching the backend sort).
   useEffect(() => {
@@ -55,13 +114,29 @@ export const AiAgronomistView: React.FC = () => {
       .history({ limit: 50 })
       .then((rows) => {
         if (!alive) return;
-        const history = asRecords(rows)
-          .map((r) => ({
-            sender: (pickStr(r, 'role', 'sender') === 'user' ? 'user' : 'ai') as 'ai' | 'user',
-            text: pickStr(r, 'text', 'message', 'body') || str(r),
-            time: pickStr(r, 'timestamp', 'createdAt', 'time') || now(),
-          }))
-          .filter((m) => m.text);
+        const history = asRecords(rows).flatMap((r) => {
+          // Backend records pair the farmer query with the bot reply in one doc.
+          const image = pickStr(r, 'imageUrl', 'photoUrl') || undefined;
+          const pair: ChatMsg[] = [];
+          const query = pickStr(r, 'userQuery', 'text', 'message', 'body');
+          if (query) {
+            pair.push({
+              sender: 'user',
+              text: query,
+              time: pickStr(r, 'timestamp', 'createdAt', 'time') || now(),
+              imageUrl: image,
+            });
+          }
+          const reply = pickStr(r, 'botResponse', 'reply', 'answer', 'response');
+          if (reply) {
+            pair.push({
+              sender: 'ai',
+              text: reply,
+              time: pickStr(r, 'timestamp', 'createdAt', 'time') || now(),
+            });
+          }
+          return pair;
+        });
         if (history.length > 0) {
           setMessages([GREETING, ...history.slice(-30)]);
         }
@@ -88,16 +163,95 @@ export const AiAgronomistView: React.FC = () => {
     }
   };
 
+  const handleAttachImage = async (file: File | undefined) => {
+    if (!file) return;
+    setAttachBusy(true);
+    setNotice(null);
+    try {
+      const uploaded = (await uploads.upload(file, { folder: 'chatbot', purpose: 'chatbot-photo' })) as
+        | Array<{ url?: string; storagePath?: string }>
+        | { url?: string; storagePath?: string }
+        | undefined;
+      const first = Array.isArray(uploaded) ? uploaded[0] : uploaded;
+      const url = first?.url ?? first?.storagePath ?? '';
+      if (!url) throw new Error('Upload succeeded but no URL was returned.');
+      if (pendingImage) URL.revokeObjectURL(pendingImage.preview);
+      setPendingImage({ url, preview: URL.createObjectURL(file) });
+    } catch (err) {
+      setNotice({ kind: 'err', text: `Photo upload failed: ${apiErrorMessage(err)}` });
+    } finally {
+      setAttachBusy(false);
+      if (attachInputRef.current) attachInputRef.current.value = '';
+    }
+  };
+
+  const toggleListening = () => {
+    try {
+      if (listening) {
+        recognitionRef.current?.stop();
+        return;
+      }
+      const w = window as unknown as {
+        webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+        SpeechRecognition?: new () => SpeechRecognitionLike;
+      };
+      const Ctor = w.webkitSpeechRecognition || w.SpeechRecognition;
+      if (!Ctor) return;
+      const recognition = new Ctor();
+      recognition.lang = 'hi-IN';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.onresult = (event) => {
+        let interim = '';
+        let finalText = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const transcript = event.results[i][0]?.transcript ?? '';
+          if (event.results[i].isFinal) finalText += transcript;
+          else interim += transcript;
+        }
+        if (finalText) {
+          setInput((prev) => `${prev.replace(interimRef.current, '')}${finalText}`.trimStart());
+          interimRef.current = '';
+        } else {
+          setInput((prev) => prev.replace(interimRef.current, '') + interim);
+          interimRef.current = interim;
+        }
+      };
+      recognition.onend = () => {
+        setListening(false);
+        interimRef.current = '';
+      };
+      recognition.onerror = () => {
+        setListening(false);
+        interimRef.current = '';
+      };
+      recognitionRef.current = recognition;
+      interimRef.current = '';
+      setListening(true);
+      recognition.start();
+    } catch {
+      setListening(false);
+      setNotice({ kind: 'err', text: 'Voice input is not available on this device/browser — please type instead.' });
+    }
+  };
+
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend ?? input).trim();
-    if (!query || isTyping) return;
+    const image = pendingImage;
+    if ((!query && !image) || isTyping) return;
 
-    setMessages((prev) => [...prev, { sender: 'user', text: query, time: now() }]);
+    setMessages((prev) => [
+      ...prev,
+      { sender: 'user', text: query || '(Photo attached)', time: now(), imageUrl: image?.preview },
+    ]);
     setInput('');
+    setPendingImage(null);
     setIsTyping(true);
     setNotice(null);
     try {
-      const res = await chatbot.sendMessage(query);
+      const res = await chatbot.sendMessage(query || 'Photo attached — please analyse.', {
+        ...(image ? { imageUrl: image.url } : {}),
+      });
       setMessages((prev) => [...prev, { sender: 'ai', text: extractReply(res), time: now() }]);
     } catch (err) {
       setMessages((prev) => [
@@ -256,6 +410,7 @@ export const AiAgronomistView: React.FC = () => {
                     : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-none'
                 )}
               >
+                {m.imageUrl && <ChatImage url={m.imageUrl} />}
                 <p>{m.text}</p>
                 <span
                   className={cn(
@@ -283,22 +438,79 @@ export const AiAgronomistView: React.FC = () => {
             e.preventDefault();
             void handleSend();
           }}
-          className="p-4 bg-white border-t border-slate-200 flex items-center gap-3"
+          className="p-4 bg-white border-t border-slate-200 space-y-2"
         >
-          <input
-            type="text"
-            placeholder="Type your question in Hindi, English, or Marathi..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="flex-1 px-4 py-3 text-xs rounded-2xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isTyping}
-            className="p-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-40 text-white rounded-2xl shadow-md transition-all flex items-center justify-center"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          {pendingImage && (
+            <div className="flex items-center gap-2">
+              <img
+                src={pendingImage.preview}
+                alt="Photo to attach"
+                className="h-14 w-14 rounded-xl border border-slate-200 object-cover"
+              />
+              <span className="text-[10px] text-slate-500 font-semibold flex-1 truncate">
+                Photo ready — it will be sent with your next message.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  URL.revokeObjectURL(pendingImage.preview);
+                  setPendingImage(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                title="Remove photo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <input
+              ref={attachInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => void handleAttachImage(e.target.files?.[0])}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => attachInputRef.current?.click()}
+              disabled={attachBusy || isTyping}
+              className="p-3 rounded-2xl border border-slate-300 text-slate-500 hover:text-emerald-700 hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-40 transition-all flex items-center justify-center"
+              title={attachBusy ? 'Uploading photo…' : 'Attach a crop / pest photo'}
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+            <input
+              type="text"
+              placeholder="Type your question in Hindi, English, or Marathi..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="flex-1 px-4 py-3 text-xs rounded-2xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20"
+            />
+            {speechSupported && (
+              <button
+                type="button"
+                onClick={toggleListening}
+                disabled={attachBusy || isTyping}
+                className={cn(
+                  'p-3 rounded-2xl border transition-all flex items-center justify-center disabled:opacity-40',
+                  listening
+                    ? 'border-rose-500 bg-rose-50 text-rose-600 animate-pulse'
+                    : 'border-slate-300 text-slate-500 hover:text-emerald-700 hover:border-emerald-500 hover:bg-emerald-50'
+                )}
+                title={listening ? 'Stop listening' : 'Speak your question'}
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={(!input.trim() && !pendingImage) || isTyping}
+              className="p-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-40 text-white rounded-2xl shadow-md transition-all flex items-center justify-center"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
         </form>
       </div>
 

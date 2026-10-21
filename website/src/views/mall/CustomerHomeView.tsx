@@ -1,25 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Bell,
   CloudRain,
   Coins,
   Flower2,
   Heart,
+  Leaf,
   Package,
   Repeat,
   ShoppingBag,
   ShoppingCart,
+  Sparkles,
   Sun,
+  Truck,
   Wallet,
   Wind,
 } from 'lucide-react';
 import { apiErrorMessage, dashboard, mall, users } from '../../lib/api';
+import { customerHub, type CustomerHomePayload, type CustomerProductCard, type CustomerRecommendationsPayload } from '../../lib/api/customerHub';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { cn } from '../../lib/utils';
 import type { MallProduct } from '../../types';
 import { MallProductCard } from './MallProductCard';
-import { asRecord, num, str, toMallProduct, type ApiProductDoc } from './mallMappers';
+import { asRecord, formatDateTime, num, str, toMallProduct, PRODUCT_PLACEHOLDER_IMAGE, type ApiProductDoc } from './mallMappers';
 
 interface WeatherDay {
   day?: string;
@@ -48,10 +53,55 @@ const QUICK_LINKS = [
   { to: '/mall', label: 'Krishi Mall', icon: ShoppingBag, tone: 'bg-slate-50 text-slate-700 border-slate-200' },
 ];
 
+const ORDER_STATUS_TONE: Record<string, string> = {
+  placed: 'bg-sky-100 text-sky-700',
+  paid: 'bg-sky-100 text-sky-700',
+  confirmed: 'bg-indigo-100 text-indigo-700',
+  shipped: 'bg-amber-100 text-amber-700',
+  out_for_delivery: 'bg-amber-100 text-amber-700',
+};
+
+const OrderStatusBadge: React.FC<{ status: string }> = ({ status }) => (
+  <span
+    className={cn(
+      'px-2 py-0.5 rounded-full text-[10px] font-bold capitalize',
+      ORDER_STATUS_TONE[status] ?? 'bg-slate-100 text-slate-600'
+    )}
+  >
+    {status.replace(/_/g, ' ')}
+  </span>
+);
+
+/** Compact product card used by the hub sections (follows / seasonal / AI basket). */
+const HubProductCard: React.FC<{ product: CustomerProductCard }> = ({ product }) => (
+  <Link
+    to={`/mall/product/${product.id}`}
+    className="min-w-[160px] w-40 bg-white rounded-2xl border border-slate-200/80 p-3 hover:shadow-md transition-all flex flex-col"
+  >
+    <img
+      src={product.imageUrl || PRODUCT_PLACEHOLDER_IMAGE}
+      alt={product.name}
+      className="w-full h-24 object-cover rounded-xl bg-slate-100"
+    />
+    <p className="text-[11px] font-bold text-slate-800 mt-2 leading-tight line-clamp-2">{product.name}</p>
+    <p className="text-sm font-black text-emerald-700 mt-1">
+      ₹{product.price}
+      {product.unit ? <span className="text-[10px] text-slate-400 font-bold"> / {product.unit}</span> : null}
+    </p>
+    {product.reason && (
+      <span className="mt-1.5 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[9px] font-bold leading-tight">
+        {product.reason}
+      </span>
+    )}
+  </Link>
+);
+
 export const CustomerHomeView: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const { addItem } = useCartStore();
   const [home, setHome] = useState<HomePayload>({});
+  const [hub, setHub] = useState<CustomerHomePayload | null>(null);
+  const [recs, setRecs] = useState<CustomerRecommendationsPayload | null>(null);
   const [rawDocs, setRawDocs] = useState<ApiProductDoc[]>([]);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [settings, setSettings] = useState<Record<string, unknown>>({});
@@ -63,13 +113,17 @@ export const CustomerHomeView: React.FC = () => {
     let mounted = true;
     const load = async () => {
       setLoading(true);
-      const [homePayload, productDocs, wishlistItems] = await Promise.all([
+      const [homePayload, hubPayload, recsPayload, productDocs, wishlistItems] = await Promise.all([
         dashboard.home().catch(() => null),
+        customerHub.home().catch(() => null),
+        customerHub.recommendations().catch(() => null),
         mall.products().catch(() => [] as unknown as ApiProductDoc[]),
         mall.wishlist().catch(() => [] as MallProduct[]),
       ]);
       if (!mounted) return;
       setHome((homePayload as HomePayload | null) ?? {});
+      setHub(hubPayload);
+      setRecs(recsPayload);
       setRawDocs(productDocs as unknown as ApiProductDoc[]);
       setWishlistIds(new Set(wishlistItems.map((p) => p.id)));
       setLoading(false);
@@ -148,6 +202,15 @@ export const CustomerHomeView: React.FC = () => {
   const weather = home.weather;
   const banners = home.banners ?? [];
   const firstName = (user?.name ?? 'Kisan').split(' ')[0];
+  const seasonalPicks = hub?.seasonalPicks ?? [];
+  const activeOrders = hub?.activeOrders ?? [];
+  const subscriptionNext = hub?.subscriptionNext ?? [];
+  const followedOffers = hub?.followedOffers ?? [];
+  const coinBalance = hub?.coinBalance ?? 0;
+  const unreadNotifications = hub?.unreadNotifications ?? 0;
+  const basket = recs?.basket ?? [];
+  const bestPrice = recs?.bestPrice ?? [];
+  const seasonalAlternatives = recs?.seasonalAlternatives ?? [];
 
   return (
     <div className="space-y-6">
@@ -265,6 +328,102 @@ export const CustomerHomeView: React.FC = () => {
         ))}
       </div>
 
+      {/* Notifications bell + coin balance (SR 1) */}
+      {(unreadNotifications > 0 || coinBalance > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {unreadNotifications > 0 && (
+            <Link
+              to="/notifications"
+              className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex items-center gap-3 hover:shadow-md transition-all"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 relative">
+                <Bell className="w-5 h-5" />
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center">
+                  {unreadNotifications}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-slate-800">{unreadNotifications} new notification{unreadNotifications > 1 ? 's' : ''}</p>
+                <p className="text-[11px] text-slate-400">Updates on your orders, offers and deliveries</p>
+              </div>
+            </Link>
+          )}
+          {coinBalance > 0 && (
+            <Link
+              to="/customer/wallet"
+              className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-2xl border border-amber-200/80 p-4 flex items-center gap-3 hover:shadow-md transition-all"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-amber-200/70 text-amber-700 flex items-center justify-center shrink-0">
+                <Coins className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-amber-900">{coinBalance} AgriCoins</p>
+                <p className="text-[11px] text-amber-700">Redeem for discounts on your next order</p>
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Active orders strip (SR 1) */}
+      {activeOrders.length > 0 && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Truck className="w-4 h-4 text-emerald-600" />
+              Your Orders
+            </h3>
+            <Link to="/customer/orders" className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800">
+              View all →
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar">
+            {activeOrders.map((order) => (
+              <Link
+                key={order.id}
+                to="/customer/orders"
+                className="min-w-[180px] bg-slate-50 rounded-2xl border border-slate-100 p-3 hover:border-emerald-200 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-black text-slate-800">#{order.id.replace(/^ord_/, '').toUpperCase()}</p>
+                  <OrderStatusBadge status={order.status} />
+                </div>
+                <p className="text-sm font-black text-emerald-700 mt-1">₹{order.total}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{formatDateTime(order.createdAt)}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Subscription next delivery (SR 1) */}
+      {subscriptionNext.length > 0 && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <Repeat className="w-4 h-4 text-sky-600" />
+              Subscription Box
+            </h3>
+            <Link to="/customer/subscriptions" className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800">
+              Manage →
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar">
+            {subscriptionNext.map((sub) => (
+              <Link
+                key={sub.id}
+                to="/customer/subscriptions"
+                className="min-w-[190px] bg-sky-50 rounded-2xl border border-sky-100 p-3 hover:border-sky-200 transition-colors"
+              >
+                <p className="text-[11px] font-black text-slate-800">{sub.label}</p>
+                <p className="text-[10px] text-sky-700 font-bold mt-1 capitalize">{sub.frequency ?? 'recurring'} delivery</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Next: {formatDateTime(sub.nextRunAt)}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Women mode — prioritise SHG & gruh udyog content */}
       <div className="bg-white rounded-3xl border border-purple-100 shadow-xs p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -375,6 +534,99 @@ export const CustomerHomeView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* From farmers you follow (SR 1) */}
+      {followedOffers.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-900">From Farmers You Follow</h2>
+            <Link to="/mall" className="text-xs font-bold text-emerald-700 hover:text-emerald-800">
+              Visit mall →
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {followedOffers.map((product) => (
+              <HubProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Seasonal picks (SR 1) */}
+      {seasonalPicks.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+              <Leaf className="w-5 h-5 text-emerald-600" />
+              Seasonal Picks
+            </h2>
+            <Link to="/mall" className="text-xs font-bold text-emerald-700 hover:text-emerald-800">
+              View all →
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {seasonalPicks.map((product) => (
+              <HubProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* AI basket (SR 23) */}
+      {basket.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              For You — AI Basket
+            </h2>
+            <Link to="/mall" className="text-xs font-bold text-emerald-700 hover:text-emerald-800">
+              Shop the mall →
+            </Link>
+          </div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {basket.map((product) => (
+              <HubProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Best price board + seasonal alternatives (SR 23) */}
+      {(bestPrice.length > 0 || seasonalAlternatives.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {bestPrice.length > 0 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
+              <h3 className="text-xs font-bold text-slate-700 mb-3">Best prices on the mall</h3>
+              <div className="space-y-2">
+                {bestPrice.slice(0, 5).map((product) => (
+                  <Link
+                    key={product.id}
+                    to={`/mall/product/${product.id}`}
+                    className="flex items-center justify-between gap-2 bg-slate-50 rounded-xl border border-slate-100 px-3 py-2 hover:border-emerald-200 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-slate-800 truncate">{product.name}</p>
+                      <p className="text-[9px] text-slate-400">{product.reason}</p>
+                    </div>
+                    <p className="text-sm font-black text-emerald-700 shrink-0">₹{product.price}</p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {seasonalAlternatives.length > 0 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
+              <h3 className="text-xs font-bold text-slate-700 mb-3">Seasonal alternatives</h3>
+              <div className="flex gap-3 overflow-x-auto no-scrollbar">
+                {seasonalAlternatives.map((product) => (
+                  <HubProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

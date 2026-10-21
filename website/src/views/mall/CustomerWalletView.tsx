@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Award, Coins, Repeat, ShoppingBag, Target, TrendingUp } from 'lucide-react';
-import { analytics, gamification } from '../../lib/api';import { StatCard } from '../../components/common/StatCard';
+import { ArrowDownLeft, ArrowUpRight, Award, Coins, Download, Receipt, Repeat, ShoppingBag, Target, TrendingUp, Wallet } from 'lucide-react';
+import { analytics, apiErrorMessage, download, gamification } from '../../lib/api';
+import { payments, type Transaction } from '../../lib/api/payments';
+import { StatCard } from '../../components/common/StatCard';
 import { formatCurrency } from '../../lib/utils';
 import { asRecord, num, str } from './mallMappers';
 
@@ -53,6 +55,55 @@ export const CustomerWalletView: React.FC = () => {
   const [customerAnalytics, setCustomerAnalytics] = useState<CustomerAnalytics | null>(null);
   const [gamificationStatus, setGamificationStatus] = useState<GamificationStatus | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Transactions tab (unified ledger).
+  const [tab, setTab] = useState<'overview' | 'transactions'>('overview');
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txTotals, setTxTotals] = useState<{ totalReceived: number; totalSent: number; refundsPending: number } | null>(null);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txDirection, setTxDirection] = useState<'received' | 'sent' | ''>('');
+  const [receiptBusy, setReceiptBusy] = useState<string | null>(null);
+
+  const loadTransactions = async (direction: 'received' | 'sent' | '') => {
+    setTxLoading(true);
+    setTxError(null);
+    try {
+      const res = await payments.getTransactions({ page: 1, pageSize: 50, ...(direction ? { direction } : {}) });
+      setTransactions(res.data ?? []);
+      setTxTotals(res.totals ?? null);
+    } catch (e) {
+      setTxError(apiErrorMessage(e));
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === 'transactions') void loadTransactions(txDirection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, txDirection]);
+
+  const handleReceipt = async (paymentId: string) => {
+    if (receiptBusy) return;
+    setReceiptBusy(paymentId);
+    setTxError(null);
+    try {
+      const blob = await download(`/payments/${paymentId}/receipt.pdf`);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `receipt-${paymentId}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      setTxError(apiErrorMessage(e));
+    } finally {
+      setReceiptBusy(null);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -111,6 +162,149 @@ export const CustomerWalletView: React.FC = () => {
         </div>
       )}
 
+      {/* Wallet tabs */}
+      <div className="flex gap-2 border-b border-slate-200 pb-0">
+        {(
+          [
+            { key: 'overview', label: 'Overview', icon: Wallet },
+            { key: 'transactions', label: 'Transactions', icon: Receipt },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2.5 rounded-t-xl font-bold text-xs flex items-center gap-1.5 transition-colors ${
+              tab === t.key
+                ? 'bg-white border border-b-0 border-slate-200 text-emerald-700 -mb-px'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <t.icon className="w-3.5 h-3.5" />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'transactions' && (
+        <div className="space-y-4">
+          {txTotals && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <StatCard
+                title="Received"
+                value={formatCurrency(txTotals.totalReceived)}
+                subtitle="All-time credits"
+                icon={ArrowDownLeft}
+                colorScheme="green"
+              />
+              <StatCard
+                title="Sent"
+                value={formatCurrency(txTotals.totalSent)}
+                subtitle="All-time payments"
+                icon={ArrowUpRight}
+                colorScheme="blue"
+              />
+              <StatCard
+                title="Refunds Pending"
+                value={txTotals.refundsPending}
+                subtitle="Refund requests in flight"
+                icon={Repeat}
+                colorScheme="amber"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            {(['', 'sent', 'received'] as const).map((d) => (
+              <button
+                key={d || 'all'}
+                type="button"
+                onClick={() => setTxDirection(d)}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs transition-all ${
+                  txDirection === d
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {d === '' ? 'All' : d === 'sent' ? 'Sent' : 'Received'}
+              </button>
+            ))}
+          </div>
+
+          {txError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-bold text-rose-800">
+              {txError}
+            </div>
+          )}
+
+          {txLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-14 bg-slate-100 rounded-2xl animate-pulse" />
+              ))}
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="py-12 text-center space-y-3">
+              <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs text-slate-500">
+                No transactions match this filter — payments and payouts will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs divide-y divide-slate-100">
+              {transactions.map((tx) => (
+                <div key={tx.id} className="flex flex-wrap items-center gap-3 p-4">
+                  <span
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      tx.direction === 'received'
+                        ? 'bg-emerald-50 text-emerald-600'
+                        : 'bg-sky-50 text-sky-600'
+                    }`}
+                  >
+                    {tx.direction === 'received' ? (
+                      <ArrowDownLeft className="w-4 h-4" />
+                    ) : (
+                      <ArrowUpRight className="w-4 h-4" />
+                    )}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 capitalize">
+                      {str(tx.purpose, tx.type).replace(/_/g, ' ') || 'Payment'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {tx.counterparty?.name || (tx.direction === 'received' ? 'Received' : 'Paid')}
+                      {tx.source ? ` · ${tx.source}` : ''} · {str(tx.createdAt).slice(0, 16).replace('T', ' ')}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-sm font-black ${
+                      tx.direction === 'received' ? 'text-emerald-700' : 'text-slate-800'
+                    }`}
+                  >
+                    {tx.direction === 'received' ? '+' : '-'}
+                    {formatCurrency(num(tx.amount))}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-extrabold uppercase">
+                    {str(tx.status, '—')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleReceipt(tx.id)}
+                    disabled={receiptBusy !== null}
+                    className="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg transition-colors disabled:opacity-40"
+                    title="Download receipt PDF"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'overview' && (
+        <>
       {/* Spend stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -256,6 +450,8 @@ export const CustomerWalletView: React.FC = () => {
             Redeem coins for discounts on inputs and deliveries from the Kisan Coins page.
           </p>
         </div>
+      )}
+        </>
       )}
 
       <div className="flex flex-wrap gap-3">

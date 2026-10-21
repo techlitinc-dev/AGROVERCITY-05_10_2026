@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
+  Camera,
   IdCard,
+  Link as LinkIcon,
   Plus,
   RefreshCw,
   ToggleLeft,
@@ -14,7 +16,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { transport, apiClient, apiErrorMessage } from '../../lib/api';
+import { transport, uploads, apiClient, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
@@ -34,8 +36,11 @@ interface VehicleForm {
   perKmRate: number | '';
   rcDocUrl: string;
   insuranceDocUrl: string;
+  photoUrl: string;
   fitnessExpiry: string;
   insuranceExpiry: string;
+  pucExpiry: string;
+  permitExpiry: string;
 }
 
 const EMPTY_VEHICLE: VehicleForm = {
@@ -47,9 +52,15 @@ const EMPTY_VEHICLE: VehicleForm = {
   perKmRate: '',
   rcDocUrl: '',
   insuranceDocUrl: '',
+  photoUrl: '',
   fitnessExpiry: '',
   insuranceExpiry: '',
+  pucExpiry: '',
+  permitExpiry: '',
 };
+
+/** Statuses that mean a vehicle is out on a trip right now (transport.py TRIP_LIVE_STATUSES). */
+const LIVE_TRIP_STATUSES = ['accepted', 'arrivedPickup', 'loading', 'enRoute', 'reachedDestination', 'unloading'];
 
 const regNo = (v: TransportVehicle): string => v.registrationNo ?? v.registrationNumber ?? '—';
 const vehAvailable = (v: TransportVehicle): boolean => v.availableNow ?? v.available ?? false;
@@ -68,6 +79,7 @@ export const FleetView: React.FC = () => {
   const [vehModal, setVehModal] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<TransportVehicle | null>(null);
   const [vehForm, setVehForm] = useState<VehicleForm>(EMPTY_VEHICLE);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [driverModal, setDriverModal] = useState(false);
   const [driverForm, setDriverForm] = useState({ name: '', phone: '' });
   const [analyticsFor, setAnalyticsFor] = useState<Rec | null>(null);
@@ -79,9 +91,14 @@ export const FleetView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [v, d] = await Promise.all([transport.myVehicles(), transport.drivers().catch(() => [] as unknown[])]);
+      const [v, d, b] = await Promise.all([
+        transport.myVehicles(),
+        transport.drivers().catch(() => [] as unknown[]),
+        transport.bookings({ pageSize: 200 }).catch(() => [] as TransportBooking[]),
+      ]);
       setVehicles(v);
       setDrivers(asArr(d).map(asRec));
+      setBookings(b.filter((x) => LIVE_TRIP_STATUSES.includes(x.status)));
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -96,7 +113,7 @@ export const FleetView: React.FC = () => {
 
   useEffect(() => {
     if (tab !== 'drivers') return;
-    transport.bookings().then((b) => setBookings(b.filter((x) => ['accepted', 'driverAssigned', 'enRoute', 'inTransit'].includes(x.status)))).catch(() => setBookings([]));
+    transport.bookings().then((b) => setBookings(b.filter((x) => LIVE_TRIP_STATUSES.includes(x.status)))).catch(() => setBookings([]));
   }, [tab]);
 
   const flash = (msg: string) => {
@@ -121,10 +138,37 @@ export const FleetView: React.FC = () => {
       perKmRate: v.perKmRate ?? v.ratePerKm ?? '',
       rcDocUrl: v.rcDocUrl ?? '',
       insuranceDocUrl: v.insuranceDocUrl ?? '',
+      photoUrl: v.photoUrl ?? '',
       fitnessExpiry: v.fitnessExpiry ?? '',
       insuranceExpiry: v.insuranceExpiry ?? '',
+      pucExpiry: v.pucExpiry ?? '',
+      permitExpiry: v.permitExpiry ?? '',
     });
     setVehModal(true);
+  };
+
+  /** Vehicle photo — file picker → POST /uploads → photoUrl on the vehicle. */
+  const uploadVehiclePhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      const uploaded = (await uploads.upload(file, { folder: 'vehicles', purpose: 'vehicle-photo' })) as {
+        url?: string;
+        fileUrl?: string;
+      };
+      const url = uploaded?.url ?? uploaded?.fileUrl ?? '';
+      if (url) {
+        setVehForm((prev) => ({ ...prev, photoUrl: url }));
+        flash('Photo uploaded.');
+      } else {
+        setError('Upload succeeded but no URL was returned.');
+      }
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setPhotoBusy(false);
+    }
   };
 
   const saveVehicle = async (e: React.FormEvent) => {
@@ -138,8 +182,11 @@ export const FleetView: React.FC = () => {
       ...(vehForm.perKmRate !== '' ? { perKmRate: Number(vehForm.perKmRate) } : {}),
       ...(vehForm.rcDocUrl.trim() ? { rcDocUrl: vehForm.rcDocUrl.trim() } : {}),
       ...(vehForm.insuranceDocUrl.trim() ? { insuranceDocUrl: vehForm.insuranceDocUrl.trim() } : {}),
+      ...(vehForm.photoUrl.trim() ? { photoUrl: vehForm.photoUrl.trim() } : {}),
       ...(vehForm.fitnessExpiry ? { fitnessExpiry: vehForm.fitnessExpiry } : {}),
       ...(vehForm.insuranceExpiry ? { insuranceExpiry: vehForm.insuranceExpiry } : {}),
+      ...(vehForm.pucExpiry ? { pucExpiry: vehForm.pucExpiry } : {}),
+      ...(vehForm.permitExpiry ? { permitExpiry: vehForm.permitExpiry } : {}),
     };
     try {
       if (editingVehicle) {
@@ -221,6 +268,12 @@ export const FleetView: React.FC = () => {
   const docStatusOf = (v: TransportVehicle): string => v.docStatus ?? 'pending';
   const strikeCount = firstNum(compliance, ['strikeCount', 'noShowStrikes', 'strikes'], 0);
 
+  /** Live trip this vehicle is currently assigned to (by id or registration no). */
+  const busyBookingFor = (v: TransportVehicle): TransportBooking | undefined =>
+    bookings.find(
+      (b) => b.vehicleId === v.id || (b.vehicleNo != null && b.vehicleNo !== '' && b.vehicleNo === regNo(v))
+    );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
@@ -293,20 +346,50 @@ export const FleetView: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {vehicles.map((v) => (
+              {vehicles.map((v) => {
+                const busyBooking = busyBookingFor(v);
+                return (
                 <div key={v.id} className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
                   <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
-                    <div>
-                      <h4 className="font-extrabold text-base text-slate-900">{regNo(v)}</h4>
-                      <p className="text-xs text-slate-400">
-                        {v.vehicleType} • {v.capacityTonnes ?? v.capacityTons ?? 0} T • {v.permitType ?? 'State Permit'}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      {v.photoUrl ? (
+                        <img src={v.photoUrl} alt={regNo(v)} className="w-14 h-14 rounded-2xl object-cover border border-slate-200" />
+                      ) : (
+                        <span className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                          <Truck className="w-7 h-7" />
+                        </span>
+                      )}
+                      <div>
+                        <h4 className="font-extrabold text-base text-slate-900">{regNo(v)}</h4>
+                        <p className="text-xs text-slate-400">
+                          {v.vehicleType} • {v.capacityTonnes ?? v.capacityTons ?? 0} T • {v.permitType ?? 'State Permit'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {busyBooking && <StatusBadge status="busy" />}
                       <StatusBadge status={docStatusOf(v)} />
                       <StatusBadge status={vehAvailable(v) ? 'available' : 'unavailable'} />
                     </div>
                   </div>
+
+                  {busyBooking && (
+                    <Link
+                      to={`/transporter/trips/${busyBooking.id}`}
+                      className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-2xl text-xs font-bold text-amber-800 hover:bg-amber-100"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      On trip {busyBooking.id} — {busyBooking.commodity || busyBooking.cargoCrop || 'Cargo'} ({busyBooking.status})
+                    </Link>
+                  )}
+
+                  {(v.driverName || busyBooking?.driverName) && (
+                    <p className="text-[11px] text-slate-500 bg-slate-50 rounded-xl p-2.5 flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-slate-400" />
+                      Driver: <span className="font-bold text-slate-800">{v.driverName ?? busyBooking?.driverName}</span>
+                      {(v.driverPhone ?? busyBooking?.driverPhone) ? ` • ${v.driverPhone ?? busyBooking?.driverPhone}` : ''}
+                    </p>
+                  )}
 
                   {(v.rejectionReason ?? '') !== '' && (
                     <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-2.5">
@@ -326,6 +409,18 @@ export const FleetView: React.FC = () => {
                     <div className="p-3 bg-slate-50 rounded-2xl">
                       <span className="text-slate-400 text-[10px] uppercase font-bold">Insurance</span>
                       <p className="font-bold text-slate-900">{v.insuranceExpiry ? fmtDate(v.insuranceExpiry) : '—'}</p>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-2xl">
+                      <span className="text-slate-400 text-[10px] uppercase font-bold">Fitness</span>
+                      <p className="font-bold text-slate-900">{v.fitnessExpiry ? fmtDate(v.fitnessExpiry) : '—'}</p>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-2xl">
+                      <span className="text-slate-400 text-[10px] uppercase font-bold">PUC</span>
+                      <p className="font-bold text-slate-900">{v.pucExpiry ? fmtDate(v.pucExpiry) : '—'}</p>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-2xl">
+                      <span className="text-slate-400 text-[10px] uppercase font-bold">Permit</span>
+                      <p className="font-bold text-slate-900">{v.permitExpiry ? fmtDate(v.permitExpiry) : '—'}</p>
                     </div>
                   </div>
 
@@ -351,7 +446,8 @@ export const FleetView: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -467,6 +563,29 @@ export const FleetView: React.FC = () => {
               <input type="number" value={vehForm.perKmRate} onChange={(e) => setVehForm({ ...vehForm, perKmRate: e.target.value === '' ? '' : Number(e.target.value) })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" placeholder="catalog" />
             </div>
           </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle photo</label>
+            <div className="flex items-center gap-3">
+              {vehForm.photoUrl ? (
+                <img src={vehForm.photoUrl} alt="Vehicle" className="w-14 h-14 rounded-2xl object-cover border border-slate-200" />
+              ) : (
+                <span className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                  <Camera className="w-6 h-6" />
+                </span>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                disabled={photoBusy}
+                onChange={(e) => {
+                  void uploadVehiclePhoto(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+                className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Uploaded to /uploads and stored as the vehicle's photoUrl.</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">RC doc URL (vault)</label>
@@ -485,6 +604,14 @@ export const FleetView: React.FC = () => {
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Insurance expiry</label>
               <input type="date" value={vehForm.insuranceExpiry} onChange={(e) => setVehForm({ ...vehForm, insuranceExpiry: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">PUC expiry</label>
+              <input type="date" value={vehForm.pucExpiry} onChange={(e) => setVehForm({ ...vehForm, pucExpiry: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Permit expiry</label>
+              <input type="date" value={vehForm.permitExpiry} onChange={(e) => setVehForm({ ...vehForm, permitExpiry: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
             </div>
           </div>
           <button type="submit" className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md">

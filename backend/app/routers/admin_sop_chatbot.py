@@ -274,3 +274,95 @@ async def get_chatbot_satisfaction(
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
 
+
+
+# ===========================================================================
+# Chatbot CMS — intents & fallback config (P2)
+# ===========================================================================
+
+_INTENTS_DOC = "chatbot_intents"
+_FALLBACK_DOC = "chatbot_fallback_config"
+
+
+class ChatbotIntentIn(BaseModel):
+    intent: str = Field(..., min_length=2, max_length=80)
+    samplePhrases: list[str] = Field(default_factory=list)
+    response: str = Field(..., min_length=1)
+    enabled: bool = True
+
+
+class ChatbotIntentsIn(BaseModel):
+    intents: list[ChatbotIntentIn]
+
+
+@router.get("/chatbot/intents")
+async def get_chatbot_intents(user: dict = Depends(current_admin_user)):
+    """Curated intent/response registry consumed by the Kisan Mitra fallback
+    engine (`platform_config/chatbot_intents`)."""
+    doc = await get_doc("platform_config", _INTENTS_DOC)
+    intents = doc.get("intents") or []
+    return {"intents": intents, "total": len(intents)}
+
+
+@router.put("/chatbot/intents")
+async def update_chatbot_intents(
+    body: ChatbotIntentsIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    doc = {
+        "id": _INTENTS_DOC,
+        "intents": [i.model_dump() for i in body.intents],
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedBy": ctx["admin"].get("id") or ctx["admin"].get("uid"),
+    }
+    await set_doc("platform_config", _INTENTS_DOC, doc)
+    await log_admin_action(
+        ctx["admin"], "chatbot", "UPDATE_INTENTS", _INTENTS_DOC,
+        None, {"intentCount": len(body.intents)}, ctx["reason"], ctx["ip"],
+    )
+    return doc
+
+
+class ChatbotFallbackConfigIn(BaseModel):
+    fallbackMessages: Optional[list[str]] = None
+    escalateAfter: Optional[int] = Field(default=None, ge=1, le=20)
+    handoffMessage: Optional[str] = Field(default=None, min_length=1)
+
+
+_FALLBACK_DEFAULTS = {
+    "fallbackMessages": [
+        "क्षमा करें, मैं समझ नहीं पाया। क्या आप दोबारा लिख सकते हैं?",
+        "Sorry, I did not understand. Could you rephrase?",
+    ],
+    "escalateAfter": 3,
+    "handoffMessage": "Connecting you to a krishi expert… / कृषि विशेषक से जोड़ा जा रहा है…",
+}
+
+
+@router.get("/chatbot/fallback-config")
+async def get_chatbot_fallback_config(user: dict = Depends(current_admin_user)):
+    """Fallback reply rotation + expert-handoff threshold."""
+    doc = await get_doc("platform_config", _FALLBACK_DOC)
+    merged = {**_FALLBACK_DEFAULTS, **{k: doc[k] for k in _FALLBACK_DEFAULTS if k in (doc or {})}}
+    return {**merged, "updatedAt": (doc or {}).get("updatedAt"), "updatedBy": (doc or {}).get("updatedBy")}
+
+
+@router.put("/chatbot/fallback-config")
+async def update_chatbot_fallback_config(
+    body: ChatbotFallbackConfigIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    existing = await get_doc("platform_config", _FALLBACK_DOC) or {}
+    new_doc = {
+        **existing,
+        **body.model_dump(exclude_none=True),
+        "id": _FALLBACK_DOC,
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "updatedBy": ctx["admin"].get("id") or ctx["admin"].get("uid"),
+    }
+    await set_doc("platform_config", _FALLBACK_DOC, new_doc)
+    await log_admin_action(
+        ctx["admin"], "chatbot", "UPDATE_FALLBACK_CONFIG", _FALLBACK_DOC,
+        existing, new_doc, ctx["reason"], ctx["ip"],
+    )
+    return new_doc

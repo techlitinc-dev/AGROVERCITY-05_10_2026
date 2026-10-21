@@ -59,7 +59,7 @@ async def _viewer(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    require_role(user, "farmer", "farmLandlord", "seller")
+    require_role(user, "farmer", "farmLandlord", "seller", "customer")
     return uid
 
 
@@ -93,9 +93,14 @@ def _calculate_carbon(species: str, count: int, age_years: int = 1) -> dict:
     }
 
 
+def _matches_q(value: object, needle: str) -> bool:
+    return needle in str(value or "").lower()
+
+
 @router.get("/articles")
 async def list_articles(
     category: str | None = None,
+    q: str | None = None,
     page: int = 1,
     pageSize: int = 20,
     uid: str = Depends(_viewer),
@@ -103,13 +108,24 @@ async def list_articles(
     docs = await query("tree_articles", [], limit=500)
     if category:
         docs = [d for d in docs if d.get("category") == category]
+    if q and q.strip():
+        needle = q.strip().lower()
+        docs = [d for d in docs if _matches_q(d.get("title"), needle)]
     docs.sort(key=lambda d: d.get("id", ""))
     return _envelope(docs, page, pageSize)
 
 
 @router.get("/ngos")
-async def list_ngos(page: int = 1, pageSize: int = 20, uid: str = Depends(_viewer)):
+async def list_ngos(
+    q: str | None = None,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(_viewer),
+):
     docs = await query("ngos", [], limit=500)
+    if q and q.strip():
+        needle = q.strip().lower()
+        docs = [d for d in docs if _matches_q(d.get("name"), needle)]
     docs.sort(key=lambda d: d.get("id", ""))
     return _envelope(docs, page, pageSize)
 
@@ -169,15 +185,31 @@ async def list_my_sapling_requests(page: int = 1, pageSize: int = 20, uid: str =
 
 
 @router.get("/biofuel")
-async def list_biofuel(page: int = 1, pageSize: int = 20, uid: str = Depends(_viewer)):
+async def list_biofuel(
+    q: str | None = None,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(_viewer),
+):
     docs = await query("biofuel_trees", [], limit=500)
+    if q and q.strip():
+        needle = q.strip().lower()
+        docs = [d for d in docs if _matches_q(d.get("name"), needle)]
     docs.sort(key=lambda d: d.get("id", ""))
     return _envelope(docs, page, pageSize)
 
 
 @router.get("/care-guides")
-async def list_care_guides(page: int = 1, pageSize: int = 20, uid: str = Depends(_viewer)):
+async def list_care_guides(
+    q: str | None = None,
+    page: int = 1,
+    pageSize: int = 20,
+    uid: str = Depends(_viewer),
+):
     docs = await query("tree_care_guides", [], limit=500)
+    if q and q.strip():
+        needle = q.strip().lower()
+        docs = [d for d in docs if _matches_q(d.get("title"), needle)]
     docs.sort(key=lambda d: d.get("stepNumber", 0))
     return _envelope(docs, page, pageSize)
 

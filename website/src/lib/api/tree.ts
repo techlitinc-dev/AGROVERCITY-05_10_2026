@@ -2,11 +2,13 @@ import { post, readList, readOne } from './http';
 
 /** Tree plantation namespace — articles, NGOs, plantations, carbon, adoptions. */
 export const tree = {
-  /** GET /tree/articles */
-  articles: (): Promise<unknown[]> => readList<unknown[]>('/tree/articles'),
+  /** GET /tree/articles — optional { q, category } filters */
+  articles: (params?: { q?: string; category?: string }): Promise<unknown[]> =>
+    readList<unknown[]>('/tree/articles', { params }),
 
-  /** GET /tree/ngos */
-  ngos: (): Promise<unknown[]> => readList<unknown[]>('/tree/ngos'),
+  /** GET /tree/ngos — optional { q } name filter */
+  ngos: (params?: { q?: string }): Promise<unknown[]> =>
+    readList<unknown[]>('/tree/ngos', { params }),
 
   /** POST /tree/ngos/{ngoId}/sapling-request */
   requestSaplings: (ngoId: string, payload: Record<string, unknown>): Promise<unknown> =>
@@ -15,11 +17,13 @@ export const tree = {
   /** GET /tree/sapling-requests/mine */
   mySaplingRequests: (): Promise<unknown[]> => readList<unknown[]>('/tree/sapling-requests/mine'),
 
-  /** GET /tree/biofuel */
-  biofuel: (): Promise<unknown[]> => readList<unknown[]>('/tree/biofuel'),
+  /** GET /tree/biofuel — optional { q } name filter */
+  biofuel: (params?: { q?: string }): Promise<unknown[]> =>
+    readList<unknown[]>('/tree/biofuel', { params }),
 
-  /** GET /tree/care-guides */
-  careGuides: (): Promise<unknown[]> => readList<unknown[]>('/tree/care-guides'),
+  /** GET /tree/care-guides — optional { q } title filter */
+  careGuides: (params?: { q?: string }): Promise<unknown[]> =>
+    readList<unknown[]>('/tree/care-guides', { params }),
 
   /** POST /tree/carbon/estimate */
   estimateCarbon: (payload: Record<string, unknown>): Promise<unknown> =>

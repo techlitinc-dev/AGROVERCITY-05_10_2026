@@ -13,6 +13,12 @@ class AdTargetType(str, Enum):
     course = "course"
     workshop = "workshop"
     external = "external"
+    product = "product"
+    demand = "demand"
+    lot = "lot"
+    vehicle = "vehicle"
+    equipment = "equipment"
+    women_offer = "women_offer"
 
 
 class AdCampaignStatus(str, Enum):
@@ -37,6 +43,8 @@ class AdCampaignCreateIn(BaseModel):
     startDate: str | None = None
     endDate: str | None = None
     autoActivate: bool = True
+    targetVillage: str | None = Field(default=None, max_length=120)
+    targetDistrict: str | None = Field(default=None, max_length=120)
 
 
 class AdCampaignUpdateIn(BaseModel):
@@ -53,3 +61,5 @@ class AdCampaignUpdateIn(BaseModel):
     dailyBudgetRupees: float | None = Field(default=None, ge=0)
     startDate: str | None = None
     endDate: str | None = None
+    targetVillage: str | None = None
+    targetDistrict: str | None = None

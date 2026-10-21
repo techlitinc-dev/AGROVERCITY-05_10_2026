@@ -39,6 +39,7 @@ from app.routers.livestock_dairy import (
 )
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
+from app.services.geo import haversine_km
 from app.services.tasks import emit_task
 from app.services.users import get_user
 
@@ -137,6 +138,26 @@ async def list_nurseries(
     uid: str = Depends(_farmer_seller),
 ):
     docs = await query("nurseries", [], limit=500)
+    requester_coords = (lat, lng) if lat is not None and lng is not None else None
+    for doc in docs:
+        doc.update(await provider_rating_fields(doc["id"]))
+        plants = await query("nursery_plants", [("nurseryId", "==", doc["id"])], limit=500)
+        prices = [float(p["price"]) for p in plants if p.get("price") is not None]
+        doc["availableSaplings"] = sum(int(p.get("stock", 0)) for p in plants)
+        doc["priceRange"] = {"min": min(prices), "max": max(prices)} if prices else None
+        doc["isGovtCertified"] = bool(
+            doc.get("isGovtCertified")
+            or doc.get("govtCertified")
+            or doc.get("certified")
+            or doc.get("verified")
+            or doc.get("status") == "verified"
+        )
+        doc_lat = doc.get("lat", doc.get("latitude"))
+        doc_lng = doc.get("lng", doc.get("longitude"))
+        if requester_coords and doc_lat is not None and doc_lng is not None:
+            doc["distanceKm"] = round(
+                haversine_km(requester_coords[0], requester_coords[1], float(doc_lat), float(doc_lng)), 2
+            )
     docs.sort(key=lambda d: d.get("distanceKm", 0))
     return _envelope(docs, page, pageSize)
 

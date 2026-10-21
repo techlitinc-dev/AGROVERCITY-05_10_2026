@@ -2,9 +2,9 @@ import { post, readList, readOne } from './http';
 
 /** AI chatbot namespace — messages, history, expert handoff. */
 export const chatbot = {
-  /** POST /chatbot/messages */
-  sendMessage: (message: string, context: Record<string, unknown> = {}): Promise<unknown> =>
-    post<unknown>('/chatbot/messages', { message, ...context }),
+  /** POST /chatbot/messages — body takes `text` plus optional sessionId/language/imageUrl/context. */
+  sendMessage: (text: string, payload: Record<string, unknown> = {}): Promise<unknown> =>
+    post<unknown>('/chatbot/messages', { text, ...payload }),
 
   /** GET /chatbot/history */
   history: (params?: Record<string, unknown>): Promise<unknown[]> =>

@@ -24,7 +24,13 @@ async def _to_delivered(client, buyer, farmer, purchase_id):
         headers=_auth(farmer),
     )
     await client.post(f"/v1/purchases/{purchase_id}/dispatch", headers=_auth(farmer))
-    return await client.post(f"/v1/purchases/{purchase_id}/deliver", headers=_auth(buyer))
+    await client.post(f"/v1/purchases/{purchase_id}/deliver", headers=_auth(buyer))
+    # The advance holds the escrow (spec C4), so the buyer must verify the
+    # farmer's handover OTP before QC unlocks.
+    otp = (await client.get(f"/v1/purchases/{purchase_id}/handover-otp", headers=_auth(farmer))).json()["otp"]
+    return await client.post(
+        f"/v1/purchases/{purchase_id}/handover/verify", json={"otp": otp}, headers=_auth(buyer)
+    )
 
 
 # ---- buy now ----
@@ -114,6 +120,11 @@ async def test_full_lifecycle_to_invoice(client, user_store):
     assert resp.json()["status"] == "advancePaid"
     assert resp.json()["advancePaid"] == 5000
     assert resp.json()["payments"][0]["kind"] == "advance"
+    # S1 convergence: paying the advance funds the escrow exactly like
+    # POST /purchases/{id}/escrow/fund (held + audit event).
+    assert resp.json()["escrow"]["status"] == "held"
+    assert resp.json()["escrow"]["amount"] == 5000
+    assert "escrowFunded" in [e["status"] for e in resp.json()["events"]]
     resp = await client.post(
         f"/v1/purchases/{purchase_id}/pickup",
         json={"date": "2026-09-28", "vehicleType": "Truck", "address": "Nashik", "notes": "morning"},
@@ -126,6 +137,12 @@ async def test_full_lifecycle_to_invoice(client, user_store):
     assert resp.json()["status"] == "inTransit"
     resp = await client.post(f"/v1/purchases/{purchase_id}/deliver", headers=_auth(buyer))
     assert resp.json()["status"] == "delivered"
+    # escrow is held → verify the farmer's handover OTP to unlock QC
+    otp = (await client.get(f"/v1/purchases/{purchase_id}/handover-otp", headers=_auth(farmer))).json()["otp"]
+    resp = await client.post(
+        f"/v1/purchases/{purchase_id}/handover/verify", json={"otp": otp}, headers=_auth(buyer)
+    )
+    assert resp.status_code == 200
     resp = await client.post(
         f"/v1/purchases/{purchase_id}/qc",
         json={"grade": "A", "acceptedQty": 10, "rejectedQty": 0, "note": ""},
@@ -140,7 +157,17 @@ async def test_full_lifecycle_to_invoice(client, user_store):
     assert resp.json()["purchaseId"] == purchase_id
     assert resp.json()["number"].startswith("INV-")
     events = [e["status"] for e in (await client.get(f"/v1/purchases/{purchase_id}", headers=_auth(buyer))).json()["events"]]
-    assert events == ["confirmed", "advancePaid", "pickupScheduled", "inTransit", "delivered", "qc", "completed"]
+    assert events == [
+        "confirmed",
+        "advancePaid",
+        "escrowFunded",
+        "pickupScheduled",
+        "inTransit",
+        "delivered",
+        "handedOver",
+        "qc",
+        "completed",
+    ]
 
 
 async def test_advance_exceeding_total_422(client, user_store):

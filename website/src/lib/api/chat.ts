@@ -11,6 +11,9 @@ export const chat = {
   /** POST /chat/direct — open (or get) a direct room with another user. */
   direct: (userId: string): Promise<unknown> => post<unknown>('/chat/direct', { userId }),
 
+  /** POST /chat/direct — open a context-scoped direct room (bookingId, lotId, demandId, …). */
+  openDirect: (payload: Record<string, unknown>): Promise<unknown> => post<unknown>('/chat/direct', payload),
+
   /** GET /chat/rooms/{id}/messages */
   messages: (roomId: string, params?: Record<string, unknown>): Promise<unknown[]> =>
     readList<unknown[]>(`/chat/rooms/${roomId}/messages`, { params }),

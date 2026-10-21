@@ -3,14 +3,18 @@
 Powered by Google Gemini 2.5 Flash / Pro models for conversational agronomy,
 crop diagnostics, mandi rate interpretation, and weather advisory.
 """
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
 
 from app.core.config import settings
-from app.core.db import set_doc
+from app.core.db import query, set_doc
 from app.models.chatbot import ChatMessageIn, ChatMessageOut
+from app.services import storage
 from app.services.ai import gateway, privacy
+
+log = logging.getLogger(__name__)
 
 KISAN_MITRA_SYSTEM_PROMPT = """
 You are Kisan Mitra (किसान मित्र), an expert rural smart-agriculture AI advisor for India.
@@ -71,9 +75,114 @@ SAFE_FALLBACK = {
     "mr": "🙏 मी या विषयावर सुरक्षित उत्तर देऊ शकत नाही. कृपया कृषी तज्ञांचा सल्ला घ्या — मी तुमचा प्रश्न त्यांना पाठवू शकतो.",
 }
 
+# SR 22 order help — when an app-help-ish intent question mentions orders, the
+# answer is grounded in the user's real recent orders instead of generic text.
+_ORDER_HELP_INTENTS = {"app_help", "order", "order_help"}
+_ORDER_KEYWORDS = (
+    "order", "orders", "ऑर्डर", "delivery", "deliver", "delivered",
+    "डिलीवरी", "डिलिवरी", "parcel", "shipment", "dispatch", "dispatched",
+)
+
+NO_RECENT_ORDERS_COPY = {
+    "hi": (
+        "🧾 आपके खाते पर हाल ही का कोई ऑर्डर नहीं मिला। मार्केटप्लेस से खरीदारी करने पर "
+        "ऑर्डर की स्थिति यहीं दिखेगी। बताइए, क्या ऑर्डर करने में मदद करूँ?"
+    ),
+    "en": (
+        "🧾 No recent orders were found on your account. Once you buy from the "
+        "marketplace, your order status will show up here. Would you like help placing an order?"
+    ),
+    "mr": (
+        "🧾 तुमच्या खात्यावर अलीकडे कोणतेही ऑर्डर सापडले नाहीत. बाजारातून खरेदी केल्यावर "
+        "ऑर्डरची स्थिती येथे दिसेल. ऑर्डर करण्यात मदत हवी आहे का?"
+    ),
+}
+
 _CONTACT_STRIP_RE = re.compile(
     r"(?:(?:\+?91[\s-]?)?[6-9]\d{9})|(?:[\w.+-]+@[\w-]+\.[\w.-]+)|(?:https?://\S+|www\.\S+)"
 )
+
+ATTACHED_IMAGE_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "description": {"type": "string"},
+        "likely_issue": {"type": "string"},
+        "crop": {"type": "string"},
+        "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+    },
+    "required": ["description"],
+}
+
+IMAGE_DIAGNOSIS_PROMPT = (
+    "You are a crop-health vision assistant for Indian smallholder farmers. "
+    "Look at the attached farm photo (crop, pest, disease symptom, weed, soil, "
+    "irrigation setup, or agricultural document). Return JSON with keys "
+    "description (what is visible, 1-2 plain sentences), likely_issue (short "
+    "label or empty string), crop (best-guess crop name or empty string), "
+    "severity ('low', 'medium', or 'high'). Do not invent details you cannot see."
+)
+
+IMAGE_UNREADABLE_NOTE = (
+    "[The user attached a farm photo, but it could not be read. Acknowledge the "
+    "photo, answer from the text where possible, and ask a short clarifying "
+    "question or suggest re-uploading a clearer photo.]"
+)
+
+
+def _blob_path_from_image_url(image_url: str) -> str | None:
+    """Resolve an uploaded-photo reference back to a storage blob path.
+
+    Dev-mode signed URLs are `file://` paths over the local upload store and
+    clients may send the bare `storagePath` from POST /uploads. External
+    https:// URLs cannot be resolved server-side without a fetch, so they are
+    treated as unreadable here (the text-only path still answers).
+    """
+    url = (image_url or "").strip()
+    if not url:
+        return None
+    if url.startswith("file://"):
+        return url[len("file://"):]
+    if "://" in url:
+        return None
+    return url
+
+
+async def _describe_attached_image(image_url: str) -> str:
+    """Best-effort vision summary of an attached photo. Never raises.
+
+    Returns a note to prepend to the model query, or "" when the image bytes
+    are unavailable or the vision call yields nothing usable.
+    """
+    try:
+        blob_path = _blob_path_from_image_url(image_url)
+        if not blob_path:
+            return ""
+        image_bytes = storage.read_blob(blob_path)
+        if not image_bytes:
+            return ""
+        observation = await gateway.analyze_image(
+            image_bytes,
+            IMAGE_DIAGNOSIS_PROMPT,
+            ATTACHED_IMAGE_SCHEMA,
+            module="chatbot",
+        )
+        description = str((observation or {}).get("description") or "").strip()
+        if not description:
+            return ""
+        issue = str((observation or {}).get("likely_issue") or "").strip()
+        crop = str((observation or {}).get("crop") or "").strip()
+        severity = str((observation or {}).get("severity") or "").strip()
+        parts = [f"Attached photo: {description}"]
+        if issue:
+            parts.append(f"likely issue: {issue}")
+        if crop:
+            parts.append(f"crop: {crop}")
+        if severity:
+            parts.append(f"severity: {severity}")
+        return "Photo analysis (" + "; ".join(parts) + ")"
+    except Exception:  # noqa: BLE001 — image input must never break the chat
+        log.warning("chatbot: attached image handling failed", exc_info=True)
+        return ""
 
 
 def copy_for(copy_map: dict, language: str | None) -> str:
@@ -201,6 +310,19 @@ async def process_chat_message(user_id: str, payload: ChatMessageIn, user_name: 
     suggested_actions = []
     handoff_suggested = False
 
+    # SR 18 — when the farmer attaches a photo, run the gateway vision path
+    # (Gemini image parts in live mode / deterministic shim otherwise) and
+    # prepend the observation to the model query. Everything is defensive:
+    # any failure degrades to a text-only note and the chat always answers.
+    model_query = payload.text
+    if payload.imageUrl:
+        image_note = await _describe_attached_image(payload.imageUrl)
+        model_query = (
+            f"{payload.text}\n\n{image_note}"
+            if image_note
+            else f"{payload.text}\n\n{IMAGE_UNREADABLE_NOTE}"
+        )
+
     # Brief M2: Jev intent routing decides whether this is a bot answer at all.
     persona, snippet = await _persona_context(user_id)
     intent_result = await gateway.decide(
@@ -238,11 +360,36 @@ async def process_chat_message(user_id: str, payload: ChatMessageIn, user_name: 
         handoff_suggested = True
         quick_replies = ["कृषि विशेषज्ञ से बात 📞", "आज का मौसम 🌤️", "मंडी भाव 📈"]
 
+    # SR 22 order help: an app-help-ish question about orders/delivery is
+    # grounded in the user's real recent orders (best-effort — any failure
+    # falls through to the normal flow). No orders at all answers directly.
+    if not bot_text and intent in _ORDER_HELP_INTENTS:
+        q_lower = payload.text.lower()
+        if any(k in q_lower for k in _ORDER_KEYWORDS):
+            try:
+                recent_orders = await query("orders", [("userId", "==", user_id)], limit=5)
+                recent_orders.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+                if recent_orders:
+                    parts = []
+                    for o in recent_orders[:3]:
+                        oid = str(o.get("id") or o.get("orderId") or "?")
+                        status = str(o.get("status") or "placed")
+                        total = o.get("finalTotal", o.get("total", 0))
+                        parts.append(f"#{oid} — {status} — ₹{total}")
+                    model_query = (
+                        f"Your recent orders (cite these when relevant): {'; '.join(parts)}"
+                        f"\n\n{model_query}"
+                    )
+                else:
+                    bot_text = copy_for(NO_RECENT_ORDERS_COPY, payload.language)
+            except Exception:  # noqa: BLE001 — order grounding is best-effort
+                log.warning("chatbot: order context lookup failed", exc_info=True)
+
     # All model calls go through the AI gateway (global rule 10). In dev/test the
     # provider is `shim` and the agronomic rule engine below is the response.
     if not bot_text and settings.ai_provider == "live":
         bot_text = await gateway.generate(
-            f"User: {user_name}\nLocation/Context: {payload.context}\nQuery: {payload.text}",
+            f"User: {user_name}\nLocation/Context: {payload.context}\nQuery: {model_query}",
             {
                 "system": build_system_prompt(persona, snippet, payload.language),
                 "temperature": 0.3,
@@ -311,6 +458,7 @@ async def process_chat_message(user_id: str, payload: ChatMessageIn, user_name: 
         "userId": user_id,
         "userQuery": payload.text,
         "botResponse": bot_text,
+        "imageUrl": payload.imageUrl,
         "richCardType": rich_card_type,
         "richCardData": rich_card_data,
         "timestamp": now_iso,

@@ -72,8 +72,30 @@ async def _farmer(uid: str = Depends(current_user_id)) -> dict:
 # ---------- Market saturation (M13) ----------
 
 
+def _resolve_saturation_location(body: SaturationIn, user: dict) -> SaturationIn:
+    """Fill omitted district/lat/lng from the farmer's profile: district from
+    the user doc, coordinates from the first farm-boundary point."""
+    district = body.district or user.get("district") or ""
+    lat, lng = body.lat, body.lng
+    if lat is None or lng is None:
+        points = user.get("farmBoundaryPoints") or []
+        first = points[0] if points else {}
+        if isinstance(first, dict):
+            lat = body.lat if body.lat is not None else first.get("lat")
+            lng = body.lng if body.lng is not None else first.get("lng")
+    return SaturationIn(
+        crop=body.crop,
+        district=district,
+        lat=lat,
+        lng=lng,
+        radiusKm=body.radiusKm,
+        shareSowingIntent=body.shareSowingIntent,
+    )
+
+
 @router.post("/saturation", response_model=SaturationOut)
 async def saturation_check(body: SaturationIn, user: dict = Depends(_farmer)):
+    body = _resolve_saturation_location(body, user)
     if body.shareSowingIntent:
         season = advisory_service.current_season()
         await set_doc(
@@ -395,3 +417,49 @@ async def pest_radar(
             source_id=f"pest_{lat}_{lng}",
         )
     return {"data": alerts, "page": 1, "pageSize": 20, "total": len(alerts)}
+
+
+# ---------- Advisory articles (admin CMS -> farmer read) ----------
+
+
+@router.get("/articles")
+async def list_advisory_articles(
+    crop: str | None = None,
+    season: str | None = None,
+    region: str | None = None,
+    limit: int = 50,
+    user: dict = Depends(_farmer),
+):
+    """Published advisory articles only (written by the admin CMS desk at
+    /admin/advisory/articles). Region matches the farmer's state/district."""
+    docs = await query("advisories", [("status", "==", "published")], limit=500)
+    farmer_region = " ".join(
+        str(user.get(k) or "") for k in ("state", "district", "village")
+    ).strip().lower()
+    rows = []
+    for doc in docs:
+        if doc.get("active") is False:
+            continue
+        if crop and crop.lower() not in (doc.get("crop") or "").lower():
+            continue
+        if season and (doc.get("season") or "").lower() != season.lower():
+            continue
+        article_region = (doc.get("region") or "").strip().lower()
+        if region:
+            if article_region and article_region not in region.strip().lower():
+                continue
+        elif article_region and article_region not in farmer_region:
+            continue
+        rows.append(
+            {
+                "articleId": doc.get("articleId") or doc.get("id"),
+                "crop": doc.get("crop"),
+                "region": doc.get("region"),
+                "season": doc.get("season"),
+                "title": doc.get("title"),
+                "body": doc.get("body"),
+                "publishedAt": doc.get("updatedAt") or doc.get("createdAt"),
+            }
+        )
+    rows.sort(key=lambda r: r.get("publishedAt") or "", reverse=True)
+    return {"data": rows[:limit], "total": len(rows)}

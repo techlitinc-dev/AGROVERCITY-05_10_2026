@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProductOut(BaseModel):
@@ -16,6 +16,9 @@ class ProductOut(BaseModel):
     bnplAvailable: bool
     batchNo: str
     inStock: bool = True
+    nutrition: str | None = None
+    harvestDate: str | None = None
+    deliverySlots: list[str] | None = None
 
 
 class CertificateOut(BaseModel):
@@ -42,6 +45,13 @@ class PlaceOrderRequest(BaseModel):
     idempotencyKey: str
     addressId: str | None = None
     couponCode: str | None = None
+    deliverySlot: str | None = None
+    coinsToRedeem: int = Field(default=0, ge=0)
+    plantTree: bool = False
+    # Doorstep delivery fee in paisa — the checkout page computes it
+    # client-side (free above the merchandise threshold, else a flat fee).
+    # Capped at Rs 500 so a tampered value cannot inflate the payable.
+    deliveryFeePaisa: int = Field(default=0, ge=0, le=50000)
 
 
 class RazorpayOrderRequest(BaseModel):

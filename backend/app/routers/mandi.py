@@ -42,6 +42,20 @@ def _crop_match(crop: str, commodity: str) -> bool:
     return crop.lower() in commodity.lower()
 
 
+async def _default_mandi(user: dict) -> str | None:
+    """Fallback mandi for history/forecast when the caller omits `mandi`:
+    the first registered mandi in the farmer's own district, else the
+    district name itself (matches `… District APMC`-style mandi names)."""
+    district = (user.get("district") or "").strip()
+    if not district:
+        return None
+    docs = await query("mandis", [], limit=1000)
+    for doc in docs:
+        if (doc.get("district") or "").strip().lower() == district.lower() and doc.get("name"):
+            return str(doc["name"])
+    return district
+
+
 @router.get("/prices")
 async def list_prices(
     crop: str | None = None,
@@ -95,9 +109,11 @@ async def compare(
     lng: float | None = None,
     user: dict = Depends(_mandi_user),
 ):
-    target_crop = crop or commodity or "Soybean"
+    target_crop = crop or commodity
+    if not target_crop:
+        _error(422, "VALIDATION_ERROR", "crop is required", {"crop": "required"})
     if quantityQuintals <= 0:
-        quantityQuintals = 20.0
+        _error(422, "INVALID_QUANTITY", "quantityQuintals must be greater than 0", {"quantityQuintals": "must be greater than 0"})
     docs = await query("mandi_prices", [], limit=1000)
     docs = [d for d in docs if _crop_match(target_crop, d.get("commodity", ""))]
     if not docs:
@@ -108,8 +124,10 @@ async def compare(
             "mandiName": d.get("mandiName", "APMC Mandi"),
             "commodity": d.get("commodity", crop),
             "modalPrice": d.get("modalPrice", 0),
-            "transportCost": round(float(d.get("distanceKm", 10)) * 14.5),
-            "netProfit": round(float(d.get("modalPrice", 0)) * quantityQuintals - float(d.get("distanceKm", 10)) * 14.5),
+            # Transport is priced at a flat ₹12/km (the spec'd rate): the raw
+            # product is returned (not rounded) so the client sees the exact fare.
+            "transportCost": float(d.get("distanceKm", 10)) * 12,
+            "netProfit": round(float(d.get("modalPrice", 0)) * quantityQuintals - float(d.get("distanceKm", 10)) * 12),
         }
         for d in docs
     ]
@@ -125,18 +143,23 @@ async def price_history(
     months: int = 3,
     user: dict = Depends(_mandi_user),
 ):
-    target = crop or commodity or "Tomato"
+    target = crop or commodity
+    target_mandi = (mandi or "").strip() or await _default_mandi(user)
+    if not target or not target_mandi:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            "crop and mandi are required",
+            {k: "required" for k, v in (("crop", target), ("mandi", target_mandi)) if not v},
+        )
     months = max(1, min(36, months))
     docs = await query("mandi_price_history", [], limit=10000)
     filtered = [
         d
         for d in docs
         if _crop_match(target, d.get("commodity", ""))
-        and (not mandi or mandi.lower() in d.get("mandiName", "").lower())
+        and target_mandi.lower() in d.get("mandiName", "").lower()
     ]
-    if not filtered:
-        # Fallback to any recent historical records so charts always render real data
-        filtered = docs[:60]
     filtered.sort(key=lambda d: d.get("date", ""))
     filtered = filtered[-months * 30:]
     return {"data": [{"date": d["date"], "modalPrice": d["modalPrice"]} for d in filtered]}
@@ -149,20 +172,18 @@ async def forecast(
     mandi: str | None = None,
     user: dict = Depends(_mandi_user),
 ):
-    target_crop = crop or commodity or "Soybean"
-    target_mandi = mandi or "Pimpalgaon Baswant"
+    target_crop = crop or commodity
+    target_mandi = (mandi or "").strip() or await _default_mandi(user)
+    missing = {}
+    if not target_crop:
+        missing["crop"] = "required"
+    if not target_mandi:
+        missing["mandi"] = "required"
+    if missing:
+        _error(422, "VALIDATION_ERROR", "crop and mandi are required", missing)
     doc = await get_doc(FORECAST_COLLECTION, forecast_doc_id(target_crop, target_mandi))
     if doc is None:
-        now = datetime.now(timezone.utc).isoformat()
-        doc = {
-            "crop": target_crop,
-            "mandi": target_mandi,
-            "expectedPrice": 4980 if "soy" in target_crop.lower() else (2850 if "onion" in target_crop.lower() else 3150),
-            "trend": "+2.8%",
-            "confidence": 0.88,
-            "advice": f"Prices for {target_crop} at {target_mandi} are projected to strengthen over the next 7 days due to steady institutional procurement. Selling during mid-week auction windows is optimal.",
-            "updatedAt": now
-        }
+        _error(404, "FORECAST_NOT_FOUND", "no forecast cached for this crop and mandi — run the nightly job")
     return {"data": doc}
 
 

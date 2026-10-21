@@ -15,6 +15,7 @@ import {
   DollarSign,
   ArrowRight,
   ShieldCheck,
+  Star,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -27,6 +28,12 @@ import {
 } from 'recharts';
 import { useSearchParams, Link } from 'react-router-dom';
 import { mandi, advisory, priceAlerts, apiErrorMessage } from '../../lib/api';
+import {
+  addMandiFavorite,
+  getMandiFavorites,
+  removeMandiFavorite,
+  type MandiFavorite,
+} from '../../lib/api/follows';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency } from '../../lib/utils';
 import type { MandiPrice } from '../../types';
@@ -48,6 +55,7 @@ export const MandiPricesView: React.FC = () => {
   const [mandis, setMandis] = useState<unknown[]>([]);
   const [alerts, setAlerts] = useState<unknown[]>([]);
   const [chartCommodity, setChartCommodity] = useState('Soybean');
+  const [chartMandi, setChartMandi] = useState('');
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [forecast, setForecast] = useState<Record<string, unknown> | null>(null);
   const [compareRows, setCompareRows] = useState<unknown[]>([]);
@@ -58,6 +66,11 @@ export const MandiPricesView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedCrop, setSelectedCrop] = useState<string>('All');
+
+  // Saved markets (SR 11)
+  const [favorites, setFavorites] = useState<MandiFavorite[]>([]);
+  const [myMarketsOnly, setMyMarketsOnly] = useState(false);
+  const [pickMandi, setPickMandi] = useState('');
 
   // Alert modal state
   const [alertModalOpen, setAlertModalOpen] = useState(false);
@@ -92,6 +105,9 @@ export const MandiPricesView: React.FC = () => {
       })
       .catch((e) => active && setError(apiErrorMessage(e)))
       .finally(() => active && setLoading(false));
+    getMandiFavorites()
+      .then((f) => active && setFavorites(f))
+      .catch(() => undefined);
     return () => {
       active = false;
     };
@@ -102,9 +118,17 @@ export const MandiPricesView: React.FC = () => {
     if (!chartCommodity) return;
     let active = true;
     setChartLoading(true);
+    // The backend defaults `mandi` to the caller's district when omitted;
+    // send the explicit selection when the farmer has picked one.
+    const historyParams: Record<string, unknown> = { crop: chartCommodity };
+    const forecastParams: Record<string, unknown> = { crop: chartCommodity };
+    if (chartMandi) {
+      historyParams.mandi = chartMandi;
+      forecastParams.mandi = chartMandi;
+    }
     Promise.all([
-      mandi.history({ commodity: chartCommodity }),
-      mandi.forecast({ commodity: chartCommodity }),
+      mandi.history(historyParams),
+      mandi.forecast(forecastParams),
       mandi.compare({ crop: chartCommodity, commodity: chartCommodity, quantityQuintals: arbitrageQty }),
     ])
       .then(([history, fc, cmp]) => {
@@ -134,15 +158,22 @@ export const MandiPricesView: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [chartCommodity, arbitrageQty]);
+  }, [chartCommodity, chartMandi, arbitrageQty]);
+
+  const favoriteNames = useMemo(
+    () => new Set(favorites.map((f) => f.name.trim().toLowerCase())),
+    [favorites]
+  );
+  const favoriteIds = useMemo(() => new Set(favorites.map((f) => f.mandiId)), [favorites]);
 
   const filteredPrices = prices.filter((p) => {
     const matchesCrop = selectedCrop === 'All' || p.commodity.toLowerCase().includes(selectedCrop.toLowerCase());
+    const matchesMarket = !myMarketsOnly || favoriteNames.has(p.mandi.trim().toLowerCase());
     const matchesSearch =
       p.commodity.toLowerCase().includes(search.toLowerCase()) ||
       p.mandi.toLowerCase().includes(search.toLowerCase()) ||
       p.district.toLowerCase().includes(search.toLowerCase());
-    return matchesCrop && matchesSearch;
+    return matchesCrop && matchesMarket && matchesSearch;
   });
 
   const chartPrice = chartData.length > 0 ? chartData[chartData.length - 1].price : 0;
@@ -176,9 +207,44 @@ export const MandiPricesView: React.FC = () => {
   const handleSaturation = async () => {
     setSaturation(null);
     try {
-      const res = await advisory.saturation({ commodity: chartCommodity });
+      // district/lat/lng fall back to the farmer's profile server-side.
+      const res = await advisory.saturation({ crop: chartCommodity });
       setSaturation(asRecord(res));
     } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  };
+
+  // Saved markets (SR 11) — optimistic local updates, revert on failure.
+  const handleAddFavorite = async () => {
+    if (!pickMandi) return;
+    const rec = asRecord(mandis.find((m) => asStr(asRecord(m).id) === pickMandi));
+    const name = asStr(rec.name, 'Mandi');
+    const optimistic: MandiFavorite = {
+      mandiId: pickMandi,
+      name,
+      district: asStr(rec.district),
+      state: asStr(rec.state),
+      since: new Date().toISOString(),
+    };
+    setFavorites((prev) => [...prev, optimistic]);
+    try {
+      await addMandiFavorite(pickMandi);
+      setNotice(`${name} pinned to your saved markets.`);
+      setPickMandi('');
+    } catch (e) {
+      setFavorites((prev) => prev.filter((f) => f.mandiId !== pickMandi));
+      setError(apiErrorMessage(e));
+    }
+  };
+
+  const handleRemoveFavorite = async (fav: MandiFavorite) => {
+    setFavorites((prev) => prev.filter((f) => f.mandiId !== fav.mandiId));
+    try {
+      await removeMandiFavorite(fav.mandiId);
+      setNotice(`${fav.name} removed from saved markets.`);
+    } catch (e) {
+      setFavorites((prev) => [...prev, fav]);
       setError(apiErrorMessage(e));
     }
   };
@@ -227,6 +293,70 @@ export const MandiPricesView: React.FC = () => {
         </div>
       )}
 
+      {/* Saved markets (SR 11) — compact strip since this view has no markets-list UI */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+              <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+              Saved Markets ({favorites.length})
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Pin the APMC yards you trade at most, then filter live rates with the “My Markets” chip below.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            <select
+              value={pickMandi}
+              onChange={(e) => setPickMandi(e.target.value)}
+              className="px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-56"
+            >
+              <option value="">Add a market…</option>
+              {mandis
+                .map((m) => asRecord(m))
+                .filter((m) => asStr(m.id) && !favoriteIds.has(asStr(m.id)))
+                .map((m) => (
+                  <option key={asStr(m.id)} value={asStr(m.id)}>
+                    {asStr(m.name, 'Mandi')}{asStr(m.district) ? ` — ${asStr(m.district)}` : ''}
+                  </option>
+                ))}
+            </select>
+            <button
+              onClick={handleAddFavorite}
+              disabled={!pickMandi}
+              className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 transition-colors"
+            >
+              <Star className="w-3.5 h-3.5" /> Save
+            </button>
+          </div>
+        </div>
+        {favorites.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-3">
+            No saved markets yet — pick a market above to pin it here.
+          </p>
+        ) : (
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+            {favorites.map((f) => (
+              <span
+                key={f.mandiId}
+                className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold whitespace-nowrap"
+              >
+                <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                {f.name}
+                {f.district ? <span className="text-amber-600/70 font-normal">• {f.district}</span> : null}
+                <button
+                  onClick={() => handleRemoveFavorite(f)}
+                  className="p-1 rounded-lg text-amber-700 hover:bg-amber-100 transition-colors"
+                  title={`Remove ${f.name} from saved markets`}
+                >
+                  <Star className="w-3.5 h-3.5 fill-amber-500" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Historical Trend Chart Card */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -240,6 +370,20 @@ export const MandiPricesView: React.FC = () => {
                 {crops.filter((c) => c !== 'All').map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
+              </select>
+              <select
+                value={chartMandi}
+                onChange={(e) => setChartMandi(e.target.value)}
+                title="Mandi (defaults to your district)"
+                className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-52"
+              >
+                <option value="">Mandi: my district</option>
+                {mandis.map((m) => {
+                  const rec = asRecord(m);
+                  const id = asStr(rec.id);
+                  const label = `${asStr(rec.name, 'Mandi')}${asStr(rec.district) ? ` — ${asStr(rec.district)}` : ''}`;
+                  return id ? <option key={id} value={asStr(rec.name, id)}>{label}</option> : null;
+                })}
               </select>
               <h3 className="font-bold text-sm text-slate-900">Modal Price Movement (APMC Trend)</h3>
             </div>
@@ -326,14 +470,45 @@ export const MandiPricesView: React.FC = () => {
                 Analyze
               </button>
             </div>
-            <p className="leading-relaxed">
-              {saturation
-                ? asStr(
-                    saturation.advice ?? saturation.recommendation ?? saturation.message,
-                    JSON.stringify(saturation)
-                  )
-                : 'Run the AI saturation check to decide whether to sell at the gate or hold for a better window.'}
-            </p>
+            <div className="space-y-1.5">
+              {saturation && asStr(saturation.riskLevel) && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
+                      saturation.riskLevel === 'red'
+                        ? 'bg-rose-100 text-rose-800'
+                        : saturation.riskLevel === 'yellow'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
+                    {asStr(saturation.riskLevel)} risk
+                  </span>
+                  {asNum(saturation.predictedPrice, 0) > 0 && (
+                    <span className="text-[11px] font-bold text-emerald-900">
+                      Expected {formatCurrency(asNum(saturation.predictedPrice, 0))}/q
+                      {asStr(saturation.predictedDate) ? ` by ${asStr(saturation.predictedDate)}` : ''}
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="leading-relaxed">
+                {saturation
+                  ? asStr(
+                      saturation.advice ?? saturation.recommendation ?? saturation.message,
+                      asNum(saturation.sowingCount, -1) >= 0
+                        ? `${asNum(saturation.sowingCount)} farmers in your district sowed ${chartCommodity}.` +
+                          (asArray(saturation.alternativeCrops).length > 0
+                            ? ` Alternatives: ${asArray(saturation.alternativeCrops)
+                                .map((a) => asStr(asRecord(a).crop, ''))
+                                .filter(Boolean)
+                                .join(', ')}.`
+                            : '')
+                        : JSON.stringify(saturation)
+                    )
+                  : 'Run the AI saturation check to decide whether to sell at the gate or hold for a better window.'}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -475,6 +650,18 @@ export const MandiPricesView: React.FC = () => {
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <button
+            onClick={() => setMyMarketsOnly((v) => !v)}
+            className={`px-3.5 py-2 text-xs font-semibold rounded-2xl whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              myMarketsOnly
+                ? 'bg-amber-500 text-white font-bold shadow-xs'
+                : 'bg-white border border-amber-200 text-amber-700 hover:bg-amber-50'
+            }`}
+            title="Show only rates from your saved markets"
+          >
+            <Star className={`w-3.5 h-3.5 ${myMarketsOnly ? 'fill-white' : 'text-amber-500'}`} />
+            My Markets{favorites.length > 0 ? ` (${favorites.length})` : ''}
+          </button>
           {crops.map((c) => (
             <button
               key={c}

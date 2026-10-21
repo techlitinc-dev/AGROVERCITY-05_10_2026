@@ -35,11 +35,21 @@ _CANALS = [
 ]
 
 
+# 1 hectare = 2.47105 acres (PMKSY micro-irrigation eligibility is quoted in
+# hectares on the portal; the calculator works internally in acres).
+HECTARES_TO_ACRES = 2.47105
+
+
 class PmksyCalcIn(BaseModel):
-    """Either `acres` (benchmark per-acre cost) or an explicit total `costPaisa`."""
+    """Cost basis (highest precedence first): explicit total `costPaisa`,
+    per-acre benchmark `acres`, or hectare-based `areaHa` (converted to
+    acres). `cropType` is accepted for UI convenience and does not change
+    the benchmark rate."""
 
     acres: float | None = Field(default=None, gt=0)
     costPaisa: int | None = Field(default=None, gt=0)
+    areaHa: float | None = Field(default=None, gt=0)
+    cropType: str | None = None
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -177,15 +187,24 @@ async def pmksy_calculator(body: PmksyCalcIn, user: dict = Depends(_farmer)):
     """PMKSY 55% micro-irrigation subsidy — integer-paisa arithmetic.
 
     `costPaisa` is the farmer's estimated total input cost; `acres` falls back to
-    the PMKSY benchmark cost. Both the legacy rupee fields and the authoritative
-    integer-paisa fields are returned so older clients keep working.
+    the PMKSY benchmark cost, and `areaHa` (hectares) is converted to acres
+    first. Both the legacy rupee fields and the authoritative integer-paisa
+    fields are returned so older clients keep working.
     """
-    if body.costPaisa is None and body.acres is None:
-        _error(422, "VALIDATION_ERROR", "provide acres or costPaisa", {"acres": "required"})
+    if body.costPaisa is None and body.acres is None and body.areaHa is None:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            "provide acres, areaHa or costPaisa",
+            {"acres": "required"},
+        )
     if body.costPaisa is not None:
         total_paisa = int(body.costPaisa)
-    else:
+    elif body.acres is not None:
         total_paisa = round(body.acres * PMKSY_BENCHMARK_COST_PER_ACRE_INR * 100)
+    else:
+        acres = body.areaHa * HECTARES_TO_ACRES
+        total_paisa = round(acres * PMKSY_BENCHMARK_COST_PER_ACRE_INR * 100)
     subsidy_paisa = (total_paisa * PMKSY_SUBSIDY_PERCENT) // 100
     farmer_share_paisa = total_paisa - subsidy_paisa
     return {

@@ -13,6 +13,10 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: true,
+    cors: true,
+    hmr: {
+      clientPort: 5173,
+    },
     proxy: {
       '/v1': {
         target: 'http://localhost:8000',

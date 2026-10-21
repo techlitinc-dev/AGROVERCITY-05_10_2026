@@ -633,3 +633,53 @@ def build_pnl_pdf(uid: str, entries: list[dict], from_date: str, to_date: str) -
     story.append(table)
     doc.build(story)
     return path
+
+
+def build_trip_receipt_pdf(receipt: dict) -> str:
+    """Render a transport trip receipt (PDF) and return the temp path."""
+    path = f"/tmp/trip_receipt_{receipt['receiptNo']}_{uuid.uuid4().hex[:8]}.pdf"
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    styles = getSampleStyleSheet()
+
+    def _rupees(paise: int | float | None) -> str:
+        return f"Rs {float(paise or 0) / 100:.2f}"
+
+    story = [
+        Paragraph("Agrovercity — Trip Receipt", styles["Title"]),
+        Paragraph(f"Receipt No: {receipt['receiptNo']}", styles["Normal"]),
+        Paragraph(f"Trip Date: {receipt.get('date') or '-'} · Issued: {receipt.get('issuedAt') or '-'}", styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    rows = [
+        ["Transporter", str(receipt.get("transporterName") or "-")],
+        ["Farmer / Booker", str(receipt.get("farmerName") or "-")],
+        ["Vehicle", f"{receipt.get('vehicleType') or '-'} · {receipt.get('vehicleNo') or '-'}"],
+        ["Route", f"{receipt.get('pickup') or '-'} -> {receipt.get('drop') or '-'}"],
+        ["Fare", _rupees(receipt.get("farePaisa"))],
+        ["Platform commission (10%)", _rupees(receipt.get("commissionPaisa"))],
+        ["Net payable to transporter", _rupees(receipt.get("netPaise"))],
+        ["Payment / escrow status", str(receipt.get("escrowStatus") or "unfunded")],
+    ]
+    table = Table(rows, colWidths=[180, 300])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#E8F5E9")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    story.append(table)
+    story.append(Spacer(1, 24))
+    story.append(
+        Paragraph(
+            f"Verify this receipt in the Agrovercity app with code {receipt.get('verificationCode') or ''}. "
+            "This is a system-generated receipt and does not need a physical signature.",
+            styles["Normal"],
+        )
+    )
+    doc.build(story)
+    return path

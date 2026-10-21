@@ -52,5 +52,21 @@ class AppealIn(BaseModel):
     photos: list[str] = []
 
 
+class ClaimFromUploadsIn(BaseModel):
+    """JSON variant of the claim-intimation body for clients that uploaded
+    damage photos via POST /uploads first (`damagePhotoUrls` are the returned
+    signed URLs). Field names match the multipart form exactly."""
+
+    policyId: str
+    cropName: str
+    calamityType: str
+    dateOfDamage: str
+    cropStage: str
+    estimatedLossPercent: float = Field(ge=0, le=100)
+    gpsCoordinates: str
+    village: str
+    damagePhotoUrls: list[str] = []
+
+
 class PayoutApprovalRequestIn(BaseModel):
     notes: str | None = None

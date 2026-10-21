@@ -43,3 +43,5 @@ backend/.local_uploads/
 
 # local project backup archives (contain secrets — never commit)
 backups/
+backup/
+logs/

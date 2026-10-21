@@ -561,3 +561,274 @@ async def update_notification_templates(
         None, {"templateCount": len(body.templates)}, ctx["reason"], ctx["ip"],
     )
     return doc
+
+
+# ===========================================================================
+# Master data management (P2 layer on top of static reference data)
+# ===========================================================================
+#
+# Master lists (mandis, crops, varieties, grades, categories, states, units,
+# vehicle-types) are served statically by routers/reference.py. This desk lets
+# admins override or extend them: every override lives in the `master_data`
+# collection as `{collection}_{code}` and is merged over the static list, so
+# GET /reference keeps working untouched.
+
+from app.data.states import INDIAN_STATES
+from app.routers.transport import ALL_VEHICLE_TYPES
+
+MASTER_COLLECTIONS = ("mandis", "crops", "varieties", "grades", "categories", "states", "units", "vehicle-types")
+
+_STATIC_MASTER: dict[str, list[dict]] = {
+    "mandis": [],
+    "crops": [
+        {"code": "wheat", "name": "Wheat"},
+        {"code": "rice", "name": "Rice (Paddy)"},
+        {"code": "cotton", "name": "Cotton"},
+        {"code": "sugarcane", "name": "Sugarcane"},
+        {"code": "soybean", "name": "Soybean"},
+        {"code": "maize", "name": "Maize"},
+        {"code": "onion", "name": "Onion"},
+        {"code": "tomato", "name": "Tomato"},
+        {"code": "chilli", "name": "Chilli"},
+        {"code": "bajra", "name": "Bajra (Pearl Millet)"},
+        {"code": "jowar", "name": "Jowar (Sorghum)"},
+        {"code": "mustard", "name": "Mustard"},
+        {"code": "groundnut", "name": "Groundnut"},
+        {"code": "banana", "name": "Banana"},
+        {"code": "grapes", "name": "Grapes"},
+    ],
+    "varieties": [],
+    "grades": [
+        {"code": "A", "name": "Grade A"},
+        {"code": "B", "name": "Grade B"},
+        {"code": "C", "name": "Grade C"},
+        {"code": "fancy", "name": "Fancy"},
+    ],
+    "categories": [],
+    "states": [{"code": s.lower().replace(" ", "_"), "name": s} for s in INDIAN_STATES],
+    "units": [
+        {"code": "kg", "name": "Kilogram"},
+        {"code": "quintal", "name": "Quintal"},
+        {"code": "tonne", "name": "Tonne"},
+        {"code": "litre", "name": "Litre"},
+        {"code": "dozen", "name": "Dozen"},
+        {"code": "bag", "name": "Bag"},
+        {"code": "acre", "name": "Acre"},
+    ],
+    "vehicle-types": [
+        {
+            "code": vt["type"].lower().replace(" ", "_"),
+            "name": vt["type"],
+            "baseFare": vt.get("baseFare"),
+            "perKmRate": vt.get("perKmRate"),
+            "capacityTonnes": vt.get("capacityTonnes"),
+        }
+        for vt in ALL_VEHICLE_TYPES
+    ],
+}
+
+MASTER_IMPORT_MAX_ROWS = 500
+
+
+def _master_doc_id(collection: str, code: str) -> str:
+    return f"{collection}_{code}"
+
+
+def _require_master_collection(collection: str) -> None:
+    if collection not in MASTER_COLLECTIONS:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            f"collection must be one of {', '.join(MASTER_COLLECTIONS)}",
+            {"collection": "unknown master collection"},
+        )
+
+
+async def _merged_master(collection: str) -> list[dict]:
+    """Static reference entries overlaid with Firestore `master_data` overrides
+    (doc id `{collection}_{code}`). Overrides win per code."""
+    merged: dict[str, dict] = {}
+    for entry in _STATIC_MASTER.get(collection, []):
+        merged[entry["code"]] = {**entry, "active": True, "source": "static"}
+    for doc in await query("master_data", [], limit=2000):
+        doc_id = doc.get("id") or ""
+        prefix = f"{collection}_"
+        if not doc_id.startswith(prefix):
+            continue
+        code = doc.get("code") or doc_id[len(prefix):]
+        merged[code] = {
+            **doc,
+            "code": code,
+            "active": doc.get("active", True),
+            "source": "firestore",
+        }
+    return sorted(merged.values(), key=lambda e: str(e.get("code")))
+
+
+@router.get("/master/{collection}")
+async def get_master_collection(
+    collection: str,
+    includeInactive: bool = Query(False, description="also return soft-deleted entries"),
+    user: dict = Depends(current_admin_user),
+):
+    """Merged master list: Firestore overrides first, static reference data as
+    the fallback layer. `source` marks which layer served each row."""
+    _require_master_collection(collection)
+    rows = await _merged_master(collection)
+    if not includeInactive:
+        rows = [r for r in rows if r.get("active", True)]
+    return {"data": rows, "total": len(rows), "collection": collection}
+
+
+class MasterEntryIn(BaseModel):
+    code: str = Field(..., min_length=1, max_length=60)
+    name: str = Field(..., min_length=1, max_length=200)
+    active: Optional[bool] = None
+    extra: Optional[dict] = Field(default=None, description="additional fields stored verbatim on the entry")
+
+
+def _master_entry_doc(collection: str, code: str, name: str, active: bool | None, extra: dict | None, admin: dict) -> dict:
+    return {
+        "id": _master_doc_id(collection, code),
+        "collection": collection,
+        "code": code,
+        "name": name,
+        "active": True if active is None else active,
+        **(extra or {}),
+        "updatedBy": admin.get("id") or admin.get("uid"),
+        "updatedAt": _now(),
+    }
+
+
+@router.post("/master/{collection}", status_code=201)
+async def upsert_master_entry(
+    collection: str,
+    body: MasterEntryIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Create or override one master-data entry (`master_data/{collection}_{code}`)."""
+    _require_master_collection(collection)
+    code = body.code.strip()
+    doc_id = _master_doc_id(collection, code)
+    existing = await get_doc("master_data", doc_id)
+    doc = _master_entry_doc(collection, code, body.name.strip(), body.active, body.extra, ctx["admin"])
+    await set_doc("master_data", doc_id, doc)
+    await log_admin_action(
+        ctx["admin"], "master-data", "master.upsert", doc_id,
+        existing, doc, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "created": existing is None, "entry": doc}
+
+
+class MasterEntryUpdateIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    active: Optional[bool] = None
+    extra: Optional[dict] = Field(default=None, description="additional fields merged verbatim into the entry")
+
+
+@router.put("/master/{collection}/{code}")
+async def update_master_entry(
+    collection: str,
+    code: str,
+    body: MasterEntryUpdateIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Partial update of one Firestore master-data entry. Static rows have no
+    doc yet — the update materialises an override carrying the static name."""
+    _require_master_collection(collection)
+    doc_id = _master_doc_id(collection, code)
+    doc = await get_doc("master_data", doc_id)
+    if doc is None:
+        static_row = next((e for e in _STATIC_MASTER.get(collection, []) if e["code"] == code), None)
+        if static_row is None:
+            _error(404, "MASTER_ENTRY_NOT_FOUND", "master entry not found")
+        doc = _master_entry_doc(collection, code, static_row["name"], None, static_row, ctx["admin"])
+    previous = dict(doc)
+    if body.name is not None:
+        doc["name"] = body.name.strip()
+    if body.active is not None:
+        doc["active"] = body.active
+    if body.extra:
+        doc.update(body.extra)
+    doc["updatedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
+    doc["updatedAt"] = _now()
+    await set_doc("master_data", doc_id, doc)
+    await log_admin_action(
+        ctx["admin"], "master-data", "master.update", doc_id,
+        previous, doc, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "entry": doc}
+
+
+@router.delete("/master/{collection}/{code}")
+async def soft_delete_master_entry(
+    collection: str,
+    code: str,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Soft delete: flips the Firestore override (or a materialised one) to
+    active=false so the row drops out of the merged list without touching
+    static data."""
+    _require_master_collection(collection)
+    doc_id = _master_doc_id(collection, code)
+    doc = await get_doc("master_data", doc_id)
+    if doc is None:
+        static_row = next((e for e in _STATIC_MASTER.get(collection, []) if e["code"] == code), None)
+        if static_row is None:
+            _error(404, "MASTER_ENTRY_NOT_FOUND", "master entry not found")
+        doc = _master_entry_doc(collection, code, static_row["name"], False, static_row, ctx["admin"])
+    else:
+        doc["active"] = False
+        doc["updatedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
+        doc["updatedAt"] = _now()
+    await set_doc("master_data", doc_id, doc)
+    await log_admin_action(
+        ctx["admin"], "master-data", "master.soft-delete", doc_id,
+        {"active": True}, {"active": False}, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "code": code, "active": False}
+
+
+class MasterImportIn(BaseModel):
+    rows: list[dict] = Field(default_factory=list)
+
+
+@router.post("/master/{collection}/import")
+async def import_master_entries(
+    collection: str,
+    body: MasterImportIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Bulk upsert (max 500 rows). Each row needs code + name; bad rows are
+    collected as errors without aborting the batch."""
+    _require_master_collection(collection)
+    if len(body.rows) > MASTER_IMPORT_MAX_ROWS:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            f"at most {MASTER_IMPORT_MAX_ROWS} rows per import",
+            {"rows": f"max {MASTER_IMPORT_MAX_ROWS}"},
+        )
+    created = updated = 0
+    errors = []
+    for index, row in enumerate(body.rows):
+        code = str(row.get("code") or "").strip()
+        name = str(row.get("name") or "").strip()
+        if not code or not name:
+            errors.append({"index": index, "code": code, "error": "code and name are required"})
+            continue
+        doc_id = _master_doc_id(collection, code)
+        existing = await get_doc("master_data", doc_id)
+        extra = {k: v for k, v in row.items() if k not in ("code", "name", "active")}
+        doc = _master_entry_doc(collection, code, name, row.get("active"), extra or None, ctx["admin"])
+        await set_doc("master_data", doc_id, doc)
+        if existing is None:
+            created += 1
+        else:
+            updated += 1
+    await log_admin_action(
+        ctx["admin"], "master-data", "master.import", collection,
+        None, {"created": created, "updated": updated, "errors": len(errors)},
+        ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "created": created, "updated": updated, "errors": errors}

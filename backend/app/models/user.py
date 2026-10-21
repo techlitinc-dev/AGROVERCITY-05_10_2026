@@ -91,6 +91,10 @@ PROFILE_ALIASES: dict[str, str] = {
     "superadmin": "superadmin",
     "admin": "superadmin",
     "teacher": "instructor",
+    "nursery": "nursery",
+    "plant_nursery": "nursery",
+    "plant nursery": "nursery",
+    "plantnursery": "nursery",
 }
 
 
@@ -162,6 +166,9 @@ class UserUpdateRequest(BaseModel):
     pincode: str | None = Field(default=None, pattern=r"^\d{6}$")
     addressLine: str | None = None
     alternatePhone: str | None = Field(default=None, pattern=r"^\d{10}$")
+    photoUrl: str | None = Field(default=None, min_length=1, max_length=500)
+    dietaryPreference: Literal["veg", "organic", "a2"] | None = None
+    familySize: int | None = Field(default=None, ge=1, le=20)
 
 
 class UserSettingsUpdate(BaseModel):
@@ -170,6 +177,8 @@ class UserSettingsUpdate(BaseModel):
     womenMode: bool | None = None
     highContrast: bool | None = None
     darkMode: bool | None = None
+    discoverable: bool | None = None
+    householdBudgetMonthly: float | None = Field(default=None, ge=0)
 
 
 class PersonaSetupRequest(BaseModel):

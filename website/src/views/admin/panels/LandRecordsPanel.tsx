@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileCheck2, Download, Database } from 'lucide-react';
+import { FileCheck2, Download, Database, Plug } from 'lucide-react';
 import { admin, apiClient, apiErrorMessage } from '../../../lib/api';
 import {
   PanelShell,
@@ -9,8 +9,10 @@ import {
   Tabs,
   Field,
   TextInput,
+  Select,
   Banner,
   str,
+  num,
   useAsync,
   useReasonModal,
   asRow,
@@ -20,7 +22,8 @@ import {
 
 /**
  * SOP-16 — Land Records Registry Sync.
- * Registry health, seed from source data (MPIN step-up), audit log and CSV export.
+ * Registry health, integration config (provider + credentials, apiKey is
+ * write-only), seed from source data (MPIN step-up), audit log and CSV export.
  */
 export const LandRecordsPanel: React.FC = () => {
   const [tab, setTab] = useState('health');
@@ -58,6 +61,7 @@ export const LandRecordsPanel: React.FC = () => {
         onChange={setTab}
         tabs={[
           { id: 'health', label: 'Registry health' },
+          { id: 'config', label: 'Integration config' },
           { id: 'audit', label: 'Audit log' },
           { id: 'seed', label: 'Seed registry' },
         ]}
@@ -87,6 +91,7 @@ export const LandRecordsPanel: React.FC = () => {
           </div>
         </PanelShell>
       )}
+      {tab === 'config' && <IntegrationConfigCard />}
       {tab === 'audit' && (
         <PanelShell
           title="SOP-16: Registry Audit Log"
@@ -149,6 +154,137 @@ const SeedCard: React.FC<{ request: (r: import('./shared').ReasonRequest) => voi
           Run seed
         </Btn>
       </div>
+    </PanelShell>
+  );
+};
+
+/**
+ * 7/12 source-registry integration config. The stored apiKey is write-only:
+ * GET returns only apiKeyMasked, and a typed key is sent on PUT once — it is
+ * never re-displayed or echoed back into the form.
+ */
+const IntegrationConfigCard: React.FC = () => {
+  const { request, modal } = useReasonModal();
+  const cfgRes = useAsync(() => admin.fieldOps.landRecordsConfig().catch(() => null), []);
+  const cfg = asRow(cfgRes.data);
+
+  const [provider, setProvider] = useState('');
+  const [apiUrl, setApiUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [syncEnabled, setSyncEnabled] = useState<boolean | null>(null);
+  const [syncCron, setSyncCron] = useState('');
+  const [timeoutMs, setTimeoutMs] = useState('');
+  const dirty =
+    provider.trim() !== '' || apiUrl.trim() !== '' || apiKey.trim() !== '' || syncEnabled !== null || syncCron.trim() !== '' || timeoutMs !== '';
+
+  const save = async (reason: string) => {
+    await admin.fieldOps.updateLandRecordsConfig(
+      {
+        ...(provider.trim() ? { provider: provider.trim() } : {}),
+        ...(apiUrl.trim() ? { apiUrl: apiUrl.trim() } : {}),
+        // Write-only: send the new key only when the admin typed one.
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        ...(syncEnabled !== null ? { syncEnabled } : {}),
+        ...(syncCron.trim() ? { syncCron: syncCron.trim() } : {}),
+        ...(timeoutMs !== '' ? { timeoutMs: Number(timeoutMs) } : {}),
+      },
+      reason
+    );
+    setProvider('');
+    setApiUrl('');
+    setApiKey('');
+    setSyncEnabled(null);
+    setSyncCron('');
+    setTimeoutMs('');
+    cfgRes.reload();
+  };
+
+  return (
+    <PanelShell
+      title="SOP-16: Land Records Integration Config"
+      subtitle="Source registry connection for 7/12 sync (GET/PUT /admin/land-records/config). The API key is write-only — it is sent on save only when you type a new one, and reads return just the last-4 mask."
+      icon={Plug}
+      loading={cfgRes.loading}
+      onRefresh={cfgRes.reload}
+      actions={
+        dirty ? (
+          <div className="flex gap-2">
+            <Btn
+              onClick={() => {
+                setProvider('');
+                setApiUrl('');
+                setApiKey('');
+                setSyncEnabled(null);
+                setSyncCron('');
+                setTimeoutMs('');
+              }}
+            >
+              Cancel
+            </Btn>
+            <Btn
+              tone="primary"
+              onClick={() =>
+                request({
+                  title: 'Update land-records integration config',
+                  defaultReason: 'Land-records integration update',
+                  confirmLabel: 'Save config',
+                  action: save,
+                })
+              }
+            >
+              Save (audited)
+            </Btn>
+          </div>
+        ) : undefined
+      }
+    >
+      {cfgRes.error && <Banner kind="error">{cfgRes.error}</Banner>}
+      {cfg && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={`Provider — current ${str(cfg, 'provider')}`}>
+              <TextInput value={provider} onChange={setProvider} placeholder={str(cfg, 'provider') === '—' ? 'mahabhulekh / bhoomi / …' : str(cfg, 'provider')} />
+            </Field>
+            <Field label={`API URL — current ${str(cfg, 'apiUrl')}`}>
+              <TextInput value={apiUrl} onChange={setApiUrl} placeholder={str(cfg, 'apiUrl')} />
+            </Field>
+            <Field
+              label={
+                str(cfg, 'apiKeyMasked') !== '—'
+                  ? `API key — currently set (${str(cfg, 'apiKeyMasked')})`
+                  : 'API key — not set'
+              }
+            >
+              <TextInput type="password" value={apiKey} onChange={setApiKey} placeholder="Type a new key to replace — never displayed back" autoComplete="new-password" />
+            </Field>
+            <Field label={`Sync enabled — currently ${String(cfg.syncEnabled ?? false)}`}>
+              <Select
+                value={syncEnabled === null ? '' : String(syncEnabled)}
+                onChange={(v) => setSyncEnabled(v === '' ? null : v === 'true')}
+                options={[
+                  { value: '', label: 'Keep current' },
+                  { value: 'true', label: 'Enabled' },
+                  { value: 'false', label: 'Disabled' },
+                ]}
+              />
+            </Field>
+            <Field label={`Sync cron — current ${str(cfg, 'syncCron')}`}>
+              <TextInput value={syncCron} onChange={setSyncCron} placeholder={str(cfg, 'syncCron') === '—' ? '0 2 * * *' : str(cfg, 'syncCron')} />
+            </Field>
+            <Field label={`Timeout (ms) — current ${num(cfg, 'timeoutMs') ?? '—'}`}>
+              <TextInput type="number" inputMode="numeric" value={timeoutMs} onChange={setTimeoutMs} placeholder={String(num(cfg, 'timeoutMs') ?? 10000)} />
+            </Field>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Last updated {str(cfg, 'updatedAt')} by {str(cfg, 'updatedBy')}.
+            {str(cfg, 'apiKeyMasked') !== '—' && (
+              <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                key set {str(cfg, 'apiKeyMasked')}
+              </span>
+            )}
+          </p>
+        </>
+      )}
     </PanelShell>
   );
 };

@@ -20,6 +20,7 @@ export type PersonaType =
   | 'insuranceProvider'
   | 'coldStorageProvider'
   | 'gaushalaManager'
+  | 'nursery'
   | 'superadmin';
 
 export interface UserProfile {
@@ -32,6 +33,8 @@ export interface UserProfile {
   pincode?: string;
   activePersona: PersonaType;
   availablePersonas: PersonaType[];
+  /** Personas the user hid in profile settings — options hidden, data kept. */
+  disabledPersonas?: PersonaType[];
   kycStatus: 'unverified' | 'submitted' | 'verified' | 'rejected';
   hasMpin: boolean;
   avatarUrl?: string;
@@ -68,9 +71,22 @@ export interface ProduceLot {
   location: string;
   state: string;
   district: string;
-  status: 'open' | 'negotiating' | 'locked' | 'sold' | 'withdrawn';
+  status:
+    | 'open'
+    | 'negotiating'
+    | 'locked'
+    | 'sold'
+    | 'withdrawn'
+    // moderation lifecycle
+    | 'pending_review'
+    | 'rejected'
+    | 'taken_down';
   harvestDate?: string;
   imageUrl?: string;
+  photos?: string[];
+  lat?: number;
+  lng?: number;
+  village?: string;
   createdAt: string;
   offersCount: number;
 }
@@ -199,8 +215,10 @@ export interface TransportVehicle {
   rcDocUrl?: string | null;
   insuranceDocUrl?: string | null;
   pucExpiry?: string | null;
+  permitExpiry?: string | null;
   fitnessExpiry?: string | null;
   insuranceExpiry?: string | null;
+  photoUrl?: string | null;
   permitType?: string;
   driverName?: string | null;
   driverPhone?: string | null;
@@ -231,7 +249,17 @@ export interface TransportBooking {
   estimatedFare: number;
   waitingHours: number;
   waitingChargePaisa: number;
-  status: 'pending' | 'requested' | 'accepted' | 'driverAssigned' | 'inTransit' | 'enRoute' | 'delivered' | 'completed' | 'cancelled';
+  /** Backend state machine (transport.py): booker cancels while `requested`. */
+  status:
+    | 'requested'
+    | 'accepted'
+    | 'arrivedPickup'
+    | 'loading'
+    | 'enRoute'
+    | 'reachedDestination'
+    | 'unloading'
+    | 'delivered'
+    | 'cancelled';
   shareToken?: string;
   currentLat?: number;
   currentLng?: number;
@@ -243,26 +271,66 @@ export interface TransportBooking {
   commodity?: string;
   weightQuintals?: number;
   fare?: number;
+  /** Locked-in negotiated fare (set when a booking offer is accepted). */
+  farePaise?: number;
   date?: string;
   vehicleId?: string | null;
   vehicleNo?: string | null;
   driverName?: string | null;
   driverPhone?: string | null;
   userId?: string;
+  /** Negotiation round counter; bumped per offer/counter on this booking. */
+  offerRound?: number;
+  /** Set when the farmer cancels — shown in the cancelled banner. */
+  cancellationReason?: string;
+  cancelledBy?: string;
+  /** Original trip id when this booking was created via one-tap rebook. */
+  rebookOf?: string;
   waypointsLog?: { waypoint?: string; label?: string; time?: string }[];
-  pod?: { photos?: string[]; receiverName?: string; deliveredAt?: string };
+  /** Instant-booking pinned coordinates (transport.py pickupGeo/dropGeo). */
+  pickupGeo?: { lat: number; lng: number } | null;
+  dropGeo?: { lat: number; lng: number } | null;
+  /** Coordinate aliases on legacy booking docs. */
+  pickupCoords?: { lat: number; lng: number } | null;
+  dropCoords?: { lat: number; lng: number } | null;
+  pod?: { photos?: string[]; receiverName?: string; receiverPhone?: string; damageNotes?: string; deliveredAt?: string };
   podOtp?: { verifiedAt?: string };
 }
+
+/** Diary entry kinds — matches backend DiaryEntryIn.type (SR 12 breadth). */
+export type DiaryEntryType =
+  | 'income'
+  | 'expense'
+  | 'farmActivity'
+  | 'transport'
+  | 'equipment'
+  | 'lesson'
+  | 'order'
+  | 'household';
+
+/** Buy/sell tag for trade entries (mandi purchases, produce sales…). */
+export type DiaryTradeType = 'buy' | 'sell';
 
 export interface FarmDiaryEntry {
   id: string;
   date: string;
-  type: 'income' | 'expense';
+  type: DiaryEntryType;
+  /** Legacy crop label kept for backward compatibility with older rows. */
   crop: string;
-  category: 'Seeds' | 'Fertilizers' | 'Pesticides' | 'Labor' | 'Diesel/Machinery' | 'Crop Sale' | 'Subsidy' | 'Other';
+  /** Free-form category; per-type option lists live in FarmDiaryView. */
+  category: string;
   amount: number;
   quantity?: number;
+  unit?: string;
   notes?: string;
+  /** Backend DiaryEntryIn.title — the short label shown in reports. */
+  title?: string;
+  /** Crop name recorded on the entry (backend cropName). */
+  cropName?: string;
+  /** Counterparty — who paid / who was paid (trade entries). */
+  party?: string;
+  tradeType?: DiaryTradeType;
+  photos?: string[];
 }
 
 export interface EquipmentMachine {

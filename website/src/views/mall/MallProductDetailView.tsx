@@ -6,12 +6,14 @@ import {
   ChevronLeft,
   Heart,
   Home,
+  MessageCircle,
   Minus,
   Plus,
   QrCode,
   ShieldCheck,
   ShoppingCart,
   Star,
+  Store,
 } from 'lucide-react';
 import { apiErrorMessage, gruhUdyog, mall } from '../../lib/api';
 import { useCartStore } from '../../stores/cartStore';
@@ -236,6 +238,33 @@ export const MallProductDetailView: React.FC = () => {
               </p>
               <h1 className="text-xl font-black text-slate-900 leading-tight mt-1">{product.title}</h1>
               <p className="text-[11px] text-slate-400 mt-1">Sold by {product.sellerName}</p>
+              {(str(raw?.sellerId) || id) && (
+                <div className="flex items-center gap-2 mt-2">
+                  {str(raw?.sellerId) && (
+                    <Link
+                      to={`/mall/seller/${str(raw?.sellerId)}`}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 hover:border-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 transition-colors"
+                    >
+                      <Store className="w-3.5 h-3.5" />
+                      View shop
+                    </Link>
+                  )}
+                  {id && (
+                    <span className="inline-flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        disabled
+                        title="Chat unlocks after your order is confirmed"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-400 text-[11px] font-bold flex items-center gap-1.5 cursor-not-allowed"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        Ask seller
+                      </button>
+                      <span className="text-[9px] text-slate-400">Chat unlocks after order confirmation</span>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <button
               onClick={() => void handleToggleWishlist()}
@@ -275,6 +304,37 @@ export const MallProductDetailView: React.FC = () => {
           )}
 
           <p className="text-xs text-slate-600 leading-relaxed">{product.description || 'Quality-checked agricultural input with doorstep delivery.'}</p>
+
+          {/* SR 6: nutrition / harvest / delivery-slot facts */}
+          {(str(raw?.nutrition) || str(raw?.harvestDate) || (Array.isArray(raw?.deliverySlots) && (raw?.deliverySlots as unknown[]).length > 0)) && (
+            <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+              {str(raw?.nutrition) && (
+                <p className="text-[11px] text-slate-600">
+                  <span className="font-bold text-slate-800">Nutrition: </span>
+                  {str(raw?.nutrition)}
+                </p>
+              )}
+              {str(raw?.harvestDate) && (
+                <p className="text-[11px] text-slate-600">
+                  <span className="font-bold text-slate-800">Harvested: </span>
+                  {str(raw?.harvestDate).slice(0, 10)}
+                </p>
+              )}
+              {Array.isArray(raw?.deliverySlots) && (raw?.deliverySlots as unknown[]).length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-800">Expected delivery:</span>
+                  {(raw?.deliverySlots as unknown[]).map((slot) => (
+                    <span
+                      key={String(slot)}
+                      className="px-2 py-0.5 rounded-full bg-white border border-emerald-100 text-[10px] font-bold text-emerald-700"
+                    >
+                      {String(slot)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Certificate */}
           <div className="flex items-center gap-2">

@@ -206,16 +206,23 @@ async def test_p1_seller_gst_report_and_commission_invoice(client, user_store):
     seller_id = _seed_persona(user_store, "seller_gst_user", "seller")
     headers = _auth(seller_id)
 
-    # Seed sales
+    # Seed a POS sale the way POST /seller/sales stores it —
+    # users/{uid}/seller_sales with netAmount/quantity/unit.
     sale_id = "sale_gst_1"
-    user_store[f"seller_sales/{sale_id}"] = {
+    user_store[f"users/{seller_id}/seller_sales/{sale_id}"] = {
         "id": sale_id,
         "sellerId": seller_id,
         "buyerName": "Direct Foods",
-        "amount": 23600.0,
-        "crop": "Tomato",
-        "quantityQuintals": 10.0,
+        "item": "Tomato",
+        "quantity": 10.0,
+        "unit": "Quintal",
+        "netAmount": 23600.0,
         "createdAt": "2026-10-05T10:00:00Z",
+    }
+    # shop GSTIN comes from the seller role profile (fallback "—")
+    user_store[f"users/{seller_id}/role_profiles/seller"] = {
+        "shopName": "GST Test Shop",
+        "gstNumber": "27AAACV1234A1Z5",
     }
 
     purchase_id = "purch_gst_1"
@@ -234,6 +241,11 @@ async def test_p1_seller_gst_report_and_commission_invoice(client, user_store):
     gst_data = gst_resp.json()
     assert gst_data["summary"]["totalSales"] >= 20000
     assert len(gst_data["records"]) >= 1
+    assert gst_data["sellerGstin"] == "27AAACV1234A1Z5"
+    record = gst_data["records"][0]
+    assert record["crop"] == "Tomato"
+    assert record["quantity"] == 10.0
+    assert record["invoiceValue"] == 23600.0
 
     # 2. Commission invoice PDF
     inv_resp = await client.get(f"/v1/seller/purchases/{purchase_id}/commission-invoice", headers=headers)

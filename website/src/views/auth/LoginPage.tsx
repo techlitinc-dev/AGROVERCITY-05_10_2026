@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Phone,
   Lock,
@@ -58,6 +58,7 @@ export const PERSONA_HOME: Record<PersonaType, string> = {
   insuranceProvider: '/insurance',
   coldStorageProvider: '/coldStorageProvider',
   gaushalaManager: '/gaushalaManager',
+  nursery: '/nursery',
   superadmin: '/admin',
 };
 
@@ -170,13 +171,21 @@ const DEMO_PERSONAS: DemoPersonaPreset[] = [
 export const LoginPage: React.FC = () => {
   const { user, activePersona, isAuthenticated, login } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Post-login destination when the auth guard bounced the user here
+  // (state.from set by AppShell). Only same-app paths are honoured.
+  const fromPath =
+    (location.state as { from?: string } | null)?.from?.startsWith('/') &&
+    !(location.state as { from?: string } | null)?.from?.startsWith('//')
+      ? (location.state as { from?: string }).from
+      : null;
 
   // If already authenticated with user profile, navigate straight to active dashboard
   useEffect(() => {
     if (isAuthenticated && user) {
-      navigate(personaHome(user.activePersona || activePersona), { replace: true });
+      navigate(fromPath || personaHome(user.activePersona || activePersona), { replace: true });
     }
-  }, [isAuthenticated, user, activePersona, navigate]);
+  }, [isAuthenticated, user, activePersona, navigate, fromPath]);
 
   const [activeTab, setActiveTab] = useState<'phone' | 'demo'>('phone');
   const [demoCategory, setDemoCategory] = useState<'all' | 'producers' | 'trade' | 'logistics' | 'finance'>('all');
@@ -257,7 +266,7 @@ export const LoginPage: React.FC = () => {
       }
       const normalized = normalizeUserProfile(res.user);
       login(normalized, res);
-      navigate(personaHome(normalized.activePersona), { replace: true });
+      navigate(fromPath || personaHome(normalized.activePersona), { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -276,7 +285,7 @@ export const LoginPage: React.FC = () => {
       }
       const normalized = normalizeUserProfile(res.user);
       login(normalized, res);
-      navigate(personaHome(normalized.activePersona), { replace: true });
+      navigate(fromPath || personaHome(normalized.activePersona), { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {

@@ -38,6 +38,19 @@ export function unwrapList<T>(payload: unknown): T[] {
   return payload as T[];
 }
 
+/** `payload.items` unwrap for the newer `{items: [...]}` envelope (women hub, ratings). */
+export function unwrapItems<T>(payload: unknown): T[] {
+  if (
+    payload !== null &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    Array.isArray((payload as { items?: unknown }).items)
+  ) {
+    return (payload as { items: T[] }).items;
+  }
+  return unwrapList<T>(payload);
+}
+
 export function unwrapPaged<T>(payload: unknown): Paged<T> {
   if (
     payload !== null &&
@@ -82,6 +95,19 @@ export async function readList<T>(url: string, opts: ReadOpts<T[]> = {}): Promis
   try {
     const res = await apiClient.get(url, { params: opts.params });
     return unwrapList<T>(res.data);
+  } catch (e) {
+    if (DEV && opts.mock !== undefined) {
+      return typeof opts.mock === 'function' ? (opts.mock as () => T[])() : opts.mock;
+    }
+    handleApiError(e);
+  }
+}
+
+/** Read endpoints that return the `{items: [...]}` envelope (women hub, ratings). */
+export async function readItems<T>(url: string, opts: ReadOpts<T[]> = {}): Promise<T[]> {
+  try {
+    const res = await apiClient.get(url, { params: opts.params });
+    return unwrapItems<T>(res.data?.data ?? res.data);
   } catch (e) {
     if (DEV && opts.mock !== undefined) {
       return typeof opts.mock === 'function' ? (opts.mock as () => T[])() : opts.mock;

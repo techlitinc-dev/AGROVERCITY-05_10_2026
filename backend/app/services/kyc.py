@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.db import get_doc, query, set_doc
 
-DOC_STATUSES = ("pending", "verified", "rejected")
+DOC_STATUSES = ("pending", "verified", "rejected", "resubmission_requested")
 
 # Base documents for every business persona: Aadhaar (masked only), PAN, and a
 # penny-drop-verified bank account. Persona extras come from features/*.md.

@@ -34,6 +34,18 @@ class LoanDocument(BaseModel):
     referenceNo: str | None = None
 
 
+class LoanDocumentAttachIn(BaseModel):
+    """JSON variant of POST /loans/{id}/documents for files already uploaded
+    via POST /uploads — `url` is the signed URL the upload returned;
+    `storagePath` (when provided) is stored as the canonical blob path so the
+    signed download endpoint keeps working."""
+
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=1)
+    type: str = ""
+    storagePath: str | None = None
+
+
 class LoanApplicationOut(BaseModel):
     applicationId: str
     amount: float

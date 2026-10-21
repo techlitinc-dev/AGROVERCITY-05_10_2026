@@ -43,7 +43,7 @@ async def test_shg_without_group_returns_empty_state(client, user_store):
     assert resp.json() == {"group": None, "deposits": [], "meetings": [], "readiness": None}
 
 
-async def test_deposit_updates_corpus(client, user_store):
+async def test_deposit_splits_corpus_and_loan_fund(client, user_store):
     token = seed_user(user_store)
     _seed_shg_group(user_store)
     resp = await client.post(
@@ -52,9 +52,19 @@ async def test_deposit_updates_corpus(client, user_store):
         headers=auth(token),
     )
     assert resp.status_code == 201
-    assert resp.json()["newCorpusPaisa"] == 4_900_000
+    body = resp.json()
+    # 25% of every deposit seeds the revolving loan fund; the rest is corpus.
+    assert body["loanFundAllocatedPaisa"] == 12_500
+    assert body["newCorpusPaisa"] == 4_887_500
+    assert body["newLoanFundPaisa"] == 3_012_500
     deposit = user_store["shg_groups/shg_test/deposits/2026-09"]
     assert deposit["amountPaisa"] == 50_000
+    group = user_store["shg_groups/shg_test"]
+    assert group["corpusPaisa"] == 4_887_500
+    assert group["loanFundPaisa"] == 3_012_500
+    member_deposit = user_store["shg_groups/shg_test/deposits/2026-09_uid-1"]
+    assert member_deposit["loanFundPaisa"] == 12_500
+    assert member_deposit["corpusPaisa"] == 37_500
 
 
 async def test_duplicate_deposit_month_409(client, user_store):

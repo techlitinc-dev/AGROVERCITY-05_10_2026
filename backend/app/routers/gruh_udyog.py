@@ -28,7 +28,11 @@ from pydantic import BaseModel, Field
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.security import verify_mpin
+from app.routers.users import require_role
 from app.services import idempotency
+from app.services.notify import notify_user
+from app.services.payments import create_razorpayx_payout
 from app.services.users import get_user
 
 router = APIRouter(prefix="/gruh-udyog", tags=["gruh-udyog"])
@@ -38,8 +42,11 @@ PRODUCTS = "gruh_udyog_products"
 BATCHES = "gruh_udyog_batches"
 CERTS = "gruh_udyog_certifications"
 OFFERS = "gruh_udyog_offers"
+SETTLEMENTS = "gruh_settlements"
+PAYOUTS = "gruh_payouts"
 MALL_PRODUCTS = "products"
 ORDERS = "orders"
+PLATFORM_CONFIG = "platform_config"
 
 GRUH_CATEGORIES = (
     "Papad & Fryums",
@@ -57,12 +64,54 @@ GRUH_CATEGORIES = (
 FOOD_CATEGORIES = frozenset(
     ("Papad & Fryums", "Pickles & Chutneys", "Spices & Masala", "Dairy & Sweets", "Grains & Flours")
 )
-CERT_TYPES = ("fssai", "udyam", "shg", "handicraft_mark", "pan")
+CERT_TYPES = ("fssai", "agmark", "other", "udyam", "shg", "handicraft_mark", "pan")
 OPEN_ORDER_STATUSES = frozenset(("placed", "paid"))
 FULFILMENT_OPEN = frozenset(("accepted", "packed", "shipped"))
+# accepted → packed → shipped → delivered; `cancel` is allowed only before
+# `packed` (see cancel_order). The website's older "dispatched" label is
+# accepted as an alias for `shipped`.
 FULFILMENT_TRANSITIONS = {"packed": "accepted", "shipped": "packed", "delivered": "shipped"}
+STATUS_ALIASES = {"dispatched": "shipped"}
 LOW_STOCK_DEFAULT = 5
 BATCH_EXPIRY_WARN_DAYS = 30
+
+# Platform commission on delivered gruh-udyog mall revenue. Config key lives in
+# `platform_config/settlements` (read pattern mirrors services/settlements.py).
+GRUH_COMMISSION_DEFAULT_PCT = 5
+
+# Buyer-notification vocabulary mirrors the Krishi Mall order lifecycle
+# (app/routers/orders.py): gruh accepted→confirmed, packed→shipped,
+# shipped→out_for_delivery, delivered→delivered, cancel→cancelled.
+MALL_STATUS_BY_FULFILMENT = {
+    "accepted": "confirmed",
+    "packed": "shipped",
+    "shipped": "out_for_delivery",
+    "delivered": "delivered",
+    "cancelled": "cancelled",
+}
+_BUYER_STATUS_COPY = {
+    "confirmed": (
+        "Order confirmed",
+        "Your order {id} is confirmed and is being packed by the seller.",
+    ),
+    "shipped": (
+        "Order packed & picked up",
+        "Your order {id} has been packed and handed over to the pickup agent.",
+    ),
+    "out_for_delivery": (
+        "Delivering today",
+        "Your order {id} is out for delivery — the delivery agent is delivering today. "
+        "Please keep your phone reachable.",
+    ),
+    "delivered": (
+        "Order delivered",
+        "Your order {id} has been delivered. Thank you for shopping on Krishi Mall!",
+    ),
+    "cancelled": (
+        "Order cancelled",
+        "Your order {id} was cancelled by the seller. Any payment made will be refunded.",
+    ),
+}
 
 
 class UnitIn(BaseModel):
@@ -141,7 +190,7 @@ class BatchStatusIn(BaseModel):
 
 
 class CertIn(BaseModel):
-    type: str = Field(pattern="^(fssai|udyam|shg|handicraft_mark|pan)$")
+    type: str = Field(pattern="^(fssai|agmark|other|udyam|shg|handicraft_mark|pan)$")
     number: str = Field(min_length=3, max_length=60)
     issuingAuthority: str = ""
     validUntil: date | None = None
@@ -156,12 +205,22 @@ class OfferIn(BaseModel):
 
 
 class FulfillmentStatusIn(BaseModel):
-    status: str = Field(pattern="^(packed|shipped|delivered)$")
+    status: str = Field(pattern="^(packed|shipped|dispatched|delivered)$")
     note: str = ""
 
 
 class RejectIn(BaseModel):
     reason: str = Field(min_length=3, max_length=300)
+
+
+class CancelIn(BaseModel):
+    reason: str = ""
+
+
+class PayoutIn(BaseModel):
+    unitId: str = Field(min_length=1)
+    amountPaisa: int = Field(gt=0)
+    mpin: str = Field(min_length=4, max_length=4)
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -183,7 +242,34 @@ async def _owner(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
+    require_role(user, "farmer", "womenShg")
     return uid
+
+
+async def _commission_pct() -> int:
+    config = await get_doc(PLATFORM_CONFIG, "settlements") or {}
+    try:
+        pct = int(config.get("gruhCommissionPct", GRUH_COMMISSION_DEFAULT_PCT))
+    except (TypeError, ValueError):
+        pct = GRUH_COMMISSION_DEFAULT_PCT
+    if not 0 <= pct < 100:
+        return GRUH_COMMISSION_DEFAULT_PCT
+    return pct
+
+
+async def _notify_buyer(order: dict, fulfilment_status: str):
+    vocab = MALL_STATUS_BY_FULFILMENT.get(fulfilment_status)
+    copy = _BUYER_STATUS_COPY.get(vocab or "")
+    if not copy:
+        return
+    title, body = copy
+    await notify_user(
+        str(order.get("userId") or ""),
+        type=f"order_{vocab}",
+        title=title,
+        body=body.format(id=order.get("id")),
+        deepLink="/dashboard/p/orders",
+    )
 
 
 async def _my_unit(unit_id: str, uid: str) -> dict:
@@ -510,15 +596,27 @@ async def publish_product(
         _error(403, "UNIT_PAUSED", "resume the unit before publishing")
     if int(product.get("stock", 0)) <= 0:
         _error(422, "STOCK_REQUIRED", "add stock before publishing", {"stock": "must be greater than 0"})
+    fssai_status = None
     if product["category"] in FOOD_CATEGORIES:
         certs = await query(CERTS, [("unitId", "==", product["unitId"])], limit=100)
-        if not any(
-            c.get("type") == "fssai"
-            and c.get("status") == "verified"
-            and (not c.get("validUntil") or c["validUntil"] >= _today().isoformat())
-            for c in certs
-        ):
-            _error(403, "FSSAI_REQUIRED", "food products need a verified FSSAI certification to go live")
+        for cert in certs:
+            if cert.get("type") != "fssai":
+                continue
+            if cert.get("validUntil") and cert["validUntil"] < _today().isoformat():
+                continue
+            if cert.get("status") == "verified":
+                fssai_status = "verified"
+                break
+            if cert.get("status") == "pending" and fssai_status is None:
+                # Pending FSSAI no longer blocks publishing — the listing goes
+                # live with a visible `fssaiStatus: "pending"` badge instead.
+                fssai_status = "pending"
+        if fssai_status is None:
+            _error(
+                403,
+                "FSSAI_REQUIRED",
+                "food products need an FSSAI certification (verified, or pending with a visible badge) to go live",
+            )
     user = await get_user(uid)
     mall_id = f"gprod_{uuid.uuid4().hex[:10]}"
     active_offer = await _active_offer(product_id)
@@ -547,6 +645,8 @@ async def publish_product(
         "gruhProductId": product_id,
         "createdAt": _now(),
     }
+    if fssai_status is not None:
+        mall_doc["fssaiStatus"] = fssai_status
     await set_doc(MALL_PRODUCTS, mall_id, mall_doc)
     product["status"] = "live"
     product["mallProductId"] = mall_id
@@ -824,6 +924,7 @@ async def accept_order(order_id: str, uid: str = Depends(_owner)):
     fulfillment["acceptedAt"] = _now()
     fulfillment["history"].append({"status": "accepted", "at": _now()})
     await set_doc(ORDERS, order_id, order)
+    await _notify_buyer(order, "accepted")
     return {"orderId": order_id, "fulfillment": fulfillment}
 
 
@@ -846,25 +947,155 @@ async def reject_order(order_id: str, body: RejectIn, uid: str = Depends(_owner)
     return {"orderId": order_id, "fulfillment": fulfillment}
 
 
+@router.post("/orders/{order_id}/cancel")
+async def cancel_order(order_id: str, body: CancelIn, uid: str = Depends(_owner)):
+    """Cancel an accepted (not yet packed) order and restore the buyer-facing
+    mall stock, mirroring the stock-restore in app/routers/orders.py."""
+    unit = await _owner_unit(uid)
+    order, mall_ids = await _order_for_unit(order_id, unit)
+    fulfillment = _fulfillment(order, unit["id"])
+    if fulfillment is None or fulfillment.get("status") not in ("placed", "accepted"):
+        _error(
+            409,
+            "ORDER_NOT_CANCELLABLE",
+            "only orders that are not yet packed can be cancelled",
+        )
+    if body.reason.strip():
+        fulfillment["cancelReason"] = body.reason.strip()
+    fulfillment["status"] = "cancelled"
+    fulfillment["cancelledAt"] = _now()
+    fulfillment["history"].append(
+        {"status": "cancelled", "at": _now(), "note": body.reason.strip()}
+    )
+    for item in _unit_items(order, mall_ids):
+        mall_product = await get_doc(MALL_PRODUCTS, item["productId"])
+        if mall_product is not None and isinstance(mall_product.get("stock"), int):
+            mall_product["stock"] += item.get("quantity", 0)
+            await set_doc(MALL_PRODUCTS, item["productId"], mall_product)
+    await set_doc(ORDERS, order_id, order)
+    await _notify_buyer(order, "cancelled")
+    return {"orderId": order_id, "fulfillment": fulfillment}
+
+
 @router.post("/orders/{order_id}/status")
 async def update_fulfillment_status(
     order_id: str, body: FulfillmentStatusIn, uid: str = Depends(_owner)
 ):
     unit = await _owner_unit(uid)
     order, _ = await _order_for_unit(order_id, unit)
+    status = STATUS_ALIASES.get(body.status, body.status)
     fulfillment = _fulfillment(order, unit["id"])
-    if fulfillment is None or fulfillment.get("status") != FULFILMENT_TRANSITIONS[body.status]:
+    if fulfillment is None or fulfillment.get("status") != FULFILMENT_TRANSITIONS[status]:
         _error(
             409,
             "BAD_TRANSITION",
-            f"order must be {FULFILMENT_TRANSITIONS[body.status]} before {body.status}",
+            f"order must be {FULFILMENT_TRANSITIONS[status]} before {status}",
         )
-    fulfillment["status"] = body.status
-    fulfillment["history"].append({"status": body.status, "at": _now(), "note": body.note})
-    if body.status == "delivered":
+    fulfillment["status"] = status
+    fulfillment["history"].append({"status": status, "at": _now(), "note": body.note})
+    if status == "delivered":
         fulfillment["deliveredAt"] = _now()
     await set_doc(ORDERS, order_id, order)
+    await _notify_buyer(order, status)
+    if status == "delivered":
+        await _accrue_settlement(unit, order, fulfillment)
     return {"orderId": order_id, "fulfillment": fulfillment}
+
+
+async def _accrue_settlement(unit: dict, order: dict, fulfillment: dict):
+    """One settlement line per delivered order: revenue (this unit's item
+    total, integer paisa) minus the platform commission from
+    `platform_config/settlements gruhCommissionPct` (default 5%)."""
+    existing = await query(SETTLEMENTS, [("orderId", "==", order["id"])], limit=10)
+    if any(line.get("unitId") == unit["id"] for line in existing):
+        return
+    revenue_paisa = int(fulfillment.get("itemsTotal", 0)) * 100
+    pct = await _commission_pct()
+    commission_paisa = round(revenue_paisa * pct / 100)
+    now = _now()
+    doc = {
+        "id": f"gus_{uuid.uuid4().hex[:10]}",
+        "unitId": unit["id"],
+        "orderId": order["id"],
+        "period": now[:7],
+        "revenuePaisa": revenue_paisa,
+        "commissionPct": pct,
+        "commissionPaisa": commission_paisa,
+        "netPaisa": revenue_paisa - commission_paisa,
+        "status": "accrued",
+        "createdAt": now,
+    }
+    await set_doc(SETTLEMENTS, doc["id"], doc)
+
+
+async def _settlement_balance(unit_id: str) -> dict:
+    lines = await query(SETTLEMENTS, [("unitId", "==", unit_id)], limit=1000)
+    payouts = await query(PAYOUTS, [("unitId", "==", unit_id)], limit=1000)
+    revenue = sum(int(line.get("revenuePaisa", 0)) for line in lines)
+    commission = sum(int(line.get("commissionPaisa", 0)) for line in lines)
+    paid_out = sum(
+        int(p.get("amountPaisa", 0))
+        for p in payouts
+        if p.get("status") in ("pending", "processed")
+    )
+    return {
+        "revenuePaisa": revenue,
+        "commissionPaisa": commission,
+        "paidOutPaisa": paid_out,
+        "availablePaisa": revenue - commission - paid_out,
+    }
+
+
+@router.get("/units/{unit_id}/settlements")
+async def unit_settlements(unit_id: str, uid: str = Depends(_owner)):
+    unit = await _my_unit(unit_id, uid)
+    lines = await query(SETTLEMENTS, [("unitId", "==", unit["id"])], limit=1000)
+    lines.sort(key=lambda line: line.get("createdAt", ""), reverse=True)
+    payouts = await query(PAYOUTS, [("unitId", "==", unit["id"])], limit=1000)
+    payouts.sort(key=lambda p: p.get("requestedAt", ""), reverse=True)
+    return {
+        "lines": lines,
+        "payouts": payouts,
+        "balance": await _settlement_balance(unit["id"]),
+    }
+
+
+@router.post("/payouts", status_code=201)
+async def create_payout(body: PayoutIn, uid: str = Depends(_owner)):
+    """MPIN-gated payout of the unit's available settlement balance (the
+    transport-payout pattern: services/payments.py auto-marks the payout
+    `processed` in dev when Razorpay keys are unset)."""
+    unit = await _my_unit(body.unitId, uid)
+    user = await get_user(uid) or {}
+    stored = user.get("mpinHash")
+    if not stored:
+        _error(409, "MPIN_NOT_SET", "set an MPIN before requesting a payout")
+    if not verify_mpin(body.mpin, stored):
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+    balance = (await _settlement_balance(unit["id"]))["availablePaisa"]
+    if body.amountPaisa > balance:
+        _error(
+            422,
+            "INSUFFICIENT_BALANCE",
+            f"payout exceeds the available balance of ₹{balance / 100:.2f}",
+            {"amountPaisa": f"must be <= {balance}"},
+        )
+    payout_id = f"gupay_{uuid.uuid4().hex[:12]}"
+    result = await create_razorpayx_payout("", body.amountPaisa, payout_id)
+    now = _now()
+    payout = {
+        "id": payout_id,
+        "unitId": unit["id"],
+        "ownerUid": uid,
+        "amountPaisa": body.amountPaisa,
+        "status": result.get("status", "pending"),
+        "razorpayPayoutId": result.get("id"),
+        "requestedAt": now,
+    }
+    if payout["status"] == "processed":
+        payout["processedAt"] = now
+    await set_doc(PAYOUTS, payout_id, payout)
+    return payout
 
 
 async def _owner_unit(uid: str) -> dict:

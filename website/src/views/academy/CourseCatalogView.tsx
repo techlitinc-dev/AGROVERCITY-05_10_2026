@@ -11,8 +11,10 @@ import {
   AlertCircle,
   BookOpen,
   MonitorSmartphone,
+  Sparkles,
 } from 'lucide-react';
 import { courses, teachers, apiErrorMessage } from '../../lib/api';
+import { getCourseRecommendations } from '../../lib/api/dashboard';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency } from '../../lib/utils';
 import { asRec, boolOf, nameOf, numOf, recArr, strOf } from './helpers';
@@ -36,6 +38,34 @@ export const CourseCatalogView: React.FC = () => {
   const [activeCourse, setActiveCourse] = useState<Record<string, unknown> | null>(null);
   const [curriculum, setCurriculum] = useState<Record<string, unknown> | null>(null);
   const [enrolling, setEnrolling] = useState(false);
+  const [recommended, setRecommended] = useState<Record<string, unknown>[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const recs = await getCourseRecommendations();
+        const top = [...recs]
+          .sort((a, b) => numOf(asRec(b).relevance) - numOf(asRec(a).relevance))
+          .slice(0, 3);
+        const docs = await Promise.all(
+          top.map((rec) =>
+            courses
+              .get(strOf(asRec(rec).courseId))
+              .then((c) => asRec(c))
+              .catch(() => null)
+          )
+        );
+        if (!mounted) return;
+        setRecommended(docs.filter((d): d is Record<string, unknown> => d !== null && Object.keys(d).length > 0));
+      } catch {
+        /* recommendations are an enhancement — catalog renders without them */
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -171,6 +201,57 @@ export const CourseCatalogView: React.FC = () => {
           Free only
         </label>
       </div>
+
+      {recommended.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-600" />
+            <h2 className="font-bold text-sm text-slate-900">Recommended for you</h2>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-1 -mx-1 px-1">
+            {recommended.map((c) => {
+              const price = priceOf(c);
+              const isFree = price === 0 || boolOf(c.isFree);
+              return (
+                <div
+                  key={strOf(c.id)}
+                  className="min-w-[260px] max-w-[260px] bg-white rounded-2xl overflow-hidden border border-emerald-200/80 shadow-xs hover:shadow-md transition-all flex flex-col justify-between flex-shrink-0"
+                >
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                      <span className="font-semibold text-amber-600">
+                        {numOf(c.ratingAverage, numOf(c.rating)) > 0
+                          ? numOf(c.ratingAverage, numOf(c.rating)).toFixed(1)
+                          : 'New'}
+                      </span>
+                      <span className="text-slate-300">•</span>
+                      <span className="capitalize">{strOf(c.category, 'General')}</span>
+                    </div>
+                    <h3 className="font-extrabold text-xs text-slate-900 leading-snug line-clamp-2">
+                      {strOf(c.title)}
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      By {strOf(c.instructorName) || 'Gurukul Faculty'}
+                    </p>
+                  </div>
+                  <div className="p-4 pt-0 flex items-center justify-between">
+                    <span className="text-xs font-black text-emerald-800">
+                      {isFree ? 'Free' : formatCurrency(price)}
+                    </span>
+                    <button
+                      onClick={() => openCourse(c)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px]"
+                    >
+                      View & Enroll
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-xs text-slate-400">Loading courses…</p>

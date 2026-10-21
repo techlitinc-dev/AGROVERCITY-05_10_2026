@@ -54,9 +54,14 @@ export const loans = {
   schedule: (applicationId: string): Promise<unknown> =>
     readOne<unknown>(`/loans/${applicationId}/schedule`),
 
-  /** POST /loans/{id}/documents */
+  /** POST /loans/{id}/documents — multipart file upload (legacy). */
   addDocument: (applicationId: string, body: Record<string, unknown>): Promise<unknown> =>
     post<unknown>(`/loans/${applicationId}/documents`, body),
+
+  /** POST /loans/{id}/documents/from-uploads — attach a file already uploaded
+   * via POST /uploads ({name, url, type, storagePath?}). */
+  attachDocument: (applicationId: string, body: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/loans/${applicationId}/documents/from-uploads`, body),
 
   /** GET /loans/{id}/documents/{docId}/download */
   downloadDocument: (applicationId: string, documentId: string): Promise<Blob> =>

@@ -1,4 +1,4 @@
-import { post, readList, readOne } from './http';
+import { del, post, readItems, readList, readOne } from './http';
 import { MOCK_MANDI_PRICES } from './mocks';
 import type { MandiPrice } from '../../types';
 
@@ -31,4 +31,15 @@ export const mandi = {
   /** POST /mandi/smart-select */
   smartSelect: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/mandi/smart-select', payload),
+
+  /** GET /mandi/favorites — saved markets ({items: [...]} envelope; typed shape in follows.ts). */
+  favoritesList: (): Promise<unknown[]> => readItems<unknown>('/mandi/favorites'),
+
+  /** POST /mandi/favorites — body {mandiId}; 404 for unknown mandi. */
+  addFavorite: (mandiId: string): Promise<unknown> =>
+    post<unknown>('/mandi/favorites', { mandiId }),
+
+  /** DELETE /mandi/favorites/{mandiId} — idempotent remove. */
+  removeFavorite: (mandiId: string): Promise<{ status: string }> =>
+    del<{ status: string }>(`/mandi/favorites/${encodeURIComponent(mandiId)}`),
 };

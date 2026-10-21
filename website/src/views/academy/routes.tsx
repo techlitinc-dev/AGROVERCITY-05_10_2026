@@ -2,6 +2,8 @@ import React, { lazy } from 'react';
 import { Route, Navigate } from 'react-router-dom';
 
 const CourseCatalogView = lazy(() => import('./CourseCatalogView').then((m) => ({ default: m.CourseCatalogView })));
+const MyLearningView = lazy(() => import('./MyLearningView').then((m) => ({ default: m.MyLearningView })));
+const InstructorsView = lazy(() => import('./InstructorsView').then((m) => ({ default: m.InstructorsView })));
 const InstructorConsoleHome = lazy(() =>
   import('./InstructorConsoleHome').then((m) => ({ default: m.InstructorConsoleHome })),
 );
@@ -21,6 +23,9 @@ export const AcademyRouteElements = () => (
   <>
     {/* Student-facing catalog */}
     <Route path="/academy" element={<CourseCatalogView />} />
+    {/* Student learner surface */}
+    <Route path="/academy/my-learning" element={<MyLearningView />} />
+    <Route path="/academy/instructors" element={<InstructorsView />} />
     {/* Instructor console */}
     <Route path="/instructor" element={<Navigate to="/instructor/home" replace />} />
     <Route path="/instructor/home" element={<InstructorConsoleHome />} />

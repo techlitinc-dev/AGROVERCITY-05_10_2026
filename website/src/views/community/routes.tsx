@@ -9,6 +9,7 @@ const WomenGruhUdyogView = lazy(() => import('./WomenGruhUdyogView').then((m) =>
 const ColdStorageView = lazy(() => import('./ColdStorageView').then((m) => ({ default: m.ColdStorageView })));
 const FpoHubView = lazy(() => import('./FpoHubView').then((m) => ({ default: m.FpoHubView })));
 const TreePlantationView = lazy(() => import('./TreePlantationView').then((m) => ({ default: m.TreePlantationView })));
+const CarbonFootprintView = lazy(() => import('./CarbonFootprintView').then((m) => ({ default: m.CarbonFootprintView })));
 
 /** 12. Community, Verticals & AI Tools */
 export const CommunityRouteElements = () => (
@@ -21,6 +22,7 @@ export const CommunityRouteElements = () => (
     <Route path="/community/cold" element={<ColdStorageView />} />
     <Route path="/community/fpo" element={<FpoHubView />} />
     <Route path="/community/trees" element={<TreePlantationView />} />
+    <Route path="/community/carbon" element={<CarbonFootprintView />} />
 
     {/* Dedicated Persona Aliases */}
     <Route path="/fpoManager" element={<FpoHubView />} />

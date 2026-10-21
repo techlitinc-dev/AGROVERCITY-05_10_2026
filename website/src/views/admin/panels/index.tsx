@@ -36,6 +36,9 @@ const TreesPanel = lazy(() => import('./TreesPanel').then((m) => ({ default: m.T
 const EconomyPanel = lazy(() => import('./EconomyPanel').then((m) => ({ default: m.EconomyPanel })));
 const ApprovalsInboxPanel = lazy(() => import('./ApprovalsInbox').then((m) => ({ default: m.ApprovalsInboxPanel })));
 const AuditViewerPanel = lazy(() => import('./AuditViewer').then((m) => ({ default: m.AuditViewerPanel })));
+const MasterDataPanel = lazy(() => import('./MasterDataPanel').then((m) => ({ default: m.MasterDataPanel })));
+const AdsPanel = lazy(() => import('./AdsPanel').then((m) => ({ default: m.AdsPanel })));
+const ReportsPanel = lazy(() => import('./ReportsPanel').then((m) => ({ default: m.ReportsPanel })));
 
 const SOP_PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
   'SOP-01': SecurityPanel,
@@ -70,6 +73,9 @@ const SOP_PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
 const EXTRA_PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
   approvals: ApprovalsInboxPanel,
   audit: AuditViewerPanel,
+  'master-data': MasterDataPanel,
+  ads: AdsPanel,
+  reports: ReportsPanel,
 };
 
 const PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
@@ -131,6 +137,9 @@ export const CONSOLE_NAV: ConsoleNavItem[] = [
   })),
   { id: 'approvals', label: 'A1. Approvals Inbox (Maker-Checker)', group: 'desk' },
   { id: 'audit', label: 'A2. Audit Trail Viewer', group: 'desk' },
+  { id: 'master-data', label: 'A3. Master Data Manager', group: 'desk' },
+  { id: 'ads', label: 'A4. Ads & Campaign Oversight', group: 'desk' },
+  { id: 'reports', label: 'A5. Reports & Exports', group: 'desk' },
 ];
 
 const PanelFallback: React.FC = () => (

@@ -238,15 +238,6 @@ async def suspend_buyer(
     return await _buyer_decide(buyer_id, "suspended", ctx)
 
 
-@router.get("/transport/vehicles")
-async def list_vehicles(
-    status: str = Query("pending"),
-    user: dict = Depends(require_admin_role("superadmin", "operations_lead")),
-):
-    filters = [("status", "==", status)] if status and status != "all" else None
-    return {"data": _sorted(await query("vehicles", filters, limit=1000))}
-
-
 @router.post("/transport/vehicles/{vehicle_id}/verify")
 async def verify_vehicle(
     vehicle_id: str,
@@ -256,10 +247,11 @@ async def verify_vehicle(
     doc = await get_doc("vehicles", vehicle_id)
     if doc is None:
         _err(404, "NOT_FOUND", "vehicle not found")
-    previous = {"status": doc.get("status")}
+    previous = {"docStatus": doc.get("docStatus"), "status": doc.get("status")}
+    doc["docStatus"] = "verified"
     doc["status"] = "verified"
     await set_doc("vehicles", vehicle_id, doc)
-    await log_admin_action(ctx["admin"], "transport", "vehicle.verified", vehicle_id, previous, {"status": "verified"}, ctx["reason"], ctx["ip"])
+    await log_admin_action(ctx["admin"], "transport", "vehicle.verified", vehicle_id, previous, {"docStatus": "verified"}, ctx["reason"], ctx["ip"])
     return {"success": True, "id": vehicle_id, "status": "verified"}
 
 

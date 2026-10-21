@@ -13,9 +13,22 @@ from app.core.db import get_doc, query, set_doc
 # (persona, tier, priceRupeesPerMonth, limits)
 TIER_MATRIX = [
     ("farmer", "free", 0, {}),
+    # First-month promo: ₹9 one-time trial for the farmer SaaS starter pack
+    # (redeem-once is a future billing concern; the plan row itself is priced).
+    ("farmer", "first_month", 9, {}),
+    # WomenHub SHG persona: core savings-group loop is free; ₹9 first-month
+    # promo (same shape as the farmer's), then ₹99/mo or ₹999/yr.
+    ("womenShg", "free", 0, {}),
+    ("womenShg", "first_month", 9, {}),
+    ("womenShg", "monthly", 99, {}),
+    ("womenShg", "yearly", 999, {}),
     ("farmLandlord", "free", 0, {"plots": 1, "activeLeases": 1, "listings": 5}),
     ("farmLandlord", "pro", 299, {"listings": 100}),
     ("transport", "free", 0, {"vehicles": 1}),
+    # Spec pricing: Transporter Starter ₹99/month (2 vehicles) and
+    # Starter Annual ₹999/year (same allowance, billed yearly).
+    ("transport", "starter", 99, {"vehicles": 2}),
+    ("transport", "starter_annual", 999, {"vehicles": 2}),
     ("transport", "pro", 499, {"vehicles": 5}),
     # robust.md §6.3: unlimited fleet, API dispatch, dedicated support (price
     # set per platform convention — between Pro ₹499 and directBuyer Enterprise).
@@ -47,6 +60,12 @@ TIER_MATRIX = [
     ("directBuyer", "pro", 4999, {"contracts_active": 5, "orgMembers": 0}),
     ("directBuyer", "enterprise", 24999, {}),
     ("emarketCustomer", "free", 0, {}),
+    # SR 1/SR 23: e-market customer premium ladder (same shape as the womenShg
+    # promo): ₹9 first-month intro, then ₹99/mo or ₹999/yr. The free row stays
+    # paywall-free; paid tiers add delivery/member perks via TIER_FEATURES.
+    ("emarketCustomer", "first_month_intro", 9, {}),
+    ("emarketCustomer", "premium_monthly", 99, {"free_delivery_above": 499}),
+    ("emarketCustomer", "premium_yearly", 999, {"free_delivery_above": 499}),
     # WS-03 step 7 (task 3.35): bulk/institutional e-market buyers — one
     # consolidated GST invoice per period + credit_terms ledger (C9). Paid plan
     # registered through the normal matrix (see the vet_free note above).
@@ -128,19 +147,48 @@ TIER_FEATURES = {
     "bankManager_enterprise": ["partnerBankSeats", "originationFee", "apiAccess"],
     "vet_pro": ["vetCampaigns", "vetScheduleEditor"],
     "emarket_business": ["consolidated_gst_invoice", "credit_terms"],
+    "emarketCustomer_first_month_intro": ["free_delivery_above", "member_prices"],
+    "emarketCustomer_premium_monthly": ["free_delivery_above", "priority_slots", "member_prices"],
+    "emarketCustomer_premium_yearly": [
+        "free_delivery_above",
+        "priority_slots",
+        "member_prices",
+        "priority_support",
+    ],
+}
+
+
+PLAN_INTERVALS = {
+    # yearly billing intervals; every plan without an entry bills monthly
+    "transport_starter_annual": "year",
+    "womenShg_yearly": "year",
+    "emarketCustomer_premium_yearly": "year",
+}
+PLAN_PROMOS = {
+    # one-time first-month trials (flag only; redemption tracking is billing-v2)
+    "farmer_first_month": True,
+    "womenShg_first_month": True,
+    "emarketCustomer_first_month_intro": True,
 }
 
 
 def plan_doc(persona: str, tier: str, rupees: int, limits: dict) -> dict:
-    return {
-        "planId": f"{persona}_{tier}",
+    plan_id = f"{persona}_{tier}"
+    interval = PLAN_INTERVALS.get(plan_id, "month")
+    doc = {
+        "planId": plan_id,
         "persona": persona,
         "tier": tier,
         "priceMonthlyPaisa": rupees * 100,
+        "interval": interval,
+        "priceRupeesPerYear": rupees * 100 if interval == "year" else rupees * 100 * 12,
         "limits": limits,
         "commission": COMMISSIONS.get(persona),
         "features": TIER_FEATURES.get(f"{persona}_{tier}", []),
     }
+    if plan_id in PLAN_PROMOS:
+        doc["promo"] = True
+    return doc
 
 
 PLANS = [plan_doc(*row) for row in TIER_MATRIX]

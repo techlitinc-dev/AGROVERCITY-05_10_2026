@@ -242,13 +242,13 @@ export const WaterClimateView: React.FC = () => {
                     <div>
                       <span className="text-[10px] uppercase font-bold text-emerald-700 block">Est. System Cost</span>
                       <span className="font-black text-sm">
-                        ₹{asNum(calculatorResult.estimatedCost ?? calculatorResult.systemCost, 0).toLocaleString('en-IN')}
+                        ₹{asNum(calculatorResult.totalCost ?? calculatorResult.estimatedCost ?? calculatorResult.systemCost, 0).toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-emerald-700 block">Govt Subsidy</span>
+                      <span className="text-[10px] uppercase font-bold text-emerald-700 block">Govt Subsidy (55%)</span>
                       <span className="font-black text-sm">
-                        ₹{asNum(calculatorResult.subsidy ?? calculatorResult.subsidyAmount, 0).toLocaleString('en-IN')}
+                        ₹{asNum(calculatorResult.subsidyAmount ?? calculatorResult.subsidy, 0).toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div className="col-span-2">

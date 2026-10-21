@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Coins, Gift, Flag, ScrollText, Settings2, Trash2 } from 'lucide-react';
+import { Coins, Gift, Flag, ScrollText, Settings2, Trash2, Handshake } from 'lucide-react';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { admin } from '../../../lib/api';
 import {
@@ -11,6 +11,7 @@ import {
   Field,
   TextInput,
   Select,
+  Banner,
   JsonConfigCard,
   idOf,
   str,
@@ -24,7 +25,8 @@ import {
 /**
  * SOP-22 — Gamification & Referral Economy.
  * Coin circulation, ledger with manual adjustment (MPIN step-up), rewards,
- * referral fraud screens and coins configuration.
+ * referral fraud screens, coins configuration and the referral program
+ * economics config.
  */
 export const EconomyPanel: React.FC = () => {
   const [tab, setTab] = useState('circulation');
@@ -40,6 +42,7 @@ export const EconomyPanel: React.FC = () => {
           { id: 'rewards', label: 'Rewards' },
           { id: 'fraud', label: 'Referral fraud' },
           { id: 'config', label: 'Coins config' },
+          { id: 'referrals', label: 'Referral config' },
         ]}
       />
       {tab === 'circulation' && <CirculationCard />}
@@ -56,6 +59,7 @@ export const EconomyPanel: React.FC = () => {
           save={(payload, reason) => admin.platform.updateCoinConfig(payload, reason)}
         />
       )}
+      {tab === 'referrals' && <ReferralConfigCard />}
     </>
   );
 };
@@ -351,5 +355,112 @@ const FraudCard: React.FC = () => {
       </PanelShell>
       {modal}
     </>
+  );
+};
+
+const ReferralConfigCard: React.FC = () => {
+  const { request, modal } = useReasonModal();
+  const cfgRes = useAsync(() => admin.economy.referralConfig().catch(() => null), []);
+  const cfg = asRow(cfgRes.data);
+
+  const [referrer, setReferrer] = useState('');
+  const [referee, setReferee] = useState('');
+  const [maxPerMonth, setMaxPerMonth] = useState('');
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [minKycTier, setMinKycTier] = useState('');
+  const dirty = referrer !== '' || referee !== '' || maxPerMonth !== '' || enabled !== null || minKycTier !== '';
+
+  const save = async (reason: string) => {
+    await admin.economy.updateReferralConfig(
+      {
+        ...(referrer !== '' ? { referrerRewardCoins: Number(referrer) } : {}),
+        ...(referee !== '' ? { refereeRewardCoins: Number(referee) } : {}),
+        ...(maxPerMonth !== '' ? { maxReferralsPerMonth: Number(maxPerMonth) } : {}),
+        ...(enabled !== null ? { enabled } : {}),
+        ...(minKycTier !== '' ? { minKycTier: Number(minKycTier) } : {}),
+      },
+      reason
+    );
+    setReferrer('');
+    setReferee('');
+    setMaxPerMonth('');
+    setEnabled(null);
+    setMinKycTier('');
+    cfgRes.reload();
+  };
+
+  return (
+    <PanelShell
+      title="SOP-22: Referral Program Config"
+      subtitle="Reward coins, monthly caps and the KYC gate applied to every referral attribution (GET/PUT /admin/platform-config/referrals)."
+      icon={Handshake}
+      loading={cfgRes.loading}
+      onRefresh={cfgRes.reload}
+      actions={
+        dirty ? (
+          <div className="flex gap-2">
+            <Btn
+              onClick={() => {
+                setReferrer('');
+                setReferee('');
+                setMaxPerMonth('');
+                setEnabled(null);
+                setMinKycTier('');
+              }}
+            >
+              Cancel
+            </Btn>
+            <Btn
+              tone="primary"
+              onClick={() =>
+                request({
+                  title: 'Update referral program config',
+                  defaultReason: 'Referral economics tuning from SOP-22 desk',
+                  confirmLabel: 'Save referral config',
+                  action: save,
+                })
+              }
+            >
+              Save (audited)
+            </Btn>
+          </div>
+        ) : undefined
+      }
+    >
+      {cfgRes.error && <Banner kind="error">{cfgRes.error}</Banner>}
+      {cfg && (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label={`Referrer reward (coins) — current ${num(cfg, 'referrerRewardCoins') ?? '—'}`} className="w-52">
+              <TextInput type="number" inputMode="numeric" value={referrer} onChange={setReferrer} placeholder={String(num(cfg, 'referrerRewardCoins') ?? 100)} />
+            </Field>
+            <Field label={`Referee reward (coins) — current ${num(cfg, 'refereeRewardCoins') ?? '—'}`} className="w-52">
+              <TextInput type="number" inputMode="numeric" value={referee} onChange={setReferee} placeholder={String(num(cfg, 'refereeRewardCoins') ?? 50)} />
+            </Field>
+            <Field label={`Max referrals / month — current ${num(cfg, 'maxReferralsPerMonth') ?? '—'}`} className="w-52">
+              <TextInput type="number" inputMode="numeric" value={maxPerMonth} onChange={setMaxPerMonth} placeholder={String(num(cfg, 'maxReferralsPerMonth') ?? 20)} />
+            </Field>
+            <Field label={`Enabled — currently ${String(cfg.enabled ?? true)}`} className="w-44">
+              <Select
+                value={enabled === null ? '' : String(enabled)}
+                onChange={(v) => setEnabled(v === '' ? null : v === 'true')}
+                options={[
+                  { value: '', label: 'Keep current' },
+                  { value: 'true', label: 'Enabled' },
+                  { value: 'false', label: 'Disabled' },
+                ]}
+              />
+            </Field>
+            <Field label={`Min KYC tier — current ${num(cfg, 'minKycTier') ?? '—'}`} className="w-44">
+              <TextInput type="number" inputMode="numeric" value={minKycTier} onChange={setMinKycTier} placeholder={String(num(cfg, 'minKycTier') ?? 0)} />
+            </Field>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Last updated {str(cfg, 'updatedAt')} by {str(cfg, 'updatedBy')}. Changes apply to new attributions only —
+            already-credited coins are never clawed back automatically.
+          </p>
+        </>
+      )}
+    </PanelShell>
   );
 };

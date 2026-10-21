@@ -1,4 +1,4 @@
-import { del, post, put, readList, readOne } from './http';
+import { del, patch, post, put, readItems, readList, readOne } from './http';
 
 /**
  * Admin namespace — SOP-01…27 grouped admin calls.
@@ -75,6 +75,9 @@ export const admin = {
     /** POST /admin/kyc/{docId}/reject */
     reject: (docId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
       post<unknown>(`/admin/kyc/${docId}/reject`, payload, audit(reason)),
+    /** POST /admin/kyc/{docId}/request-more — doc moves to resubmission_requested */
+    requestMore: (docId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/kyc/${docId}/request-more`, payload, audit(reason)),
   },
 
   // ===== SOP-04 rates & mandi ops =====
@@ -113,6 +116,9 @@ export const admin = {
     /** PUT /admin/lots/{lotId}/status */
     setLotStatus: (lotId: string, status: string, reason?: Reason): Promise<unknown> =>
       put<unknown>(`/admin/lots/${lotId}/status`, { status }, audit(reason)),
+    /** POST /admin/market/lots/{lotId}/moderate — {action: approve|reject|takedown, reason?} */
+    moderateLot: (lotId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/market/lots/${lotId}/moderate`, payload, audit(reason)),
     /** GET /admin/orders */
     orders: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/orders', { params }),
@@ -134,6 +140,20 @@ export const admin = {
     /** POST /admin/marketplace/products/{id}/certificates */
     addProductCertificate: (productId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
       post<unknown>(`/admin/marketplace/products/${productId}/certificates`, payload, audit(reason)),
+    /** GET /admin/sellers — seller persona registry with product/order/revenue rollups */
+    sellers: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/sellers', { params }),
+    /** GET /admin/marketplace/categories */
+    categories: (): Promise<unknown[]> => readList<unknown[]>('/admin/marketplace/categories'),
+    /** POST /admin/marketplace/categories */
+    createCategory: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>('/admin/marketplace/categories', payload, audit(reason)),
+    /** PUT /admin/marketplace/categories/{categoryId} */
+    updateCategory: (categoryId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>(`/admin/marketplace/categories/${categoryId}`, payload, audit(reason)),
+    /** DELETE /admin/marketplace/categories/{categoryId} — soft delete (active=false) */
+    deleteCategory: (categoryId: string, reason?: Reason): Promise<unknown> =>
+      del<unknown>(`/admin/marketplace/categories/${categoryId}`, audit(reason)),
   },
 
   // ===== SOP-07 disputes desk =====
@@ -156,9 +176,15 @@ export const admin = {
     /** GET /admin/transport/bookings */
     bookings: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/transport/bookings', { params }),
+    /** GET /admin/transport/bookings/{bookingId} — full trip detail: offers, expenses, waypointsLog, pod photos */
+    booking: (bookingId: string): Promise<unknown> =>
+      readOne<unknown>(`/admin/transport/bookings/${bookingId}`),
     /** PUT /admin/transport/bookings/{id}/status */
     setBookingStatus: (bookingId: string, status: string, reason?: Reason): Promise<unknown> =>
       put<unknown>(`/admin/transport/bookings/${bookingId}/status`, { status }, audit(reason)),
+    /** GET /admin/transport/drivers */
+    drivers: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/transport/drivers', { params }),
     /** GET /admin/transport/vehicles */
     vehicles: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/transport/vehicles', { params }),
@@ -173,6 +199,26 @@ export const admin = {
     /** PUT /admin/transport/pricing-rules */
     updatePricingRules: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
       put<unknown>('/admin/transport/pricing-rules', payload, audit(reason)),
+    /** GET /admin/platform-config/grace-window */
+    graceWindow: (): Promise<unknown> => readOne<unknown>('/admin/platform-config/grace-window'),
+    /** PUT /admin/platform-config/grace-window */
+    updateGraceWindow: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/platform-config/grace-window', payload, audit(reason)),
+    /** GET /admin/exceptions/pickup — bookings stuck past the pickup grace window */
+    pickupExceptions: (): Promise<unknown[]> => readList<unknown[]>('/admin/exceptions/pickup'),
+  },
+
+  // ===== pickup agent registry (SOP-08 dispatch desk) =====
+  pickupAgents: {
+    /** GET /admin/pickup-agents */
+    list: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/pickup-agents', { params }),
+    /** POST /admin/pickup-agents */
+    create: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>('/admin/pickup-agents', payload, audit(reason)),
+    /** PATCH /admin/pickup-agents/{agentId} */
+    update: (agentId: string, updates: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      patch<unknown>(`/admin/pickup-agents/${agentId}`, updates, audit(reason)),
   },
 
   // ===== SOP-09 equipment ops =====
@@ -243,6 +289,11 @@ export const admin = {
     /** GET /admin/land-records/audit-log */
     landRecordsAuditLog: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/land-records/audit-log', { params }),
+    /** GET /admin/land-records/config — apiKey is write-only; reads return apiKeyMasked */
+    landRecordsConfig: (): Promise<unknown> => readOne<unknown>('/admin/land-records/config'),
+    /** PUT /admin/land-records/config */
+    updateLandRecordsConfig: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/land-records/config', payload, audit(reason)),
     /** GET /admin/water/schedules */
     waterSchedules: (): Promise<unknown[]> => readList<unknown[]>('/admin/water/schedules'),
     /** PUT /admin/water/schedules/{id} */
@@ -317,6 +368,17 @@ export const admin = {
     /** GET /admin/reports/financial */
     financialReports: (params?: Record<string, unknown>): Promise<unknown> =>
       readOne<unknown>('/admin/reports/financial', { params }),
+    /** GET /admin/subscriptions — every user subscription joined with plan snapshot */
+    subscriptions: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/subscriptions', { params }),
+    /** GET /admin/escrow/holdings — in-escrow money with platform totals */
+    escrowHoldings: (): Promise<unknown> => readOne<unknown>('/admin/escrow/holdings'),
+    /** GET /admin/reports/transactions?from&to&format — bookings + orders + settlements */
+    transactionsReport: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/reports/transactions', { params }),
+    /** GET /admin/reports/crops?format — crop-wise listed volumes & values */
+    cropsReport: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/reports/crops', { params }),
     /** GET /admin/settlements */
     settlements: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/settlements', { params }),
@@ -429,6 +491,11 @@ export const admin = {
     /** GET /admin/cold-storage/bookings */
     bookings: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/cold-storage/bookings', { params }),
+    /** GET /admin/platform-config/carbon — carbon-credit economics (SOP-23 desk) */
+    carbonConfig: (): Promise<unknown> => readOne<unknown>('/admin/platform-config/carbon'),
+    /** PUT /admin/platform-config/carbon */
+    updateCarbonConfig: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/platform-config/carbon', payload, audit(reason)),
   },
 
   // ===== SOP-21/22 trees + coins economy =====
@@ -464,6 +531,11 @@ export const admin = {
     referralFraud: (): Promise<unknown[]> => readList<unknown[]>('/admin/gamification/referral-fraud'),
     /** GET /admin/referrals/audit */
     referralsAudit: (): Promise<unknown[]> => readList<unknown[]>('/admin/referrals/audit'),
+    /** GET /admin/platform-config/referrals — reward coins, monthly caps, KYC gate */
+    referralConfig: (): Promise<unknown> => readOne<unknown>('/admin/platform-config/referrals'),
+    /** PUT /admin/platform-config/referrals */
+    updateReferralConfig: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/platform-config/referrals', payload, audit(reason)),
     /** DELETE /admin/ratings/{ratingId} */
     deleteRating: (ratingId: string, reason?: Reason): Promise<unknown> =>
       del<unknown>(`/admin/ratings/${ratingId}`, audit(reason)),
@@ -496,6 +568,20 @@ export const admin = {
     enterprises: (): Promise<unknown[]> => readList<unknown[]>('/admin/women/enterprises'),
     /** GET /admin/women/impact-report */
     impactReport: (): Promise<unknown> => readOne<unknown>('/admin/women/impact-report'),
+    /** GET /admin/women/loans */
+    loans: (): Promise<unknown[]> => readItems<unknown[]>('/admin/women/loans'),
+    /** GET /admin/women/deposit-compliance?month=YYYY-MM */
+    depositCompliance: (month: string): Promise<unknown[]> =>
+      readItems<unknown[]>('/admin/women/deposit-compliance', { params: { month } }),
+  },
+
+  // ===== SOP-24 women billing / subscription kill-switch =====
+  billing: {
+    /** GET /admin/billing/config */
+    config: (): Promise<unknown> => readOne<unknown>('/admin/billing/config'),
+    /** PUT /admin/billing/config */
+    updateConfig: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/billing/config', payload, audit(reason)),
   },
 
   // ===== SOP-25 settlements desk =====
@@ -680,6 +766,16 @@ export const admin = {
       post<unknown>(`/admin/chatbot/handoffs/${ticketId}/assign`, payload, audit(reason)),
     /** GET /admin/chatbot/satisfaction */
     satisfaction: (): Promise<unknown> => readOne<unknown>('/admin/chatbot/satisfaction'),
+    /** GET /admin/chatbot/intents — curated intent/response registry */
+    intents: (): Promise<unknown> => readOne<unknown>('/admin/chatbot/intents'),
+    /** PUT /admin/chatbot/intents — replaces the whole intent list */
+    updateIntents: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/chatbot/intents', payload, audit(reason)),
+    /** GET /admin/chatbot/fallback-config — fallback rotation + handoff threshold */
+    fallbackConfig: (): Promise<unknown> => readOne<unknown>('/admin/chatbot/fallback-config'),
+    /** PUT /admin/chatbot/fallback-config */
+    updateFallbackConfig: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/chatbot/fallback-config', payload, audit(reason)),
     /** GET /admin/experts */
     experts: (): Promise<unknown[]> => readList<unknown[]>('/admin/experts'),
     /** PUT /admin/experts/{id} */
@@ -711,5 +807,64 @@ export const admin = {
     /** GET /admin/procurements */
     procurements: (params?: Record<string, unknown>): Promise<unknown[]> =>
       readList<unknown[]>('/admin/procurements', { params }),
+  },
+
+  // ===== master data manager (mandis/crops/varieties/grades/categories/states/units/vehicle-types) =====
+  masterData: {
+    /** GET /admin/master/{collection} — merged static + Firestore override rows */
+    list: (collection: string, params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>(`/admin/master/${collection}`, { params }),
+    /** POST /admin/master/{collection} — create or override one entry */
+    create: (collection: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/master/${collection}`, payload, audit(reason)),
+    /** PUT /admin/master/{collection}/{code} — partial update */
+    update: (collection: string, code: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>(`/admin/master/${collection}/${encodeURIComponent(code)}`, payload, audit(reason)),
+    /** DELETE /admin/master/{collection}/{code} — soft delete (active=false) */
+    remove: (collection: string, code: string, reason?: Reason): Promise<unknown> =>
+      del<unknown>(`/admin/master/${collection}/${encodeURIComponent(code)}`, audit(reason)),
+    /** POST /admin/master/{collection}/import — bulk upsert (max 500 rows) */
+    importRows: (collection: string, rows: Record<string, unknown>[], reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/master/${collection}/import`, { rows }, audit(reason)),
+  },
+
+  // ===== ads & campaign oversight (SOP-05/06 trade router) =====
+  ads: {
+    /** GET /admin/ads — all campaigns with advertiser name/persona resolved */
+    campaigns: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/ads', { params }),
+    /** POST /admin/ads/{adId}/approve */
+    approve: (adId: string, reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/ads/${adId}/approve`, undefined, audit(reason)),
+    /** POST /admin/ads/{adId}/reject — body: { reason } (min 3 chars) */
+    reject: (adId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/ads/${adId}/reject`, payload, audit(reason)),
+    /** GET /admin/ads/{adId}/analytics — impressions/clicks/CTR/spend vs budget */
+    analytics: (adId: string): Promise<unknown> =>
+      readOne<unknown>(`/admin/ads/${adId}/analytics`),
+    /** GET /admin/platform-config/ads-pricing */
+    pricing: (): Promise<unknown> => readOne<unknown>('/admin/platform-config/ads-pricing'),
+    /** PUT /admin/platform-config/ads-pricing */
+    updatePricing: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>('/admin/platform-config/ads-pricing', payload, audit(reason)),
+  },
+
+  // ===== crop advisory CMS (SOP-11) =====
+  advisory: {
+    /** GET /admin/advisory/articles — status: draft | published | all */
+    articles: (params?: Record<string, unknown>): Promise<unknown[]> =>
+      readList<unknown[]>('/admin/advisory/articles', { params }),
+    /** POST /admin/advisory/articles */
+    createArticle: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      post<unknown>('/admin/advisory/articles', payload, audit(reason)),
+    /** PUT /admin/advisory/articles/{articleId} */
+    updateArticle: (articleId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
+      put<unknown>(`/admin/advisory/articles/${articleId}`, payload, audit(reason)),
+    /** DELETE /admin/advisory/articles/{articleId} — soft delete (active=false, back to draft) */
+    deleteArticle: (articleId: string, reason?: Reason): Promise<unknown> =>
+      del<unknown>(`/admin/advisory/articles/${articleId}`, audit(reason)),
+    /** POST /admin/advisory/articles/{articleId}/push — notify all matching farmers */
+    pushArticle: (articleId: string, reason?: Reason): Promise<unknown> =>
+      post<unknown>(`/admin/advisory/articles/${articleId}/push`, undefined, audit(reason)),
   },
 };

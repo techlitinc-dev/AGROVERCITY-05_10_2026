@@ -193,6 +193,9 @@ async def test_blacklist_and_report_user(client, user_store):
 async def test_farmer_risk_and_duplicate_detection(client, user_store):
     token = await _owner_token(client)
     farmer = second_farmer_token(user_store)  # uid-2, phone +919876543210
+    # Fresh account so the new_account risk signal always fires (helper seeds a
+    # fixed createdAt that ages out of the 30-day window over time).
+    user_store["users/uid-2"]["createdAt"] = NOW.isoformat()
     # duplicate account sharing the same phone
     user_store["users/uid-2"]["phone"] = "+919876543210"
     user_store["users/uid-f3"] = {

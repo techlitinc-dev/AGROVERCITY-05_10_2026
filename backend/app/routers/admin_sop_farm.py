@@ -18,6 +18,7 @@ an immutable `audit_logs` record via services.audit.
 """
 import uuid
 from datetime import date, datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -26,6 +27,7 @@ from app.core.db import get_doc, query, set_doc
 from app.services import notifications, reports
 from app.services.admin_auth import admin_mutation_context, current_admin_user
 from app.services.audit import log_admin_action
+from app.services.notify import notify_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -583,3 +585,310 @@ async def put_pnl_benchmark(
         ctx["ip"],
     )
     return {"crop": crop, "benchmark": entry}
+
+
+# ===========================================================================
+# Platform config — carbon credits & 7/12 land-records integration (P2)
+# ===========================================================================
+
+_CARBON_CONFIG_DOC = "carbon_config"
+_CARBON_DEFAULTS = {
+    "kgCo2PerTreePerYear": 21.0,
+    "creditPricePaisePerKg": 80,
+    "ecoCoinsPerCredit": 10,
+    "payoutThresholdCredits": 10,
+}
+
+_LAND_RECORDS_CONFIG_DOC = "land_records_config"
+
+
+class CarbonConfigIn(BaseModel):
+    kgCo2PerTreePerYear: Optional[float] = Field(default=None, gt=0)
+    creditPricePaisePerKg: Optional[int] = Field(default=None, gt=0)
+    ecoCoinsPerCredit: Optional[int] = Field(default=None, ge=0)
+    payoutThresholdCredits: Optional[int] = Field(default=None, ge=1)
+
+
+@router.get("/platform-config/carbon")
+async def get_carbon_config(user: dict = Depends(current_admin_user)):
+    """Carbon-credit economics: per-tree CO2 sequestration, credit price,
+    EcoCoins conversion and the payout threshold."""
+    doc = await get_doc("platform_config", _CARBON_CONFIG_DOC)
+    merged = {**_CARBON_DEFAULTS, **{k: doc[k] for k in _CARBON_DEFAULTS if k in (doc or {})}}
+    return {**merged, "updatedAt": (doc or {}).get("updatedAt"), "updatedBy": (doc or {}).get("updatedBy")}
+
+
+@router.put("/platform-config/carbon")
+async def update_carbon_config(
+    body: CarbonConfigIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    existing = await get_doc("platform_config", _CARBON_CONFIG_DOC) or {}
+    new_cfg = {
+        **existing,
+        **body.model_dump(exclude_none=True),
+        "id": _CARBON_CONFIG_DOC,
+        "updatedAt": _now(),
+        "updatedBy": ctx["admin"].get("id") or ctx["admin"].get("uid"),
+    }
+    await set_doc("platform_config", _CARBON_CONFIG_DOC, new_cfg)
+    await log_admin_action(
+        ctx["admin"], "climate", "carbon.config.update", _CARBON_CONFIG_DOC,
+        existing, new_cfg, ctx["reason"], ctx["ip"],
+    )
+    return new_cfg
+
+
+class LandRecordsConfigIn(BaseModel):
+    provider: Optional[str] = Field(default=None, min_length=2, max_length=80)
+    apiUrl: Optional[str] = Field(default=None, min_length=4, max_length=500)
+    apiKey: Optional[str] = Field(default=None, description="write-only; reads return apiKeyMasked")
+    syncEnabled: Optional[bool] = None
+    syncCron: Optional[str] = Field(default=None, max_length=60)
+    timeoutMs: Optional[int] = Field(default=None, ge=100, le=60000)
+
+
+def _mask_api_key(api_key: str | None) -> str | None:
+    if not api_key:
+        return None
+    if len(api_key) <= 4:
+        return "****"
+    return "****" + api_key[-4:]
+
+
+@router.get("/land-records/config")
+async def get_land_records_config(user: dict = Depends(current_admin_user)):
+    """7/12 land-records integration config. The stored apiKey is never
+    returned — only `apiKeyMasked` (last 4)."""
+    doc = await get_doc("platform_config", _LAND_RECORDS_CONFIG_DOC) or {}
+    return {
+        "provider": doc.get("provider"),
+        "apiUrl": doc.get("apiUrl"),
+        "apiKeyMasked": _mask_api_key(doc.get("apiKey")),
+        "syncEnabled": bool(doc.get("syncEnabled")),
+        "syncCron": doc.get("syncCron"),
+        "timeoutMs": doc.get("timeoutMs"),
+        "updatedAt": doc.get("updatedAt"),
+        "updatedBy": doc.get("updatedBy"),
+    }
+
+
+@router.put("/land-records/config")
+async def update_land_records_config(
+    body: LandRecordsConfigIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Upsert the 7/12 integration config; a provided apiKey replaces the
+    stored one, an omitted apiKey keeps it."""
+    existing = await get_doc("platform_config", _LAND_RECORDS_CONFIG_DOC) or {}
+    new_cfg = {
+        **existing,
+        **{k: v for k, v in body.model_dump(exclude_none=True).items() if k != "apiKey"},
+        "id": _LAND_RECORDS_CONFIG_DOC,
+        "updatedAt": _now(),
+        "updatedBy": ctx["admin"].get("id") or ctx["admin"].get("uid"),
+    }
+    if body.apiKey:
+        new_cfg["apiKey"] = body.apiKey
+    await set_doc("platform_config", _LAND_RECORDS_CONFIG_DOC, new_cfg)
+    await log_admin_action(
+        ctx["admin"], "land-records", "config.update", _LAND_RECORDS_CONFIG_DOC,
+        {k: ("***" if k == "apiKey" else v) for k, v in existing.items()},
+        {k: ("***" if k == "apiKey" else v) for k, v in new_cfg.items()},
+        ctx["reason"], ctx["ip"],
+    )
+    return {
+        "provider": new_cfg.get("provider"),
+        "apiUrl": new_cfg.get("apiUrl"),
+        "apiKeyMasked": _mask_api_key(new_cfg.get("apiKey")),
+        "syncEnabled": bool(new_cfg.get("syncEnabled")),
+        "syncCron": new_cfg.get("syncCron"),
+        "timeoutMs": new_cfg.get("timeoutMs"),
+        "updatedAt": new_cfg.get("updatedAt"),
+        "updatedBy": new_cfg.get("updatedBy"),
+    }
+
+
+# ===========================================================================
+# Crop advisory CMS — articles with farmer push (P2)
+# ===========================================================================
+
+_ADVISORY_STATUSES = ("draft", "published")
+
+
+class AdvisoryArticleIn(BaseModel):
+    crop: str = Field(..., min_length=1, max_length=120)
+    region: Optional[str] = Field(default=None, max_length=120, description="state/district scope; null = all")
+    season: Optional[str] = Field(default=None, max_length=60)
+    title: str = Field(..., min_length=3, max_length=200)
+    body: str = Field(..., min_length=3)
+    status: str = Field(default="draft", description="draft | published")
+
+
+class AdvisoryArticleUpdateIn(BaseModel):
+    crop: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    region: Optional[str] = Field(default=None, max_length=120)
+    season: Optional[str] = Field(default=None, max_length=60)
+    title: Optional[str] = Field(default=None, min_length=3, max_length=200)
+    body: Optional[str] = Field(default=None, min_length=3)
+    status: Optional[str] = Field(default=None, description="draft | published")
+
+
+def _require_article_status(status: str) -> None:
+    if status not in _ADVISORY_STATUSES:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            f"status must be one of {', '.join(_ADVISORY_STATUSES)}",
+            {"status": "invalid status"},
+        )
+
+
+@router.post("/advisory/articles", status_code=201)
+async def create_advisory_article(
+    body: AdvisoryArticleIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Create a crop advisory article (draft or published) in `advisories`."""
+    _require_article_status(body.status)
+    article_id = f"adv_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "articleId": article_id,
+        "crop": body.crop,
+        "region": body.region,
+        "season": body.season,
+        "title": body.title,
+        "body": body.body,
+        "status": body.status,
+        "createdBy": ctx["admin"].get("id") or ctx["admin"].get("uid"),
+        "createdAt": _now(),
+        "updatedAt": _now(),
+    }
+    await set_doc("advisories", article_id, doc)
+    await log_admin_action(
+        ctx["admin"], "advisory", "article.create", article_id,
+        None, {"status": body.status, "crop": body.crop}, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "article": doc}
+
+
+@router.get("/advisory/articles")
+async def list_advisory_articles(
+    status: Optional[str] = Query(None, description="draft | published | all"),
+    crop: Optional[str] = Query(None),
+    user: dict = Depends(current_admin_user),
+):
+    """All advisory articles (admin sees drafts too)."""
+    docs = await query("advisories", None, limit=1000)
+    rows = []
+    for doc in docs:
+        doc_status = doc.get("status") or "draft"
+        if status and status != "all" and doc_status != status:
+            continue
+        if crop and crop.lower() not in (doc.get("crop") or "").lower():
+            continue
+        rows.append(doc)
+    rows.sort(key=lambda r: r.get("updatedAt") or "", reverse=True)
+    return {"data": rows, "total": len(rows)}
+
+
+async def _find_article(article_id: str) -> dict:
+    doc = await get_doc("advisories", article_id)
+    if doc is None:
+        _error(404, "ARTICLE_NOT_FOUND", "advisory article not found")
+    return doc
+
+
+@router.get("/advisory/articles/{article_id}")
+async def get_advisory_article(
+    article_id: str,
+    user: dict = Depends(current_admin_user),
+):
+    return {"article": await _find_article(article_id)}
+
+
+@router.put("/advisory/articles/{article_id}")
+async def update_advisory_article(
+    article_id: str,
+    body: AdvisoryArticleUpdateIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    doc = await _find_article(article_id)
+    updates = body.model_dump(exclude_none=True)
+    if "status" in updates:
+        _require_article_status(updates["status"])
+    previous = {k: doc.get(k) for k in updates}
+    doc.update(updates)
+    doc["updatedAt"] = _now()
+    doc["updatedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
+    await set_doc("advisories", article_id, doc)
+    await log_admin_action(
+        ctx["admin"], "advisory", "article.update", article_id,
+        previous, updates, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "article": doc}
+
+
+@router.delete("/advisory/articles/{article_id}")
+async def delete_advisory_article(
+    article_id: str,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    doc = await _find_article(article_id)
+    previous = {"status": doc.get("status")}
+    doc["status"] = "draft"
+    doc["active"] = False
+    doc["updatedAt"] = _now()
+    doc["updatedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
+    await set_doc("advisories", article_id, doc)
+    await log_admin_action(
+        ctx["admin"], "advisory", "article.delete", article_id,
+        previous, {"active": False}, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "articleId": article_id, "active": False}
+
+
+@router.post("/advisory/articles/{article_id}/push")
+async def push_advisory_article(
+    article_id: str,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Notify all farmers (region-filtered when the article sets `region`) of a
+    published article. One notification per farmer via services/notify."""
+    doc = await _find_article(article_id)
+    if doc.get("status") != "published":
+        _error(409, "ARTICLE_NOT_PUBLISHED", "only published articles can be pushed")
+
+    region = (doc.get("region") or "").strip().lower()
+    users_list = await query("users", None, limit=2000)
+    notified = 0
+    for user_doc in users_list:
+        profiles = user_doc.get("linkedProfiles") or []
+        if "farmer" not in profiles and user_doc.get("activeProfile") != "farmer" and user_doc.get("primaryProfile") != "farmer":
+            continue
+        if region:
+            user_region = " ".join(
+                str(user_doc.get(k) or "") for k in ("state", "district", "village")
+            ).strip().lower()
+            if region not in user_region:
+                continue
+        uid = user_doc.get("id")
+        if not uid:
+            continue
+        await notify_user(
+            uid,
+            type="advisory_article",
+            title=doc.get("title") or "New advisory",
+            body=f"{doc.get('crop', '')} — {doc.get('title', '')}",
+            deepLink=f"/dashboard/p/advisory/articles/{article_id}",
+        )
+        notified += 1
+
+    doc["lastPushedAt"] = _now()
+    doc["lastPushedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
+    await set_doc("advisories", article_id, doc)
+    await log_admin_action(
+        ctx["admin"], "advisory", "article.push", article_id,
+        None, {"notified": notified}, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "articleId": article_id, "notified": notified}

@@ -38,6 +38,10 @@ export const ProduceLotsView: React.FC = () => {
   const [newGrade, setNewGrade] = useState<'A' | 'B' | 'C' | 'Ungraded'>('A');
   const [newPrice, setNewPrice] = useState(4750);
   const [newLocation, setNewLocation] = useState('Pimpalgaon Baswant, Nashik');
+  const [newVillage, setNewVillage] = useState('Pimplas');
+  const [newHarvestDate, setNewHarvestDate] = useState('2026-10-25');
+  const [newPhotos, setNewPhotos] = useState('https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?auto=format&fit=crop&w=600&q=80');
+  const [submitForReviewCheck, setSubmitForReviewCheck] = useState(true);
 
   const reload = async () => {
     const [l, o] = await Promise.all([lots.list(), offers.mine()]);
@@ -86,6 +90,7 @@ export const ProduceLotsView: React.FC = () => {
     e.preventDefault();
     setError(null);
     try {
+      const photosArray = newPhotos ? [newPhotos.trim()] : [];
       if (editingLot) {
         const updated = await lots.update(editingLot.id, {
           crop: newCrop,
@@ -94,6 +99,9 @@ export const ProduceLotsView: React.FC = () => {
           grade: newGrade,
           expectedPricePerQuintal: newPrice,
           location: newLocation,
+          village: newVillage,
+          harvestDate: newHarvestDate,
+          photos: photosArray,
         });
         setLotsList((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
         setNotice(`Lot #${updated.id} updated.`);
@@ -105,14 +113,32 @@ export const ProduceLotsView: React.FC = () => {
           grade: newGrade,
           expectedPricePerQuintal: newPrice,
           location: newLocation,
+          village: newVillage,
+          harvestDate: newHarvestDate,
+          photos: photosArray,
+          submitForReview: submitForReviewCheck,
         });
         setLotsList((prev) => [created, ...prev]);
-        setNotice('Produce lot published for buyers.');
+        setNotice(submitForReviewCheck ? 'Produce lot submitted for admin moderation.' : 'Produce lot saved as draft.');
       }
       setCreateModalOpen(false);
       resetForm();
     } catch (err) {
       setError(apiErrorMessage(err));
+    }
+  };
+
+  const handleSubmitForReview = async (lotId: string) => {
+    setError(null);
+    setBusyId(lotId);
+    try {
+      const updated = await lots.submitForReview(lotId);
+      setLotsList((prev) => prev.map((l) => (l.id === lotId ? updated : l)));
+      setNotice(`Lot #${lotId} submitted for admin verification.`);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -281,10 +307,29 @@ export const ProduceLotsView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Moderation notes if present */}
+                {(lot as any).moderation && (
+                  <div className="mt-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 text-[10px] text-emerald-800 font-semibold flex items-center justify-between">
+                    <span>Moderation: {(lot as any).moderation.action}</span>
+                    <span className="text-emerald-700">{(lot as any).moderation.reason}</span>
+                  </div>
+                )}
+
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-600">
-                    {lot.offersCount} Buyer Quotes Received
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-600">
+                      {lot.offersCount} Buyer Quotes
+                    </span>
+                    {(lot.status === 'pending_review' || lot.status === 'rejected') && (
+                      <button
+                        onClick={() => handleSubmitForReview(lot.id)}
+                        disabled={busyId === lot.id}
+                        className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all disabled:opacity-50"
+                      >
+                        {lot.status === 'pending_review' ? 'In Review' : 'Submit Review'}
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-1">
                     <button
                       onClick={() => openEditModal(lot)}
@@ -521,6 +566,28 @@ export const ProduceLotsView: React.FC = () => {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Village / Taluka</label>
+              <input
+                type="text"
+                value={newVillage}
+                onChange={(e) => setNewVillage(e.target.value)}
+                placeholder="e.g. Khed, Niphad"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Harvest Date</label>
+              <input
+                type="date"
+                value={newHarvestDate}
+                onChange={(e) => setNewHarvestDate(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Pickup Location / Gate</label>
             <input
@@ -532,11 +599,37 @@ export const ProduceLotsView: React.FC = () => {
             />
           </div>
 
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Produce Sample Photo URL</label>
+            <input
+              type="text"
+              value={newPhotos}
+              onChange={(e) => setNewPhotos(e.target.value)}
+              placeholder="https://..."
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+            />
+          </div>
+
+          {!editingLot && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+              <input
+                type="checkbox"
+                id="submitReviewCheck"
+                checked={submitForReviewCheck}
+                onChange={(e) => setSubmitForReviewCheck(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 rounded"
+              />
+              <label htmlFor="submitReviewCheck" className="text-xs font-bold text-emerald-900 cursor-pointer">
+                Submit directly for APMC / Admin Moderation Review
+              </label>
+            </div>
+          )}
+
           <button
             type="submit"
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md transition-all mt-2"
           >
-            {editingLot ? 'Save Lot Changes' : 'Publish Lot for Buyers'}
+            {editingLot ? 'Save Lot Changes' : (submitForReviewCheck ? 'Submit for Review' : 'Save as Draft')}
           </button>
         </form>
       </ModalSheet>

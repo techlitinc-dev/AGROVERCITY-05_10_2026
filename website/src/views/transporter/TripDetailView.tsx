@@ -18,15 +18,46 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { transport, apiClient, apiErrorMessage } from '../../lib/api';
+import { transport, uploads, apiClient, apiErrorMessage, ApiError } from '../../lib/api';
+import type { BookingRoute } from '../../lib/api/transport';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { RouteMap } from '../../components/common/RouteMap';
 import { formatCurrency, formatWeight } from '../../lib/utils';
 import type { TransportBooking } from '../../types';
 import { asArr, asRec, downloadJson, firstNum, firstStr, fmtDate, str, type Rec } from './utils';
 
-/** Backend state machine (transport.py ALLOWED_TRANSITIONS). */
-const STATUS_FLOW: TransportBooking['status'][] = ['accepted', 'enRoute', 'delivered'];
+/**
+ * Backend state machine (transport.py ALLOWED_TRANSITIONS) — Flipkart-style
+ * granular chain. Intermediate steps are optional: accepted may skip straight
+ * to enRoute, and reachedDestination may skip unloading to delivered.
+ */
+const TRIP_STEPS: { status: TransportBooking['status']; label: string }[] = [
+  { status: 'accepted', label: 'Accepted' },
+  { status: 'arrivedPickup', label: 'Reached pickup' },
+  { status: 'loading', label: 'Loading' },
+  { status: 'enRoute', label: 'In transit' },
+  { status: 'reachedDestination', label: 'Reached destination' },
+  { status: 'unloading', label: 'Unloading' },
+  { status: 'delivered', label: 'Delivered' },
+];
+
+const ALLOWED_NEXT: Record<string, TransportBooking['status'][]> = {
+  accepted: ['arrivedPickup', 'enRoute'],
+  arrivedPickup: ['loading', 'enRoute'],
+  loading: ['enRoute'],
+  enRoute: ['reachedDestination', 'delivered'],
+  reachedDestination: ['unloading', 'delivered'],
+  unloading: ['delivered'],
+};
+
+const nextLabel = (status: string): string => TRIP_STEPS.find((s) => s.status === status)?.label ?? status;
+
+const formatDuration = (min: number): string => {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
 
 const EXPENSE_CATEGORIES = [
   'diesel',
@@ -50,17 +81,18 @@ export const TripDetailView: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [statusModal, setStatusModal] = useState(false);
-  const [newStatus, setNewStatus] = useState<string>('accepted');
   const [waitingPhase, setWaitingPhase] = useState<'pickup' | 'drop'>('pickup');
   const [wbModal, setWbModal] = useState(false);
   const [wbForm, setWbForm] = useState({ slipNo: '', weighbridgeName: 'धर्मकांटा', grossWeightKg: 0, tareWeightKg: 0, slipPhotoUrl: '', notes: '' });
   const [otpModal, setOtpModal] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [otpReceiver, setOtpReceiver] = useState('');
-  const [otpPhotos, setOtpPhotos] = useState('');
+  const [otpPhotos, setOtpPhotos] = useState<string[]>([]);
+  const [otpUploadBusy, setOtpUploadBusy] = useState(false);
   const [deliveredModal, setDeliveredModal] = useState(false);
-  const [podForm, setPodForm] = useState({ receiverName: '', receiverPhone: '', podPhotos: '', damageNotes: '' });
+  const [podForm, setPodForm] = useState({ receiverName: '', receiverPhone: '', damageNotes: '' });
+  const [podPhotos, setPodPhotos] = useState<string[]>([]);
+  const [podUploadBusy, setPodUploadBusy] = useState(false);
   const [locModal, setLocModal] = useState(false);
   const [locForm, setLocForm] = useState({ lat: 0, lng: 0 });
   const [expenseModal, setExpenseModal] = useState(false);
@@ -73,6 +105,9 @@ export const TripDetailView: React.FC = () => {
   const [breakdownForm, setBreakdownForm] = useState({ note: '', location: '', completedDistanceKm: 0 });
   const [biltyData, setBiltyData] = useState<Rec | null>(null);
   const [invoiceData, setInvoiceData] = useState<Rec | null>(null);
+  const [route, setRoute] = useState<BookingRoute | null>(null);
+  /** 'geo' = 422 GEO_REQUIRED (booking has no coordinates yet); 'error' = anything else. */
+  const [routeState, setRouteState] = useState<'loading' | 'ready' | 'geo' | 'error'>('loading');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -105,6 +140,27 @@ export const TripDetailView: React.FC = () => {
       .catch(() => setDisputes([]));
   }, [id]);
 
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    setRoute(null);
+    setRouteState('loading');
+    transport
+      .getBookingRoute(id)
+      .then((r) => {
+        if (!alive) return;
+        setRoute(r);
+        setRouteState('ready');
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setRouteState(e instanceof ApiError && (e.code === 'GEO_REQUIRED' || e.status === 422) ? 'geo' : 'error');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
   const flash = (msg: string) => {
     setNotice(msg);
     setTimeout(() => setNotice(null), 4000);
@@ -134,6 +190,37 @@ export const TripDetailView: React.FC = () => {
     }
   };
 
+  /** File → POST /uploads → append the returned URL to the photo list. */
+  const uploadPodPhoto = async (
+    file: File | undefined,
+    setUrls: React.Dispatch<React.SetStateAction<string[]>>,
+    setUploadBusy: (b: boolean) => void
+  ) => {
+    if (!file) return;
+    setUploadBusy(true);
+    setError(null);
+    try {
+      const uploaded = (await uploads.upload(file, { folder: 'pod', purpose: 'pod-photo' })) as {
+        url?: string;
+        fileUrl?: string;
+      };
+      const url = uploaded?.url ?? uploaded?.fileUrl ?? '';
+      if (url) {
+        setUrls((prev) => [...prev, url]);
+        flash('Photo uploaded.');
+      } else {
+        setError('Upload succeeded but no URL was returned.');
+      }
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setUploadBusy(false);
+    }
+  };
+
+  const currentIdx = booking ? TRIP_STEPS.findIndex((s) => s.status === booking.status) : -1;
+  const nextSteps = booking ? (ALLOWED_NEXT[booking.status] ?? []) : [];
+
   if (loading && !booking) {
     return <div className="p-10 text-center text-xs text-slate-400 bg-white rounded-3xl border border-slate-200">Loading trip…</div>;
   }
@@ -151,11 +238,13 @@ export const TripDetailView: React.FC = () => {
   const crop = booking.commodity || booking.cargoCrop || 'Cargo';
   const pickup = booking.pickup || booking.pickupAddress;
   const drop = booking.drop || booking.dropAddress;
+  const origin = booking.pickupGeo ?? booking.pickupCoords ?? null;
+  const destination = booking.dropGeo ?? booking.dropCoords ?? null;
   const fare = booking.fare ?? booking.estimatedFare ?? 0;
   const weight = booking.weightQuintals ?? booking.cargoWeightQuintal ?? 0;
   const wbNet = wbForm.grossWeightKg - wbForm.tareWeightKg;
   const podVerified = !!booking.podOtp?.verifiedAt;
-  const shareUrl = shareToken ? `${window.location.origin}/transport/shared/${shareToken}` : null;
+  const shareUrl = shareToken ? `${window.location.origin}/track/${shareToken}` : null;
 
   return (
     <div className="space-y-6">
@@ -215,6 +304,30 @@ export const TripDetailView: React.FC = () => {
         </div>
       </div>
 
+      {/* Route map — polyline + pickup/drop pins; degrades to a hint card when the
+          booking has no coordinates (422 GEO_REQUIRED) or no API key is set. */}
+      <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <Navigation className="w-4 h-4 text-emerald-600" /> Route
+          </h3>
+          {route && (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {Math.round(route.distanceKm)} km · ~{formatDuration(route.durationMin)}
+            </span>
+          )}
+        </div>
+        <RouteMap
+          origin={origin}
+          destination={destination}
+          polyline={route?.polyline ?? null}
+          bounds={route?.bounds ?? null}
+          distanceKm={route?.distanceKm ?? booking.distanceKm}
+          durationMin={route?.durationMin ?? null}
+          hint={routeState === 'geo' ? 'Route available once pickup/drop pins are set.' : null}
+        />
+      </div>
+
       {/* Waypoint timeline */}
       {booking.waypointsLog && booking.waypointsLog.length > 0 && (
         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-2">
@@ -230,33 +343,55 @@ export const TripDetailView: React.FC = () => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Status */}
+        {/* Status — granular 7-step chain with per-status transition buttons */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
           <h3 className="font-bold text-sm text-slate-900">Trip Status</h3>
-          <div className="flex items-center gap-2 flex-wrap">
-            {STATUS_FLOW.map((s, i) => {
-              const currentIdx = STATUS_FLOW.indexOf(booking.status);
-              const reached = i <= currentIdx;
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {TRIP_STEPS.map((s, i) => {
+              const reached = currentIdx >= 0 && i <= currentIdx;
+              const isCurrent = i === currentIdx;
               return (
-                <React.Fragment key={s}>
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${reached ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
-                    {s === 'enRoute' ? 'En Route' : s}
+                <React.Fragment key={s.status}>
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                      isCurrent
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : reached
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-slate-50 text-slate-400 border-slate-200'
+                    }`}
+                  >
+                    {s.label}
                   </span>
-                  {i < STATUS_FLOW.length - 1 && <span className="text-slate-300">→</span>}
+                  {i < TRIP_STEPS.length - 1 && <span className="text-slate-300">→</span>}
                 </React.Fragment>
               );
             })}
           </div>
           {podVerified && <p className="text-[11px] text-emerald-700 font-bold">POD OTP verified</p>}
-          <button
-            onClick={() => {
-              setNewStatus(booking.status === 'accepted' ? 'enRoute' : booking.status);
-              setStatusModal(true);
-            }}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
-          >
-            Update Status…
-          </button>
+          {nextSteps.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Next:</span>
+              {nextSteps.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => run(() => transport.updateBooking(id, { status: s }), `Status updated to ${nextLabel(s)}.`)}
+                  disabled={busy}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60"
+                >
+                  Mark {nextLabel(s)}
+                </button>
+              ))}
+            </div>
+          ) : (
+            ['delivered', 'completed'].includes(booking.status) && (
+              <p className="text-[11px] text-emerald-700 font-bold">Trip delivered — settlement follows after platform reconciliation.</p>
+            )
+          )}
+          <p className="text-[10px] text-slate-400">
+            Steps are optional — you can skip from Accepted straight to In transit, and from Reached destination straight
+            to Delivered. Delivery also files the POD (photos + receiver name).
+          </p>
         </div>
 
         {/* Location ping */}
@@ -302,7 +437,7 @@ export const TripDetailView: React.FC = () => {
             </select>
             <button
               onClick={() => run(() => transport.logWaiting(id, { phase: waitingPhase, action: 'start' }), 'Waiting timer started.')}
-              disabled={busy || !['accepted', 'enRoute'].includes(booking.status)}
+              disabled={busy || currentIdx < 0 || currentIdx >= TRIP_STEPS.length - 1}
               className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs disabled:opacity-60"
             >
               Start Timer
@@ -342,20 +477,21 @@ export const TripDetailView: React.FC = () => {
               onClick={() => {
                 setOtpInput('');
                 setOtpReceiver('');
-                setOtpPhotos('');
+                setOtpPhotos([]);
                 setOtpModal(true);
               }}
-              disabled={busy || !['enRoute'].includes(booking.status) || podVerified}
+              disabled={busy || !['enRoute', 'reachedDestination', 'unloading'].includes(booking.status) || podVerified}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60"
             >
               {podVerified ? 'POD Verified ✓' : 'Verify POD OTP'}
             </button>
             <button
               onClick={() => {
-                setPodForm({ receiverName: '', receiverPhone: '', podPhotos: '', damageNotes: '' });
+                setPodForm({ receiverName: '', receiverPhone: '', damageNotes: '' });
+                setPodPhotos([]);
                 setDeliveredModal(true);
               }}
-              disabled={busy || booking.status !== 'enRoute'}
+              disabled={busy || !['enRoute', 'reachedDestination', 'unloading'].includes(booking.status)}
               className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs disabled:opacity-60"
             >
               Mark Delivered (photos + receiver)…
@@ -500,31 +636,6 @@ export const TripDetailView: React.FC = () => {
 
       {/* --- Modals --- */}
 
-      <ModalSheet isOpen={statusModal} onClose={() => setStatusModal(false)} title="Update Trip Status" maxWidth="sm">
-        <div className="space-y-3">
-          <select
-            value={newStatus}
-            onChange={(e) => setNewStatus(e.target.value)}
-            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-bold"
-          >
-            {STATUS_FLOW.map((s) => (
-              <option key={s} value={s}>{s === 'enRoute' ? 'En Route' : s}</option>
-            ))}
-          </select>
-          <p className="text-[11px] text-slate-400">
-            Allowed transitions: accepted → enRoute → delivered. Delivery also needs POD (photos + receiver name) — use
-            the Mark Delivered action, or verify the POD OTP.
-          </p>
-          <button
-            onClick={() => run(() => transport.updateBooking(id, { status: newStatus }), `Status updated to ${newStatus}.`, () => setStatusModal(false))}
-            disabled={busy}
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60"
-          >
-            Update Status
-          </button>
-        </div>
-      </ModalSheet>
-
       <ModalSheet isOpen={wbModal} onClose={() => setWbModal(false)} title="Weighbridge Slip" maxWidth="sm">
         <form
           onSubmit={(e) => {
@@ -593,7 +704,7 @@ export const TripDetailView: React.FC = () => {
                 apiClient.post(`/transport/bookings/${id}/verify-pod-otp`, {
                   otp: otpInput,
                   receiverName: otpReceiver.trim(),
-                  podPhotos: otpPhotos.split(',').map((u) => u.trim()).filter(Boolean),
+                  podPhotos: otpPhotos,
                 }),
               'POD verified — trip delivered.',
               () => {
@@ -618,13 +729,31 @@ export const TripDetailView: React.FC = () => {
             <input type="text" value={otpReceiver} onChange={(e) => setOtpReceiver(e.target.value)} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" required />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Delivery photo URLs (comma separated)</label>
-            <input type="text" value={otpPhotos} onChange={(e) => setOtpPhotos(e.target.value)} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" placeholder="https://…, https://…" required />
+            <label className="block text-xs font-bold text-slate-700 mb-1">Delivery photos (at least one)</label>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={otpUploadBusy}
+              onChange={(e) => {
+                void uploadPodPhoto(e.target.files?.[0], setOtpPhotos, setOtpUploadBusy);
+                e.target.value = '';
+              }}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+            />
+            {otpPhotos.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {otpPhotos.map((u) => (
+                  <span key={u} className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-100 text-[10px] font-mono text-emerald-800 truncate max-w-full">
+                    {u.split('/').pop()}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <p className="text-[11px] text-slate-400">
             OTP not accepted? Ask the shipper to reveal it again (it expires after a fixed window).
           </p>
-          <button type="submit" disabled={busy || otpInput.length !== 6} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
+          <button type="submit" disabled={busy || otpInput.length !== 6 || otpPhotos.length === 0} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
             Verify OTP & Mark Delivered
           </button>
         </form>
@@ -640,7 +769,7 @@ export const TripDetailView: React.FC = () => {
                   status: 'delivered',
                   receiverName: podForm.receiverName.trim(),
                   receiverPhone: podForm.receiverPhone.trim() || undefined,
-                  podPhotos: podForm.podPhotos.split(',').map((u) => u.trim()).filter(Boolean),
+                  podPhotos,
                   damageNotes: podForm.damageNotes.trim() || undefined,
                 }),
               'Trip marked delivered.',
@@ -658,14 +787,32 @@ export const TripDetailView: React.FC = () => {
             <input type="tel" value={podForm.receiverPhone} onChange={(e) => setPodForm({ ...podForm, receiverPhone: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Delivery photo URLs (comma separated)</label>
-            <input type="text" value={podForm.podPhotos} onChange={(e) => setPodForm({ ...podForm, podPhotos: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" placeholder="https://…, https://…" required />
+            <label className="block text-xs font-bold text-slate-700 mb-1">Delivery photos (at least one)</label>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={podUploadBusy}
+              onChange={(e) => {
+                void uploadPodPhoto(e.target.files?.[0], setPodPhotos, setPodUploadBusy);
+                e.target.value = '';
+              }}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+            />
+            {podPhotos.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {podPhotos.map((u) => (
+                  <span key={u} className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-100 text-[10px] font-mono text-emerald-800 truncate max-w-full">
+                    {u.split('/').pop()}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Damage notes (optional)</label>
             <input type="text" value={podForm.damageNotes} onChange={(e) => setPodForm({ ...podForm, damageNotes: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
           </div>
-          <button type="submit" disabled={busy} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
+          <button type="submit" disabled={busy || podPhotos.length === 0} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
             Mark Delivered
           </button>
         </form>

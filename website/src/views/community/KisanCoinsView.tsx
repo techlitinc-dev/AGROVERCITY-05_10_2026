@@ -11,6 +11,7 @@ import {
   Trophy,
   ScrollText,
   UserPlus,
+  Share2,
 } from 'lucide-react';
 import { apiErrorMessage, gamification, referrals } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
@@ -38,6 +39,7 @@ export const KisanCoinsView: React.FC = () => {
   const [inviteName, setInviteName] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
   const [copied, setCopied] = useState(false);
+  const [linkShared, setLinkShared] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
@@ -81,6 +83,25 @@ export const KisanCoinsView: React.FC = () => {
     navigator.clipboard.writeText(referralCode).catch(() => undefined);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  // SR 17 — native share sheet when available, clipboard fallback with a flash.
+  const handleShareInvite = async () => {
+    const link = pickStr(referral, 'shareLink');
+    const message = pickStr(referral, 'shareMessage') || `Join me on Agrovercity: ${link}`;
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({ title: 'Agrovercity Refer & Earn', text: message, url: link });
+        return;
+      }
+      await navigator.clipboard.writeText(link || message);
+      setLinkShared(true);
+      window.setTimeout(() => setLinkShared(false), 2000);
+      flash('ok', 'Invite link copied — share it with fellow farmers!');
+    } catch (err) {
+      if ((err as Error | undefined)?.name === 'AbortError') return; // share sheet dismissed
+      flash('err', apiErrorMessage(err));
+    }
   };
 
   const handleRedeem = async (rewardId: string, title: string, cost: number) => {
@@ -280,6 +301,15 @@ export const KisanCoinsView: React.FC = () => {
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? 'Copied' : 'Copy'}</span>
               </button>
+              <button
+                onClick={() => void handleShareInvite()}
+                disabled={referralCode === '—'}
+                className="px-3 py-1.5 bg-white/15 hover:bg-white/25 disabled:opacity-40 text-white font-bold text-xs rounded-xl border border-white/20 flex items-center gap-1.5 transition-colors"
+                title="Share your invite link"
+              >
+                {linkShared ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+                <span>{linkShared ? 'Copied' : 'Share invite link'}</span>
+              </button>
             </div>
           </div>
 
@@ -310,6 +340,51 @@ export const KisanCoinsView: React.FC = () => {
                 {busyId === 'invite' ? 'Sending…' : 'Send Invite'}
               </button>
             </div>
+          </div>
+
+          {/* SR 17 — referred farmers (from GET /referrals `referred`) */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-emerald-600" /> Referred Farmers
+              </h3>
+              <span className="text-[10px] font-bold text-slate-400">
+                {asRecords(referral.referred).length} invited
+              </span>
+            </div>
+            {asRecords(referral.referred).length === 0 ? (
+              <p className="text-xs text-slate-400">
+                No invites yet — share your code or send an invite to a neighboring farmer to start earning.
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {asRecords(referral.referred).slice(0, 10).map((u, i) => {
+                  const status = pickStr(u, 'status') || 'invited';
+                  const joined = status === 'joined';
+                  return (
+                    <div key={pickStr(u, 'phone') || i} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <p className="font-bold text-slate-800">{pickStr(u, 'name') || 'Kisan'}</p>
+                        <p className="text-[11px] text-slate-400">{pickStr(u, 'phone') || '—'}</p>
+                      </div>
+                      <div className="text-right space-y-0.5">
+                        <span
+                          className={cn(
+                            'inline-block text-[10px] font-bold px-2 py-0.5 rounded-full capitalize',
+                            joined ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          )}
+                        >
+                          {joined ? 'Joined' : 'Invited'}
+                        </span>
+                        <p className="text-[10px] text-slate-400">
+                          {formatDateTime(pickStr(u, 'joinedAt', 'invitedAt')) || 'Awaiting signup'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

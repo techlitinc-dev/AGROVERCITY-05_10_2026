@@ -32,6 +32,7 @@ from app.routers.water import (
 )
 from app.services import approvals
 from app.services import claims as claims_service
+from app.services.billing import _matrix_plan, get_plan
 from app.services.admin_auth import (
     admin_mutation_context,
     current_admin_user,
@@ -303,7 +304,15 @@ async def land_records_status(
 ):
     """Revenue-portal gateway health + latency — same data as
     GET /admin/land-records/health (`gateway_health` probe rows)."""
-    return {"data": await latest_probes()}
+    integration_config = await get_doc("platform_config", "land_records_config")
+    return {
+        "data": await latest_probes(),
+        "integration": {
+            "configured": bool(integration_config and integration_config.get("apiUrl")),
+            "provider": (integration_config or {}).get("provider"),
+            "syncEnabled": bool((integration_config or {}).get("syncEnabled")),
+        },
+    }
 
 
 class LandRecordRow(BaseModel):
@@ -783,3 +792,240 @@ async def get_water_usage_stats(
         "recommendedMeasures": "Expand drip subsidies in semi-critical clusters; restrict flood irrigation",
         "generatedAt": _now(),
     }
+
+
+# ===========================================================================
+# Subscriptions, escrow holdings & transaction/crop reports (SOP-14 §3)
+# ===========================================================================
+
+def _user_persona(user: dict | None) -> str:
+    user = user or {}
+    return user.get("activeProfile") or user.get("primaryProfile") or (
+        (user.get("linkedProfiles") or [None])[0]
+    ) or "farmer"
+
+
+@router.get("/subscriptions")
+async def list_all_subscriptions(
+    status: Optional[str] = Query(None, description="active | past_due | cancelled | expired | all"),
+    persona: Optional[str] = Query(None, description="filter by the subscriber's active persona"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    user: dict = Depends(require_admin_role("superadmin", "finance_admin", "compliance_officer")),
+):
+    """Every user subscription (`subscriptions` collection) joined with the
+    subscriber's name/phone/persona and the plan snapshot."""
+    docs = await query("subscriptions", None, limit=2000)
+    users_by_id = {u["id"]: u for u in await query("users", None, limit=1000) if u.get("id")}
+
+    rows = []
+    for sub in docs:
+        sub_status = sub.get("status") or "active"
+        if status and status != "all" and sub_status != status:
+            continue
+        subscriber = users_by_id.get(sub.get("userId") or "") or {}
+        sub_persona = _user_persona(subscriber)
+        if persona and sub_persona != persona:
+            continue
+        plan = await get_plan(sub.get("planId") or "") or _matrix_plan(sub.get("planId") or "")
+        rows.append(
+            {
+                "id": sub.get("subId") or sub.get("id"),
+                "userId": sub.get("userId"),
+                "userName": subscriber.get("name"),
+                "userPhone": subscriber.get("phone"),
+                "persona": sub_persona,
+                "planId": sub.get("planId"),
+                "plan": plan,
+                "status": sub_status,
+                "provider": sub.get("provider"),
+                "providerRef": sub.get("providerRef"),
+                "currentPeriodEnd": sub.get("currentPeriodEnd"),
+                "createdAt": sub.get("createdAt"),
+            }
+        )
+    rows.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
+    return _paginate(rows, page, pageSize)
+
+
+@router.get("/escrow/holdings")
+async def escrow_holdings(
+    user: dict = Depends(require_admin_role("superadmin", "finance_admin", "compliance_officer")),
+):
+    """Aggregated in-escrow money: trade purchases and transport trips whose
+    escrow is currently `held` (services/escrow.py representation), with
+    platform totals in paisa."""
+    rows = []
+
+    purchases = await query("purchases", None, limit=2000)
+    users_by_id = {u["id"]: u for u in await query("users", None, limit=1000) if u.get("id")}
+    for purchase in purchases:
+        escrow = purchase.get("escrow") or {}
+        if escrow.get("status") != "held":
+            continue
+        # purchase escrow.amount is in rupees (routers/purchases.py)
+        amount_paise = int(round(float(escrow.get("amount") or 0) * 100))
+        holder = users_by_id.get(purchase.get("buyerId") or "") or {}
+        rows.append(
+            {
+                "kind": "purchase",
+                "refId": purchase.get("id"),
+                "holderName": holder.get("name") or purchase.get("buyerName"),
+                "holderId": purchase.get("buyerId"),
+                "counterpartyName": purchase.get("farmerName"),
+                "amountPaise": amount_paise,
+                "heldSince": escrow.get("fundedAt") or purchase.get("createdAt"),
+                "status": escrow.get("status"),
+                "paused": bool(escrow.get("disputeOpenedAt")) and not escrow.get("disputeResolvedAt"),
+            }
+        )
+
+    bookings = await query("transport_bookings", None, limit=2000)
+    for booking in bookings:
+        escrow = booking.get("escrow") or {}
+        if escrow.get("status") != "held":
+            continue
+        holder = users_by_id.get(booking.get("userId") or "") or {}
+        rows.append(
+            {
+                "kind": "transport_booking",
+                "refId": booking.get("id"),
+                "holderName": holder.get("name") or booking.get("userId"),
+                "holderId": booking.get("userId"),
+                "counterpartyName": booking.get("transporterId"),
+                "amountPaise": int(escrow.get("amountPaise") or 0),
+                "heldSince": escrow.get("fundedAt") or booking.get("createdAt"),
+                "status": escrow.get("status"),
+                "paused": bool(escrow.get("disputeOpenedAt")) and not escrow.get("disputeResolvedAt"),
+            }
+        )
+
+    rows.sort(key=lambda r: r.get("heldSince") or "", reverse=True)
+    totals = {
+        "count": len(rows),
+        "totalAmountPaise": sum(r["amountPaise"] for r in rows),
+        "byKind": {},
+        "pausedCount": sum(1 for r in rows if r["paused"]),
+    }
+    for row in rows:
+        bucket = totals["byKind"].setdefault(row["kind"], {"count": 0, "amountPaise": 0})
+        bucket["count"] += 1
+        bucket["amountPaise"] += row["amountPaise"]
+    return {"data": rows, "total": len(rows), "totals": totals, "generatedAt": _now()}
+
+
+def _in_range(day: str, from_date: Optional[str], to_date: Optional[str]) -> bool:
+    if from_date and day < from_date:
+        return False
+    if to_date and day > to_date:
+        return False
+    return True
+
+
+def _csv_response(rows: list[dict], filename: str):
+    import io, csv
+
+    out = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(out, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    return Response(
+        content=out.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/transactions")
+async def transactions_report(
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    format: str = Query("json", description="json or csv"),
+    user: dict = Depends(require_admin_role("superadmin", "finance_admin", "compliance_officer")),
+):
+    """Bookings + marketplace orders + settlements in the date range
+    (inclusive day filter on each doc's createdAt). CSV follows the same
+    pattern as GET /admin/reports/financial."""
+    rows = []
+    for booking in await query("transport_bookings", None, limit=2000):
+        day = (booking.get("createdAt") or "")[:10]
+        if not _in_range(day, from_date, to_date):
+            continue
+        rows.append(
+            {
+                "kind": "transport_booking",
+                "refId": booking.get("id"),
+                "date": day,
+                "status": booking.get("status"),
+                "amountPaise": int(round(float(booking.get("fare") or 0) * 100)),
+                "userId": booking.get("userId"),
+                "counterpartyId": booking.get("transporterId"),
+            }
+        )
+    for order in await query("orders", None, limit=2000):
+        day = (order.get("createdAt") or "")[:10]
+        if not _in_range(day, from_date, to_date):
+            continue
+        rows.append(
+            {
+                "kind": "order",
+                "refId": order.get("id"),
+                "date": day,
+                "status": order.get("status"),
+                "amountPaise": int(round(float(order.get("finalTotal", order.get("total")) or 0) * 100)),
+                "userId": order.get("userId"),
+                "counterpartyId": None,
+            }
+        )
+    for settlement in await query("settlements", None, limit=2000):
+        day = (settlement.get("createdAt") or "")[:10]
+        if not _in_range(day, from_date, to_date):
+            continue
+        rows.append(
+            {
+                "kind": "settlement",
+                "refId": settlement.get("id"),
+                "date": day,
+                "status": settlement.get("status"),
+                "amountPaise": int(round(float(settlement.get("netRupees") or 0) * 100)),
+                "userId": settlement.get("userId"),
+                "counterpartyId": None,
+            }
+        )
+    rows.sort(key=lambda r: (r["date"], r["kind"]), reverse=True)
+    if format.lower() == "csv":
+        return _csv_response(rows, f"transactions_{from_date or 'start'}_{to_date or 'end'}.csv")
+    return {"data": rows, "total": len(rows), "from": from_date, "to": to_date, "generatedAt": _now()}
+
+
+@router.get("/reports/crops")
+async def crops_report(
+    format: str = Query("json", description="json or csv"),
+    user: dict = Depends(require_admin_role("superadmin", "finance_admin", "compliance_officer")),
+):
+    """Crop-wise listed volumes and values aggregated from `market_lots`
+    (crop / quantityQuintals / expectedRate)."""
+    buckets: dict[str, dict] = {}
+    for lot in await query("market_lots", None, limit=2000):
+        crop = lot.get("crop") or "Unknown"
+        qty = float(lot.get("quantityQuintals") or 0)
+        rate = float(lot.get("expectedRate") or 0)
+        bucket = buckets.setdefault(crop, {"crop": crop, "lots": 0, "volumeQuintals": 0.0, "valueRupees": 0.0})
+        bucket["lots"] += 1
+        bucket["volumeQuintals"] += qty
+        bucket["valueRupees"] += qty * rate
+    rows = [
+        {
+            "crop": b["crop"],
+            "lots": b["lots"],
+            "volumeQuintals": round(b["volumeQuintals"], 2),
+            "valueRupees": round(b["valueRupees"], 2),
+            "averageRatePerQuintal": round(b["valueRupees"] / b["volumeQuintals"], 2) if b["volumeQuintals"] else 0.0,
+        }
+        for b in buckets.values()
+    ]
+    rows.sort(key=lambda r: r["valueRupees"], reverse=True)
+    if format.lower() == "csv":
+        return _csv_response(rows, "crops_report.csv")
+    return {"data": rows, "total": len(rows), "generatedAt": _now()}

@@ -31,17 +31,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.db import get_db, get_doc, query, set_doc
+from app.services import coins as coins_service
 from app.services.admin_auth import admin_mutation_context, current_admin_user
 from app.services.audit import log_admin_action
+from app.services.notify import notify_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-# SOP-21 tree request lifecycle: pending -> approved -> dispatched, with
-# rejection allowed from pending or approved (terminal once dispatched).
-TREE_REQUEST_STATUSES = {"approved", "dispatched", "rejected"}
+# SOP-21 tree request lifecycle: pending -> approved -> dispatched ->
+# survival_verified, with rejection allowed from pending or approved (terminal
+# once survival-verified).
+TREE_REQUEST_STATUSES = {"approved", "dispatched", "rejected", "survival_verified"}
 TREE_REQUEST_TRANSITIONS = {
     "pending": {"approved", "rejected"},
     "approved": {"dispatched", "rejected"},
+    "dispatched": {"survival_verified"},
 }
 
 # SOP-23 carbon desk factors come from `carbon_factors` (seeded by
@@ -61,6 +65,19 @@ GRUH_PRODUCTS = "gruh_udyog_products"
 _LEDGER_SCAN_LIMIT = 5000
 _REFERRER_SCAN_LIMIT = 300
 _REQUEST_SCAN_LIMIT = 3000
+
+# Survival-verification coin reward for a sapling request (award amount can be
+# overridden per request via the doc's `survivalRewardCoins` field).
+_TREE_SURVIVAL_REWARD_COINS = 50
+
+_REFERRALS_CONFIG_DOC = "referrals_config"
+_REFERRALS_DEFAULTS = {
+    "referrerRewardCoins": 100,
+    "refereeRewardCoins": 50,
+    "maxReferralsPerMonth": 20,
+    "enabled": True,
+    "minKycTier": 0,
+}
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -167,7 +184,7 @@ async def list_tree_requests(
 
 
 class TreeRequestStatusIn(BaseModel):
-    status: str = Field(..., description="approved | dispatched | rejected")
+    status: str = Field(..., description="approved | dispatched | rejected | survival_verified")
     reason: Optional[str] = Field(default=None, min_length=3)
 
 
@@ -177,13 +194,19 @@ async def update_tree_request_status(
     body: TreeRequestStatusIn,
     ctx: dict = Depends(admin_mutation_context),
 ):
-    """SOP-21: approve, dispatch, or reject a sapling request."""
+    """SOP-21: approve, dispatch, reject, or survival-verify a sapling request.
+
+    A transition to `survival_verified` mints the survival reward coins to the
+    requesting farmer via services/coins.py and notifies them. The mint is
+    idempotent: it happens only when `survivalRewardMintedAt` is not yet set
+    on the request doc, so replaying the same transition never double-awards.
+    """
     if body.status not in TREE_REQUEST_STATUSES:
         _error(
             422,
             "VALIDATION_ERROR",
-            "status must be approved | dispatched | rejected",
-            {"status": "must be one of approved | dispatched | rejected"},
+            "status must be approved | dispatched | rejected | survival_verified",
+            {"status": "must be one of approved | dispatched | rejected | survival_verified"},
         )
     if body.status == "rejected" and not (body.reason or "").strip():
         _error(422, "VALIDATION_ERROR", "a rejection reason is required", {"reason": "min 3 chars"})
@@ -207,12 +230,37 @@ async def update_tree_request_status(
     doc["reviewedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
     if body.reason:
         doc["reviewReason"] = body.reason
+
+    reward = None
+    if body.status == "survival_verified" and not doc.get("survivalRewardMintedAt"):
+        farmer_id = doc.get("userId")
+        coins = int(doc.get("survivalRewardCoins") or _TREE_SURVIVAL_REWARD_COINS)
+        if farmer_id and coins > 0:
+            try:
+                balance = await coins_service.award_coins(
+                    farmer_id, coins, "tree_survival_verified", ref_id=doc["id"]
+                )
+            except Exception:  # noqa: BLE001 — reward failure must not block verification
+                balance = None
+            if balance is not None:
+                now = _now()
+                doc["survivalRewardMintedAt"] = now
+                doc["survivalRewardCoins"] = coins
+                reward = {"coins": coins, "balanceAfter": balance, "mintedAt": now}
+                await notify_user(
+                    farmer_id,
+                    type="tree_survival_reward",
+                    title="Tree survival reward / पेड़ जीवित रहने का पुरस्कार",
+                    body=f"{coins} AgriCoins credited — your saplings passed the survival check.",
+                    deepLink="/dashboard/p/tree",
+                )
+
     await set_doc(collection_path, doc["id"], doc)
     await log_admin_action(
         ctx["admin"], "trees", f"sapling-request.{body.status}", doc["id"],
-        previous, {"status": body.status}, ctx["reason"], ctx["ip"],
+        previous, {"status": body.status, "reward": reward}, ctx["reason"], ctx["ip"],
     )
-    return {"success": True, "id": doc["id"], "status": body.status, "request": doc}
+    return {"success": True, "id": doc["id"], "status": body.status, "request": doc, "reward": reward}
 
 
 @router.get("/tree/ngos")
@@ -629,6 +677,7 @@ class SubsidyDisburseIn(BaseModel):
     shgId: str = Field(..., min_length=1)
     amount: int = Field(..., gt=0, description="subsidy amount in paisa")
     reference: Optional[str] = Field(default=None, max_length=120)
+    fund: Optional[str] = Field(default="corpus", description="corpus | loanFund")
 
 
 @router.post("/women/subsidies/disburse")
@@ -641,12 +690,21 @@ async def disburse_women_subsidy(
     The credit is recorded in `shg_deposits` (the collection the phase-07
     console's deposits desk reads) and mirrored into the
     `shg_groups/{id}/deposits` sub-collection the Women Farmer Hub ledger
-    reads; the group corpus is bumped with the same double-entry discipline
-    as the farmer deposit flow in app/routers/women.py.
+    reads; the group fund is bumped with the same double-entry discipline
+    as the farmer deposit flow in app/routers/women.py. `fund` decides
+    whether the corpus (default) or the revolving loan fund receives it.
     """
     group = await get_doc(SHG_GROUPS, body.shgId)
     if group is None:
         _error(404, "SHG_NOT_FOUND", "SHG not found")
+    if (body.fund or "corpus") not in ("corpus", "loanFund"):
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            "fund must be corpus | loanFund",
+            {"fund": "must be one of corpus | loanFund"},
+        )
+    target_fund = body.fund or "corpus"
 
     credit_id = f"sub_{uuid.uuid4().hex[:12]}"
     credit = {
@@ -655,26 +713,116 @@ async def disburse_women_subsidy(
         "kind": "subsidy",
         "amountPaisa": body.amount,
         "reference": body.reference,
+        "fund": target_fund,
         "creditedBy": ctx["admin"].get("id") or ctx["admin"].get("uid"),
         "creditedAt": _now(),
     }
-    previous_corpus = int(group.get("corpusPaisa", 0) or 0)
-    group["corpusPaisa"] = previous_corpus + body.amount
+    fund_key = "loanFundPaisa" if target_fund == "loanFund" else "corpusPaisa"
+    previous_fund = int(group.get(fund_key, 0) or 0)
+    group[fund_key] = previous_fund + body.amount
     await set_doc(SHG_DEPOSITS, credit_id, credit)
     await set_doc(f"{SHG_GROUPS}/{body.shgId}/deposits", credit_id, credit)
     await set_doc(SHG_GROUPS, body.shgId, group)
     await log_admin_action(
         ctx["admin"], "women", "subsidy.disburse", body.shgId,
-        {"corpusPaisa": previous_corpus},
-        {"amountPaisa": body.amount, "corpusPaisa": group["corpusPaisa"], "reference": body.reference},
+        {fund_key: previous_fund},
+        {"amountPaisa": body.amount, fund_key: group[fund_key], "reference": body.reference, "fund": target_fund},
         ctx["reason"], ctx["ip"],
     )
     return {
         "success": True,
         "credit": credit,
-        "previousCorpusPaisa": previous_corpus,
-        "newCorpusPaisa": group["corpusPaisa"],
+        "fund": target_fund,
+        "previousFundPaisa": previous_fund,
+        "newFundPaisa": group[fund_key],
+        "previousCorpusPaisa": previous_fund if fund_key == "corpusPaisa" else int(group.get("corpusPaisa", 0) or 0),
+        "newCorpusPaisa": int(group.get("corpusPaisa", 0) or 0),
     }
+
+
+GRUH_CERTS = "gruh_udyog_certifications"
+
+
+@router.get("/gruh/certifications/queue")
+async def gruh_certification_queue(
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    user: dict = Depends(current_admin_user),
+):
+    """Pending gruh-udyog unit certifications (fssai/agmark/udyam/...) joined
+    with the unit name — the verification queue for the women-program desk."""
+    certs = await query(GRUH_CERTS, None, limit=1000)
+    pending = [c for c in certs if c.get("status") == "pending"]
+    units = {u["id"]: u for u in await query(GRUH_UNITS, None, limit=1000)}
+    rows = []
+    for cert in _sorted_newest(pending):
+        row = dict(cert)
+        row["unitName"] = (units.get(cert.get("unitId")) or {}).get("name")
+        row["ownerName"] = await _user_name(cert.get("ownerUid"))
+        rows.append(row)
+    return _envelope(rows, page, pageSize)
+
+
+class GruhCertRejectIn(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=300)
+
+
+async def _review_gruh_cert(cert_id: str, action: str, ctx: dict, reason: str | None = None) -> dict:
+    cert = await get_doc(GRUH_CERTS, cert_id)
+    if cert is None:
+        _error(404, "CERT_NOT_FOUND", "gruh udyog certification not found")
+    if cert.get("status") != "pending":
+        _error(409, "CERT_NOT_PENDING", f"certification is {cert.get('status')}; only pending certs can be reviewed")
+    previous = {"status": cert.get("status")}
+    cert["status"] = "verified" if action == "verify" else "rejected"
+    cert["reviewedAt"] = _now()
+    cert["reviewedBy"] = ctx["admin"].get("id") or ctx["admin"].get("uid")
+    if reason:
+        cert["reviewReason"] = reason
+    await set_doc(GRUH_CERTS, cert_id, cert)
+    await log_admin_action(
+        ctx["admin"], "women", f"gruh.cert.{action}", cert_id,
+        previous, {"status": cert["status"]}, ctx["reason"], ctx["ip"],
+    )
+    owner_uid = cert.get("ownerUid") or (await get_doc(GRUH_UNITS, cert.get("unitId") or "") or {}).get("ownerUid")
+    if owner_uid:
+        label = cert.get("type", "certification").upper()
+        if action == "verify":
+            await notify_user(
+                owner_uid,
+                type="gruh_cert_verified",
+                title="Certification verified / प्रमाणपत्र सत्यापित",
+                body=f"Your {label} certification {cert.get('number', '')} for your gruh udyog unit has been verified.",
+                deepLink="/community/women",
+            )
+        else:
+            await notify_user(
+                owner_uid,
+                type="gruh_cert_rejected",
+                title="Certification rejected / प्रमाणपत्र नामंजूर",
+                body=f"Your {label} certification {cert.get('number', '')} was rejected: {reason or 'no reason given'}.",
+                deepLink="/community/women",
+            )
+    return {"success": True, "id": cert_id, "status": cert["status"], "certification": cert}
+
+
+@router.post("/gruh/certifications/{cert_id}/verify")
+async def verify_gruh_certification(
+    cert_id: str,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Approve a pending gruh-udyog unit certification (FSSAI gate enabler)."""
+    return await _review_gruh_cert(cert_id, "verify", ctx)
+
+
+@router.post("/gruh/certifications/{cert_id}/reject")
+async def reject_gruh_certification(
+    cert_id: str,
+    body: GruhCertRejectIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Reject a pending gruh-udyog certification — a reason is mandatory."""
+    return await _review_gruh_cert(cert_id, "reject", ctx, body.reason)
 
 
 @router.get("/women/enterprise-products")
@@ -745,6 +893,54 @@ async def list_women_enterprises(
         "totalMonthlyProfitPaisa": sum(int(line.get("monthlyProfitPaisa", 0) or 0) for line in lines),
     }
     return result
+
+
+SHG_LOANS = "shg_loans"
+
+
+@router.get("/women/loans")
+async def list_women_loans(
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    user: dict = Depends(current_admin_user),
+):
+    """WomenHub oversight: every `shg_loans` doc across groups, joined with the
+    group name and carrying the full audit trail."""
+    loans = await query(SHG_LOANS, None, limit=1000)
+    groups = {g["id"]: g for g in await query(SHG_GROUPS, None, limit=1000)}
+    rows = []
+    for loan in _sorted_newest(loans, "requestedAt"):
+        row = dict(loan)
+        row["groupName"] = (groups.get(loan.get("shgId")) or {}).get("name")
+        rows.append(row)
+    return _envelope(rows, page, pageSize)
+
+
+@router.get("/women/deposit-compliance")
+async def women_deposit_compliance(
+    month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    user: dict = Depends(current_admin_user),
+):
+    """Per-group deposit compliance for one month (default: current month):
+    how many members paid vs the expected memberCount x monthlyDepositPaisa."""
+    month = month or datetime.now(timezone.utc).strftime("%Y-%m")
+    groups = await query(SHG_GROUPS, None, limit=1000)
+    items = []
+    for group in groups:
+        deposits = await query(f"{SHG_GROUPS}/{group['id']}/deposits", None, limit=1000)
+        member_docs = [d for d in deposits if d.get("memberUid") and d.get("month") == month]
+        member_count = int(group.get("memberCount", 0) or 0)
+        items.append(
+            {
+                "groupId": group["id"],
+                "name": group.get("name", ""),
+                "memberCount": member_count,
+                "paidCount": len(member_docs),
+                "paidTotalPaisa": sum(int(d.get("amountPaisa", 0) or 0) for d in member_docs),
+                "expectedTotalPaisa": member_count * int(group.get("monthlyDepositPaisa", 0) or 0),
+            }
+        )
+    return {"items": items, "month": month}
 
 
 # ===========================================================================
@@ -841,6 +1037,43 @@ async def update_coins_platform_config(
     await set_doc("platform_config", "coins", new_cfg)
     await log_admin_action(
         ctx["admin"], "economy", "coins.config.update", "coins", existing, new_cfg, ctx["reason"], ctx["ip"]
+    )
+    return new_cfg
+
+
+class ReferralsConfigIn(BaseModel):
+    referrerRewardCoins: Optional[int] = Field(default=None, ge=0)
+    refereeRewardCoins: Optional[int] = Field(default=None, ge=0)
+    maxReferralsPerMonth: Optional[int] = Field(default=None, ge=1)
+    enabled: Optional[bool] = None
+    minKycTier: Optional[int] = Field(default=None, ge=0)
+
+
+@router.get("/platform-config/referrals")
+async def get_referrals_config(user: dict = Depends(current_admin_user)):
+    """Referral program economics: reward coins, monthly caps, KYC gate."""
+    doc = await get_doc("platform_config", _REFERRALS_CONFIG_DOC)
+    merged = {**_REFERRALS_DEFAULTS, **{k: doc[k] for k in _REFERRALS_DEFAULTS if k in (doc or {})}}
+    return {**merged, "updatedAt": (doc or {}).get("updatedAt"), "updatedBy": (doc or {}).get("updatedBy")}
+
+
+@router.put("/platform-config/referrals")
+async def update_referrals_config(
+    body: ReferralsConfigIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    existing = await get_doc("platform_config", _REFERRALS_CONFIG_DOC) or {}
+    new_cfg = {
+        **existing,
+        **body.model_dump(exclude_none=True),
+        "id": _REFERRALS_CONFIG_DOC,
+        "updatedAt": _now(),
+        "updatedBy": ctx["admin"].get("id"),
+    }
+    await set_doc("platform_config", _REFERRALS_CONFIG_DOC, new_cfg)
+    await log_admin_action(
+        ctx["admin"], "economy", "referrals.config.update", _REFERRALS_CONFIG_DOC,
+        existing, new_cfg, ctx["reason"], ctx["ip"],
     )
     return new_cfg
 

@@ -684,6 +684,14 @@ async def test_dairy_purchase_commission_line_on_invoice(client, user_store):
     )
     await client.post(f"/v1/purchases/{purchase_id}/dispatch", headers=auth(farmer_token))
     await client.post(f"/v1/purchases/{purchase_id}/deliver", headers=auth(mgr_token))
+    # advance holds the escrow → verify the farmer's handover OTP to unlock QC
+    otp = (await client.get(f"/v1/purchases/{purchase_id}/handover-otp", headers=auth(farmer_token))).json()["otp"]
+    handover = await client.post(
+        f"/v1/purchases/{purchase_id}/handover/verify",
+        json={"otp": otp},
+        headers=auth(mgr_token),
+    )
+    assert handover.status_code == 200
     qc_resp = await client.post(
         f"/v1/purchases/{purchase_id}/qc",
         json={"grade": "A", "acceptedQty": purchase["quantity"], "rejectedQty": 0, "note": "OK"},

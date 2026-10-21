@@ -1,7 +1,24 @@
-import { download, del, patch, post, put, readList, readOne } from './http';
+import { download, del, patch, post, put, readItems, readList, readOne } from './http';
 
 /** Seller (Vyapari) namespace — products, orders, stock, procurement, sales, ledgers, compliance. */
 export const seller = {
+  // --- business profile ---
+  /** GET /seller/profile — shop identity, licences, capacity, operating states/mandis. */
+  profile: (): Promise<unknown> => readOne<unknown>('/seller/profile'),
+
+  /** PUT /seller/profile — partial merge of the profile fields. */
+  updateProfile: (payload: Record<string, unknown>): Promise<unknown> =>
+    put<unknown>('/seller/profile', payload),
+
+  // --- sourcing network ---
+  /** GET /seller/sourcing-recommendations?limit= — AI-matched farmer lots. */
+  sourcingRecommendations: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readItems<unknown[]>('/seller/sourcing-recommendations', { params }),
+
+  /** GET /seller/buyers?q=&state=&category= — direct-buyer network directory. */
+  buyers: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readItems<unknown[]>('/seller/buyers', { params }),
+
   // --- dashboard ---
   /** GET /seller/dashboard */
   dashboard: (): Promise<unknown> => readOne<unknown>('/seller/dashboard'),
@@ -25,6 +42,9 @@ export const seller = {
     put<unknown>(`/seller/products/${productId}`, updates),
 
   // --- orders ---
+  /** GET /seller/orders — marketplace orders this seller fulfils (own sellerId or item lines), newest first. */
+  orders: (): Promise<unknown[]> => readList<unknown[]>('/seller/orders'),
+
   /** PATCH /seller/orders/{id}/status */
   updateOrderStatus: (orderId: string, status: string, note?: string): Promise<unknown> =>
     patch<unknown>(`/seller/orders/${orderId}/status`, note ? { status, note } : { status }),
@@ -126,6 +146,9 @@ export const seller = {
     patch<unknown>(`/seller/rates/${rateId}`, updates),
 
   // --- compliance ---
+  /** GET /seller/settlements — weekly settlement lines (gross, commission, net, status). */
+  settlements: (): Promise<unknown[]> => readList<unknown[]>('/seller/settlements'),
+
   /** GET /seller/gst-reports */
   gstReports: (): Promise<unknown[]> => readList<unknown[]>('/seller/gst-reports'),
 

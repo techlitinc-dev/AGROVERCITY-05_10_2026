@@ -13,6 +13,8 @@ import {
   MapPin,
   AlertCircle,
   CheckCircle2,
+  Share2,
+  Check,
 } from 'lucide-react';
 import { apiErrorMessage, content } from '../../lib/api';
 import { cn, formatDateTime, formatNumber } from '../../lib/utils';
@@ -43,6 +45,7 @@ export const AgriNewsChannelsView: React.FC = () => {
   const [registeredTalks, setRegisteredTalks] = useState<Set<string>>(new Set());
   const [enrolledWorkshops, setEnrolledWorkshops] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [sharedId, setSharedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
@@ -79,6 +82,28 @@ export const AgriNewsChannelsView: React.FC = () => {
   const flash = (kind: 'ok' | 'err', text: string) => {
     setNotice({ kind, text });
     window.setTimeout(() => setNotice(null), 4000);
+  };
+
+  // SR 15 — share an article / blog post: native sheet when available,
+  // clipboard fallback with a short "Copied" flash on the button itself.
+  const handleShare = async (item: Record<string, unknown>, fallbackId: string) => {
+    const id = pickStr(item, 'id') || fallbackId;
+    const title = pickStr(item, 'title', 'headline') || 'Agrovercity Agri Update';
+    const text = pickStr(item, 'summary', 'excerpt', 'body', 'description') || title;
+    const link = pickStr(item, 'link', 'url');
+    const url = link || `${window.location.origin}/community/news?article=${encodeURIComponent(id)}`;
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({ title, text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setSharedId(id);
+      window.setTimeout(() => setSharedId((prev) => (prev === id ? null : prev)), 2000);
+    } catch (err) {
+      if ((err as Error | undefined)?.name === 'AbortError') return; // share sheet dismissed
+      flash('err', apiErrorMessage(err));
+    }
   };
 
   const handleLike = async (blogId: string) => {
@@ -201,28 +226,47 @@ export const AgriNewsChannelsView: React.FC = () => {
               No news articles available right now.
             </p>
           )}
-          {news.map((item, i) => (
-            <div
-              key={pickStr(item, 'id') || i}
-              className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-2 hover:border-slate-300 transition-colors"
-            >
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-[10px] font-bold uppercase text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
-                  {pickStr(item, 'category', 'tag') || 'Agri Update'}
-                </span>
-                <span className="text-slate-400">
-                  {formatDateTime(pickStr(item, 'publishedAt', 'createdAt', 'time')) || 'Recently'}
-                </span>
+          {news.map((item, i) => {
+            const id = pickStr(item, 'id') || `news-${i}`;
+            const shared = sharedId === id;
+            return (
+              <div
+                key={id}
+                className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-2 hover:border-slate-300 transition-colors"
+              >
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[10px] font-bold uppercase text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                    {pickStr(item, 'category', 'tag') || 'Agri Update'}
+                  </span>
+                  <span className="text-slate-400">
+                    {formatDateTime(pickStr(item, 'publishedAt', 'createdAt', 'time')) || 'Recently'}
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-sm sm:text-base text-slate-900 leading-snug">
+                  {pickStr(item, 'title', 'headline') || 'Untitled'}
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {pickStr(item, 'summary', 'body', 'description')}
+                </p>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <p className="text-xs text-slate-500">Source: {pickStr(item, 'source', 'author') || 'Agrovercity Desk'}</p>
+                  <button
+                    onClick={() => void handleShare(item, `news-${i}`)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 transition-colors',
+                      shared
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-700'
+                    )}
+                    title="Share this article"
+                  >
+                    {shared ? <Check className="w-3 h-3" /> : <Share2 className="w-3 h-3" />}
+                    {shared ? 'Copied' : 'Share'}
+                  </button>
+                </div>
               </div>
-              <h3 className="font-extrabold text-sm sm:text-base text-slate-900 leading-snug">
-                {pickStr(item, 'title', 'headline') || 'Untitled'}
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                {pickStr(item, 'summary', 'body', 'description')}
-              </p>
-              <p className="text-xs text-slate-500">Source: {pickStr(item, 'source', 'author') || 'Agrovercity Desk'}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -280,6 +324,7 @@ export const AgriNewsChannelsView: React.FC = () => {
             const id = pickStr(b, 'id') || String(i);
             const liked = likedBlogs.has(id);
             const saved = savedBlogs.has(id);
+            const shared = sharedId === id;
             return (
               <div key={id} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">
                 <div className="flex items-center justify-between text-[11px]">
@@ -323,6 +368,19 @@ export const AgriNewsChannelsView: React.FC = () => {
                   >
                     <Bookmark className={cn('w-3.5 h-3.5', saved && 'fill-current')} />
                     {saved ? 'Saved' : 'Bookmark'}
+                  </button>
+                  <button
+                    onClick={() => void handleShare(b, `blog-${i}`)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-xl text-[11px] font-bold border flex items-center gap-1.5 transition-colors',
+                      shared
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700'
+                    )}
+                    title="Share this post"
+                  >
+                    {shared ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+                    {shared ? 'Copied' : 'Share'}
                   </button>
                 </div>
               </div>

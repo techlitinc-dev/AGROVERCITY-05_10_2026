@@ -11,10 +11,13 @@ export const uploads = {
   upload: async (file: File | Blob, extra: Record<string, string> = {}): Promise<unknown> => {
     try {
       const form = new FormData();
-      form.append('file', file);
+      // backend expects a `files` list (list[UploadFile] = File(...))
+      form.append('files', file);
       Object.entries(extra).forEach(([key, value]) => form.append(key, value));
       const res = await apiClient.post('/uploads', form);
-      return res.data?.data ?? res.data;
+      const payload = res.data?.data ?? res.data;
+      // POST /uploads returns a list of UploadedFileOut — hand callers the first file.
+      return Array.isArray(payload) ? payload[0] : payload;
     } catch (e) {
       // uploads are mutations — always throw, never fake success
       handleApiError(e);

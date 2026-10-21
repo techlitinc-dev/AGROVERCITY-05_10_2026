@@ -33,6 +33,52 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_AD_TARGET_COLLECTIONS = {"product": "products", "demand": "demands"}
+
+# Own-listing targets: the target doc must exist AND belong to the caller.
+# women_offer accepts either a gruh_udyog offer or a gruh_udyog product doc.
+_AD_OWNED_TARGETS: dict[str, list[tuple[str, str]]] = {
+    "lot": [("market_lots", "farmerId")],
+    "vehicle": [("vehicles", "ownerId")],
+    "equipment": [("equipment", "ownerId")],
+    "women_offer": [("gruh_udyog_offers", "ownerUid"), ("gruh_udyog_products", "ownerUid")],
+}
+
+
+async def _validate_ad_target(target_type: str, target_id: str, uid: str) -> None:
+    """Own-listing targeting: a product/demand target must point at a real doc;
+    lot/vehicle/equipment/women_offer targets must also belong to the caller."""
+    owned = _AD_OWNED_TARGETS.get(str(target_type))
+    if owned:
+        if not target_id:
+            _error(422, "VALIDATION_ERROR", "targetId is required for this targetType", {"targetId": "required"})
+        doc = None
+        owner_field = owned[0][1]
+        for collection, field in owned:
+            doc = await get_doc(collection, target_id)
+            if doc is not None:
+                owner_field = field
+                break
+        if doc is None:
+            _error(404, "AD_TARGET_NOT_FOUND", f"target {target_type} '{target_id}' does not exist")
+        if doc.get(owner_field) != uid:
+            _error(
+                403,
+                "FORBIDDEN",
+                f"target {target_type} '{target_id}' is not your listing",
+                {owner_field: "must belong to you"},
+            )
+        return
+    collection = _AD_TARGET_COLLECTIONS.get(str(target_type))
+    if not collection:
+        return
+    if not target_id:
+        _error(422, "VALIDATION_ERROR", "targetId is required for this targetType", {"targetId": "required"})
+    doc = await get_doc(collection, target_id)
+    if doc is None:
+        _error(404, "AD_TARGET_NOT_FOUND", f"target {target_type} '{target_id}' does not exist")
+
+
 # ---------------------------------------------------------------------------
 # Public Ad Serving & Tracking
 # ---------------------------------------------------------------------------
@@ -107,6 +153,8 @@ async def track_ad_click(ad_id: str):
 # ---------------------------------------------------------------------------
 @router.post("", status_code=201)
 async def create_ad_campaign(body: AdCampaignCreateIn, user: dict = Depends(_user)):
+    target_type = body.targetType.value if hasattr(body.targetType, "value") else str(body.targetType)
+    await _validate_ad_target(target_type, body.targetId, user["id"])
     ad_id = uuid.uuid4().hex[:14]
     now = _now()
     status = "active" if body.autoActivate else "pending_approval"
@@ -128,6 +176,8 @@ async def create_ad_campaign(body: AdCampaignCreateIn, user: dict = Depends(_use
         "spentRupees": 0.0,
         "startDate": body.startDate or now[:10],
         "endDate": body.endDate or "2026-12-31",
+        "targetVillage": body.targetVillage,
+        "targetDistrict": body.targetDistrict,
         "status": status,
         "impressions": 0,
         "clicks": 0,
@@ -183,6 +233,11 @@ async def update_ad_campaign(ad_id: str, body: AdCampaignUpdateIn, user: dict = 
         _error(403, "FORBIDDEN", "not your ad campaign")
 
     fields = body.model_dump(exclude_none=True)
+    merged_type = fields.get("targetType", ad.get("targetType"))
+    merged_id = fields.get("targetId", ad.get("targetId"))
+    if hasattr(merged_type, "value"):
+        merged_type = merged_type.value
+    await _validate_ad_target(str(merged_type), str(merged_id or ""), user["id"])
     for key, value in fields.items():
         if hasattr(value, "value"):
             ad[key] = value.value

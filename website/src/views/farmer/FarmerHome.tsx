@@ -16,7 +16,7 @@ import {
   Bell,
   Stethoscope,
 } from 'lucide-react';
-import { dashboard, mandi, intelligence, notifications, apiErrorMessage } from '../../lib/api';
+import { dashboard, mandi, intelligence, notifications, gamification, apiErrorMessage } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { formatCurrency } from '../../lib/utils';
 import type { AppNotification, MandiPrice } from '../../types';
@@ -34,6 +34,16 @@ interface TaskItem {
   time: string;
 }
 
+const taskTitle = (r: Record<string, unknown>): string => {
+  const t = r.title;
+  if (typeof t === 'string' && t) return t;
+  if (t !== null && typeof t === 'object' && !Array.isArray(t)) {
+    const localized = t as Record<string, unknown>;
+    return asStr(localized.en) || asStr(localized.hi);
+  }
+  return asStr(r.text, 'Farm task');
+};
+
 export const FarmerHome: React.FC = () => {
   const { user } = useAuthStore();
   const [weather, setWeather] = useState<Record<string, unknown> | null>(null);
@@ -41,6 +51,8 @@ export const FarmerHome: React.FC = () => {
   const [intel, setIntel] = useState<Record<string, unknown> | null>(null);
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [urgentTask, setUrgentTask] = useState<Record<string, unknown> | null>(null);
+  const [coinBalance, setCoinBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +61,16 @@ export const FarmerHome: React.FC = () => {
     setLoading(true);
 
     const load = async () => {
+      // Coin balance (Kisan Coins card) — best-effort alongside the home load.
+      gamification
+        .status()
+        .then((s) => {
+          if (!active) return;
+          const coins = asNum(asRecord(s).agriCoins, 0);
+          setCoinBalance(coins);
+        })
+        .catch(() => undefined);
+
       // Primary: persona-aware home dashboard; fall back to fan-out endpoints.
       try {
         const home = asRecord(await dashboard.home());
@@ -59,13 +81,14 @@ export const FarmerHome: React.FC = () => {
           setRates(homeRates as MandiPrice[]);
         }
         setIntel(asRecord(home.intelligence) || null);
-        setNotifs(asArray(home.notifications) as AppNotification[]);
+        setNotifs(asArray(home.notifications ?? []) as AppNotification[]);
+        setUrgentTask(home.urgentTask ? asRecord(home.urgentTask) : null);
         setTasks(
-          asArray(home.tasks).map((t, i) => {
+          asArray(home.tasks ?? []).map((t, i) => {
             const r = asRecord(t);
             return {
               id: asStr(r.id, String(i)),
-              text: asStr(r.title ?? r.text, 'Farm task'),
+              text: taskTitle(r),
               done: r.done === true || r.status === 'done',
               time: asStr(r.dueAt ?? r.time, 'Today'),
             };
@@ -90,11 +113,11 @@ export const FarmerHome: React.FC = () => {
         if (i) setIntel(asRecord(i));
         setNotifs(n);
         setTasks(
-          asArray(t).map((task, idx) => {
+          asArray(t ?? []).map((task, idx) => {
             const rec = asRecord(task);
             return {
               id: asStr(rec.id, String(idx)),
-              text: asStr(rec.title ?? rec.text, 'Farm task'),
+              text: taskTitle(rec),
               done: rec.done === true || rec.status === 'done',
               time: asStr(rec.dueAt ?? rec.time, 'Today'),
             };
@@ -253,7 +276,9 @@ export const FarmerHome: React.FC = () => {
               </div>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-bold tracking-tight text-slate-900">{user?.kisanCoins || 350}</span>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">
+                {user?.kisanCoins || coinBalance || 350}
+              </span>
             </div>
             <p className="mt-1 text-xs text-slate-500">Redeemable on Krishi Mall</p>
           </div>
@@ -407,12 +432,37 @@ export const FarmerHome: React.FC = () => {
             </span>
           </div>
 
-          {tasks.length === 0 ? (
+          {tasks.length === 0 && !urgentTask ? (
             <p className="text-xs text-slate-400 py-4 text-center">
               No pending tasks. You are all caught up!
             </p>
           ) : (
             <div className="space-y-2.5">
+              {urgentTask && (
+                <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50 flex items-start gap-3">
+                  <span className="mt-0.5 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black uppercase tracking-wide flex-shrink-0">
+                    {asStr(urgentTask.priority, 'urgent')}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-rose-900">{taskTitle(urgentTask)}</p>
+                    {asStr(urgentTask.subtitle) && (
+                      <p className="text-[10px] text-rose-700 mt-0.5 truncate">{asStr(urgentTask.subtitle)}</p>
+                    )}
+                    <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">
+                      Due {asStr(urgentTask.dueAt, 'today')}
+                    </span>
+                  </div>
+                  {asStr(urgentTask.id) && (
+                    <button
+                      onClick={() => completeTask(asStr(urgentTask.id))}
+                      className="p-1 text-rose-400 hover:text-rose-600 rounded-md flex-shrink-0"
+                      title="Mark done"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
               {tasks.slice(0, 6).map((task) => (
                 <div
                   key={task.id}

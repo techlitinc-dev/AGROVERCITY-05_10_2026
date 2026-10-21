@@ -43,6 +43,16 @@ async def _user(uid: str = Depends(current_user_id)) -> dict:
     return user
 
 
+async def _viewer(uid: str = Depends(current_user_id)) -> dict:
+    """Read/browse gate — customers may view schemes but never apply (the
+    apply gate stays `_user`, farmer/farmLandlord only)."""
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    require_role(user, "farmer", "farmLandlord", "customer")
+    return user
+
+
 async def _vault_doc_types(uid: str) -> list[str]:
     docs = await query(f"users/{uid}/vault_documents", [], limit=200)
     return [str(d.get("docType") or "") for d in docs if d.get("docType")]
@@ -79,7 +89,7 @@ async def list_schemes(
     eligibleOnly: bool = False,
     cursor: str | None = Query(None),
     pageSize: int = Query(20, ge=1, le=100),
-    user: dict = Depends(_user),
+    user: dict = Depends(_viewer),
 ):
     """Discovery list — server-ordered matched-to-profile first (task 5.9).
 
@@ -114,7 +124,7 @@ async def list_schemes(
 
 
 @router.get("/portals")
-async def list_portals(user: dict = Depends(_user)):
+async def list_portals(user: dict = Depends(_viewer)):
     return {"data": [PortalEntry(**p).model_dump() for p in PORTALS]}
 
 
@@ -122,7 +132,7 @@ async def list_portals(user: dict = Depends(_user)):
 async def list_matches(
     lang: str | None = Query(None),
     emitTasks: bool = Query(True),
-    user: dict = Depends(_user),
+    user: dict = Depends(_viewer),
 ):
     """AI scheme matching (M21, SDR). Rules decide eligibility; the model ranks
     and explains. Launches at `suggest`."""
@@ -151,7 +161,7 @@ async def deadline_reminders(
 
 
 @router.get("/{scheme_id}")
-async def scheme_detail(scheme_id: str, user: dict = Depends(_user)):
+async def scheme_detail(scheme_id: str, user: dict = Depends(_viewer)):
     """Scheme detail + eligibility checklist + required-document vault status.
 
     The checklist is computed server-side (`services/eligibility.py`); the client

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     sarvam_api_key: str = ""
     weather_api_key: str = ""
+    # Google Maps geo provider. Empty = mock adapter (deterministic stub).
+    google_maps_api_key: str = ""
     sentry_dsn: str = ""
     cron_secret: str = ""
     gemini_api_key: str = ""

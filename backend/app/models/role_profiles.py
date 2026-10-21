@@ -25,6 +25,13 @@ class SellerRoleProfile(BaseModel):
     shopName: str
     gstNumber: str | None = None
     apmcLicense: str | None = None
+    # Vyapari hub business profile (pre-KYC data entry, V-test gaps).
+    businessType: Literal["mandi_trader", "wholesaler", "processor", "retailer", "exporter"] | None = None
+    yearsInTrade: int | None = None
+    buyingCapacityBand: Literal["under_50k", "50k_2l", "2l_10l", "above_10l"] | None = None
+    operatingStates: list[str] = []
+    mandis: list[str] = []
+    logoPath: str | None = None
 
 
 class FarmLandlordRoleProfile(BaseModel):
@@ -101,6 +108,27 @@ class BankManagerRoleProfile(BaseModel):
     employeeId: str | None = None
 
 
+class NurseryRoleProfile(BaseModel):
+    nurseryName: str = ""
+    ownerName: str = ""
+    licenseNo: str = ""
+    registrationNo: str = ""
+    deliveryRadiusKm: int = 50
+    specializations: list[str] = []
+    settlementUpi: str | None = None
+    bankAccount: str | None = None
+    ifscCode: str | None = None
+    serviceArea: str = ""
+
+
+class WomenShgRoleProfile(BaseModel):
+    shgName: str = ""
+    groupRole: str = "member"  # "president" | "secretary" | "treasurer" | "member"
+    enterpriseType: str = ""
+    skills: list[str] = []
+    settlementUpi: str | None = None
+
+
 ROLE_PROFILE_MODELS: dict[str, type[BaseModel]] = {
     "transport": TransportRoleProfile,
     "transporter": TransportRoleProfile,
@@ -118,4 +146,6 @@ ROLE_PROFILE_MODELS: dict[str, type[BaseModel]] = {
     "directBuyer": DirectBuyerRoleProfile,
     "exporter": ExporterRoleProfile,
     "bankManager": BankManagerRoleProfile,
+    "nursery": NurseryRoleProfile,
+    "womenShg": WomenShgRoleProfile,
 }

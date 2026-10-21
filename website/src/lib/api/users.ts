@@ -3,6 +3,12 @@ import type { PersonaType, UserProfile } from '../../types';
 
 export interface UserSettings {
   language?: string;
+  preferredLanguage?: string;
+  womenMode?: boolean;
+  highContrast?: boolean;
+  darkMode?: boolean;
+  /** Account visibility — false hides the profile from search/discovery. */
+  discoverable?: boolean;
   notifications?: Record<string, boolean>;
   [key: string]: unknown;
 }
@@ -16,8 +22,8 @@ export const users = {
   /** GET /users/me */
   getMe: (): Promise<UserProfile> => readOne<UserProfile>('/users/me'),
 
-  /** PUT /users/me */
-  updateMe: (updates: Partial<UserProfile>): Promise<UserProfile> =>
+  /** PUT /users/me — accepts the typed core plus loose backend extras (tehsil, addressLine, …). */
+  updateMe: (updates: Partial<UserProfile> & Record<string, unknown>): Promise<UserProfile> =>
     put<UserProfile>('/users/me', updates),
 
   /** PUT /users/me/persona-setup */
@@ -43,6 +49,26 @@ export const users = {
   /** DELETE /users/me/profiles/{type} — unlink. */
   unlinkProfile: (profileType: PersonaType): Promise<{ success: boolean }> =>
     del<{ success: boolean }>(`/users/me/profiles/${profileType}`),
+
+  /** GET /users/me/profiles — linked/active/primary + per-persona flags. */
+  myProfiles: (): Promise<unknown> => readOne<unknown>('/users/me/profiles'),
+
+  /** PUT /users/me/profiles/{type}/visibility — hide/show a persona (hide ≠ unlink). */
+  setPersonaVisibility: (
+    profileType: PersonaType,
+    enabled: boolean
+  ): Promise<{
+    persona: string;
+    enabled: boolean;
+    activeProfile: string;
+    disabledProfiles: string[];
+  }> =>
+    put<{
+      persona: string;
+      enabled: boolean;
+      activeProfile: string;
+      disabledProfiles: string[];
+    }>(`/users/me/profiles/${profileType}/visibility`, { enabled }),
 
   /** GET /users/me/settings */
   getSettings: (): Promise<UserSettings> => readOne<UserSettings>('/users/me/settings'),
@@ -75,6 +101,18 @@ export const users = {
   /** DELETE /devices/{token_hash} */
   unregisterDevice: (tokenHash: string): Promise<{ success: boolean }> =>
     del<{ success: boolean }>(`/devices/${tokenHash}`),
+
+  /** GET /users/me/saved — saved items, optionally filtered by kind (mandi-rate | tree | article | ad). */
+  savedItems: (kind?: string): Promise<unknown[]> =>
+    readList<unknown[]>('/users/me/saved', { params: kind ? { kind } : {} }),
+
+  /** POST /users/me/saved — save an item. */
+  saveItem: (body: { kind: string; refId: string; title?: string; snapshot?: Record<string, unknown> }): Promise<unknown> =>
+    post<unknown>('/users/me/saved', body),
+
+  /** DELETE /users/me/saved/{kind}/{refId} — remove a saved item. */
+  unsaveItem: (kind: string, refId: string): Promise<{ success: boolean }> =>
+    del<{ success: boolean }>(`/users/me/saved/${kind}/${encodeURIComponent(refId)}`),
 
   /** POST /users/{user_id}/report */
   reportUser: (userId: string, reason: string): Promise<{ success: boolean }> =>

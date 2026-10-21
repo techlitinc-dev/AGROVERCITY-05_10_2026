@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { HeartHandshake, HandCoins, BarChart3 } from 'lucide-react';
+import { HeartHandshake, HandCoins, BarChart3, Landmark, ShieldCheck, Power } from 'lucide-react';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { admin } from '../../../lib/api';
+import { cn, formatDateTime, formatPaisa } from '../../../lib/utils';
 import {
   PanelShell,
   DataTable,
@@ -39,12 +40,14 @@ export const WomenPanel: React.FC = () => {
           { id: 'directory', label: 'SHG directory' },
           { id: 'subsidies', label: 'Subsidies' },
           { id: 'impact', label: 'Impact report' },
+          { id: 'loans', label: 'Loans & Compliance' },
         ]}
       />
       {tab === 'queue' && <QueueCard />}
       {tab === 'directory' && <DirectoryCard />}
       {tab === 'subsidies' && <SubsidyCard />}
       {tab === 'impact' && <ImpactCard />}
+      {tab === 'loans' && <LoansComplianceCard />}
     </>
   );
 };
@@ -321,6 +324,213 @@ const ImpactCard: React.FC = () => {
           />
         </PanelShell>
       </div>
+    </>
+  );
+};
+
+/* --------------------------------------------- Loans & deposit compliance */
+
+const LoansComplianceCard: React.FC = () => {
+  const { request, modal } = useReasonModal();
+  const loans = useAsync(() => admin.women.loans(), []);
+  const [auditFor, setAuditFor] = useState<string | null>(null);
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const compliance = useAsync(() => admin.women.depositCompliance(month), [month]);
+  const billing = useAsync(() => admin.billing.config().catch(() => null), []);
+  const [switchMsg, setSwitchMsg] = useState<string | null>(null);
+
+  const rows = (loans.data ?? []) as Row[];
+  const auditRows = asRows(rows.find((r) => idOf(r) === auditFor)?.audit);
+  const subscriptionsEnabled =
+    asRow(billing.data)?.subscriptionsEnabled === true;
+
+  const toggleSubscriptions = () => {
+    const next = !subscriptionsEnabled;
+    request({
+      title: `${next ? 'Enable' : 'Disable'} platform subscriptions`,
+      description:
+        'Kill-switch for the ₹9 / ₹99 / ₹999 subscription feature. Disabling blocks new subscriptions immediately.',
+      confirmLabel: next ? 'Enable subscriptions' : 'Disable subscriptions',
+      tone: next ? 'primary' : 'danger',
+      defaultReason: next
+        ? 'Subscription feature re-enabled after review'
+        : 'Subscription feature disabled — incident/business decision',
+      action: (reason) => admin.billing.updateConfig({ subscriptionsEnabled: next }, reason),
+      onDone: () => {
+        billing.reload();
+        setSwitchMsg(
+          next
+            ? 'Subscriptions are ON — users can buy plans again.'
+            : 'Subscriptions are OFF — the feature is hidden for all users.'
+        );
+      },
+    });
+  };
+
+  return (
+    <>
+      <PanelShell
+        title="SOP-24: SHG Loan Book"
+        subtitle="Every group loan across the platform (GET /admin/women/loans)."
+        icon={Landmark}
+        loading={loans.loading}
+        error={loans.error}
+        onRefresh={loans.reload}
+      >
+        <DataTable
+          rows={rows}
+          empty="No SHG loans recorded."
+          columns={[
+            {
+              header: 'Group',
+              cell: (r) => <span className="font-semibold text-slate-800">{str(r, 'groupName', 'shgName') || '—'}</span>,
+            },
+            {
+              header: 'Borrower',
+              cell: (r) => (
+                <div>
+                  <p className="font-bold text-slate-900">{str(r, 'borrowerName') || 'Member'}</p>
+                  <p className="text-[10px] text-slate-400">{str(r, 'purpose') || '—'}</p>
+                </div>
+              ),
+            },
+            {
+              header: 'Amount',
+              cell: (r) => <span className="font-bold">{formatPaisa(num(r, 'amountPaisa') ?? 0)}</span>,
+            },
+            { header: 'Status', cell: (r) => <StatusBadge status={str(r, 'status') || 'requested'} /> },
+            {
+              header: 'Repaid',
+              cell: (r) => {
+                const amount = num(r, 'amountPaisa') ?? 0;
+                const repaid = num(r, 'repaidPaisa') ?? 0;
+                return (
+                  <span className={cn('font-semibold', repaid >= amount && amount > 0 ? 'text-emerald-700' : 'text-slate-600')}>
+                    {formatPaisa(repaid)}
+                    {amount > 0 ? ` (${Math.round((repaid / amount) * 100)}%)` : ''}
+                  </span>
+                );
+              },
+            },
+            {
+              header: 'Audit',
+              className: 'text-right',
+              cell: (r) => (
+                <Btn onClick={() => setAuditFor(auditFor === idOf(r) ? null : idOf(r))}>
+                  {auditFor === idOf(r) ? 'Hide' : 'Trail'}
+                </Btn>
+              ),
+            },
+          ]}
+        />
+        {auditFor && (
+          <div className="mt-3 p-3 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-1.5">
+            <h4 className="text-xs font-extrabold text-slate-700">
+              Audit trail — {str(rows.find((r) => idOf(r) === auditFor) ?? {}, 'borrowerName') || 'loan'}
+            </h4>
+            {auditRows.length === 0 ? (
+              <p className="text-[11px] text-slate-400">No audit entries recorded.</p>
+            ) : (
+              auditRows.map((a, i) => (
+                <div key={i} className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-500">
+                  <span>
+                    <span className="font-bold text-slate-700">{str(a, 'action') || 'action'}</span>
+                    {str(a, 'byName') ? ` by ${str(a, 'byName')}` : ''}
+                    {(num(a, 'amountPaisa') ?? 0) > 0 ? ` · ${formatPaisa(num(a, 'amountPaisa') ?? 0)}` : ''}
+                  </span>
+                  <span>{formatDateTime(str(a, 'at')) || '—'}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </PanelShell>
+
+      <PanelShell
+        title="SOP-24: Deposit Compliance"
+        subtitle="Monthly savings collection per SHG (GET /admin/women/deposit-compliance)."
+        icon={BarChart3}
+        loading={compliance.loading}
+        error={compliance.error}
+        onRefresh={compliance.reload}
+      >
+        <Field label="Month" className="max-w-40 mb-3">
+          <TextInput type="month" value={month} onChange={setMonth} />
+        </Field>
+        <DataTable
+          rows={(compliance.data ?? []) as Row[]}
+          empty="No deposit data for this month."
+          columns={[
+            {
+              header: 'SHG',
+              cell: (r) => (
+                <div>
+                  <p className="font-bold text-slate-900">{str(r, 'name', 'groupName')}</p>
+                  <p className="text-[10px] text-slate-400">{str(r, 'groupId')}</p>
+                </div>
+              ),
+            },
+            { header: 'Members', cell: (r) => <span>{num(r, 'memberCount') ?? '—'}</span> },
+            {
+              header: 'Paid',
+              cell: (r) => (
+                <span className="font-semibold">
+                  {num(r, 'paidCount') ?? 0}/{num(r, 'memberCount') ?? 0}
+                </span>
+              ),
+            },
+            { header: 'Paid ₹', cell: (r) => <span className="font-bold">{formatPaisa(num(r, 'paidTotalPaisa') ?? 0)}</span> },
+            { header: 'Expected ₹', cell: (r) => <span>{formatPaisa(num(r, 'expectedTotalPaisa') ?? 0)}</span> },
+            {
+              header: 'Compliance',
+              cell: (r) => {
+                const expected = num(r, 'expectedTotalPaisa') ?? 0;
+                const paid = num(r, 'paidTotalPaisa') ?? 0;
+                const pctVal = expected > 0 ? Math.round((paid / expected) * 100) : null;
+                return (
+                  <span
+                    className={cn(
+                      'font-bold',
+                      pctVal === null ? 'text-slate-400' : pctVal >= 80 ? 'text-emerald-700' : pctVal >= 50 ? 'text-amber-600' : 'text-rose-600'
+                    )}
+                  >
+                    {pctVal === null ? '—' : `${pctVal}%`}
+                  </span>
+                );
+              },
+            },
+          ]}
+        />
+      </PanelShell>
+
+      <PanelShell
+        title="Subscription switch"
+        subtitle="Platform kill-switch for the ₹9 / ₹99 / ₹999 subscription feature (GET/PUT /admin/billing/config)."
+        icon={ShieldCheck}
+        loading={billing.loading}
+      >
+        {switchMsg && <Banner kind="success">{switchMsg}</Banner>}
+        <div className="flex flex-wrap items-center justify-between gap-3 max-w-3xl">
+          <div>
+            <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+              <Power className={cn('w-4 h-4', subscriptionsEnabled ? 'text-emerald-600' : 'text-rose-500')} />
+              Subscriptions are {subscriptionsEnabled ? 'ON' : 'OFF'}
+            </p>
+            <p className="text-[11px] text-slate-400">
+              {subscriptionsEnabled
+                ? 'Users can purchase and renew subscription plans.'
+                : 'New subscriptions are blocked across the platform.'}
+            </p>
+          </div>
+          <Btn tone={subscriptionsEnabled ? 'danger' : 'primary'} onClick={toggleSubscriptions}>
+            {subscriptionsEnabled ? 'Disable subscriptions' : 'Enable subscriptions'}
+          </Btn>
+        </div>
+        {modal}
+      </PanelShell>
     </>
   );
 };

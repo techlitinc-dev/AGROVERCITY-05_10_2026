@@ -13,6 +13,11 @@ class LotRequest(BaseModel):
     harvestDate: str | None = None
     photos: list[str] = []
     location: Any = None
+    lat: float | None = None
+    lng: float | None = None
+    village: str | None = None
+    # Create the lot straight into the admin review queue.
+    submitForReview: bool = False
 
 
 class LotOut(BaseModel):
@@ -28,5 +33,8 @@ class LotOut(BaseModel):
     harvestDate: str | None = None
     photos: list[str] = []
     location: Any = None
+    lat: float | None = None
+    lng: float | None = None
+    village: str | None = None
     status: str = "open"
     createdAt: str

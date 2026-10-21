@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Truck,
@@ -16,6 +16,14 @@ import {
   FileText,
   ArrowRight,
   ShieldAlert,
+  CalendarDays,
+  User,
+  FileCheck,
+  Star,
+  Megaphone,
+  Sparkles,
+  Bot,
+  BookOpen,
 } from 'lucide-react';
 import { transport, apiErrorMessage } from '../../lib/api';
 import { StatCard } from '../../components/common/StatCard';
@@ -37,6 +45,17 @@ const TAB_FOR_PATH: Record<string, TabId> = {
 /** Vehicle-type catalog names accepted by POST /transport/vehicles. */
 const VEHICLE_TYPES = ['Tata Ace', 'Bolero Maxi', 'Tractor Trolley', 'Eicher 6-Wheeler', 'Reefer Cold Van', '10-Wheeler Truck'];
 
+const QUICK_LINKS = [
+  { to: '/transporter/profile', label: 'Profile', icon: User },
+  { to: '/transporter/bookings', label: 'My Bookings', icon: FileCheck },
+  { to: '/transporter/ratings', label: 'Ratings & Reviews', icon: Star },
+  { to: '/transporter/ads', label: 'My Advertisements', icon: Megaphone },
+  { to: '/transporter/ai', label: 'AI Analysis', icon: Sparkles },
+  { to: '/transporter/chatbot', label: 'Chatbot', icon: Bot },
+  { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
+  { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
+];
+
 const bookingCrop = (b: TransportBooking): string => b.commodity || b.cargoCrop || 'Cargo';
 const bookingPickup = (b: TransportBooking): string => b.pickup || b.pickupAddress || '—';
 const bookingDrop = (b: TransportBooking): string => b.drop || b.dropAddress || '—';
@@ -54,6 +73,7 @@ export const TransporterHome: React.FC = () => {
   const [matched, setMatched] = useState<Rec[]>([]);
   const [fareTrends, setFareTrends] = useState<Rec[]>([]);
   const [bookings, setBookings] = useState<TransportBooking[]>([]);
+  const [acceptedTrips, setAcceptedTrips] = useState<TransportBooking[]>([]);
   const [settlements, setSettlements] = useState<Rec[]>([]);
   const [wallet, setWallet] = useState<Rec>({});
   const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
@@ -89,18 +109,20 @@ export const TransporterHome: React.FC = () => {
       setAnalytics({});
     }
     try {
-      const [l, m, f, b, s] = await Promise.all([
+      const [l, m, f, b, s, accepted] = await Promise.all([
         transport.loads(),
         transport.matchedLoads().catch(() => [] as unknown[]),
         transport.fareTrends().catch(() => [] as unknown[]),
         transport.bookings(),
         transport.settlements().catch(() => [] as unknown[]),
+        transport.bookings({ status: 'accepted' }).catch(() => [] as TransportBooking[]),
       ]);
       setLoads(asArr(l).map(asRec));
       setMatched(asArr(m).map(asRec));
       setFareTrends(asArr(f).map(asRec));
       setBookings(b);
       setSettlements(asArr(s).map(asRec));
+      setAcceptedTrips(accepted);
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -169,6 +191,29 @@ export const TransporterHome: React.FC = () => {
   const todayTrips = asArr(dashboard.todayTrips);
   const docExpiries = asArr(dashboard.documentExpiries);
   const walletBalance = firstNum(wallet, ['balancePaisa'], 0) / 100;
+
+  // Trip calendar: accepted bookings grouped by scheduled/pickup date over the next 7 days.
+  const weekDays = useMemo(() => {
+    const byDay = new Map<string, TransportBooking[]>();
+    acceptedTrips.forEach((b) => {
+      const key = String(b.date ?? b.pickupTime ?? '').slice(0, 10);
+      if (!key) return;
+      byDay.set(key, [...(byDay.get(key) ?? []), b]);
+    });
+    const days: { key: string; weekday: string; dateLabel: string; trips: TransportBooking[] }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i += 1) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      days.push({
+        key,
+        weekday: i === 0 ? 'Today' : d.toLocaleDateString('en-IN', { weekday: 'short' }),
+        dateLabel: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+        trips: byDay.get(key) ?? [],
+      });
+    }
+    return days;
+  }, [acceptedTrips]);
 
   return (
     <div className="space-y-6">
@@ -255,6 +300,72 @@ export const TransporterHome: React.FC = () => {
           icon={Wallet}
           colorScheme="purple"
         />
+      </div>
+
+      {/* Trip Calendar — next 7 days of accepted bookings */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-emerald-600" /> Trip Calendar — Next 7 Days
+          </h3>
+          <span className="text-xs text-slate-400 font-semibold">{acceptedTrips.length} accepted trip(s)</span>
+        </div>
+        {acceptedTrips.length === 0 && !loading ? (
+          <div className="p-6 border border-dashed border-slate-300 rounded-2xl text-center text-xs font-semibold text-slate-500">
+            No trips scheduled. Accept jobs from the Job Inbox or win bids on the load board.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+            {weekDays.map((day) => (
+              <div
+                key={day.key}
+                className={`rounded-2xl border p-3 space-y-2 min-h-[96px] ${
+                  day.trips.length > 0 ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/60'
+                }`}
+              >
+                <div>
+                  <p className={`text-[10px] font-bold uppercase ${day.trips.length > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                    {day.weekday}
+                  </p>
+                  <p className="text-xs font-black text-slate-900">{day.dateLabel}</p>
+                </div>
+                {day.trips.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 italic">No trips scheduled</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {day.trips.map((t) => (
+                      <Link
+                        key={t.id}
+                        to={`/transporter/trips/${t.id}`}
+                        className="block p-2 rounded-xl bg-white border border-emerald-100 hover:border-emerald-300 transition-colors"
+                        title={`${bookingPickup(t)} → ${bookingDrop(t)}`}
+                      >
+                        <p className="text-[10px] font-bold text-slate-900 truncate">{bookingCrop(t)}</p>
+                        <p className="text-[9px] text-slate-500 truncate">
+                          {bookingPickup(t)} → {bookingDrop(t)}
+                        </p>
+                        <p className="text-[9px] font-bold text-emerald-700">{formatCurrency(bookingFare(t))}</p>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Quick Links */}
+      <div className="flex flex-wrap gap-2">
+        {QUICK_LINKS.map((l) => (
+          <Link
+            key={l.to}
+            to={l.to}
+            className="px-3.5 py-2.5 rounded-2xl border border-slate-200 hover:bg-emerald-50 hover:border-emerald-200 text-slate-700 hover:text-emerald-800 font-bold text-xs flex items-center gap-1.5 transition-all"
+          >
+            <l.icon className="w-4 h-4" /> {l.label}
+          </Link>
+        ))}
       </div>
 
       {/* Tabs */}

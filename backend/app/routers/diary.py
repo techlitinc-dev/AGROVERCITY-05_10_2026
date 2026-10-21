@@ -1,8 +1,11 @@
+import csv
+import io
 import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.cache import cache_delete, cache_get, cache_set
@@ -41,7 +44,7 @@ async def _farmer_or_landlord(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    require_role(user, "farmer", "farmLandlord")
+    require_role(user, "farmer", "farmLandlord", "nursery", "seller", "transporter", "transport", "customer")
     return uid
 
 
@@ -65,6 +68,7 @@ async def _filtered_entries(
     category: str | None,
     from_date: str | None,
     to_date: str | None,
+    q: str | None = None,
 ) -> list[dict]:
     entries = await list_subdocs(f"users/{uid}/diary_entries")
     if type is not None:
@@ -75,6 +79,13 @@ async def _filtered_entries(
         entries = [e for e in entries if e.get("date", "") >= from_date]
     if to_date is not None:
         entries = [e for e in entries if e.get("date", "") <= to_date]
+    if q:
+        needle = q.lower()
+        fields = ("notes", "cropName", "category", "title", "product")
+        entries = [
+            e for e in entries
+            if any(needle in str(e.get(f) or "").lower() for f in fields)
+        ]
     return sorted(entries, key=lambda e: e.get("date", ""), reverse=True)
 
 
@@ -82,13 +93,14 @@ async def _filtered_entries(
 async def list_entries(
     type: str | None = None,
     category: str | None = None,
+    q: str | None = None,
     from_date: str | None = Query(None, alias="from"),
     to_date: str | None = Query(None, alias="to"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
     uid: str = Depends(_farmer_or_landlord),
 ):
-    entries = await _filtered_entries(uid, type, category, from_date, to_date)
+    entries = await _filtered_entries(uid, type, category, from_date, to_date, q)
     total = len(entries)
     start = (page - 1) * pageSize
     return {
@@ -231,6 +243,53 @@ async def diary_report(
         "from": from_date,
         "to": to_date,
     }
+
+
+@router.get("/report.csv")
+async def diary_report_csv(
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    uid: str = Depends(_farmer_or_landlord),
+):
+    """CSV twin of the PDF report — same from/to window, stdlib csv writer."""
+    today = date.today()
+    if from_date is None:
+        from_date = today.replace(day=1).isoformat()
+    if to_date is None:
+        if today.month == 12:
+            first_next = today.replace(year=today.year + 1, month=1, day=1)
+        else:
+            first_next = today.replace(month=today.month + 1, day=1)
+        to_date = (first_next - timedelta(days=1)).isoformat()
+    entries = await _filtered_entries(uid, None, None, from_date, to_date)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        ["date", "title", "category", "type", "tradeType", "quantity", "unit",
+         "amountPaisa", "party", "cropName", "notes"]
+    )
+    for entry in entries:
+        amount_paisa = int(round(float(entry.get("amount") or 0) * 100))
+        writer.writerow(
+            [
+                entry.get("date", ""),
+                entry.get("title", ""),
+                entry.get("category", ""),
+                entry.get("type", ""),
+                entry.get("tradeType") or "",
+                entry.get("quantity") if entry.get("quantity") is not None else "",
+                entry.get("unit") or "",
+                amount_paisa,
+                entry.get("party", ""),
+                entry.get("cropName") or "",
+                entry.get("notes") or "",
+            ]
+        )
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="diary-report.csv"'},
+    )
 
 
 class ReceiptScanIn(BaseModel):

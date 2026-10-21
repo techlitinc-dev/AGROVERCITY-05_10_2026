@@ -341,8 +341,10 @@ export const TextInput: React.FC<{
   inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'email' | 'url';
   maxLength?: number;
   required?: boolean;
+  disabled?: boolean;
+  autoComplete?: string;
   className?: string;
-}> = ({ value, onChange, placeholder, type = 'text', list, inputMode, maxLength, required, className }) => (
+}> = ({ value, onChange, placeholder, type = 'text', list, inputMode, maxLength, required, disabled, autoComplete, className }) => (
   <input
     type={type}
     value={value}
@@ -350,9 +352,11 @@ export const TextInput: React.FC<{
     inputMode={inputMode}
     maxLength={maxLength}
     required={required}
+    disabled={disabled}
+    autoComplete={autoComplete}
     placeholder={placeholder}
     onChange={(e) => onChange(e.target.value)}
-    className={cn(inputCls, className)}
+    className={cn(inputCls, disabled && 'opacity-60 cursor-not-allowed', className)}
   />
 );
 

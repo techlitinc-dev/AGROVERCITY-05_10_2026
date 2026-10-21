@@ -174,6 +174,7 @@ async def promote_waitlist_head(slot: dict, equipment: dict) -> dict | None:
 @router.get("")
 async def list_equipment(
     type: str | None = None,
+    q: str | None = None,
     lat: float | None = None,
     lng: float | None = None,
     uid: str = Depends(_viewer),
@@ -183,6 +184,15 @@ async def list_equipment(
         d for d in docs
         if d.get("active", True) and d.get("docStatus") == "verified" and (type is None or d.get("type") == type)
     ]
+    # SR 27: substring search over machine type / name / location (case-insensitive)
+    needle = q.strip().lower() if q else None
+    if needle:
+        docs = [
+            d for d in docs
+            if needle in str(d.get("name") or "").lower()
+            or needle in str(d.get("type") or "").lower()
+            or needle in str(d.get("location") or "").lower()
+        ]
     # WS-04 step 10: priority listing — Pro/Enterprise owners rank first.
     # Per-doc plan lookups happen once per owner, not per machine.
     from app.services.billing import effective_plan
@@ -204,6 +214,29 @@ async def list_equipment(
         d.update(await provider_rating_fields(d["id"]))
         out.append(EquipmentOut(**d).model_dump())
     return {"data": out}
+
+
+@router.get("/my-bookings")
+async def my_bookings(uid: str = Depends(_farmer)):
+    """The caller's equipment bookings, newest first, with a machine snapshot
+    (SR 27) — the renter-side counterpart of the owner's fleet bookings view."""
+    bookings = await query("equipment_bookings", [("userId", "==", uid)], limit=500)
+    bookings.sort(key=lambda b: b.get("createdAt", ""), reverse=True)
+    out = []
+    for booking in bookings:
+        machine = await get_doc("equipment", booking.get("equipmentId") or "")
+        owner_id = (machine or {}).get("ownerId")
+        owner = await get_doc("users", owner_id) if owner_id else None
+        out.append(
+            {
+                **booking,
+                "machineName": (machine or {}).get("name"),
+                "machineType": (machine or {}).get("type"),
+                "ownerId": owner_id,
+                "ownerName": (owner or {}).get("name"),
+            }
+        )
+    return {"data": out, "page": 1, "pageSize": len(out), "total": len(out)}
 
 
 @router.get("/{equipment_id}/slots")

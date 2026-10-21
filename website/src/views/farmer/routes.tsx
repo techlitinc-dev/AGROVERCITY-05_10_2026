@@ -10,6 +10,7 @@ const PurchaseDetailView = lazy(() => import('./PurchaseDetailView').then((m) =>
 const BuyerContractsView = lazy(() => import('./BuyerContractsView').then((m) => ({ default: m.BuyerContractsView })));
 const ContractDetailView = lazy(() => import('./ContractDetailView').then((m) => ({ default: m.ContractDetailView })));
 const TransportBookingView = lazy(() => import('./TransportBookingView').then((m) => ({ default: m.TransportBookingView })));
+const TransportBookingDetailView = lazy(() => import('./TransportBookingDetailView').then((m) => ({ default: m.TransportBookingDetailView })));
 const FarmDiaryView = lazy(() => import('./FarmDiaryView').then((m) => ({ default: m.FarmDiaryView })));
 const PnlDashboardView = lazy(() => import('./PnlDashboardView').then((m) => ({ default: m.PnlDashboardView })));
 const EquipmentRentalView = lazy(() => import('./EquipmentRentalView').then((m) => ({ default: m.EquipmentRentalView })));
@@ -25,7 +26,9 @@ const WaterClimateView = lazy(() => import('./WaterClimateView').then((m) => ({ 
 const VaultView = lazy(() => import('./VaultView').then((m) => ({ default: m.VaultView })));
 const ReferralsView = lazy(() => import('./ReferralsView').then((m) => ({ default: m.ReferralsView })));
 const KisanCoinsView = lazy(() => import('../community/KisanCoinsView').then((m) => ({ default: m.KisanCoinsView })));
-const DairyHome = lazy(() => import('../dairy/DairyHome').then((m) => ({ default: m.DairyHome })));
+const FarmerDairyView = lazy(() => import('./FarmerDairyView').then((m) => ({ default: m.FarmerDairyView })));
+const LivestockHubView = lazy(() => import('./LivestockHubView').then((m) => ({ default: m.LivestockHubView })));
+const MyCropsView = lazy(() => import('./MyCropsView').then((m) => ({ default: m.MyCropsView })));
 const AiCropDoctorView = lazy(() => import('./AiCropDoctorView').then((m) => ({ default: m.AiCropDoctorView })));
 
 /** 1. Farmer / Kisan Hub (18 journeys) */
@@ -41,6 +44,7 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/contracts" element={<BuyerContractsView />} />
     <Route path="/farmer/contracts/:id" element={<ContractDetailView />} />
     <Route path="/farmer/transport" element={<TransportBookingView />} />
+    <Route path="/farmer/transport/:id" element={<TransportBookingDetailView />} />
     <Route path="/farmer/diary" element={<FarmDiaryView />} />
     <Route path="/farmer/pnl" element={<PnlDashboardView />} />
     <Route path="/farmer/equipment" element={<EquipmentRentalView />} />
@@ -56,6 +60,8 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/vault" element={<VaultView />} />
     <Route path="/farmer/referrals" element={<ReferralsView />} />
     <Route path="/farmer/coins" element={<KisanCoinsView />} />
-    <Route path="/farmer/dairy" element={<DairyHome />} />
+    <Route path="/farmer/dairy" element={<FarmerDairyView />} />
+    <Route path="/farmer/livestock" element={<LivestockHubView />} />
+    <Route path="/farmer/crops" element={<MyCropsView />} />
   </>
 );

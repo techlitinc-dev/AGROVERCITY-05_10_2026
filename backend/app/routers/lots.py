@@ -56,7 +56,10 @@ async def create_lot(body: LotRequest, uid: str = Depends(_farmer_user)):
         "harvestDate": body.harvestDate or now[:10],
         "photos": body.photos or [],
         "location": body.location or "Pimpalgaon Baswant, Nashik",
-        "status": "open",
+        "lat": body.lat,
+        "lng": body.lng,
+        "village": body.village,
+        "status": "pending_review" if body.submitForReview else "open",
         "createdAt": now,
     }
     await set_doc("market_lots", doc["id"], doc)
@@ -97,18 +100,32 @@ async def browse_lots(
     maxRate: float | None = None,
     minQty: float | None = None,
     harvestBefore: str | None = None,
+    status: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
+    maxDistanceKm: float | None = None,
     sort: str = "newest",
     page: int = 1,
     pageSize: int = 20,
     uid: str = Depends(current_user_id),
 ):
     """Open discovery for buyers (any authenticated user) — spec V3."""
-    docs = await query("market_lots", [("status", "==", "open")], limit=1000)
+    if status:
+        # An explicit status narrows the default open-only discovery surface
+        # (moderation states like rejected/taken_down stay hidden by default).
+        docs = await query("market_lots", [("status", "==", status)], limit=1000)
+    else:
+        docs = await query("market_lots", [("status", "==", "open")], limit=1000)
     docs = [d for d in docs if d.get("farmerId") != uid]
     if crop:
         docs = [d for d in docs if crop.lower() in d.get("crop", "").lower()]
     if state:
-        docs = [d for d in docs if (d.get("location") or {}).get("state", "").lower() == state.lower()]
+        docs = [
+            d for d in docs
+            if state.lower() in (
+                (d.get("state") or (d.get("location") or {}).get("state", "")).lower()
+            )
+        ]
     if minRate is not None:
         docs = [d for d in docs if d.get("expectedRate", 0) >= minRate]
     if maxRate is not None:
@@ -117,6 +134,17 @@ async def browse_lots(
         docs = [d for d in docs if d.get("quantityQuintals", 0) >= minQty]
     if harvestBefore:
         docs = [d for d in docs if d.get("harvestDate", "") <= harvestBefore]
+    if lat is not None and lng is not None and maxDistanceKm is not None:
+        # Haversine km against the lot's own coords; lots without coords can
+        # never satisfy a distance filter and are skipped.
+        docs = [
+            d for d in docs
+            if d.get("lat") is not None
+            and d.get("lng") is not None
+            and _haversine_km(lat, lng, float(d["lat"]), float(d["lng"])) <= maxDistanceKm
+        ]
+        for d in docs:
+            d["distanceKm"] = round(_haversine_km(lat, lng, float(d["lat"]), float(d["lng"])), 2)
     if sort == "price":
         docs.sort(key=lambda d: d.get("expectedRate", 0))
     elif sort == "ready-date":
@@ -133,6 +161,40 @@ async def browse_lots(
         name = (farmer.get("name") or "").strip().split(" ")[0]
         enriched.append({**lot, "farmerName": name, "farmerVillage": farmer.get("village", "")})
     return {"data": enriched, "page": page, "pageSize": pageSize, "total": total}
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in kilometres (small float math, radians)."""
+    import math
+
+    radius_km = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lng2 - lng1)
+    a = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    )
+    return 2 * radius_km * math.asin(math.sqrt(a))
+
+
+@router.post("/lots/{lot_id}/submit-for-review")
+async def submit_lot_for_review(lot_id: str, uid: str = Depends(_farmer_user)):
+    """Farmer moves an open (or previously rejected) lot into the admin review
+    queue — browse/discovery keep serving only `open` lots until approval."""
+    doc = await get_doc("market_lots", lot_id)
+    if doc is None or doc.get("farmerId") != uid:
+        _error(404, "LOT_NOT_FOUND", "lot not found")
+    if doc.get("status") not in ("open", "rejected"):
+        _error(
+            409,
+            "LOT_NOT_SUBMITTABLE",
+            f"a lot in status '{doc.get('status')}' cannot be submitted for review",
+        )
+    doc["status"] = "pending_review"
+    doc["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("market_lots", lot_id, doc)
+    return doc
 
 
 @router.get("/lots/{lot_id}/offers")
@@ -213,8 +275,14 @@ async def update_lot(lot_id: str, body: LotRequest, uid: str = Depends(_farmer_u
         _error(404, "LOT_NOT_FOUND", "lot not found")
     if doc.get("status") == "sold":
         _error(409, "LOT_NOT_EDITABLE", "a sold lot cannot be edited")
-    _validate_lot(body)
-    doc.update(body.model_dump())
+    qty, rate = _validate_lot(body)
+    # Merge only the fields the client actually sent — absent optional fields
+    # (lat/lng/village/photos/…) must not clobber stored values with None.
+    doc.update(body.model_dump(exclude_none=True, exclude={"submitForReview"}))
+    doc["quantityQuintals"] = qty
+    doc["quantityQuintal"] = qty
+    doc["expectedRate"] = rate
+    doc["expectedPricePerQuintal"] = rate
     await set_doc("market_lots", lot_id, doc)
     return doc
 

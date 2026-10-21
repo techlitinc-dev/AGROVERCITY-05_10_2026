@@ -4,18 +4,22 @@ import {
   AlertCircle,
   ArrowRight,
   Check,
+  Clock,
+  Coins,
+  Leaf,
   MapPin,
   Minus,
   Plus,
   ShieldCheck,
   ShoppingCart,
+  Sprout,
   Tag,
   Trash2,
 } from 'lucide-react';
-import { apiErrorMessage, mall } from '../../lib/api';
-import { useCartStore } from '../../stores/cartStore';
+import { apiErrorMessage, customer, gamification, mall } from '../../lib/api';
+import { useCartStore, type ProduceLogisticsMode } from '../../stores/cartStore';
 import { useAuthStore } from '../../stores/authStore';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatPaisa } from '../../lib/utils';
 import {
   asRecords,
   num,
@@ -61,13 +65,15 @@ declare global {
 
 const BNPL_INSTALLMENTS = 2;
 
+const DEFAULT_DELIVERY_SLOTS = ['7–10 AM', '10–1 PM', '4–7 PM'];
+
 const newIdempotencyKey = (): string =>
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 export const CartCheckoutView: React.FC = () => {
-  const { items, updateQty, removeItem, clearCart, getSubtotal } = useCartStore();
+  const { items, updateQty, removeItem, clearCart, getSubtotal, produceLines, updateProduceQty, updateProduceLogistics, removeProduceLine, clearProduceCart, getProduceSubtotalPaisa } = useCartStore();
   const user = useAuthStore((s) => s.user);
 
   const [rows, setRows] = useState<ApiCartRow[]>([]);
@@ -88,6 +94,13 @@ export const CartCheckoutView: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // SR 8/SR 19: delivery slot, Krushi Ratna coin redemption, plant-a-tree.
+  const [deliverySlot, setDeliverySlot] = useState('');
+  const [coinBalance, setCoinBalance] = useState(0);
+  const [coinInput, setCoinInput] = useState('');
+  const [coinsApplied, setCoinsApplied] = useState(false);
+  const [plantTree, setPlantTree] = useState(false);
   const [orderResult, setOrderResult] = useState<{
     orderId: string;
     total: number;
@@ -95,7 +108,39 @@ export const CartCheckoutView: React.FC = () => {
     paymentNote: string | null;
   } | null>(null);
 
+  // FarmGate produce cart (multi-farmer /customer/cart/checkout).
+  const [produceCheckout, setProduceCheckout] = useState<{
+    parentOrderId: string;
+    orders: Array<Record<string, unknown>>;
+  } | null>(null);
+  const [produceBusy, setProduceBusy] = useState(false);
+
   const navigate = useNavigate();
+
+  const handleProduceCheckout = async () => {
+    if (produceBusy || produceLines.length === 0) return;
+    setProduceBusy(true);
+    setError(null);
+    try {
+      const res = (await customer.checkout({
+        lines: produceLines.map((l) => ({
+          farmerId: l.farmerId,
+          lotId: l.lotId,
+          qty: l.qtyQuintals,
+          logisticsMode: l.logisticsMode,
+        })),
+      })) as { parentOrderId?: string; orders?: Array<Record<string, unknown>> };
+      clearProduceCart();
+      setProduceCheckout({
+        parentOrderId: str(res.parentOrderId),
+        orders: Array.isArray(res.orders) ? res.orders : [],
+      });
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setProduceBusy(false);
+    }
+  };
 
   // --- cart: server is the source of truth; store stays as the optimistic mirror ---
   useEffect(() => {
@@ -162,14 +207,51 @@ export const CartCheckoutView: React.FC = () => {
     };
   }, []);
 
+  // Krushi Ratna wallet balance for the coin-redemption control.
+  useEffect(() => {
+    let mounted = true;
+    gamification
+      .status()
+      .then((payload) => {
+        if (!mounted) return;
+        const record = payload as Record<string, unknown>;
+        setCoinBalance(Number(record.agriCoins ?? 0) || 0);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Delivery slots: the union of the cart items' product-level slots, else the
+  // platform defaults.
+  const slotOptions = useMemo(() => {
+    const fromProducts = rows.flatMap((row) => {
+      const slots = (row.product as Record<string, unknown> | undefined)?.deliverySlots;
+      return Array.isArray(slots) ? slots.map(String) : [];
+    });
+    const unique = [...new Set(fromProducts)];
+    return unique.length > 0 ? unique : DEFAULT_DELIVERY_SLOTS;
+  }, [rows]);
+
+  useEffect(() => {
+    if (slotOptions.length > 0 && !slotOptions.includes(deliverySlot)) {
+      setDeliverySlot(slotOptions[0]);
+    }
+  }, [slotOptions, deliverySlot]);
+
   const serverTotal = useMemo(
     () => rows.reduce((sum, r) => sum + num(toMallProduct(r.product).price) * r.quantity, 0),
     [rows]
   );
   const subtotal = rows.length > 0 ? serverTotal : getSubtotal();
   const discount = appliedCoupon?.discount ?? 0;
+  // Coins are 1:1 rupees, capped at the merchandise total (after coupon).
+  const coinMax = Math.max(0, Math.min(coinBalance, subtotal - discount));
+  const requestedCoins = coinsApplied ? Math.min(Math.max(0, parseInt(coinInput, 10) || 0), coinMax) : 0;
+  const coinDiscount = requestedCoins;
   const deliveryFee = subtotal - discount > 1500 || subtotal === 0 ? 0 : 99;
-  const grandTotal = Math.max(0, subtotal - discount + deliveryFee);
+  const grandTotal = Math.max(0, subtotal - discount - coinDiscount + deliveryFee);
   const cartCount = rows.length > 0 ? rows.reduce((n, r) => n + r.quantity, 0) : items.reduce((n, i) => n + i.quantity, 0);
 
   const syncRowQty = async (row: ApiCartRow, quantity: number) => {
@@ -311,6 +393,13 @@ export const CartCheckoutView: React.FC = () => {
       if (selected) payload.addressId = selected.id;
       else payload.deliveryAddress = `${newAddress.line1}, ${newAddress.village}, ${newAddress.district}, ${newAddress.state} - ${newAddress.pincode}`;
       if (appliedCoupon) payload.couponCode = appliedCoupon.code;
+      if (deliverySlot) payload.deliverySlot = deliverySlot;
+      if (coinDiscount > 0) payload.coinsToRedeem = coinDiscount;
+      if (plantTree) payload.plantTree = true;
+      // Doorstep delivery fee (Rs 99 unless the free-delivery threshold hit) is
+      // charged by the backend as part of the payable — send it explicitly so
+      // coupon/coin math and the Razorpay amount include it.
+      payload.deliveryFeePaisa = Math.round(deliveryFee * 100);
 
       const res = (await mall.placeOrder(payload)) as { orderId?: string; total?: number; discount?: number };
       const orderId = str(res.orderId);
@@ -374,7 +463,38 @@ export const CartCheckoutView: React.FC = () => {
     );
   }
 
-  const empty = !loadingCart && rows.length === 0 && items.length === 0;
+  const empty = !loadingCart && rows.length === 0 && items.length === 0 && produceLines.length === 0;
+
+  if (produceCheckout) {
+    return (
+      <div className="max-w-md mx-auto py-12 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-md">
+          <Sprout className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900">Procurement Placed!</h2>
+        <p className="text-xs text-slate-500">
+          <strong>{produceCheckout.orders.length}</strong> farmer order
+          {produceCheckout.orders.length === 1 ? '' : 's'} confirmed under consolidation{' '}
+          <strong>#{produceCheckout.parentOrderId.replace(/^ord_/, '').toUpperCase()}</strong>. Deposits and
+          inspection windows are tracked on the procurements page.
+        </p>
+        <div className="pt-4 flex justify-center gap-3">
+          <Link
+            to="/customer/procurements"
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+          >
+            Track Procurements
+          </Link>
+          <Link
+            to="/customer/produce"
+            className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs"
+          >
+            Browse More Produce
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (empty) {
     return (
@@ -528,6 +648,101 @@ export const CartCheckoutView: React.FC = () => {
             )}
           </div>
 
+          {/* FarmGate produce cart (multi-farmer checkout) */}
+          {produceLines.length > 0 && (
+            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-6 border border-emerald-200/80 shadow-xs space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold text-sm text-emerald-900 flex items-center gap-1.5">
+                  <Sprout className="w-4 h-4 text-emerald-600" />
+                  Produce Cart ({produceLines.length} lot{produceLines.length === 1 ? '' : 's'})
+                </h3>
+                <Link to="/customer/produce" className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800">
+                  + Add more lots
+                </Link>
+              </div>
+
+              <div className="divide-y divide-emerald-100">
+                {produceLines.map((line) => (
+                  <div key={line.lotId} className="py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-slate-900 leading-tight">
+                          {line.crop}
+                          {line.grade ? ` · ${line.grade}` : ''}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {line.farmerName || 'Farmer'} · {formatPaisa(line.pricePaisa)}/quintal
+                          {line.harvestDate ? ` · harvested ${line.harvestDate.slice(0, 10)}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeProduceLine(line.lotId)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors shrink-0"
+                        aria-label="Remove lot"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center border border-emerald-200 rounded-xl bg-white p-1">
+                        <button
+                          type="button"
+                          onClick={() => updateProduceQty(line.lotId, Math.round((line.qtyQuintals - 0.5) * 2) / 2)}
+                          className="p-1 text-slate-500 hover:text-slate-800"
+                          aria-label="Decrease quintals"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="px-2 text-xs font-bold text-slate-800">{line.qtyQuintals} q</span>
+                        <button
+                          type="button"
+                          onClick={() => updateProduceQty(line.lotId, Math.round((line.qtyQuintals + 0.5) * 2) / 2)}
+                          className="p-1 text-slate-500 hover:text-slate-800"
+                          aria-label="Increase quintals"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <select
+                        value={line.logisticsMode}
+                        onChange={(e) =>
+                          updateProduceLogistics(line.lotId, e.target.value as ProduceLogisticsMode)
+                        }
+                        className="px-2.5 py-1.5 rounded-xl bg-white border border-emerald-200 text-[11px] font-bold text-slate-700 focus:outline-none"
+                      >
+                        <option value="customer_pickup">I pick up</option>
+                        <option value="farmer_delivery">Farmer delivers</option>
+                        <option value="platform_transport">Platform transport</option>
+                      </select>
+                      <span className="ml-auto text-xs font-black text-emerald-800">
+                        {formatPaisa(Math.round(line.pricePaisa * line.qtyQuintals))}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-emerald-200">
+                <div>
+                  <p className="text-[11px] text-emerald-700 font-semibold">
+                    Total · {produceLines.length} farmer{produceLines.length === 1 ? '' : 's'}
+                  </p>
+                  <p className="text-lg font-black text-emerald-900">{formatPaisa(getProduceSubtotalPaisa())}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleProduceCheckout()}
+                  disabled={produceBusy}
+                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center gap-1.5 disabled:opacity-60"
+                >
+                  <Sprout className="w-4 h-4" />
+                  {produceBusy ? 'Placing procurement…' : 'Checkout Produce'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Delivery Address */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -621,6 +836,28 @@ export const CartCheckoutView: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Delivery slot (SR 8) */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
+            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-emerald-600" />
+              Delivery Slot
+            </h3>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              {slotOptions.map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => setDeliverySlot(slot)}
+                  className={`p-2.5 rounded-xl border font-bold text-center transition-all ${
+                    deliverySlot === slot ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-slate-200'
+                  }`}
+                >
+                  {slot}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Right: Order Summary & Payment */}
@@ -673,6 +910,40 @@ export const CartCheckoutView: React.FC = () => {
               )}
             </div>
 
+            {/* Krushi Ratna coin redemption (SR 8) */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Coins className="w-3.5 h-3.5 text-amber-500" />
+                Krushi Ratna Coins
+                <span className="font-normal text-slate-400">(balance: {coinBalance})</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max={coinMax}
+                  value={coinInput}
+                  onChange={(e) => {
+                    setCoinInput(e.target.value);
+                    setCoinsApplied(false);
+                  }}
+                  placeholder={`Redeem up to ${coinMax} coins`}
+                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if ((parseInt(coinInput, 10) || 0) > 0) setCoinsApplied(true);
+                  }}
+                  disabled={coinMax <= 0 || (parseInt(coinInput, 10) || 0) <= 0}
+                  className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 text-xs font-bold text-amber-800 disabled:opacity-50"
+                >
+                  {coinsApplied ? 'Applied' : 'Apply'}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400">1 coin = ₹1 off, capped at your order total.</p>
+            </div>
+
             <div className="space-y-2 text-xs text-slate-600 border-t border-slate-100 pt-3">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
@@ -682,6 +953,12 @@ export const CartCheckoutView: React.FC = () => {
                 <div className="flex justify-between text-emerald-700 font-bold">
                   <span>Coupon Discount ({appliedCoupon?.code}):</span>
                   <span>-{formatCurrency(discount)}</span>
+                </div>
+              )}
+              {coinDiscount > 0 && (
+                <div className="flex justify-between text-amber-700 font-bold">
+                  <span>Krushi Ratna Coins:</span>
+                  <span>-{formatCurrency(coinDiscount)}</span>
                 </div>
               )}
               <div className="flex justify-between">
@@ -695,6 +972,20 @@ export const CartCheckoutView: React.FC = () => {
                 <span className="text-emerald-800 text-base">{formatCurrency(grandTotal)}</span>
               </div>
             </div>
+
+            {/* Plant a tree (SR 19) */}
+            <label className="flex items-start gap-2.5 p-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={plantTree}
+                onChange={(e) => setPlantTree(e.target.checked)}
+                className="mt-0.5 accent-emerald-600"
+              />
+              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                <Leaf className="w-4 h-4 text-emerald-600" />
+                Plant a tree with this order (₹0)
+              </span>
+            </label>
 
             {/* Payment Method */}
             <div className="pt-2 space-y-2">

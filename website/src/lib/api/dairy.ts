@@ -76,6 +76,18 @@ export const dairy = {
   farmerReliability: (farmerId: string): Promise<unknown> =>
     readOne<unknown>(`/dairy/farmers/${farmerId}/reliability`),
 
+  // --- dairy member self-views (Kisan Setu "My Milk & Payments") ---
+  /** GET /livestock/dairy/farmer/slips — my milk collection slips. */
+  farmerSlips: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readList<unknown[]>('/livestock/dairy/farmer/slips', { params }),
+
+  /** GET /livestock/dairy/farmer/payments — my milk payment entries. */
+  farmerPayments: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readList<unknown[]>('/livestock/dairy/farmer/payments', { params }),
+
+  /** GET /livestock/dairy/farmer/analytics — 6-month liters/amount/paid summary. */
+  farmerAnalytics: (): Promise<unknown> => readOne<unknown>('/livestock/dairy/farmer/analytics'),
+
   /** Dairy manager ops — /dairy-manager. */
   manager: {
     /** GET /dairy-manager/analytics */

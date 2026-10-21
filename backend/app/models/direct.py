@@ -72,6 +72,11 @@ class PickupIn(BaseModel):
     notes: str = ""
     mode: Literal["farmerDelivers", "buyerPicksup"] = "buyerPicksup"
     slot: str = ""
+    # Optional pickup-agent assignment + vehicle override (agents: pickup_agents
+    # collection). graceMinutes defaults to the app_config pickupGraceMinutes.
+    agentId: str | None = None
+    vehicleNumber: str | None = None
+    graceMinutes: int | None = Field(default=None, ge=0, le=24 * 60)
 
 
 class QcMeasurement(BaseModel):

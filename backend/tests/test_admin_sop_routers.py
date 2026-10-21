@@ -131,6 +131,88 @@ async def test_sop_transport_bookings_envelope(client, user_store):
     assert resp.json()["total"] == 1
 
 
+async def test_sop_transport_booking_route_404(client, user_store):
+    resp = await client.get(
+        "/v1/admin/transport/bookings/nope/route",
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "BOOKING_NOT_FOUND"
+
+
+async def test_sop_transport_booking_route_geo_required(client, user_store):
+    user_store["transport_bookings/tb-nogeo"] = {
+        "id": "tb-nogeo",
+        "status": "accepted",
+        "pickup": "Nashik",
+        "drop": "Mumbai",
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+    resp = await client.get(
+        "/v1/admin/transport/bookings/tb-nogeo/route",
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "GEO_REQUIRED"
+
+
+async def test_sop_transport_booking_route_coords_fallback(client, user_store):
+    # instant-booking field names: pickupCoords/dropCoords (no *Geo fields)
+    user_store["transport_bookings/tb-fallback"] = {
+        "id": "tb-fallback",
+        "status": "accepted",
+        "pickupCoords": {"lat": 20.0, "lng": 73.8},
+        "dropCoords": {"lat": 19.1, "lng": 72.9},
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+    resp = await client.get(
+        "/v1/admin/transport/bookings/tb-fallback/route",
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["provider"] == "mock"
+
+
+async def test_sop_transport_booking_route_mock_and_cache(client, user_store):
+    user_store["transport_bookings/tb-route"] = {
+        "id": "tb-route",
+        "status": "enRoute",
+        "pickupGeo": {"lat": 20.0, "lng": 73.8},
+        "dropGeo": {"lat": 19.1, "lng": 72.9},
+        "createdAt": "2026-10-01T00:00:00+00:00",
+    }
+    resp = await client.get(
+        "/v1/admin/transport/bookings/tb-route/route",
+        headers=ADMIN_HEADERS,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["provider"] == "mock"
+    assert body["bookingId"] == "tb-route"
+    assert body["legs"] == []
+    coords_key = body["coordsKey"]
+
+    # routeCache written on the booking doc, same fields as routers/transport.py
+    cache = user_store["transport_bookings/tb-route"]["routeCache"]
+    assert cache["coordsKey"] == coords_key
+    assert cache["provider"] == "mock"
+    assert "distanceKm" in cache and "durationMin" in cache
+    assert "bounds" in cache and "computedAt" in cache
+    assert "legs" not in cache
+
+    # second call is served from routeCache with an identical coordsKey
+    resp2 = await client.get(
+        "/v1/admin/transport/bookings/tb-route/route",
+        headers=ADMIN_HEADERS,
+    )
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    assert body2["coordsKey"] == coords_key
+    assert body2["legs"] == []
+    assert body2["distanceKm"] == body["distanceKm"]
+    assert body2["durationMin"] == body["durationMin"]
+
+
 async def test_sop_equipment_verify_missing_404(client, user_store):
     resp = await client.put(
         "/v1/admin/equipment/nope/verify",

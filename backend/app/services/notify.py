@@ -89,10 +89,32 @@ DEEP_LINKS: dict[str, str] = {
     "equipment_refund": "/dashboard/p/equipment",
     "equipment_contract": "/dashboard/p/equipment",
     "equipment_dispute": "/dashboard/p/equipment",
+    # WomenHub (SHG savings group, join requests, in-group loans, reminders)
+    "deposit_due": "/womenShg/savings",
+    "vaccination_due": "/womenShg",
+    "shg_join_request": "/womenShg/savings",
+    "shg_join_approved": "/womenShg/savings",
+    "shg_join_declined": "/womenShg/savings",
+    "shg_loan_requested": "/womenShg/savings",
+    "shg_loan_approved": "/womenShg/savings",
+    "shg_loan_repaid": "/womenShg/savings",
+    # Vyapari hub — lot moderation, pickup reminders, saved-search alerts
+    "lot_moderated": "/dashboard/p/myLots",
+    "pickup_reminder_24h": "/dashboard/p/purchases",
+    "pickup_reminder_2h": "/dashboard/p/purchases",
+    "saved_search_alert": "/dashboard/p/browseLots",
 }
 
 # Notification type -> preference category (task 2.9). Default "trade".
 TYPE_CATEGORY: dict[str, str] = {
+    "deposit_due": "payments",
+    "vaccination_due": "tasks",
+    "shg_join_request": "social",
+    "shg_join_approved": "social",
+    "shg_join_declined": "social",
+    "shg_loan_requested": "payments",
+    "shg_loan_approved": "payments",
+    "shg_loan_repaid": "payments",
     "chat_message": "social",
     "chat_unlocked": "social",
     "rated": "social",
@@ -107,6 +129,10 @@ TYPE_CATEGORY: dict[str, str] = {
     "equipment_refund": "payments",
     "marketing": "marketing",
     "promo": "marketing",
+    "lot_moderated": "tasks",
+    "pickup_reminder_24h": "tasks",
+    "pickup_reminder_2h": "tasks",
+    "saved_search_alert": "marketing",
 }
 
 DEFAULT_PREFS: dict = {
@@ -156,7 +182,10 @@ async def _timing_decision(uid: str, type: str, user: dict) -> dict:
             "local_time": user_local_now(user).strftime("%H:%M"),
         }
     )
-    answers = (await gateway.decide(state, "notify.timing.v1", module=NOTIFY_TIMING_MODULE)).answers
+    try:
+        answers = (await gateway.decide(state, "notify.timing.v1", module=NOTIFY_TIMING_MODULE)).answers
+    except Exception:  # noqa: BLE001 — gateway outage falls back to immediate push
+        return {"send_now": True, "channel": "push"}
     return answers or {"send_now": True, "channel": "push"}
 
 

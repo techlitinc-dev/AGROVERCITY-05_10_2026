@@ -1,6 +1,12 @@
 from pydantic import BaseModel, Field
 
 
+class GeoPoint(BaseModel):
+    lat: float
+    lng: float
+    address: str | None = None
+
+
 class VehicleTypeOut(BaseModel):
     type: str
     baseFare: float
@@ -11,6 +17,10 @@ class VehicleTypeOut(BaseModel):
 class FareEstimateRequest(BaseModel):
     vehicleType: str
     distanceKm: float
+    # Server-computed road distance wins over distanceKm when both coords are
+    # present and a Google key is configured.
+    pickup: GeoPoint | None = None
+    drop: GeoPoint | None = None
     # Transporter-side earning lever only; server-clamped to SURGE_CAP.
     surgeMultiplier: float | None = None
 
@@ -25,6 +35,8 @@ class FareEstimateOut(BaseModel):
     returnDiscount: float = 0.0
     surgeMultiplier: float = 1.0
     breakdown: dict | None = None
+    distanceKm: float | None = None
+    distanceSource: str | None = None
 
 
 class CreateBookingRequest(BaseModel):
@@ -33,6 +45,11 @@ class CreateBookingRequest(BaseModel):
     pickup: str
     drop: str
     date: str
+    # Optional coordinates: when both are present and a Google key is
+    # configured, the server-computed road distance drives the fare and is
+    # stored as pickupGeo/dropGeo on the booking.
+    pickupCoords: GeoPoint | None = None
+    dropCoords: GeoPoint | None = None
     # Book Now / Book Later (FT-1): ISO datetime of the pickup slot plus an
     # optional loading window. Drives reminders and the cancel-penalty window.
     pickupTime: str | None = None
@@ -66,12 +83,6 @@ class AcceptBookingRequest(BaseModel):
 
 class RejectBookingRequest(BaseModel):
     reason: str = Field(min_length=3)
-
-
-class GeoPoint(BaseModel):
-    lat: float
-    lng: float
-    address: str | None = None
 
 
 class OwnerVehicleRequest(BaseModel):

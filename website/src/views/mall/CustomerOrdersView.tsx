@@ -1,20 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
   CalendarClock,
   Check,
   ChevronRight,
+  Clock,
   CreditCard,
+  FileText,
+  Leaf,
   MapPin,
   Package,
+  Phone,
   RotateCcw,
   Star,
+  Store,
   Truck,
   XCircle,
 } from 'lucide-react';
-import { apiErrorMessage, mall } from '../../lib/api';
+import { apiErrorMessage, download, mall, post } from '../../lib/api';
+import { useCartStore } from '../../stores/cartStore';
 import { formatCurrency } from '../../lib/utils';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import {
@@ -25,37 +31,69 @@ import {
   orderNumber,
   orderTotal,
   str,
+  toMallProduct,
+  PRODUCT_PLACEHOLDER_IMAGE,
   type ApiBnplInstallment,
   type ApiOrder,
   type ApiOrderEvent,
   type ApiProductDoc,
 } from './mallMappers';
 
-/** Shared product-id → display name cache (order docs store only {productId, quantity}). */
-function useProductNames(): Record<string, string> {
-  const [names, setNames] = useState<Record<string, string>>({});
+/** Shared product-id → product doc cache (order docs store only {productId, quantity}). */
+function useProductCatalog(): Record<string, ApiProductDoc> {
+  const [docs, setDocs] = useState<Record<string, ApiProductDoc>>({});
   useEffect(() => {
     let mounted = true;
     mall
       .products()
-      .then((docs) => {
+      .then((list) => {
         if (!mounted) return;
-        const map: Record<string, string> = {};
-        (docs as unknown as ApiProductDoc[]).forEach((d) => {
-          if (d.id) map[String(d.id)] = String(d.title ?? d.id);
+        const map: Record<string, ApiProductDoc> = {};
+        (list as unknown as ApiProductDoc[]).forEach((d) => {
+          if (d.id) map[String(d.id)] = d;
         });
-        setNames(map);
+        setDocs(map);
       })
       .catch(() => undefined);
     return () => {
       mounted = false;
     };
   }, []);
-  return names;
+  return docs;
+}
+
+/** Product-id → display name, derived from the catalog hook above. */
+function useProductNames(): Record<string, string> {
+  const docs = useProductCatalog();
+  return useMemo(() => {
+    const map: Record<string, string> = {};
+    Object.entries(docs).forEach(([id, d]) => {
+      map[id] = String(d.title ?? id);
+    });
+    return map;
+  }, [docs]);
 }
 
 const CANCELLABLE: string[] = ['placed', 'paid'];
 const RETURNABLE: string[] = ['delivered', 'paid'];
+
+// SR 10: customer-friendly fulfilment step labels. Internal statuses are kept
+// for all logic; this map only affects display.
+const STATUS_DISPLAY: Record<string, string> = {
+  placed: 'Confirmed',
+  paid: 'Confirmed',
+  confirmed: 'Packed',
+  shipped: 'Pickup',
+  out_for_delivery: 'In transit',
+  delivered: 'Delivered',
+  closed: 'Delivered',
+  cancelled: 'Cancelled',
+  returned: 'Returned',
+  return_requested: 'Return requested',
+};
+
+const displayStatus = (status: string): string =>
+  STATUS_DISPLAY[status] ?? status.replace(/_/g, ' ');
 
 // ---------------------------------------------------------------- list view
 
@@ -168,6 +206,8 @@ export const CustomerOrdersView: React.FC = () => {
 
 export const CustomerOrderDetailView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { addItem } = useCartStore();
   const [order, setOrder] = useState<ApiOrder | null>(null);
   const [events, setEvents] = useState<ApiOrderEvent[]>([]);
   const [bnpl, setBnpl] = useState<ApiBnplInstallment[] | null>(null);
@@ -180,7 +220,10 @@ export const CustomerOrderDetailView: React.FC = () => {
   const [returnReason, setReturnReason] = useState('');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [ratedProducts, setRatedProducts] = useState<Set<string>>(new Set());
+  const [invoiceBusy, setInvoiceBusy] = useState(false);
+  const [reorderBusy, setReorderBusy] = useState(false);
   const productNames = useProductNames();
+  const productCatalog = useProductCatalog();
 
   const loadDetail = async () => {
     if (!id) return;
@@ -250,9 +293,80 @@ export const CustomerOrderDetailView: React.FC = () => {
     }
   };
 
+  // SR 9: PDF invoice download.
+  const handleInvoice = async () => {
+    if (!id || invoiceBusy) return;
+    setInvoiceBusy(true);
+    setError(null);
+    try {
+      const blob = await download(`/orders/${id}/invoice.pdf`);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `invoice-${id}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setInvoiceBusy(false);
+    }
+  };
+
+  // SR 9: reorder a delivered order — the endpoint is idempotent and returns
+  // the item list; we push them into the cart store and re-sync the server cart.
+  const handleReorder = async () => {
+    if (!id || reorderBusy) return;
+    setReorderBusy(true);
+    setError(null);
+    try {
+      const payload = await post<{ items?: Array<{ productId?: string; quantity?: number }> }>(
+        `/orders/${id}/reorder`
+      );
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      for (const item of items) {
+        if (!item.productId) continue;
+        const doc = productCatalog[item.productId];
+        const product = doc
+          ? toMallProduct(doc)
+          : {
+              id: item.productId,
+              title: productNames[item.productId] ?? 'Previously ordered item',
+              category: 'Organic Produce' as const,
+              brand: '',
+              price: 0,
+              mrp: 0,
+              rating: 0,
+              ratingCount: 0,
+              stockQty: 10,
+              unit: '',
+              imageUrl: PRODUCT_PLACEHOLDER_IMAGE,
+              sellerName: '',
+              description: 'Reordered from a previous purchase.',
+              specifications: {},
+            };
+        addItem(product, Math.max(1, item.quantity ?? 1));
+        mall.addToCart(item.productId, Math.max(1, item.quantity ?? 1)).catch(() => undefined);
+      }
+      setNotice(`${items.length} item${items.length === 1 ? '' : 's'} added back to your cart.`);
+      navigate('/mall/cart');
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setReorderBusy(false);
+    }
+  };
+
   const cancellable = order ? CANCELLABLE.includes(order.status) && order.status !== 'cancelled' : false;
   const returnable = order ? RETURNABLE.includes(order.status) && order.returnStatus !== 'requested' : false;
   const rateable = order?.status === 'delivered';
+  const reorderable = order?.status === 'delivered' || order?.status === 'closed';
+  const firstProduct = order?.items?.[0] ? productCatalog[order.items[0].productId] : undefined;
+  const sellerId = str(order?.sellerId) || str(firstProduct?.sellerId);
+  const sellerName = str(order?.sellerName) || str(firstProduct?.sellerName) || str(firstProduct?.dealerName);
+  const sellerPhone = str(order?.sellerPhone);
   const effectiveEvents = useMemo(
     () =>
       events.length > 0
@@ -327,7 +441,7 @@ export const CustomerOrderDetailView: React.FC = () => {
                   idx === 0 ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-slate-300'
                 }`}
               />
-              <p className="text-xs font-bold text-slate-800 capitalize">{event.status.replace(/_/g, ' ')}</p>
+              <p className="text-xs font-bold text-slate-800">{displayStatus(event.status)}</p>
               {event.note && <p className="text-[11px] text-slate-500">{event.note}</p>}
               <p className="text-[10px] text-slate-400">{formatDateTime(event.at)}</p>
             </li>
@@ -391,12 +505,24 @@ export const CustomerOrderDetailView: React.FC = () => {
               <span>-{formatCurrency(num(order.discount))}</span>
             </div>
           )}
+          {num(order.coinsRedeemed) > 0 && (
+            <div className="flex justify-between text-amber-700 font-bold">
+              <span>Krushi Ratna Coins:</span>
+              <span>-{formatCurrency(num(order.coinsRedeemed))}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm font-black text-slate-900 pt-1 border-t border-slate-200">
             <span>Total ({order.paymentMethod.toUpperCase()}):</span>
             <span className="text-emerald-800">{formatCurrency(orderTotal(order))}</span>
           </div>
           {order.refundStatus && order.refundStatus !== 'none' && (
             <p className="text-[11px] font-bold text-amber-700 pt-1">Refund status: {order.refundStatus}</p>
+          )}
+          {str(order.treeAdoptionId) && (
+            <p className="text-[11px] font-bold text-emerald-700 pt-1 flex items-center gap-1">
+              <Leaf className="w-3.5 h-3.5" />
+              A native tree was planted with this order
+            </p>
           )}
         </div>
       </div>
@@ -410,6 +536,15 @@ export const CustomerOrderDetailView: React.FC = () => {
             <p className="text-[11px] text-slate-500 mt-0.5">{order.deliveryAddress || '—'}</p>
           </div>
         </div>
+        {str(order.deliverySlot) && (
+          <div className="flex items-start gap-2">
+            <Clock className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-slate-800">Delivery Slot</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{str(order.deliverySlot)}</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-start gap-2">
           <CreditCard className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
           <div>
@@ -421,6 +556,28 @@ export const CustomerOrderDetailView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* SR 10: seller / delivery-agent contact */}
+      {(sellerName || sellerId || sellerPhone) && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-2">
+          <h3 className="font-bold text-sm text-slate-900">Seller Contact</h3>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[11px] text-slate-500">
+            {sellerName && <span className="font-bold text-slate-700">{sellerName}</span>}
+            {sellerPhone && (
+              <a href={`tel:${sellerPhone}`} className="flex items-center gap-1 font-bold text-emerald-700">
+                <Phone className="w-3.5 h-3.5" />
+                {sellerPhone}
+              </a>
+            )}
+            {sellerId && (
+              <Link to={`/mall/seller/${sellerId}`} className="flex items-center gap-1 font-bold text-emerald-700">
+                <Store className="w-3.5 h-3.5" />
+                Visit storefront
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* BNPL schedule */}
       {order.paymentMethod === 'bnpl' && (
@@ -450,6 +607,26 @@ export const CustomerOrderDetailView: React.FC = () => {
       {/* Actions */}
       {order.status !== 'cancelled' && (
         <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => void handleInvoice()}
+            disabled={invoiceBusy}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <FileText className="w-4 h-4" />
+            {invoiceBusy ? 'Downloading…' : 'Invoice PDF'}
+          </button>
+          {reorderable && (
+            <button
+              type="button"
+              onClick={() => void handleReorder()}
+              disabled={reorderBusy}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              {reorderBusy ? 'Adding…' : 'Reorder'}
+            </button>
+          )}
           {cancellable && (
             <button
               type="button"

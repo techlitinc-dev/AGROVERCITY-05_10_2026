@@ -6,7 +6,18 @@ from pydantic import BaseModel, ConfigDict, Field
 class DiaryEntryIn(BaseModel):
     title: str
     category: str
-    type: Literal["expense", "income", "farmActivity"]
+    # farmActivity covers crop work; transport/equipment/lesson/order/household
+    # are activity-log kinds (not cashbook) so P&L analytics can ignore them.
+    type: Literal[
+        "expense",
+        "income",
+        "farmActivity",
+        "transport",
+        "equipment",
+        "lesson",
+        "order",
+        "household",
+    ]
     amount: float = 0
     date: str
     cropName: str | None = None
@@ -15,6 +26,8 @@ class DiaryEntryIn(BaseModel):
     quantity: float | None = None
     unit: str | None = None
     party: str = ""  # counterparty — who paid / who was paid (accounting-grade)
+    # Buy/sell tag for trade entries (mandi purchases, produce sales, …).
+    tradeType: Literal["buy", "sell"] | None = None
 
 
 class DiaryEntryOut(DiaryEntryIn):

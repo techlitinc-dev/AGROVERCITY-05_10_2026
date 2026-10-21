@@ -8,6 +8,7 @@ import {
   ShoppingCart,
   ChevronDown,
   User,
+  UserRound,
   Shield,
   LogOut,
   Sparkles,
@@ -18,13 +19,23 @@ import {
   MessageCircle,
   FileCheck2,
   LayoutDashboard,
+  Package,
+  Boxes,
+  FileCheck,
+  Tag,
+  DollarSign,
+  Calendar,
+  BookOpen,
+  Heart,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useI18nStore, SUPPORTED_LANGUAGES } from '../../lib/i18n';
+import { users } from '../../lib/api';
 import type { PersonaType } from '../../types';
 import { cn } from '../../lib/utils';
+import { normalizePersona } from '../../lib/personas';
 
 export const Navbar: React.FC = () => {
   const { user, activePersona, switchPersona, isAuthenticated, logout } = useAuthStore();
@@ -37,6 +48,8 @@ export const Navbar: React.FC = () => {
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const [womenMode, setWomenMode] = useState(false);
+  const [womenSettings, setWomenSettings] = useState<Record<string, unknown>>({});
 
   // Load the real inbox once after login so the bell badge reflects unread count.
   useEffect(() => {
@@ -45,6 +58,34 @@ export const Navbar: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
+
+  // Women-mode toggle mirrors the mall home boost: persisted via user settings.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let mounted = true;
+    users
+      .getSettings()
+      .then((s) => {
+        if (!mounted || !s) return;
+        setWomenSettings(s as Record<string, unknown>);
+        setWomenMode(Boolean((s as Record<string, unknown>).womenMode));
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [isAuthenticated]);
+
+  const handleToggleWomenMode = async () => {
+    const next = !womenMode;
+    setWomenMode(next);
+    try {
+      const saved = await users.updateSettings({ ...womenSettings, womenMode: next });
+      setWomenSettings((saved as Record<string, unknown>) ?? { ...womenSettings, womenMode: next });
+    } catch {
+      setWomenMode((v) => !v);
+    }
+  };
 
   const personaOptions: { id: PersonaType; label: string; icon: string }[] = [
     { id: 'farmer', label: 'Farmer / Kisan (किसान)', icon: '🌾' },
@@ -61,6 +102,7 @@ export const Navbar: React.FC = () => {
     { id: 'fpoManager', label: 'FPO / Cooperative Manager (एफपीओ प्रबंधक)', icon: '🌾' },
     { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG (महिला गृह उद्योग)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
+    { id: 'nursery', label: 'Plant Nursery (पौधघर / नर्सरी)', icon: '🌱' },
     { id: 'bankManager', label: 'Bank Manager (ऋण प्रबंधक)', icon: '🏦' },
     { id: 'insuranceProvider', label: 'Insurance Provider (बीमा डेस्क)', icon: '📑' },
     { id: 'coldStorageProvider', label: 'Cold Storage (शीतगृह)', icon: '❄️' },
@@ -70,10 +112,39 @@ export const Navbar: React.FC = () => {
   ];
 
   const handleSelectPersona = (p: PersonaType) => {
+    if (disabledPersonas.has(normalizePersona(p))) return; // hidden persona
     switchPersona(p);
     setPersonaDropdownOpen(false);
     navigate(`/${p}`);
   };
+
+  // Personas hidden in profile settings disappear from the switcher (data kept).
+  const disabledPersonas = new Set((user?.disabledPersonas ?? []).map(normalizePersona));
+  const visiblePersonaOptions = personaOptions.filter((o) => !disabledPersonas.has(o.id));
+
+  // Persona workspace quick-links shown inside the profile dropdown.
+  const personaQuickLinks: Partial<Record<PersonaType, { to: string; label: string; icon: React.ElementType }[]>> = {
+    nursery: [
+      { to: '/nursery', label: 'Nursery Cockpit', icon: LayoutDashboard },
+      { to: '/nursery/inventory', label: 'Plants / Inventory', icon: Package },
+      { to: '/nursery/batches', label: 'Batches & Stock', icon: Boxes },
+      { to: '/nursery/orders', label: 'Orders Received', icon: FileCheck },
+      { to: '/nursery/offers', label: 'Offers & Discounts', icon: Tag },
+      { to: '/nursery/payouts', label: 'Earnings & Payouts', icon: DollarSign },
+    ],
+    customer: [
+      { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
+      { to: '/customer/produce', label: 'Farm-Fresh Produce', icon: Sprout },
+      { to: '/customer/orders', label: 'My Orders & Delivery', icon: Package },
+      { to: '/customer/subscriptions', label: 'Subscription Veggie Box', icon: Calendar },
+      { to: '/customer/diary', label: 'Household Diary', icon: BookOpen },
+      { to: '/customer/finance', label: 'Finance CEO (Household)', icon: Landmark },
+    ],
+  };
+  const activePersonaId = normalizePersona(activePersona);
+  const quickLinks = personaQuickLinks[activePersonaId] || [];
+  const activePersonaLabel =
+    personaOptions.find((o) => o.id === activePersonaId)?.label.split('(')[0].trim() || activePersonaId;
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
@@ -122,10 +193,10 @@ export const Navbar: React.FC = () => {
                 className="flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/80 rounded-2xl text-xs sm:text-sm font-bold text-emerald-900 transition-all shadow-xs"
               >
               <span className="text-base sm:text-lg">
-                {personaOptions.find((o) => o.id === activePersona)?.icon || '🌾'}
+                {personaOptions.find((o) => o.id === normalizePersona(activePersona))?.icon || '🌾'}
               </span>
               <span className="max-w-[110px] sm:max-w-[180px] truncate">
-                {personaOptions.find((o) => o.id === activePersona)?.label.split('(')[0] || activePersona}
+                {personaOptions.find((o) => o.id === normalizePersona(activePersona))?.label.split('(')[0] || activePersona}
               </span>
               <ChevronDown className="w-4 h-4 text-emerald-700" />
             </button>
@@ -140,13 +211,13 @@ export const Navbar: React.FC = () => {
                   <div className="px-4 py-2 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                     Switch Active Persona (15 Roles)
                   </div>
-                  {personaOptions.map((opt) => (
+                  {visiblePersonaOptions.map((opt) => (
                     <button
                       key={opt.id}
                       onClick={() => handleSelectPersona(opt.id)}
                       className={cn(
                         'w-full px-4 py-2.5 text-left text-xs font-semibold flex items-center justify-between hover:bg-slate-50 transition-colors',
-                        activePersona === opt.id
+                        normalizePersona(activePersona) === opt.id
                           ? 'bg-emerald-50 text-emerald-900 font-bold border-l-4 border-emerald-600'
                           : 'text-slate-700'
                       )}
@@ -155,7 +226,7 @@ export const Navbar: React.FC = () => {
                         <span className="text-base">{opt.icon}</span>
                         <span>{opt.label}</span>
                       </span>
-                      {activePersona === opt.id && (
+                      {normalizePersona(activePersona) === opt.id && (
                         <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold">
                           Active
                         </span>
@@ -230,6 +301,37 @@ export const Navbar: React.FC = () => {
               </>
             )}
           </div>
+
+          {/* Women-Mode Toggle (Mahila Gruh Udyog boost) */}
+          {isAuthenticated && (
+            <button
+              onClick={() => void handleToggleWomenMode()}
+              aria-pressed={womenMode}
+              className={cn(
+                'hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all hover-lift',
+                womenMode
+                  ? 'bg-purple-50 border-purple-300 text-purple-800'
+                  : 'border-slate-200 hover:bg-slate-50 text-slate-500'
+              )}
+              title="Women Mode — महिला मोड (boosts Mahila Gruh Udyog products in the mall)"
+            >
+              <Heart className={cn('w-3.5 h-3.5', womenMode ? 'text-purple-600 fill-purple-200' : 'text-slate-400')} />
+              <span className="hidden lg:inline">महिला मोड</span>
+              <span
+                className={cn(
+                  'w-6 h-3.5 rounded-full relative block',
+                  womenMode ? 'bg-purple-500' : 'bg-slate-300'
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all',
+                    womenMode ? 'left-3' : 'left-0.5'
+                  )}
+                />
+              </span>
+            </button>
+          )}
 
           {/* Kisan Coins Badge */}
           {isAuthenticated && user && (
@@ -316,6 +418,14 @@ export const Navbar: React.FC = () => {
                     </Link>
 
                     <Link
+                      to="/profile"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                    >
+                      <UserRound className="w-4 h-4 text-slate-400" /> My Profile
+                    </Link>
+
+                    <Link
                       to="/notifications"
                       onClick={() => setProfileDropdownOpen(false)}
                       className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
@@ -330,6 +440,24 @@ export const Navbar: React.FC = () => {
                     >
                       <MessageCircle className="w-4 h-4 text-slate-400" /> Chats
                     </Link>
+
+                    {quickLinks.length > 0 && (
+                      <div className="mt-1 pt-1 border-t border-slate-100">
+                        <p className="px-4 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          {activePersonaLabel} Workspace
+                        </p>
+                        {quickLinks.map((ql) => (
+                          <Link
+                            key={ql.to}
+                            to={ql.to}
+                            onClick={() => setProfileDropdownOpen(false)}
+                            className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                          >
+                            <ql.icon className="w-4 h-4 text-slate-400" /> {ql.label}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
 
                     <Link
                       to="/settings"

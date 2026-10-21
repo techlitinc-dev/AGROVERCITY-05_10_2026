@@ -157,6 +157,36 @@ ACCESS_MAP["landlord"] = ACCESS_MAP["farmLandlord"]
 ACCESS_MAP["farm landlord"] = ACCESS_MAP["farmLandlord"]
 ACCESS_MAP["farm_landlord"] = ACCESS_MAP["farmLandlord"]
 ACCESS_MAP["equipmentOwner"] = ACCESS_MAP["equipmentRental"]
+ACCESS_MAP["womenShg"] = {
+    "womenShgHub",
+    "womenShgEnterprise",
+    "womenShgDirectory",
+    "finance",
+    "krishiRatna",
+    "gyanHub",
+    "agriNews",
+    "referEarn",
+}
+ACCESS_MAP["nursery"] = {
+    "nurseryHome",
+    "nurseryProfile",
+    "nurseryInventory",
+    "nurseryBatches",
+    "nurseryOrders",
+    "nurseryOffers",
+    "nurseryPayouts",
+    "nurseryAi",
+    "nurseryDiary",
+    "marketplace",
+    "finance",
+    "profitLoss",
+    "krishiRatna",
+    "gyanHub",
+    "agriNews",
+    "referEarn",
+    "treePlantation",
+    "landLegal",
+}
 
 DEFAULT_HOME: dict[str, str] = {
     "farmer": "home",
@@ -179,4 +209,6 @@ DEFAULT_HOME: dict[str, str] = {
     "bankManager": "bankManagerHome",
     "insuranceProvider": "insuranceProviderHome",
     "coldStorageProvider": "coldStorageHome",
+    "womenShg": "/womenShg",
+    "nursery": "/nursery",
 }

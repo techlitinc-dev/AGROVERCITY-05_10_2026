@@ -21,6 +21,7 @@ from app.services.admin_auth import (
     require_admin_role,
 )
 from app.services.audit import log_admin_action
+from app.services.notify import notify_user
 from app.services.users import get_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -346,6 +347,62 @@ async def reject_kyc_document(
     _role: dict = Depends(require_admin_role("superadmin", "compliance_officer")),
 ):
     return await _review_kyc(doc_id, "rejected", body.rejectionReason, ctx)
+
+
+class KycRequestMoreIn(BaseModel):
+    note: str = Field(..., min_length=3, description="what the user must fix and resubmit")
+
+
+@router.post("/kyc/{doc_id}/request-more")
+async def request_more_kyc_documents(
+    doc_id: str,
+    body: KycRequestMoreIn,
+    ctx: dict = Depends(admin_mutation_context),
+    _role: dict = Depends(require_admin_role("superadmin", "compliance_officer")),
+):
+    """Ask the user to resubmit a document: the doc moves to
+    `resubmission_requested` (an extension of the services/kyc.py doc state
+    machine) with the reviewer note; a reupload flips it back to pending.
+    Verify/reject flows are untouched."""
+    case, doc = await _find_case_for_doc(doc_id)
+    if case is None:
+        _error(404, "KYC_DOC_NOT_FOUND", "kyc document not found")
+    if doc.get("status") == "verified":
+        _error(409, "KYC_DOC_ALREADY_VERIFIED", "a verified document cannot be sent back")
+
+    previous = {"status": doc.get("status"), "reason": doc.get("reason")}
+    doc["status"] = "resubmission_requested"
+    doc["reason"] = body.note
+    doc["reviewedBy"] = ctx["admin"].get("id")
+    doc["reviewedAt"] = datetime.now(timezone.utc).isoformat()
+    doc["updatedAt"] = doc["reviewedAt"]
+    case["status"] = kyc_service._recompute_case_status(case)
+    await set_doc("kyc_cases", case["caseId"], case)
+
+    await notify_user(
+        case.get("userId"),
+        type="kyc_resubmission_requested",
+        title="KYC document resubmission / दस्तावेज़ पुनः जमा करें",
+        body=f"{doc.get('type')}: {body.note}",
+        deepLink="/profile/kyc",
+    )
+    await log_admin_action(
+        ctx["admin"],
+        "kyc",
+        "kyc.request-more",
+        doc_id,
+        previous,
+        {"status": "resubmission_requested", "note": body.note},
+        ctx["reason"],
+        ctx["ip"],
+    )
+    return {
+        "success": True,
+        "caseId": case["caseId"],
+        "docId": doc_id,
+        "status": "resubmission_requested",
+        "caseStatus": case["status"],
+    }
 
 
 @router.get("/expert-handoffs")

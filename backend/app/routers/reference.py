@@ -5,7 +5,7 @@ from app.data.district_crops import DISTRICT_CROPS
 from app.data.languages import LANGUAGES, REGIONAL_MAPPING
 from app.data.states import INDIAN_STATES
 from app.services import district_crops as district_crops_service
-from app.services.geo import adapter
+from app.services.geo import get_geo
 
 router = APIRouter(tags=["reference"])
 
@@ -17,7 +17,7 @@ async def states():
 
 @router.get("/geo/reverse")
 async def reverse_geocode(lat: float, lng: float):
-    return adapter.reverse(lat, lng)
+    return await get_geo().reverse(lat, lng)
 
 
 @router.get("/regions/crops")

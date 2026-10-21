@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 import hashlib
 import logging
@@ -39,8 +39,18 @@ logger = logging.getLogger(__name__)
 _ME_DEFAULTS = {
     "village": "", "tehsil": "", "district": "", "state": "", "landAreaAcres": 0,
     "soilType": "", "irrigationType": "", "activeCrops": [], "farmBoundaryPoints": [],
-    "agriCoins": 0, "krishiRatnaLevel": 1,
+    "agriCoins": 0, "krishiRatnaLevel": 1, "disabledProfiles": [],
 }
+
+# Canonical platform personas (website PersonaType spellings) — used by the
+# visibility surface; flags are computed with normalize_profile on both sides
+# so backend spellings (farmLandlord, transport, …) still match.
+PLATFORM_PERSONAS = (
+    "farmer", "landlord", "transporter", "seller", "equipmentOwner", "exporter",
+    "directBuyer", "broker", "dairyManager", "milkSeller", "vet", "fpoManager",
+    "womenShg", "instructor", "bankManager", "insuranceProvider",
+    "coldStorageProvider", "gaushalaManager", "nursery", "customer", "superadmin",
+)
 
 
 def _error(status_code: int, code: str, message: str):
@@ -68,6 +78,8 @@ def require_role(user: dict, *roles: str):
         "dairy_manager": "dairyManager",
         "milk_seller": "milkSeller",
         "teacher": "instructor",
+        "nursery": "nursery",
+        "plant_nursery": "nursery",
     }
     if aliases.get(raw_active) in norm_roles or aliases.get(active) in norm_roles:
         return
@@ -235,6 +247,8 @@ async def get_my_settings(uid: str = Depends(current_user_id)):
         "womenMode": user.get("womenMode", False),
         "highContrast": user.get("highContrast", False),
         "darkMode": user.get("darkMode", False),
+        "discoverable": user.get("discoverable", True),
+        "householdBudgetMonthly": user.get("householdBudgetMonthly", 0),
     }
 
 
@@ -386,6 +400,8 @@ async def activate_profile(profile_type: str, uid: str = Depends(current_user_id
         else:
             _error(404, "PROFILE_NOT_LINKED", "profile is not linked")
     target_active = canonical if (canonical in linked or canonical in VALID_PROFILES) else profile_type
+    if _platform_form(normalize_profile(target_active)) in _disabled_profiles(user):
+        _error(409, "PERSONA_DISABLED", "this persona is hidden — enable it in profile settings first")
     user["activeProfile"] = target_active
     await set_doc("users", uid, user)
     return {
@@ -410,6 +426,113 @@ async def set_primary_profile(profile_type: str, uid: str = Depends(current_user
     user["primaryProfile"] = target
     await set_doc("users", uid, user)
     return await _with_role_profiles(user)
+
+
+class ProfileVisibilityIn(BaseModel):
+    enabled: bool
+
+
+# Backend-canonical spellings that differ from the website PersonaType spelling.
+_PLATFORM_BY_BACKEND = {
+    "farmLandlord": "landlord",
+    "equipmentRental": "equipmentOwner",
+}
+
+
+def _platform_form(backend_canonical: str) -> str:
+    return _PLATFORM_BY_BACKEND.get(backend_canonical, backend_canonical)
+
+
+def _disabled_profiles(user: dict) -> list[str]:
+    """Stored in platform-canonical form (frontend PersonaType spellings)."""
+    return [_platform_form(normalize_profile(p)) for p in (user.get("disabledProfiles") or [])]
+
+
+def _original_casing(linked: list[str], platform: str) -> str:
+    for entry in linked:
+        if _platform_form(normalize_profile(entry)) == platform:
+            return entry
+    return platform
+
+
+@router.get("/me/profiles")
+async def get_my_profiles(uid: str = Depends(current_user_id)):
+    """Linked/active/primary plus the full platform persona list with flags —
+    the visibility surface the profile settings UI renders."""
+    user = await _require_user(uid)
+    linked = user.get("linkedProfiles") or []
+    linked_plat = {_platform_form(normalize_profile(p)) for p in linked}
+    disabled = _disabled_profiles(user)
+    active = _platform_form(normalize_profile(user.get("activeProfile") or ""))
+    primary = _platform_form(normalize_profile(user.get("primaryProfile") or ""))
+    personas = [
+        {
+            "persona": p,
+            "linked": p in linked_plat,
+            "active": p == active,
+            "primary": p == primary,
+            "disabled": p in disabled,
+        }
+        for p in PLATFORM_PERSONAS
+    ]
+    return {
+        "linkedProfiles": linked,
+        "activeProfile": user.get("activeProfile") or "",
+        "primaryProfile": user.get("primaryProfile") or "",
+        "disabledProfiles": user.get("disabledProfiles") or [],
+        "personas": personas,
+    }
+
+
+@router.put("/me/profiles/{profile_type}/visibility")
+async def set_profile_visibility(
+    profile_type: str,
+    body: ProfileVisibilityIn,
+    uid: str = Depends(current_user_id),
+):
+    """Hide/show a persona (hide ≠ unlink — data stays, options disappear).
+
+    Disabling the active persona auto-switches to the primary enabled one;
+    disabling the last enabled persona is rejected.
+    """
+    user = await _require_user(uid)
+    backend_canonical = normalize_profile(profile_type)
+    if backend_canonical not in VALID_PROFILES and profile_type not in VALID_PROFILES:
+        _error(422, "INVALID_PROFILE_TYPE", "unknown profile type")
+    platform = _platform_form(backend_canonical)
+
+    linked = user.get("linkedProfiles") or []
+    linked_plat = [_platform_form(normalize_profile(p)) for p in linked]
+    disabled = _disabled_profiles(user)
+    enabled_linked = [p for p in linked_plat if p not in disabled]
+
+    if body.enabled:
+        if platform in disabled:
+            disabled.remove(platform)
+    else:
+        if platform in enabled_linked and len(enabled_linked) == 1:
+            _error(409, "LAST_ENABLED_PERSONA", "at least one persona must stay enabled")
+        if platform not in disabled:
+            disabled.append(platform)
+        if _platform_form(normalize_profile(user.get("activeProfile") or "")) == platform:
+            primary = _platform_form(normalize_profile(user.get("primaryProfile") or ""))
+            fallback = (
+                primary
+                if primary in linked_plat and primary not in disabled
+                else next((p for p in linked_plat if p not in disabled), None)
+            )
+            if fallback is None:
+                _error(409, "LAST_ENABLED_PERSONA", "at least one persona must stay enabled")
+            user["activeProfile"] = _original_casing(linked, fallback)
+
+    user["disabledProfiles"] = disabled
+    await set_doc("users", uid, user)
+    return {
+        "persona": platform,
+        "enabled": body.enabled,
+        "activeProfile": user.get("activeProfile") or "",
+        "disabledProfiles": user.get("disabledProfiles") or [],
+    }
 
 
 @router.get("/me/dashboard/{profile_type}")
@@ -599,3 +722,72 @@ async def list_blocks(uid: str = Depends(current_user_id)):
         target = await get_doc("users", doc["id"]) or {}
         data.append({"userId": doc["id"], "name": target.get("name", ""), "at": doc.get("at")})
     return {"data": data, "page": 1, "pageSize": len(data) or 20, "total": len(data)}
+
+
+# ==========================================
+# SAVED ITEMS (mandi rates, trees, articles, ads)
+# ==========================================
+
+SAVED_ITEM_KINDS = ("mandi-rate", "tree", "article", "ad")
+SAVED_COLLECTION = "user_saved"
+
+
+class SavedItemIn(BaseModel):
+    kind: str
+    refId: str = Field(min_length=1)
+    title: str | None = None
+    snapshot: dict | None = None
+
+
+def _saved_doc_id(uid: str, kind: str, ref_id: str) -> str:
+    # refId may contain slashes (e.g. "crops/wheat") which would otherwise
+    # collide with the collection/doc_id key separator.
+    return f"{uid}_{kind}_{ref_id.replace('/', '_')}"
+
+
+@router.get("/me/saved")
+async def list_saved_items(
+    kind: str | None = None,
+    uid: str = Depends(current_user_id),
+):
+    await _require_user(uid)
+    if kind is not None and kind not in SAVED_ITEM_KINDS:
+        _error(422, "INVALID_KIND", f"kind must be one of {', '.join(SAVED_ITEM_KINDS)}")
+    docs = await query(SAVED_COLLECTION, [("userId", "==", uid)], limit=500)
+    docs = [d for d in docs if d.get("userId") == uid]
+    if kind is not None:
+        docs = [d for d in docs if d.get("kind") == kind]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return {"data": docs, "page": 1, "pageSize": len(docs) or 20, "total": len(docs)}
+
+
+@router.post("/me/saved", status_code=201)
+async def save_item(body: SavedItemIn, uid: str = Depends(current_user_id)):
+    await _require_user(uid)
+    if body.kind not in SAVED_ITEM_KINDS:
+        _error(422, "INVALID_KIND", f"kind must be one of {', '.join(SAVED_ITEM_KINDS)}")
+    doc_id = _saved_doc_id(uid, body.kind, body.refId)
+    existing = await get_doc(SAVED_COLLECTION, doc_id)
+    doc = {
+        "id": doc_id,
+        "userId": uid,
+        "kind": body.kind,
+        "refId": body.refId,
+        "title": body.title,
+        "snapshot": body.snapshot,
+        # Idempotent upsert: the original save timestamp is kept on repost.
+        "createdAt": (existing or {}).get("createdAt") or datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc(SAVED_COLLECTION, doc_id, doc)
+    return doc
+
+
+@router.delete("/me/saved/{kind}/{ref_id:path}", status_code=204)
+async def unsave_item(kind: str, ref_id: str, uid: str = Depends(current_user_id)):
+    await _require_user(uid)
+    if kind not in SAVED_ITEM_KINDS:
+        _error(422, "INVALID_KIND", f"kind must be one of {', '.join(SAVED_ITEM_KINDS)}")
+    doc_id = _saved_doc_id(uid, kind, ref_id)
+    if await get_doc(SAVED_COLLECTION, doc_id) is None:
+        _error(404, "SAVED_NOT_FOUND", "saved item not found")
+    await delete_doc(SAVED_COLLECTION, doc_id)

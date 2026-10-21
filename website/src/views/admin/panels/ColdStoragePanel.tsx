@@ -47,7 +47,12 @@ export const ColdStoragePanel: React.FC = () => {
       {tab === 'directory' && <DirectoryCard />}
       {tab === 'bookings' && <BookingsCard />}
       {tab === 'varieties' && <VarietiesCard />}
-      {tab === 'carbon' && <CarbonCard />}
+      {tab === 'carbon' && (
+        <>
+          <CarbonCard />
+          <CarbonConfigCard />
+        </>
+      )}
     </>
   );
 };
@@ -356,6 +361,89 @@ const CarbonCard: React.FC = () => {
           />
         </div>
       </div>
+    </PanelShell>
+  );
+};
+
+/** Carbon-credit economics config (GET/PUT /admin/platform-config/carbon). */
+const CarbonConfigCard: React.FC = () => {
+  const { request, modal } = useReasonModal();
+  const cfgRes = useAsync(() => admin.coldStorage.carbonConfig().catch(() => null), []);
+  const cfg = asRow(cfgRes.data);
+
+  const [kgCo2, setKgCo2] = useState('');
+  const [pricePaise, setPricePaise] = useState('');
+  const [ecoCoins, setEcoCoins] = useState('');
+  const [threshold, setThreshold] = useState('');
+  const dirty = kgCo2 !== '' || pricePaise !== '' || ecoCoins !== '' || threshold !== '';
+
+  const save = async (reason: string) => {
+    await admin.coldStorage.updateCarbonConfig(
+      {
+        ...(kgCo2 !== '' ? { kgCo2PerTreePerYear: Number(kgCo2) } : {}),
+        ...(pricePaise !== '' ? { creditPricePaisePerKg: Number(pricePaise) } : {}),
+        ...(ecoCoins !== '' ? { ecoCoinsPerCredit: Number(ecoCoins) } : {}),
+        ...(threshold !== '' ? { payoutThresholdCredits: Number(threshold) } : {}),
+      },
+      reason
+    );
+    setKgCo2('');
+    setPricePaise('');
+    setEcoCoins('');
+    setThreshold('');
+    cfgRes.reload();
+  };
+
+  return (
+    <PanelShell
+      title="SOP-23: Carbon Credit Config"
+      subtitle="Conversion factors behind the carbon desk: per-tree CO₂ sequestration, credit price, EcoCoins conversion and the payout threshold (GET/PUT /admin/platform-config/carbon)."
+      icon={Globe2}
+      loading={cfgRes.loading}
+      onRefresh={cfgRes.reload}
+      actions={
+        dirty ? (
+          <div className="flex gap-2">
+            <Btn onClick={() => { setKgCo2(''); setPricePaise(''); setEcoCoins(''); setThreshold(''); }}>Cancel</Btn>
+            <Btn
+              tone="primary"
+              onClick={() =>
+                request({
+                  title: 'Update carbon credit config',
+                  defaultReason: 'Carbon economics update from SOP-23 desk',
+                  confirmLabel: 'Save carbon config',
+                  action: save,
+                })
+              }
+            >
+              Save (audited)
+            </Btn>
+          </div>
+        ) : undefined
+      }
+    >
+      {cfgRes.error && <Banner kind="error">{cfgRes.error}</Banner>}
+      {cfg && (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label={`kg CO₂ / tree / year — current ${num(cfg, 'kgCo2PerTreePerYear') ?? '—'}`} className="w-52">
+              <TextInput type="number" inputMode="decimal" value={kgCo2} onChange={setKgCo2} placeholder={String(num(cfg, 'kgCo2PerTreePerYear') ?? 21)} />
+            </Field>
+            <Field label={`Credit price (paise/kg) — current ${num(cfg, 'creditPricePaisePerKg') ?? '—'}`} className="w-56">
+              <TextInput type="number" inputMode="numeric" value={pricePaise} onChange={setPricePaise} placeholder={String(num(cfg, 'creditPricePaisePerKg') ?? 80)} />
+            </Field>
+            <Field label={`EcoCoins / credit — current ${num(cfg, 'ecoCoinsPerCredit') ?? '—'}`} className="w-52">
+              <TextInput type="number" inputMode="numeric" value={ecoCoins} onChange={setEcoCoins} placeholder={String(num(cfg, 'ecoCoinsPerCredit') ?? 10)} />
+            </Field>
+            <Field label={`Payout threshold (credits) — current ${num(cfg, 'payoutThresholdCredits') ?? '—'}`} className="w-56">
+              <TextInput type="number" inputMode="numeric" value={threshold} onChange={setThreshold} placeholder={String(num(cfg, 'payoutThresholdCredits') ?? 10)} />
+            </Field>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Last updated {str(cfg, 'updatedAt')} by {str(cfg, 'updatedBy')}.
+          </p>
+        </>
+      )}
     </PanelShell>
   );
 };

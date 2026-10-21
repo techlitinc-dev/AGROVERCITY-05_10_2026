@@ -149,7 +149,7 @@ async def test_add_product_publish_appears_on_krishi_mall(client, user_store):
     assert mall_id in {p["id"] for p in catalog.json()["data"]}
 
 
-async def test_publish_food_requires_verified_fssai(client, user_store):
+async def test_publish_food_allows_pending_fssai_with_badge(client, user_store):
     token = seed_user(user_store)
     unit_id = await _register_unit(client, token)
     product_id = await _add_product(client, token, unit_id, FOOD_PRODUCT)
@@ -164,14 +164,26 @@ async def test_publish_food_requires_verified_fssai(client, user_store):
         headers=auth(token),
     )
     assert cert.status_code == 201
-    still_blocked = await _publish(client, token, product_id)
-    assert still_blocked.status_code == 403
 
+    # Pending FSSAI no longer blocks publish — the listing goes live with a
+    # visible `fssaiStatus: "pending"` badge instead.
+    published = await _publish(client, token, product_id)
+    assert published.status_code == 200
+    mall_id = published.json()["mallProductId"]
+    assert user_store[f"products/{mall_id}"]["fssaiStatus"] == "pending"
+
+    # Once the cert verifies, re-publishing stamps the verified badge.
+    unpublish = await client.post(
+        f"/v1/gruh-udyog/products/{product_id}/unpublish", headers=auth(token)
+    )
+    assert unpublish.status_code == 200
     cert_doc = user_store[f"gruh_udyog_certifications/{cert.json()['id']}"]
     cert_doc["status"] = "verified"
     user_store[f"gruh_udyog_certifications/{cert.json()['id']}"] = cert_doc
-    published = await _publish(client, token, product_id)
-    assert published.status_code == 200
+    republished = await _publish(client, token, product_id)
+    assert republished.status_code == 200
+    new_mall_id = republished.json()["mallProductId"]
+    assert user_store[f"products/{new_mall_id}"]["fssaiStatus"] == "verified"
 
 
 async def test_publish_gates_stock_and_paused_unit(client, user_store):
@@ -341,6 +353,88 @@ async def test_reject_order_and_block_transitions(client, user_store):
         headers=auth(token),
     )
     assert blocked.status_code == 409
+
+
+async def test_dispatched_alias_maps_to_shipped(client, user_store):
+    token = seed_user(user_store)
+    buyer = seed_user(user_store, uid="uid-2")
+    unit_id = await _register_unit(client, token)
+    product_id = await _add_product(client, token, unit_id, HANDICRAFT_PRODUCT)
+    mall_id = (await _publish(client, token, product_id)).json()["mallProductId"]
+    order_id = await _place_mall_order(client, buyer, mall_id, key="ord-key-dispatched")
+
+    await client.post(f"/v1/gruh-udyog/orders/{order_id}/accept", headers=auth(token))
+    await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/status",
+        json={"status": "packed"},
+        headers=auth(token),
+    )
+    # The website's older "dispatched" label is an alias for `shipped`.
+    resp = await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/status",
+        json={"status": "dispatched"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["fulfillment"]["status"] == "shipped"
+    history = resp.json()["fulfillment"]["history"]
+    assert history[-1]["status"] == "shipped"
+
+
+async def test_cancel_before_packed_restores_stock(client, user_store):
+    token = seed_user(user_store)
+    buyer = seed_user(user_store, uid="uid-2")
+    unit_id = await _register_unit(client, token)
+    product_id = await _add_product(client, token, unit_id, HANDICRAFT_PRODUCT)
+    mall_id = (await _publish(client, token, product_id)).json()["mallProductId"]
+    # Placing the mall order decremented the live listing stock 10 → 8.
+    order_id = await _place_mall_order(client, buyer, mall_id, quantity=2, key="ord-key-cancel")
+    assert user_store[f"products/{mall_id}"]["stock"] == 8
+
+    accepted = await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/accept", headers=auth(token)
+    )
+    assert accepted.status_code == 200
+    cancelled = await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/cancel",
+        json={"reason": "raw material shortage"},
+        headers=auth(token),
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["fulfillment"]["status"] == "cancelled"
+    assert cancelled.json()["fulfillment"]["cancelReason"] == "raw material shortage"
+    # Buyer-facing stock is restored on the mall listing.
+    assert user_store[f"products/{mall_id}"]["stock"] == 10
+
+    # A cancelled fulfilment can no longer be advanced.
+    blocked = await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/status",
+        json={"status": "packed"},
+        headers=auth(token),
+    )
+    assert blocked.status_code == 409
+
+
+async def test_cancel_after_packing_rejected(client, user_store):
+    token = seed_user(user_store)
+    buyer = seed_user(user_store, uid="uid-2")
+    unit_id = await _register_unit(client, token)
+    product_id = await _add_product(client, token, unit_id, HANDICRAFT_PRODUCT)
+    mall_id = (await _publish(client, token, product_id)).json()["mallProductId"]
+    order_id = await _place_mall_order(client, buyer, mall_id, key="ord-key-cancel2")
+    await client.post(f"/v1/gruh-udyog/orders/{order_id}/accept", headers=auth(token))
+    await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/status",
+        json={"status": "packed"},
+        headers=auth(token),
+    )
+    resp = await client.post(
+        f"/v1/gruh-udyog/orders/{order_id}/cancel",
+        json={"reason": "changed my mind"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "ORDER_NOT_CANCELLABLE"
 
 
 async def test_foreign_order_returns_404(client, user_store):

@@ -139,6 +139,13 @@ async def _complete_purchase(client, token, farmer_token, n):
     ).status_code == 200
     assert (await client.post(f"/v1/purchases/{pid}/dispatch", headers=_auth(farmer_token))).status_code == 200
     assert (await client.post(f"/v1/purchases/{pid}/deliver", headers=_auth(token))).status_code == 200
+    # advance holds the escrow → handover OTP must be verified before QC
+    otp = (await client.get(f"/v1/purchases/{pid}/handover-otp", headers=_auth(farmer_token))).json()["otp"]
+    assert (
+        await client.post(
+            f"/v1/purchases/{pid}/handover/verify", json={"otp": otp}, headers=_auth(token)
+        )
+    ).status_code == 200
     resp = await client.post(
         f"/v1/purchases/{pid}/qc",
         json={"grade": "A", "acceptedQty": 10, "rejectedQty": 0, "note": ""},

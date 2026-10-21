@@ -484,11 +484,18 @@ async def get_purchase(purchase_id: str, uid: str = Depends(current_user_id)):
 
 @router.post("/{purchase_id}/advance")
 async def pay_advance(purchase_id: str, body: AdvanceIn, uid: str = Depends(current_user_id)):
+    """Advance payment IS the escrow funding (spec C4) — the same writes as
+    POST /purchases/{id}/escrow/fund, so the handover-OTP/QC gate applies on
+    both paths. The payment record keeps kind "advance"."""
     purchase = await _participant(purchase_id, uid)
     if purchase.get("status") != "confirmed":
         _error(400, "INVALID_STATUS_TRANSITION", f"cannot pay advance from {purchase.get('status')}")
     if body.amount > purchase["totalAmount"]:
         _error(422, "VALIDATION_ERROR", "advance exceeds total", {"amount": "must not exceed totalAmount"})
+    escrow = purchase.setdefault("escrow", {})
+    if escrow.get("status") == "held":
+        _error(409, "ESCROW_ALREADY_HELD", "escrow is already funded")
+    await probation_gate_escrow(purchase["buyerId"], purchase_id, body.amount)
     await _transition(purchase, "advancePaid")
     payment = {
         "id": f"pay_{uuid.uuid4().hex[:10]}",
@@ -500,6 +507,14 @@ async def pay_advance(purchase_id: str, body: AdvanceIn, uid: str = Depends(curr
     }
     purchase.setdefault("payments", []).append(payment)
     purchase["advancePaid"] = body.amount
+    escrow.update(
+        status="held",
+        amount=body.amount,
+        method=body.method,
+        reference=body.reference,
+        fundedAt=_now(),
+    )
+    _append_event(purchase, "escrowFunded", f"{body.amount} advance held by platform")
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
     await notify_user(
@@ -523,14 +538,28 @@ async def pay_advance(purchase_id: str, body: AdvanceIn, uid: str = Depends(curr
 async def schedule_pickup(purchase_id: str, body: PickupIn, uid: str = Depends(current_user_id)):
     purchase = await _participant(purchase_id, uid)
     await _transition(purchase, "pickupScheduled")
-    purchase["pickup"] = body.model_dump()
+    pickup_data = body.model_dump()
+    if pickup_data.get("agentId"):
+        agent = await get_doc("pickup_agents", pickup_data["agentId"])
+        if agent is None:
+            _error(404, "PICKUP_AGENT_NOT_FOUND", "pickup agent not found")
+        if not agent.get("active", False):
+            _error(409, "PICKUP_AGENT_INACTIVE", "pickup agent is not active")
+    if pickup_data.get("graceMinutes") is None:
+        # Default grace window comes from app_config (routers/app_config.py pattern).
+        config = await get_doc("app_config", "current") or {}
+        try:
+            pickup_data["graceMinutes"] = int(config.get("pickupGraceMinutes", 60))
+        except (TypeError, ValueError):
+            pickup_data["graceMinutes"] = 60
+    purchase["pickup"] = pickup_data
     purchase["updatedAt"] = _now()
     await set_doc("purchases", purchase_id, purchase)
     await notify_user(
         purchase["farmerId"],
         type="pickup_scheduled",
         title="Pickup scheduled / पिकअप तय हुआ",
-        body=f"{purchase['crop']} — {(body.model_dump().get('date') or '')}",
+        body=f"{purchase['crop']} — {(pickup_data.get('date') or '')}",
         deepLink=f"/dashboard/p/purchases/{purchase_id}",
     )
     return _redact(purchase, uid)

@@ -17,6 +17,7 @@ export const KrishiMallCatalogView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [womenLed, setWomenLed] = useState(false);
   const [addedAlert, setAddedAlert] = useState<string | null>(null);
   const [wishlistAlert, setWishlistAlert] = useState<string | null>(null);
   const [addingId, setAddingId] = useState<string | null>(null);
@@ -30,7 +31,10 @@ export const KrishiMallCatalogView: React.FC = () => {
       setError(null);
       try {
         const [productDocs, wishlistItems] = await Promise.all([
-          mall.products(),
+          // Women-led chip narrows the catalog to gruh-udyog + women-enterprise listings.
+          mall.products(
+            womenLed ? { source: 'gruh_udyog,women_enterprise' } : undefined
+          ),
           mall.wishlist().catch(() => [] as MallProduct[]),
         ]);
         if (!mounted) return;
@@ -59,7 +63,7 @@ export const KrishiMallCatalogView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [womenLed]);
 
   const categories = useMemo(() => {
     const fromData = products.map((p) => p.category).filter((c) => !BASE_CATEGORIES.includes(c));
@@ -200,6 +204,28 @@ export const KrishiMallCatalogView: React.FC = () => {
               {cat}
             </button>
           ))}
+        </div>
+
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <button
+            onClick={() => {
+              setWomenLed((v) => !v);
+              setSelectedCategory('All');
+            }}
+            className={`px-3.5 py-2 text-xs font-semibold rounded-2xl whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              womenLed
+                ? 'bg-pink-600 text-white font-bold shadow-xs'
+                : 'bg-white border border-pink-200 text-pink-700 hover:bg-pink-50'
+            }`}
+          >
+            <Heart className={`w-3.5 h-3.5 ${womenLed ? 'fill-white' : ''}`} />
+            Women-led
+          </button>
+          {womenLed && (
+            <span className="self-center text-[10px] text-pink-600 font-bold">
+              Showing SHG &amp; gruh udyog products only
+            </span>
+          )}
         </div>
 
         {gruhCategories.length > 0 && (

@@ -14,11 +14,16 @@ async def test_schedule_one_entry_per_crop(client, user_store):
     assert resp.json() == resp2.json()
 
 
-async def test_groundwater_requires_district(client, user_store):
+async def test_groundwater_defaults_district(client, user_store):
+    # District defaults from the user profile, then Nashik — never a 400.
     token = seed_user(user_store)
     resp = await client.get("/v1/water/groundwater", headers=auth(token))
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "MISSING_DISTRICT"
+    assert resp.status_code == 200
+    assert resp.json()["district"] == "Nashik"
+    token_nagpur = seed_user(user_store, uid="uid-nagpur", district="Nagpur")
+    resp2 = await client.get("/v1/water/groundwater", headers=auth(token_nagpur))
+    assert resp2.status_code == 200
+    assert resp2.json()["district"] == "Nagpur"
 
 
 async def test_groundwater_nagpur_critical(client, user_store):

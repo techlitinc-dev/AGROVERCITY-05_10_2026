@@ -31,6 +31,7 @@ from app.routers.contracts import (
 from app.services import approvals
 from app.services.admin_auth import admin_mutation_context, current_admin_user
 from app.services.audit import log_admin_action
+from app.services.notify import notify_user
 from app.services.payments import refund_razorpay_payment
 from app.services.sync import MandiSyncError, sync_mandi_prices
 from app.services.users import get_user
@@ -300,6 +301,80 @@ async def force_lot_status(lot_id: str, body: LotStatusIn, ctx: dict = Depends(a
         {"status": mapped, "note": body.note}, ctx["reason"], ctx["ip"],
     )
     return {"success": True, "id": lot_id, "status": mapped, "previousStatus": previous_status}
+
+
+class LotModerateIn(BaseModel):
+    action: Literal["approve", "reject", "takedown"]
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+_LOT_MODERATION_TRANSITIONS = {
+    # action: (allowed source statuses, target status, reason required)
+    "approve": (("pending_review",), "open", False),
+    "reject": (("pending_review",), "rejected", True),
+    "takedown": (("open", "pending_review", "rejected"), "taken_down", True),
+}
+
+
+@router.post("/market/lots/{lot_id}/moderate")
+async def moderate_lot(lot_id: str, body: LotModerateIn, ctx: dict = Depends(admin_mutation_context)):
+    """Marketplace lot moderation: approve (pending_review → open), reject
+    (pending_review → rejected, reason mandatory) or takedown (any live status
+    → taken_down, reason mandatory). Every decision is audited on the lot doc
+    and pushed to the farmer as a `lot_moderated` notification."""
+    lot = await get_doc("market_lots", lot_id)
+    if lot is None:
+        _error(404, "LOT_NOT_FOUND", "lot not found")
+    allowed_sources, target, reason_required = _LOT_MODERATION_TRANSITIONS[body.action]
+    if lot.get("status") not in allowed_sources:
+        _error(
+            409,
+            "LOT_NOT_MODERATABLE",
+            f"cannot {body.action} a lot in status '{lot.get('status')}'",
+        )
+    reason = (body.reason or "").strip() or None
+    if reason_required and not reason:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            f"reason is required to {body.action} a lot",
+            {"reason": "required"},
+        )
+    previous_status = lot.get("status")
+    now = _now()
+    lot["status"] = target
+    lot["moderation"] = {
+        "action": body.action,
+        "reason": reason,
+        "by": _admin_id(ctx["admin"]),
+        "at": now,
+    }
+    lot["updatedAt"] = now
+    await set_doc("market_lots", lot_id, lot)
+    await log_admin_action(
+        ctx["admin"], "lots", f"LOT_MODERATE_{body.action.upper()}", lot_id,
+        {"status": previous_status},
+        {"status": target, "reason": reason}, ctx["reason"], ctx["ip"],
+    )
+    owner_id = lot.get("farmerId") or ""
+    if owner_id:
+        await notify_user(
+            owner_id,
+            type="lot_moderated",
+            title="Lot review update / लॉट समीक्षा",
+            body=(
+                f"Your {lot.get('crop', 'crop')} lot was {target}"
+                + (f" — {reason}" if reason else "")
+            ),
+        )
+    return {
+        "success": True,
+        "id": lot_id,
+        "status": target,
+        "previousStatus": previous_status,
+        "moderation": lot["moderation"],
+    }
+
 
 
 @router.get("/procurements")
@@ -875,3 +950,346 @@ async def list_product_certificates(
         _error(404, "PRODUCT_NOT_FOUND", "product not found")
     certs = product.get("certificates") or []
     return {"productId": product_id, "data": certs, "total": len(certs)}
+
+
+# ===========================================================================
+# Advertisement moderation desk (P2 — ads go live only after review)
+# ===========================================================================
+#
+# Campaign statuses follow models/ads.py AdCampaignStatus:
+# draft | pending_approval | active | paused | completed. The public serving
+# surface (routers/ads.py /active) only reads status == "active", so approve
+# flips pending_approval -> active and reject flips it to "paused" with a
+# recorded reason (the enum has no rejected state).
+
+_ADS_PRICING_DOC = "ads_pricing"
+
+_ADS_PRICING_DEFAULTS = {
+    "cpcPaise": 200,
+    "cpmPaise": 50000,
+    "minBudgetPaise": 50000,
+    "targetingOptions": ["state", "district", "persona", "crop"],
+}
+
+
+@router.get("/ads")
+async def list_ad_campaigns(
+    status: Optional[str] = Query(None, description="pending_approval | active | paused | completed | draft | all"),
+    persona: Optional[str] = Query(None, description="filter by advertiser persona"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    user: dict = Depends(current_admin_user),
+):
+    """All ad campaigns with the advertiser's name/persona resolved."""
+    docs = await query("ad_campaigns", None, limit=2000)
+    users_by_id = await _users_map()
+    rows = []
+    for doc in docs:
+        doc_status = doc.get("status") or "draft"
+        if status and status != "all" and doc_status != status:
+            continue
+        advertiser = users_by_id.get(doc.get("advertiserId") or "") or {}
+        advertiser_persona = advertiser.get("activeProfile") or advertiser.get("primaryProfile") or (
+            (advertiser.get("linkedProfiles") or [None])[0]
+        )
+        if persona and advertiser_persona != persona:
+            continue
+        rows.append(
+            {
+                **doc,
+                "advertiserName": doc.get("advertiserName") or advertiser.get("name"),
+                "advertiserPersona": advertiser_persona,
+            }
+        )
+    rows.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
+    return _paginate(rows, page, pageSize)
+
+
+async def _decide_ad(ad_id: str, status: str, reason: Optional[str], ctx: dict) -> dict:
+    ad = await get_doc("ad_campaigns", ad_id)
+    if ad is None:
+        _error(404, "AD_NOT_FOUND", "ad campaign not found")
+    if ad.get("status") not in ("pending_approval", "paused", "draft"):
+        _error(
+            409,
+            "AD_NOT_DECIDABLE",
+            f"ad in status '{ad.get('status')}' cannot be {status}",
+        )
+    previous = {"status": ad.get("status")}
+    ad["status"] = status
+    ad["reviewedBy"] = _admin_id(ctx["admin"])
+    ad["reviewedAt"] = _now()
+    if reason:
+        ad["reviewReason"] = reason
+    ad["updatedAt"] = _now()
+    await set_doc("ad_campaigns", ad_id, ad)
+    await log_admin_action(
+        ctx["admin"], "ads", f"ad.{status}", ad_id, previous,
+        {"status": status, "reason": reason}, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "id": ad_id, "status": status, "ad": ad}
+
+
+@router.post("/ads/{ad_id}/approve")
+async def approve_ad_campaign(
+    ad_id: str,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Approve a pending ad — it starts serving on the public surfaces."""
+    return await _decide_ad(ad_id, "active", None, ctx)
+
+
+class AdRejectIn(BaseModel):
+    reason: str = Field(..., min_length=3, description="explanation recorded on the campaign")
+
+
+@router.post("/ads/{ad_id}/reject")
+async def reject_ad_campaign(
+    ad_id: str,
+    body: AdRejectIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Reject a pending ad (goes to paused with the recorded reason)."""
+    return await _decide_ad(ad_id, "paused", body.reason, ctx)
+
+
+@router.get("/ads/{ad_id}/analytics")
+async def ad_campaign_analytics(
+    ad_id: str,
+    user: dict = Depends(current_admin_user),
+):
+    """Campaign counters: impressions, clicks, CTR, spend vs budget."""
+    ad = await get_doc("ad_campaigns", ad_id)
+    if ad is None:
+        _error(404, "AD_NOT_FOUND", "ad campaign not found")
+    impressions = int(ad.get("impressions") or 0)
+    clicks = int(ad.get("clicks") or 0)
+    spent = float(ad.get("spentRupees") or 0)
+    budget = float(ad.get("budgetRupees") or 0)
+    return {
+        "adId": ad_id,
+        "title": ad.get("title"),
+        "status": ad.get("status"),
+        "impressions": impressions,
+        "clicks": clicks,
+        "ctrPercent": round((clicks / max(1, impressions)) * 100, 2),
+        "spentRupees": spent,
+        "budgetRupees": budget,
+        "remainingBudgetRupees": round(max(0.0, budget - spent), 2),
+    }
+
+
+class AdsPricingIn(BaseModel):
+    cpcPaise: Optional[int] = Field(default=None, ge=0)
+    cpmPaise: Optional[int] = Field(default=None, ge=0)
+    minBudgetPaise: Optional[int] = Field(default=None, ge=0)
+    targetingOptions: Optional[list[str]] = None
+
+
+@router.get("/platform-config/ads-pricing")
+async def get_ads_pricing(user: dict = Depends(current_admin_user)):
+    """Ad pricing floor: CPC/CPM rates, minimum budget, targeting options."""
+    doc = await get_doc("platform_config", _ADS_PRICING_DOC)
+    if not doc:
+        return {**_ADS_PRICING_DEFAULTS, "id": _ADS_PRICING_DOC, "updatedAt": None, "updatedBy": None}
+    merged = {**_ADS_PRICING_DEFAULTS, **{k: doc[k] for k in _ADS_PRICING_DEFAULTS if k in doc}}
+    return {**merged, "updatedAt": doc.get("updatedAt"), "updatedBy": doc.get("updatedBy")}
+
+
+@router.put("/platform-config/ads-pricing")
+async def update_ads_pricing(
+    body: AdsPricingIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    existing = await get_doc("platform_config", _ADS_PRICING_DOC) or {}
+    new_doc = {
+        **existing,
+        **body.model_dump(exclude_none=True),
+        "id": _ADS_PRICING_DOC,
+        "updatedAt": _now(),
+        "updatedBy": _admin_id(ctx["admin"]),
+    }
+    await set_doc("platform_config", _ADS_PRICING_DOC, new_doc)
+    await log_admin_action(
+        ctx["admin"], "ads", "UPDATE_ADS_PRICING", _ADS_PRICING_DOC,
+        existing, new_doc, ctx["reason"], ctx["ip"],
+    )
+    return new_doc
+
+
+# ===========================================================================
+# E-market admin — seller registry + managed marketplace categories (P2)
+# ===========================================================================
+
+
+@router.get("/sellers")
+async def list_sellers(
+    search: Optional[str] = Query(None, description="matches id, name, phone"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    user: dict = Depends(current_admin_user),
+):
+    """Users with the seller persona joined with product count, order count
+    and order revenue (products/orders collections)."""
+    users_by_id = await _users_map()
+    products = await query("products", None, limit=2000)
+    orders = await query("orders", None, limit=2000)
+
+    products_by_id = {p.get("id"): p for p in products if p.get("id")}
+    product_count: dict[str, int] = {}
+    for product in products:
+        seller_id = product.get("sellerId") or ""
+        product_count[seller_id] = product_count.get(seller_id, 0) + 1
+
+    # Attribute order items to the product's seller: order count = distinct
+    # orders containing the seller's products; revenue = qty x discounted price.
+    order_count: dict[str, set] = {}
+    order_revenue: dict[str, float] = {}
+    for order in orders:
+        if order.get("status") == "cancelled":
+            continue
+        for item in order.get("items") or []:
+            product = products_by_id.get(item.get("productId") or "") or {}
+            seller_id = product.get("sellerId") or ""
+            if not seller_id:
+                continue
+            order_count.setdefault(seller_id, set()).add(order.get("id"))
+            unit_price = float(product.get("discountedPrice") or product.get("mrp") or 0)
+            order_revenue[seller_id] = order_revenue.get(seller_id, 0.0) + unit_price * int(
+                item.get("quantity") or 0
+            )
+
+    rows = []
+    for seller_id, seller in users_by_id.items():
+        profiles = seller.get("linkedProfiles") or []
+        if "seller" not in profiles and seller.get("activeProfile") != "seller" and seller.get("primaryProfile") != "seller":
+            continue
+        if search:
+            needle = search.lower()
+            haystack = " ".join(str(seller.get(k) or "") for k in ("id", "name", "phone")).lower()
+            if needle not in haystack:
+                continue
+        rows.append(
+            {
+                "id": seller_id,
+                "name": seller.get("name"),
+                "phone": seller.get("phone"),
+                "status": seller.get("status", "active"),
+                "vyapariVerified": bool(seller.get("vyapariVerified")),
+                "productCount": product_count.get(seller_id, 0),
+                "orderCount": len(order_count.get(seller_id, set())),
+                "revenueRupees": round(order_revenue.get(seller_id, 0.0), 2),
+                "createdAt": seller.get("createdAt"),
+            }
+        )
+    rows.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
+    return _paginate(rows, page, pageSize)
+
+
+_MARKETPLACE_CATEGORIES_DOC = "marketplace_categories"
+
+
+@router.get("/marketplace/categories")
+async def list_marketplace_categories(user: dict = Depends(current_admin_user)):
+    """Admin-managed marketplace category list (`platform_config/marketplace_categories`)."""
+    doc = await get_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC)
+    categories = doc.get("categories") or []
+    return {"data": categories, "total": len(categories)}
+
+
+class MarketplaceCategoryIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    active: bool = True
+
+
+@router.post("/marketplace/categories", status_code=201)
+async def create_marketplace_category(
+    body: MarketplaceCategoryIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    doc = await get_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC) or {}
+    categories = list(doc.get("categories") or [])
+    name_l = body.name.strip().lower()
+    if any(c.get("name", "").strip().lower() == name_l for c in categories):
+        _error(409, "CATEGORY_EXISTS", "a category with this name already exists")
+    category = {"id": f"cat_{uuid.uuid4().hex[:8]}", "name": body.name.strip(), "active": body.active}
+    categories.append(category)
+    new_doc = {
+        **doc,
+        "id": _MARKETPLACE_CATEGORIES_DOC,
+        "categories": categories,
+        "updatedAt": _now(),
+        "updatedBy": _admin_id(ctx["admin"]),
+    }
+    await set_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC, new_doc)
+    await log_admin_action(
+        ctx["admin"], "marketplace", "category.create", category["id"],
+        None, category, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "category": category}
+
+
+class MarketplaceCategoryUpdateIn(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    active: Optional[bool] = None
+
+
+@router.put("/marketplace/categories/{category_id}")
+async def update_marketplace_category(
+    category_id: str,
+    body: MarketplaceCategoryUpdateIn,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    doc = await get_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC)
+    if doc is None:
+        _error(404, "CATEGORY_NOT_FOUND", "category not found")
+    categories = list(doc.get("categories") or [])
+    target = next((c for c in categories if c.get("id") == category_id), None)
+    if target is None:
+        _error(404, "CATEGORY_NOT_FOUND", "category not found")
+    previous = dict(target)
+    if body.name is not None:
+        target["name"] = body.name.strip()
+    if body.active is not None:
+        target["active"] = body.active
+    new_doc = {
+        **doc,
+        "categories": categories,
+        "updatedAt": _now(),
+        "updatedBy": _admin_id(ctx["admin"]),
+    }
+    await set_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC, new_doc)
+    await log_admin_action(
+        ctx["admin"], "marketplace", "category.update", category_id,
+        previous, target, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "category": target}
+
+
+@router.delete("/marketplace/categories/{category_id}")
+async def delete_marketplace_category(
+    category_id: str,
+    ctx: dict = Depends(admin_mutation_context),
+):
+    """Soft delete: flips active=false on the managed category."""
+    doc = await get_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC)
+    if doc is None:
+        _error(404, "CATEGORY_NOT_FOUND", "category not found")
+    categories = list(doc.get("categories") or [])
+    target = next((c for c in categories if c.get("id") == category_id), None)
+    if target is None:
+        _error(404, "CATEGORY_NOT_FOUND", "category not found")
+    previous = dict(target)
+    target["active"] = False
+    new_doc = {
+        **doc,
+        "categories": categories,
+        "updatedAt": _now(),
+        "updatedBy": _admin_id(ctx["admin"]),
+    }
+    await set_doc("platform_config", _MARKETPLACE_CATEGORIES_DOC, new_doc)
+    await log_admin_action(
+        ctx["admin"], "marketplace", "category.soft-delete", category_id,
+        previous, target, ctx["reason"], ctx["ip"],
+    )
+    return {"success": True, "id": category_id, "active": False}

@@ -2,11 +2,34 @@ import { del, post, readList, readOne } from './http';
 import { MOCK_EQUIPMENT } from './mocks';
 import type { EquipmentMachine } from '../../types';
 
+/** Renter-side booking row from GET /equipment/my-bookings (SR 27). */
+export interface EquipmentMyBooking {
+  id: string;
+  userId?: string;
+  farmerName?: string;
+  slotId?: string;
+  equipmentId?: string;
+  date?: string;
+  slotName?: string;
+  priceRupees?: number;
+  ownerType?: string;
+  status: string;
+  createdAt?: string;
+  machineName?: string | null;
+  machineType?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
+}
+
 /** Equipment rental namespace — discovery & booking lifecycle (renter side). */
 export const equipment = {
-  /** GET /equipment */
+  /** GET /equipment — optional filters: q (substring), type (machineType exact). */
   list: (params?: Record<string, unknown>): Promise<EquipmentMachine[]> =>
     readList<EquipmentMachine>('/equipment', { params, mock: MOCK_EQUIPMENT }),
+
+  /** GET /equipment/my-bookings — the caller's bookings, newest first. */
+  myBookings: (): Promise<EquipmentMyBooking[]> =>
+    readList<EquipmentMyBooking>('/equipment/my-bookings'),
 
   /** GET /equipment/{id}/slots */
   slots: (equipmentId: string, params?: Record<string, unknown>): Promise<unknown[]> =>

@@ -31,9 +31,14 @@ export const insurance = {
   claims: (): Promise<CropInsuranceClaim[]> =>
     readList<CropInsuranceClaim>('/insurance/claims', { mock: MOCK_INSURANCE_CLAIMS }),
 
-  /** POST /insurance/claims — claim intimation. */
+  /** POST /insurance/claims — multipart claim intimation (legacy). */
   intimateClaim: (payload: Partial<CropInsuranceClaim>): Promise<CropInsuranceClaim> =>
     post<CropInsuranceClaim>('/insurance/claims', payload),
+
+  /** POST /insurance/claims/from-uploads — JSON intimation; photos are
+   * pre-uploaded via POST /uploads and referenced by signed URL. */
+  intimateClaimFromUploads: (payload: Record<string, unknown>): Promise<Record<string, unknown>> =>
+    post<Record<string, unknown>>('/insurance/claims/from-uploads', payload),
 
   /** GET /insurance/claims/{id} */
   claim: (claimId: string): Promise<CropInsuranceClaim> =>

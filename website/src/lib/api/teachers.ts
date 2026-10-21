@@ -1,5 +1,33 @@
 import { post, put, readList, readOne } from './http';
 
+/** DEV-only fallback for the public instructor directory (used by http read helpers only in DEV). */
+const MOCK_TEACHERS: Record<string, unknown>[] = [
+  {
+    id: 'usr_teacher_demo1',
+    userId: 'usr_teacher_demo1',
+    name: 'Dr. Sunita Deshmukh',
+    headline: 'Soil scientist & organic farming specialist',
+    qualification: 'Ph.D. Agronomy',
+    institution: 'MPKV Rahuri',
+    expertise: ['Soil Health', 'Organic Farming', 'Composting'],
+    experienceYears: 14,
+    avatarUrl: '',
+    isVerified: true,
+  },
+  {
+    id: 'usr_teacher_demo2',
+    userId: 'usr_teacher_demo2',
+    name: 'Shri Vilas Jadhav',
+    headline: 'Drip irrigation & water budgeting expert',
+    qualification: 'M.Sc. Horticulture',
+    institution: 'Jain Irrigation Academy',
+    expertise: ['Drip Irrigation', 'Water Management'],
+    experienceYears: 9,
+    avatarUrl: '',
+    isVerified: true,
+  },
+];
+
 /** Teachers (Gurukul instructor) namespace — profile, courses, batches, students, earnings. */
 export const teachers = {
   // --- profile ---
@@ -21,6 +49,10 @@ export const teachers = {
   home: (): Promise<unknown> => readOne<unknown>('/teachers/home'),
 
   // --- directory ---
+  /** GET /teachers — public instructor directory (teacher_profiles docs). */
+  list: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readList<Record<string, unknown>>('/teachers', { params, mock: MOCK_TEACHERS }),
+
   /** GET /teachers */
   directory: (params?: Record<string, unknown>): Promise<unknown[]> =>
     readList<unknown[]>('/teachers', { params }),

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   TreePine,
   BookOpen,
@@ -8,8 +9,12 @@ import {
   AlertCircle,
   CheckCircle2,
   Sprout,
+  Search,
+  Bookmark,
+  ArrowRight,
+  Leaf,
 } from 'lucide-react';
-import { apiErrorMessage, tree } from '../../lib/api';
+import { apiErrorMessage, tree, users } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { cn, formatDateTime, formatNumber } from '../../lib/utils';
 import { asRecords, pickNum, pickStr } from '../shared/records';
@@ -30,6 +35,11 @@ export const TreePlantationView: React.FC = () => {
   const [biofuel, setBiofuel] = useState<Record<string, unknown>[]>([]);
   const [careGuides, setCareGuides] = useState<Record<string, unknown>[]>([]);
   const [myRequests, setMyRequests] = useState<Record<string, unknown>[]>([]);
+  const [myPlantations, setMyPlantations] = useState<Record<string, unknown>[]>([]);
+  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
+  const [tabLoading, setTabLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [requestNgo, setRequestNgo] = useState<Record<string, unknown> | null>(null);
   const [species, setSpecies] = useState('');
   const [quantity, setQuantity] = useState('25');
@@ -38,31 +48,87 @@ export const TreePlantationView: React.FC = () => {
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     let alive = true;
-    const load = async () => {
-      const [a, n, b, c, m] = await Promise.all([
-        tree.articles().catch(() => []),
-        tree.ngos().catch(() => []),
-        tree.biofuel().catch(() => []),
-        tree.careGuides().catch(() => []),
+    const loadPersonal = async () => {
+      const [m, pl, s] = await Promise.all([
         tree.mySaplingRequests().catch(() => []),
+        tree.myPlantations().catch(() => []),
+        users.savedItems().catch(() => []),
       ]);
       if (!alive) return;
-      setArticles(asRecords(a));
-      setNgos(asRecords(n));
-      setBiofuel(asRecords(b));
-      setCareGuides(asRecords(c));
       setMyRequests(asRecords(m));
+      setMyPlantations(asRecords(pl));
+      setSavedKeys(
+        new Set(
+          asRecords(s)
+            .map((item) => `${pickStr(item, 'kind')}:${pickStr(item, 'refId')}`)
+            .filter((key) => !key.endsWith(':'))
+        )
+      );
     };
-    void load();
+    void loadPersonal();
     return () => {
       alive = false;
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    const loadTab = async () => {
+      setTabLoading(true);
+      const q = debouncedSearch.trim();
+      const params = q ? { q } : undefined;
+      try {
+        if (tab === 'articles') setArticles(asRecords(await tree.articles(params)));
+        if (tab === 'ngos') setNgos(asRecords(await tree.ngos(params)));
+        if (tab === 'biofuel') setBiofuel(asRecords(await tree.biofuel(params)));
+        if (tab === 'care') setCareGuides(asRecords(await tree.careGuides(params)));
+      } catch {
+        // Keep the previously rendered list when a filtered fetch fails.
+      } finally {
+        if (alive) setTabLoading(false);
+      }
+    };
+    void loadTab();
+    return () => {
+      alive = false;
+    };
+  }, [tab, debouncedSearch]);
+
   const flash = (kind: 'ok' | 'err', text: string) => {
     setNotice({ kind, text });
     window.setTimeout(() => setNotice(null), 5000);
+  };
+
+  const isSaved = (kind: string, item: Record<string, unknown>) =>
+    savedKeys.has(`${kind}:${pickStr(item, 'id')}`);
+
+  const toggleBookmark = async (kind: string, item: Record<string, unknown>) => {
+    const refId = pickStr(item, 'id');
+    if (!refId) return;
+    const key = `${kind}:${refId}`;
+    try {
+      if (savedKeys.has(key)) {
+        await users.unsaveItem(kind, refId);
+        setSavedKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        flash('ok', 'Removed from your saved items.');
+      } else {
+        await users.saveItem({ kind, refId, title: pickStr(item, 'title') || undefined });
+        setSavedKeys((prev) => new Set(prev).add(key));
+        flash('ok', 'Saved to your bookmarks.');
+      }
+    } catch (err) {
+      flash('err', apiErrorMessage(err));
+    }
   };
 
   const handleSaplingRequest = async () => {
@@ -134,19 +200,79 @@ export const TreePlantationView: React.FC = () => {
         ))}
       </div>
 
+      {/* My plantations strip */}
+      {myPlantations.length > 0 && (
+        <Link
+          to="/community/carbon"
+          className="flex items-center justify-between gap-3 p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl hover:border-emerald-300 transition-colors"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <Leaf className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="font-bold text-xs text-emerald-900">
+                My Plantations · {formatNumber(myPlantations.length)}
+              </p>
+              <p className="text-[11px] text-emerald-700">
+                {formatNumber(
+                  myPlantations.reduce((sum, p) => sum + pickNum(p, 'estimatedCo2KgPerYear'), 0)
+                )}{' '}
+                kg CO₂ captured per year
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1 shrink-0">
+            Carbon dashboard <ArrowRight className="w-3.5 h-3.5" />
+          </span>
+        </Link>
+      )}
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Search ${TABS.find((t) => t.id === tab)?.label.toLowerCase() ?? 'items'}…`}
+          className="w-full pl-10 pr-4 py-2.5 text-xs rounded-2xl border border-slate-200 bg-white focus:outline-none focus:border-emerald-600"
+        />
+      </div>
+
+      {tabLoading && (
+        <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-6 text-center">
+          Loading…
+        </p>
+      )}
+
       {/* ARTICLES */}
       {tab === 'articles' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {articles.length === 0 && (
+          {!tabLoading && articles.length === 0 && (
             <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-6 text-center sm:col-span-2">
-              Plantation stories are being published — check back after the monsoon drive.
+              {search.trim()
+                ? `No plantation stories match "${search.trim()}".`
+                : 'Plantation stories are being published — check back after the monsoon drive.'}
             </p>
           )}
           {articles.map((a, i) => (
             <div key={pickStr(a, 'id') || i} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-2">
-              <span className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                {pickStr(a, 'category', 'tag') || 'Agroforestry'}
-              </span>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  {pickStr(a, 'category', 'tag') || 'Agroforestry'}
+                </span>
+                <button
+                  onClick={() => void toggleBookmark('article', a)}
+                  className={cn(
+                    'p-1.5 rounded-xl border transition-colors',
+                    isSaved('article', a)
+                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      : 'border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600'
+                  )}
+                  title={isSaved('article', a) ? 'Remove bookmark' : 'Bookmark'}
+                >
+                  <Bookmark className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <h4 className="font-extrabold text-sm text-slate-900 leading-snug">
                 {pickStr(a, 'title', 'headline') || 'Plantation story'}
               </h4>
@@ -184,9 +310,11 @@ export const TreePlantationView: React.FC = () => {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {ngos.length === 0 && (
+            {!tabLoading && ngos.length === 0 && (
               <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-6 text-center sm:col-span-2">
-                No NGO partners listed for your district yet.
+                {search.trim()
+                  ? `No NGO partners match "${search.trim()}".`
+                  : 'No NGO partners listed for your district yet.'}
               </p>
             )}
             {ngos.map((n, i) => (
@@ -225,9 +353,11 @@ export const TreePlantationView: React.FC = () => {
       {/* BIOFUEL */}
       {tab === 'biofuel' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {biofuel.length === 0 && (
+          {!tabLoading && biofuel.length === 0 && (
             <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-6 text-center sm:col-span-2 lg:col-span-3">
-              Biofuel crop catalogue loads before the planting season.
+              {search.trim()
+                ? `No biofuel crops match "${search.trim()}".`
+                : 'Biofuel crop catalogue loads before the planting season.'}
             </p>
           )}
           {biofuel.map((b, i) => (
@@ -251,19 +381,33 @@ export const TreePlantationView: React.FC = () => {
       {/* CARE GUIDES */}
       {tab === 'care' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {careGuides.length === 0 && (
+          {!tabLoading && careGuides.length === 0 && (
             <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-6 text-center sm:col-span-2">
-              Care guides are on the way.
+              {search.trim() ? `No care guides match "${search.trim()}".` : 'Care guides are on the way.'}
             </p>
           )}
           {careGuides.map((g, i) => (
             <div key={pickStr(g, 'id') || i} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-2">
-              <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-                <Droplets className="w-4 h-4 text-sky-600" />
-                {pickStr(g, 'title') || 'Care guide'}
-              </h4>
+              <div className="flex items-start justify-between gap-2">
+                <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                  <Droplets className="w-4 h-4 text-sky-600" />
+                  {pickStr(g, 'title') || 'Care guide'}
+                </h4>
+                <button
+                  onClick={() => void toggleBookmark('tree', g)}
+                  className={cn(
+                    'p-1.5 rounded-xl border transition-colors',
+                    isSaved('tree', g)
+                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      : 'border-slate-200 text-slate-400 hover:border-emerald-300 hover:text-emerald-600'
+                  )}
+                  title={isSaved('tree', g) ? 'Remove bookmark' : 'Bookmark'}
+                >
+                  <Bookmark className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                {pickStr(g, 'body', 'summary', 'tips')}
+                {pickStr(g, 'body', 'summary', 'tips', 'instructions')}
               </p>
               {pickStr(g, 'species', 'tree') && (
                 <p className="text-[11px] text-slate-400">Species: {pickStr(g, 'species', 'tree')}</p>

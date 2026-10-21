@@ -89,7 +89,14 @@ export const SellerMandiRatesPage: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-3">
-            <h3 className="font-bold text-sm text-slate-900">My Posted Rates ({rates.length})</h3>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">My Posted Rates ({rates.length})</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Status: <strong className="text-slate-600">pending</strong> = in the moderation queue ·{' '}
+                <strong className="text-slate-600">approved</strong> = live for buyers ·{' '}
+                <strong className="text-slate-600">rejected</strong> = repost within the ±25% band
+              </p>
+            </div>
             {rates.length === 0 ? (
               <div className={cardCls}>
                 <EmptyState label="No rates posted yet" />

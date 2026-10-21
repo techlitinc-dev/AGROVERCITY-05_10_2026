@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import admin_action
-from app.models.claims import AppealIn, InsuranceClaimRecord, PayoutApprovalRequestIn
+from app.models.claims import AppealIn, ClaimFromUploadsIn, InsuranceClaimRecord, PayoutApprovalRequestIn
 from app.routers import admin_sop_finance
 from app.services import approvals
 from app.services import claims as claims_service
@@ -83,9 +83,6 @@ async def submit_claim(
     user: dict = Depends(_require_insurance_user),
 ):
     uid = user["id"]
-    policy = await get_doc(f"users/{uid}/insurance_policies", policyId)
-    if policy is None:
-        _error(404, "POLICY_NOT_FOUND", "पॉलिसी नहीं मिली")
     if len(damagePhotos) > MAX_CLAIM_PHOTOS:
         _error(422, "TOO_MANY_PHOTOS", "अधिकतम 5 फोटो स्वीकार्य हैं")
     urls = []
@@ -95,6 +92,63 @@ async def submit_claim(
             uid, data, photo.filename or "photo", photo.content_type, prefix="claims"
         )
         urls.append(storage.signed_download_url(blob_path))
+    return await _intimate_claim(
+        uid,
+        user,
+        policyId=policyId,
+        cropName=cropName,
+        calamityType=calamityType,
+        dateOfDamage=dateOfDamage,
+        cropStage=cropStage,
+        estimatedLossPercent=estimatedLossPercent,
+        gpsCoordinates=gpsCoordinates,
+        village=village,
+        photo_urls=urls,
+    )
+
+
+@router.post("/claims/from-uploads", status_code=201)
+async def submit_claim_from_uploads(
+    body: ClaimFromUploadsIn,
+    user: dict = Depends(_require_insurance_user),
+):
+    """JSON intimation for clients that uploaded damage photos through
+    POST /uploads first — same record, same triage, same audit trail."""
+    uid = user["id"]
+    if len(body.damagePhotoUrls) > MAX_CLAIM_PHOTOS:
+        _error(422, "TOO_MANY_PHOTOS", "अधिकतम 5 फोटो स्वीकार्य हैं")
+    return await _intimate_claim(
+        uid,
+        user,
+        policyId=body.policyId,
+        cropName=body.cropName,
+        calamityType=body.calamityType,
+        dateOfDamage=body.dateOfDamage,
+        cropStage=body.cropStage,
+        estimatedLossPercent=body.estimatedLossPercent,
+        gpsCoordinates=body.gpsCoordinates,
+        village=body.village,
+        photo_urls=list(body.damagePhotoUrls),
+    )
+
+
+async def _intimate_claim(
+    uid: str,
+    user: dict,
+    *,
+    policyId: str,
+    cropName: str,
+    calamityType: str,
+    dateOfDamage: str,
+    cropStage: str,
+    estimatedLossPercent: float,
+    gpsCoordinates: str,
+    village: str,
+    photo_urls: list[str],
+) -> dict:
+    policy = await get_doc(f"users/{uid}/insurance_policies", policyId)
+    if policy is None:
+        _error(404, "POLICY_NOT_FOUND", "पॉलिसी नहीं मिली")
     now = datetime.now(timezone.utc).isoformat()
     claim = {
         "id": uuid.uuid4().hex,
@@ -112,7 +166,7 @@ async def submit_claim(
         **claims_service.auto_assign_surveyor(user.get("district", "")),
         "gpsCoordinates": gpsCoordinates,
         "village": village,
-        "damagePhotos": urls,
+        "damagePhotos": photo_urls,
         "submittedAt": now,
         "dbtTransactionId": None,
         "bankAccountLast4": await _bank_account_last4(uid, user),

@@ -5,8 +5,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import admin_action, current_user_id
 from app.core.security import verify_mpin
@@ -48,6 +49,7 @@ from app.services import kyc as kyc_service
 from app.services import reports
 from app.services import settlements as settlements_service
 from app.services import escrow as escrow_service
+from app.services.geo import ROAD_FACTOR, GeoProviderError, get_geo, resolve_distance_km
 from app.services.payments import (
     create_razorpay_order,
     create_razorpayx_payout,
@@ -331,6 +333,20 @@ async def _assert_trip_operator(booking: dict, uid: str):
     _error(403, "FORBIDDEN", "only the assigned fleet can operate this trip")
 
 
+async def _assert_booking_reader(booking: dict, uid: str):
+    """Read access: the booker, the assigned transporter, or a driver of the
+    transporter's fleet (drivers are user docs with fleetOwnerId, POST /drivers)."""
+    if uid in (booking.get("userId"), booking.get("transporterId")):
+        return
+    transporter_id = booking.get("transporterId")
+    if not transporter_id:
+        _error(403, "FORBIDDEN", "only a booking party can view this booking")
+    user = await get_user(uid)
+    if user and _is_driver(user) and user.get("fleetOwnerId") == transporter_id:
+        return
+    _error(403, "FORBIDDEN", "only a booking party can view this booking")
+
+
 # Return-load matching window (T8): a completed/underway trip surfaces open loads
 # whose pickup is near the trip's drop district and whose pickup date falls within
 # this many days of the trip date. Deterministic — AI ranking of these is WS-06 M16.
@@ -352,11 +368,41 @@ def _places_match(pickup: str, drop: str) -> bool:
     drop_tokens = _place_tokens(drop)
     return bool(pickup_tokens & drop_tokens)
 
+# Flipkart-style step tracker (spec v1 granular trip steps): the intermediate
+# steps are optional — accepted may skip loading (straight to enRoute) and
+# reachedDestination may skip unloading (straight to delivered). `delivered`
+# remains the only settlement/escrow-release trigger.
 ALLOWED_TRANSITIONS = {
     "requested": {"accepted", "cancelled"},
-    "accepted": {"enRoute", "cancelled"},
-    "enRoute": {"delivered"},
+    "accepted": {"arrivedPickup", "enRoute", "cancelled"},
+    "arrivedPickup": {"loading", "enRoute"},
+    "loading": {"enRoute"},
+    # legacy clients drive enRoute→delivered directly; the step tracker adds
+    # reachedDestination as the preferred intermediate.
+    "enRoute": {"reachedDestination", "delivered"},
+    "reachedDestination": {"unloading", "delivered"},
+    "unloading": {"delivered"},
 }
+
+# Human labels for the step tracker (bilingual, mirroring update_booking).
+TRIP_STATUS_LABELS = {
+    "accepted": "स्वीकृत",
+    "arrivedPickup": "पिकअप स्थान पर पहुंचे",
+    "loading": "लोडिंग चालू",
+    "enRoute": "रास्ते में",
+    "reachedDestination": "गंतव्य पर पहुंचे",
+    "unloading": "अनलोडिंग चालू",
+    "delivered": "डिलीवर पूर्ण",
+    "cancelled": "रद्द",
+}
+
+# A trip counts as "live" (on the road / at a stop) in every step between
+# accepted and delivered — dashboards, calendars, detention and share views
+# all treat these the same way.
+TRIP_LIVE_STATUSES = (
+    "accepted", "arrivedPickup", "loading", "enRoute",
+    "reachedDestination", "unloading",
+)
 
 INITIAL_OPEN_LOADS = [
     {
@@ -626,7 +672,6 @@ async def _own_vehicle(vehicle_id: str, uid: str) -> dict:
 # ------------------------------------------
 
 LOCATION_FRESH_HOURS = 24
-ROAD_FACTOR = 1.25  # straight-line km -> road km
 URGENT_LOAD_NOTIFY_RADIUS_KM = 50
 
 
@@ -766,7 +811,7 @@ async def vehicle_calendar(vehicle_id: str, uid: str = Depends(_transporter)):
             "drop": b.get("drop"),
         }
         for b in bookings
-        if b.get("status") in ("accepted", "enRoute")
+        if b.get("status") in TRIP_LIVE_STATUSES
     ]
     return {"vehicleId": vehicle_id, "bookings": trips}
 
@@ -800,6 +845,71 @@ async def update_vehicle_location(
 # 2. TRANSPORTER PROFILE & STATS
 # ==========================================
 
+def _parse_ts(raw) -> datetime | None:
+    """Best-effort ISO timestamp parse (naive values read as UTC); None on junk."""
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+async def _computed_reputation(
+    uid: str, active_vehicles: list[dict], bookings: list[dict]
+) -> dict:
+    """Computed rating / on-time % / fleet utilization for this provider.
+
+    Each value is None when the underlying data is too thin — callers keep
+    their historical constants in that case. Never raises: profile/analytics
+    stats must not 500 the page on malformed docs.
+    """
+    try:
+        ratings_docs = await query(
+            "ratings", [("providerId", "==", uid), ("bookingKind", "==", "transport")], limit=1000
+        )
+        stars = [int(r.get("stars") or 0) for r in ratings_docs]
+        stars = [s for s in stars if 1 <= s <= 5]
+        rating = round(sum(stars) / len(stars), 2) if stars else None
+
+        on_time = measurable = 0
+        for b in bookings:
+            if b.get("status") != "delivered":
+                continue
+            delivered_at = _parse_ts((b.get("pod") or {}).get("deliveredAt"))
+            if delivered_at is None:
+                for wp in reversed(b.get("waypointsLog") or []):
+                    if wp.get("waypoint") == "delivered":
+                        delivered_at = _parse_ts(wp.get("time"))
+                        break
+            scheduled = _parse_ts(b.get("pickupTime")) or _parse_ts(b.get("date"))
+            if delivered_at is None or scheduled is None:
+                continue
+            measurable += 1
+            if delivered_at.date() == scheduled.date() or delivered_at <= scheduled:
+                on_time += 1
+        on_time_pct = round(on_time * 100 / measurable, 1) if measurable else None
+
+        window_start = datetime.now(timezone.utc) - timedelta(days=30)
+        busy_days: set[tuple[str, str]] = set()
+        for b in bookings:
+            if b.get("status") not in TRIP_LIVE_STATUSES and b.get("status") != "delivered":
+                continue
+            vehicle_id = b.get("vehicleId")
+            trip_at = _parse_ts(b.get("pickupTime")) or _parse_ts(b.get("date"))
+            if not vehicle_id or trip_at is None or trip_at < window_start:
+                continue
+            busy_days.add((vehicle_id, trip_at.date().isoformat()))
+        utilization = None
+        if active_vehicles:
+            utilization = min(round(len(busy_days) * 100 / (len(active_vehicles) * 30), 1), 100.0)
+        return {"rating": rating, "onTimePct": on_time_pct, "fleetUtilization": utilization}
+    except Exception:
+        return {"rating": None, "onTimePct": None, "fleetUtilization": None}
+
 @router.get("/profile")
 async def get_transporter_profile(uid: str = Depends(_transporter)):
     profile = await get_doc(f"users/{uid}/role_profiles", "transport")
@@ -808,8 +918,9 @@ async def get_transporter_profile(uid: str = Depends(_transporter)):
     active_vehicles = [v for v in vehicles if v.get("active", True)]
     bookings = await query("transport_bookings", [("transporterId", "==", uid)], limit=1000)
     completed_trips = [b for b in bookings if b.get("status") == "delivered"]
-    live_trips = [b for b in bookings if b.get("status") in ("accepted", "enRoute")]
+    live_trips = [b for b in bookings if b.get("status") in TRIP_LIVE_STATUSES]
     lifetime_earnings = sum(int(b.get("fare") or 0) for b in completed_trips)
+    reputation = await _computed_reputation(uid, active_vehicles, bookings)
 
     if profile is None:
         profile = {
@@ -837,8 +948,8 @@ async def get_transporter_profile(uid: str = Depends(_transporter)):
             "totalTrips": len(completed_trips),
             "activeTrips": len(live_trips),
             "lifetimeEarnings": lifetime_earnings,
-            "rating": 4.8,
-            "onTimeRate": 97.4,
+            "rating": reputation["rating"] if reputation["rating"] is not None else 4.8,
+            "onTimeRate": reputation["onTimePct"] if reputation["onTimePct"] is not None else 97.4,
             "verified": any(v.get("docStatus") == "verified" for v in active_vehicles),
         },
     }
@@ -861,14 +972,20 @@ async def update_transporter_profile(body: TransportProfileUpdate, uid: str = De
 @router.post("/fare-estimate", response_model=FareEstimateOut)
 async def fare_estimate(body: FareEstimateRequest, uid: str = Depends(_viewer)):
     vt = _vehicle_type(body.vehicleType)
-    distance_fare = vt["perKmRate"] * body.distanceKm
+    distance_km = body.distanceKm
+    distance_source = "client"
+    if body.pickup and body.drop:
+        distance_km, distance_source = await resolve_distance_km(
+            body.pickup.model_dump(), body.drop.model_dump(), body.distanceKm
+        )
+    distance_fare = vt["perKmRate"] * distance_km
     base_fare = vt["baseFare"]
     # Surge is a transporter-side earning lever, hard-capped (never farmer-side):
     # the estimate applies it to base+distance only after clamping to [1.0, CAP].
     surge = min(max(body.surgeMultiplier or 1.0, 1.0), SURGE_MULTIPLIER_CAP)
     total = round((base_fare + distance_fare) * surge, 2)
-    loading_labor = 300.0 if body.distanceKm > 10 else 150.0
-    toll_estimate = round((body.distanceKm / 50.0) * 85.0) if body.distanceKm >= 50 else 0.0
+    loading_labor = 300.0 if distance_km > 10 else 150.0
+    toll_estimate = round((distance_km / 50.0) * 85.0) if distance_km >= 50 else 0.0
 
     return FareEstimateOut(
         baseFare=base_fare,
@@ -886,6 +1003,8 @@ async def fare_estimate(body: FareEstimateRequest, uid: str = Depends(_viewer)):
             "tollEstimate": toll_estimate,
             "surgeMultiplier": surge,
         },
+        distanceKm=distance_km,
+        distanceSource=distance_source,
     )
 
 
@@ -899,14 +1018,26 @@ async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)
         if lot.get("status") != "open":
             _error(409, "LOT_NOT_OPEN", "lot is not open")
 
-    fare = vt["baseFare"] + vt["perKmRate"] * body.distanceKm
+    distance_km = body.distanceKm
+    geo_extra = {}
+    if body.pickupCoords and body.dropCoords:
+        distance_km, distance_source = await resolve_distance_km(
+            body.pickupCoords.model_dump(), body.dropCoords.model_dump(), body.distanceKm
+        )
+        geo_extra = {
+            "pickupGeo": {"lat": body.pickupCoords.lat, "lng": body.pickupCoords.lng},
+            "dropGeo": {"lat": body.dropCoords.lat, "lng": body.dropCoords.lng},
+            "distanceSource": distance_source,
+        }
+    fare = vt["baseFare"] + vt["perKmRate"] * distance_km
     doc = {
         "id": f"trb_{uuid.uuid4().hex[:12]}",
         "userId": uid,
         "vehicleType": body.vehicleType,
-        "distanceKm": body.distanceKm,
+        "distanceKm": distance_km,
         "pickup": body.pickup,
         "drop": body.drop,
+        **geo_extra,
         "date": body.date,
         "lotId": body.lotId,
         "commodity": body.commodity,
@@ -983,8 +1114,15 @@ async def list_bookings(
 
 
 @router.get("/bookings/{booking_id}")
-async def get_booking_detail(booking_id: str, uid: str = Depends(_viewer)):
+async def get_booking_detail(booking_id: str, uid: str = Depends(current_user_id)):
+    # Same persona gate as _viewer, plus fleet drivers (they read trips the
+    # fleet operates); the party check below decides *which* booking.
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    require_role(user, "farmer", "seller", "transport", "directBuyer", "driver")
     booking = await _get_booking(booking_id)
+    await _assert_booking_reader(booking, uid)
     if booking.get("lotId"):
         lot = await get_doc("market_lots", booking["lotId"])
         booking["lot"] = (
@@ -1027,7 +1165,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             await _record_no_show_strike(booking.get("transporterId") or uid)
     booking["status"] = body.status
     waypoints = booking.get("waypointsLog", [])
-    label = "स्वीकृत" if body.status == "accepted" else ("रास्ते में" if body.status == "enRoute" else "डिलीवर पूर्ण")
+    label = TRIP_STATUS_LABELS.get(body.status, body.status)
     waypoints.append({
         "waypoint": body.status,
         "label": label,
@@ -1054,12 +1192,44 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
                     body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
                     deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
                 )
+    elif body.status == "arrivedPickup":
+        await notify_user(
+            booking["userId"],
+            type="trip_arrived_pickup",
+            title="Vehicle at pickup / गाड़ी पिकअप पर",
+            body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {booking.get('vehicleNo') or 'vehicle'} arrived for loading",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        )
+    elif body.status == "loading":
+        await notify_user(
+            booking["userId"],
+            type="trip_loading",
+            title="Loading started / लोडिंग शुरू",
+            body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} is being loaded",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        )
     elif body.status == "enRoute":
         await notify_user(
             booking["userId"],
             type="trip_enroute",
             title="Vehicle en route / गाड़ी निकली",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {booking.get('vehicleNo') or 'vehicle'} is heading to pickup",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        )
+    elif body.status == "reachedDestination":
+        await notify_user(
+            booking["userId"],
+            type="trip_reached_destination",
+            title="Reached destination / गंतव्य पर पहुंचे",
+            body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — arrived at {booking.get('drop') or 'the drop point'}",
+            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        )
+    elif body.status == "unloading":
+        await notify_user(
+            booking["userId"],
+            type="trip_unloading",
+            title="Unloading started / अनलोडिंग शुरू",
+            body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} is being unloaded",
             deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     elif body.status == "delivered":
@@ -1127,7 +1297,7 @@ async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = 
     pod_otp = booking.get("podOtp") or {}
     if pod_otp.get("verifiedAt"):
         _error(409, "ALREADY_VERIFIED", "POD OTP already verified")
-    if booking.get("status") != "enRoute":
+    if booking.get("status") not in ("enRoute", "reachedDestination", "unloading"):
         _error(409, "ILLEGAL_TRANSITION", f"cannot verify POD OTP from {booking.get('status')}")
     if not pod_otp.get("otp"):
         _error(400, "OTP_NOT_GENERATED", "farmer must reveal the OTP first")
@@ -1338,6 +1508,244 @@ async def cancel_booking(booking_id: str, body: RejectBookingRequest, uid: str =
             deepLink=f"/dashboard/p/transport/trips/{booking_id}",
         )
     return booking
+
+
+# ==========================================
+# 3b. BOOKING PRICE OFFERS / NEGOTIATION ROUNDS
+# ==========================================
+
+OFFER_MAX_ROUNDS = 6
+OFFER_COLLECTION = "transport_bookings/{booking_id}/offers"
+
+
+class BookingOfferRequest(BaseModel):
+    farePaise: int = Field(gt=0)
+    message: str | None = None
+
+
+class BookingOfferCounterRequest(BaseModel):
+    farePaise: int = Field(gt=0)
+    message: str | None = None
+
+
+def _offer_path(booking_id: str) -> str:
+    return f"transport_bookings/{booking_id}/offers"
+
+
+async def _list_offers(booking_id: str) -> list[dict]:
+    offers = await query(_offer_path(booking_id), [], limit=100)
+    offers.sort(key=lambda o: (o.get("round") or 0, o.get("createdAt") or ""))
+    return offers
+
+
+async def _assert_offer_party(booking: dict, offers: list[dict], uid: str):
+    """Only the two negotiating parties may see/touch a booking's offers."""
+    participants = {booking.get("userId"), booking.get("transporterId")}
+    participants |= {o.get("fromUserId") for o in offers}
+    participants |= {o.get("toUserId") for o in offers}
+    participants.discard(None)
+    if uid not in participants:
+        _error(403, "FORBIDDEN", "only a booking party can access these offers")
+
+
+def _counterparty_role(offer: dict) -> str:
+    return "farmer" if offer.get("fromRole") == "transporter" else "transporter"
+
+
+@router.post("/bookings/{booking_id}/offer", status_code=201)
+async def create_booking_offer(
+    booking_id: str,
+    body: BookingOfferRequest,
+    uid: str = Depends(_transporter),
+):
+    """A transporter quotes a fare on a requested direct booking; the farmer
+    can accept/decline/counter. New offers and counters share a per-booking
+    round counter, hard-capped at OFFER_MAX_ROUNDS."""
+    booking = await _get_booking(booking_id)
+    if booking.get("status") != "requested":
+        _error(409, "INVALID_STATUS_TRANSITION", f"cannot offer on a {booking.get('status')} booking")
+    offers = await _list_offers(booking_id)
+    current_round = int(booking.get("offerRound") or 0)
+    if current_round >= OFFER_MAX_ROUNDS:
+        _error(409, "OFFER_ROUND_LIMIT", f"negotiation is capped at {OFFER_MAX_ROUNDS} rounds")
+    current_round += 1
+    offer = {
+        "offerId": f"ofr_{uuid.uuid4().hex[:10]}",
+        "bookingId": booking_id,
+        "fromRole": "transporter",
+        "fromUserId": uid,
+        "toUserId": booking.get("userId"),
+        "farePaise": int(body.farePaise),
+        "message": body.message,
+        "round": current_round,
+        "status": "pending",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc(_offer_path(booking_id), offer["offerId"], offer)
+    booking["offerRound"] = current_round
+    await set_doc("transport_bookings", booking_id, booking)
+    await notify_user(
+        booking["userId"],
+        type="booking_offer_received",
+        title="Fare offer / भाड़ा प्रस्ताव",
+        body=f"₹{body.farePaise / 100:.0f} quoted for {booking.get('commodity') or booking.get('vehicleType', 'Trip')} — accept or counter",
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+    )
+    return offer
+
+
+@router.get("/bookings/{booking_id}/offers")
+async def list_booking_offers(booking_id: str, uid: str = Depends(_viewer)):
+    booking = await _get_booking(booking_id)
+    offers = await _list_offers(booking_id)
+    await _assert_offer_party(booking, offers, uid)
+    return {"bookingId": booking_id, "data": offers, "total": len(offers)}
+
+
+async def _get_pending_offer(booking_id: str, offer_id: str) -> dict:
+    offer = await get_doc(_offer_path(booking_id), offer_id)
+    if offer is None:
+        _error(404, "OFFER_NOT_FOUND", "offer not found")
+    return offer
+
+
+def _assert_offer_counterparty(offer: dict, uid: str):
+    if offer.get("toUserId") != uid:
+        _error(403, "FORBIDDEN", f"only the {_counterparty_role(offer)} can respond to this offer")
+
+
+@router.post("/bookings/{booking_id}/offers/{offer_id}/accept")
+async def accept_booking_offer(
+    booking_id: str,
+    offer_id: str,
+    uid: str = Depends(_viewer),
+):
+    """The offer's counterparty accepts: the fare is locked, other pending
+    offers are declined, the booking turns accepted and the chat room opens
+    (same side effects as the PATCH accept path)."""
+    booking = await _get_booking(booking_id)
+    offer = await _get_pending_offer(booking_id, offer_id)
+    await _assert_offer_party(booking, [offer], uid)
+    _assert_offer_counterparty(offer, uid)
+    if offer.get("status") != "pending":
+        _error(409, "OFFER_NOT_PENDING", f"cannot accept a {offer.get('status')} offer")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    offer["status"] = "accepted"
+    offer["respondedAt"] = now_iso
+    await set_doc(_offer_path(booking_id), offer_id, offer)
+    for other in await _list_offers(booking_id):
+        if other.get("offerId") != offer_id and other.get("status") == "pending":
+            other["status"] = "declined"
+            await set_doc(_offer_path(booking_id), other["offerId"], other)
+
+    transporter_id = offer.get("fromUserId") if offer.get("fromRole") == "transporter" else offer.get("toUserId")
+    booking["status"] = "accepted"
+    booking["transporterId"] = transporter_id
+    booking["farePaise"] = int(offer["farePaise"])
+    booking["fare"] = round(int(offer["farePaise"]) / 100, 2)
+    waypoints = booking.get("waypointsLog", [])
+    waypoints.append({
+        "waypoint": "offer_accepted",
+        "label": f"भाड़ा तय हुआ: ₹{int(offer['farePaise']) / 100:.0f} (राउंड {offer.get('round')})",
+        "time": now_iso,
+    })
+    booking["waypointsLog"] = waypoints
+    await set_doc("transport_bookings", booking_id, booking)
+
+    await notify_user(
+        transporter_id,
+        type="booking_offer_accepted",
+        title="Offer accepted / प्रस्ताव स्वीकृत",
+        body=f"₹{int(offer['farePaise']) / 100:.0f} locked for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+    )
+    room = await ensure_transport_room(booking)
+    if room:
+        for party in (booking["userId"], booking["transporterId"]):
+            await notify_user(
+                party,
+                type="chat_unlocked",
+                title="Chat unlocked / चैट खुली",
+                body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
+                deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
+            )
+    return offer
+
+
+@router.post("/bookings/{booking_id}/offers/{offer_id}/decline")
+async def decline_booking_offer(
+    booking_id: str,
+    offer_id: str,
+    uid: str = Depends(_viewer),
+):
+    booking = await _get_booking(booking_id)
+    offer = await _get_pending_offer(booking_id, offer_id)
+    await _assert_offer_party(booking, [offer], uid)
+    _assert_offer_counterparty(offer, uid)
+    if offer.get("status") != "pending":
+        _error(409, "OFFER_NOT_PENDING", f"cannot decline a {offer.get('status')} offer")
+    offer["status"] = "declined"
+    offer["respondedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc(_offer_path(booking_id), offer_id, offer)
+    await notify_user(
+        offer.get("fromUserId"),
+        type="booking_offer_declined",
+        title="Offer declined / प्रस्ताव अस्वीकृत",
+        body=f"₹{int(offer['farePaise']) / 100:.0f} was declined for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+    )
+    return offer
+
+
+@router.post("/bookings/{booking_id}/offers/{offer_id}/counter", status_code=201)
+async def counter_booking_offer(
+    booking_id: str,
+    offer_id: str,
+    body: BookingOfferCounterRequest,
+    uid: str = Depends(_viewer),
+):
+    """The counterparty answers with their own number: the old offer is marked
+    countered and a fresh pending offer with the flipped role begins the next
+    round."""
+    booking = await _get_booking(booking_id)
+    offer = await _get_pending_offer(booking_id, offer_id)
+    await _assert_offer_party(booking, [offer], uid)
+    _assert_offer_counterparty(offer, uid)
+    if offer.get("status") != "pending":
+        _error(409, "OFFER_NOT_PENDING", f"cannot counter a {offer.get('status')} offer")
+    current_round = int(booking.get("offerRound") or offer.get("round") or 0)
+    if current_round >= OFFER_MAX_ROUNDS:
+        _error(409, "OFFER_ROUND_LIMIT", f"negotiation is capped at {OFFER_MAX_ROUNDS} rounds")
+    current_round += 1
+    from_role = _counterparty_role(offer)
+    counter = {
+        "offerId": f"ofr_{uuid.uuid4().hex[:10]}",
+        "bookingId": booking_id,
+        "fromRole": from_role,
+        "fromUserId": uid,
+        "toUserId": offer.get("fromUserId"),
+        "farePaise": int(body.farePaise),
+        "message": body.message,
+        "round": current_round,
+        "status": "pending",
+        "counterToOfferId": offer_id,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    offer["status"] = "countered"
+    offer["respondedAt"] = counter["createdAt"]
+    await set_doc(_offer_path(booking_id), offer_id, offer)
+    await set_doc(_offer_path(booking_id), counter["offerId"], counter)
+    booking["offerRound"] = current_round
+    await set_doc("transport_bookings", booking_id, booking)
+    await notify_user(
+        counter["toUserId"],
+        type="booking_offer_countered",
+        title="Counter offer / काउंटर प्रस्ताव",
+        body=f"₹{body.farePaise / 100:.0f} proposed for {booking.get('commodity') or booking.get('vehicleType', 'Trip')} — round {current_round}",
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+    )
+    return counter
 
 
 # ==========================================
@@ -1700,6 +2108,40 @@ async def get_trip_location(booking_id: str, uid: str = Depends(_viewer)):
     }
 
 
+@router.get("/bookings/{booking_id}/route")
+async def get_booking_route(booking_id: str, uid: str = Depends(_viewer)):
+    """Pickup→drop road route. Provider-backed when a Google key is set,
+    haversine fallback otherwise; cached on the booking doc under routeCache
+    (legs are not persisted)."""
+    booking = await _get_booking(booking_id)
+    pickup = booking.get("pickupGeo")
+    drop = booking.get("dropGeo")
+    if not pickup or not drop:
+        _error(
+            422,
+            "GEO_REQUIRED",
+            "this booking has no pickup/drop coordinates; rebook with coords to see the route",
+        )
+    coords_key = hashlib.sha256(
+        f"{pickup['lat']},{pickup['lng']};{drop['lat']},{drop['lng']}".encode()
+    ).hexdigest()
+    fields = ("provider", "distanceKm", "durationMin", "polyline", "bounds")
+    cached = booking.get("routeCache")
+    if cached and cached.get("coordsKey") == coords_key:
+        return {**{k: cached.get(k) for k in fields}, "legs": [], "bookingId": booking_id, "coordsKey": coords_key}
+    try:
+        route = await get_geo().route(pickup, drop)
+    except GeoProviderError as exc:
+        _error(502, "GEO_PROVIDER_ERROR", str(exc))
+    booking["routeCache"] = {
+        **{k: route.get(k) for k in fields},
+        "computedAt": datetime.now(timezone.utc).isoformat(),
+        "coordsKey": coords_key,
+    }
+    await set_doc("transport_bookings", booking_id, booking)
+    return {**route, "bookingId": booking_id, "coordsKey": coords_key}
+
+
 # ==========================================
 # 6. DIGITAL BILTY / LORRY RECEIPT (LR) & WEIGHBRIDGE
 # ==========================================
@@ -1756,6 +2198,69 @@ async def get_digital_bilty(booking_id: str, uid: str = Depends(_viewer)):
         "terms": "कृषि उपज परिवहन नियमावली अनुसार माल की सुरक्षा सुनिश्चित है।",
     }
     return lr_doc
+
+
+async def _trip_receipt(booking_id: str) -> dict:
+    """Shared receipt payload for the JSON and PDF download endpoints."""
+    booking = await _get_booking(booking_id)
+    if booking.get("farePaise"):
+        fare_paisa = int(booking["farePaise"])
+    else:
+        fare_paisa = int(round(float(booking.get("fare") or 0) * 100))
+    commission_paisa = int(round(fare_paisa * TRANSPORT_COMMISSION_RATE))
+    escrow = booking.get("escrow") or {}
+    farmer = {}
+    transporter = {}
+    if booking.get("userId"):
+        farmer = await get_user(booking["userId"]) or {}
+    if booking.get("transporterId"):
+        transporter = await get_user(booking["transporterId"]) or {}
+    return {
+        "platform": "Agrovercity",
+        "receiptNo": booking_id,
+        "date": booking.get("date"),
+        "issuedAt": datetime.now(timezone.utc).isoformat(),
+        "status": booking.get("status"),
+        "farmerId": booking.get("userId"),
+        "transporterId": booking.get("transporterId"),
+        "farmerName": farmer.get("name") or booking.get("userId") or "-",
+        "transporterName": transporter.get("name") or booking.get("transporterId") or "-",
+        "vehicleType": booking.get("vehicleType"),
+        "vehicleNo": booking.get("vehicleNo"),
+        "pickup": booking.get("pickup"),
+        "drop": booking.get("drop"),
+        "farePaisa": fare_paisa,
+        "commissionPaisa": commission_paisa,
+        "netPaise": fare_paisa - commission_paisa,
+        "escrowStatus": escrow.get("status") or "unfunded",
+        "verificationCode": f"AGRO-TMS-VERIFY-{booking_id}",
+    }
+
+
+def _assert_booking_party(booking: dict, uid: str):
+    if uid not in (booking.get("userId"), booking.get("transporterId")):
+        _error(403, "FORBIDDEN", "only a booking party can download this receipt")
+
+
+@router.get("/bookings/{booking_id}/receipt")
+async def get_trip_receipt(booking_id: str, uid: str = Depends(_viewer)):
+    booking = await _get_booking(booking_id)
+    _assert_booking_party(booking, uid)
+    return await _trip_receipt(booking_id)
+
+
+@router.get("/bookings/{booking_id}/receipt.pdf")
+async def get_trip_receipt_pdf(booking_id: str, uid: str = Depends(_viewer)):
+    booking = await _get_booking(booking_id)
+    _assert_booking_party(booking, uid)
+    path = reports.build_trip_receipt_pdf(await _trip_receipt(booking_id))
+    with open(path, "rb") as handle:
+        content = handle.read()
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="receipt-{booking_id}.pdf"'},
+    )
 
 
 @router.post("/bookings/{booking_id}/weighbridge")
@@ -1849,12 +2354,13 @@ async def get_transport_analytics(uid: str = Depends(_transporter)):
     active_vehicles = [v for v in vehicles if v.get("active", True)]
     bookings = await query("transport_bookings", [("transporterId", "==", uid)], limit=1000)
     completed = [b for b in bookings if b.get("status") == "delivered"]
-    live = [b for b in bookings if b.get("status") in ("accepted", "enRoute")]
+    live = [b for b in bookings if b.get("status") in TRIP_LIVE_STATUSES]
 
     total_gross = sum(int(b.get("fare") or 0) for b in completed)
     total_km = sum(float(b.get("distanceKm") or 0) for b in completed)
     estimated_diesel = round(total_km * 14.5, 2)  # Avg ₹14.5/km fuel
     estimated_net = round(total_gross - estimated_diesel - (total_gross * TRANSPORT_COMMISSION_RATE), 2)
+    reputation = await _computed_reputation(uid, active_vehicles, bookings)
 
     return {
         "totalVehicles": len(active_vehicles),
@@ -1864,9 +2370,158 @@ async def get_transport_analytics(uid: str = Depends(_transporter)):
         "totalDistanceKm": round(total_km, 1),
         "estimatedDieselExpense": estimated_diesel,
         "estimatedNetProfit": max(estimated_net, 0.0),
-        "fleetUtilizationRate": 85.5 if active_vehicles else 0.0,
-        "onTimeDeliveryPct": 98.2,
-        "averageRating": 4.9,
+        "fleetUtilizationRate": (
+            reputation["fleetUtilization"]
+            if reputation["fleetUtilization"] is not None
+            else (85.5 if active_vehicles else 0.0)
+        ),
+        "onTimeDeliveryPct": (
+            reputation["onTimePct"] if reputation["onTimePct"] is not None else 98.2
+        ),
+        "averageRating": reputation["rating"] if reputation["rating"] is not None else 4.9,
+    }
+
+
+@router.get("/ai-insights")
+async def get_transport_ai_insights(uid: str = Depends(_transporter)):
+    """Rule-based insights computed from the caller's own bookings and fleet
+    (no external AI call). Plan-gated exactly like /transport/analytics."""
+    await _plan_feature_guard(uid, "routeAnalytics")
+    bookings = await query("transport_bookings", [("transporterId", "==", uid)], limit=1000)
+    vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=100)
+    delivered = [b for b in bookings if b.get("status") == "delivered"]
+    now = datetime.now(timezone.utc)
+
+    # Route demand: pickup→drop pairs ranked by earnings.
+    route_map: dict[str, dict] = {}
+    for booking in delivered:
+        route = f"{booking.get('pickup') or '?'} ➔ {booking.get('drop') or '?'}"
+        row = route_map.setdefault(route, {"route": route, "count": 0, "earningsPaise": 0})
+        row["count"] += 1
+        row["earningsPaise"] += _fare_paisa(booking)
+    route_demand = sorted(
+        route_map.values(), key=lambda r: r["earningsPaise"], reverse=True
+    )[:5]
+
+    # Earnings trend over the last 6 complete months including the current one;
+    # a booking counts in its scheduled month (date/pickupTime, createdAt fallback).
+    month_index = now.year * 12 + (now.month - 1)
+    trend = {f"{(month_index - i) // 12}-{(month_index - i) % 12 + 1:02d}": 0 for i in range(5, -1, -1)}
+
+    def _booking_month(booking: dict) -> str | None:
+        raw = str(booking.get("date") or "")[:7]
+        if len(raw) == 7 and raw[4] == "-":
+            return raw
+        parsed = _parse_iso(booking.get("pickupTime")) or _parse_iso(booking.get("createdAt"))
+        return f"{parsed.year}-{parsed.month:02d}" if parsed else None
+
+    for booking in delivered:
+        month = _booking_month(booking)
+        if month in trend:
+            trend[month] += _fare_paisa(booking)
+    earnings_trend = [{"month": m, "earningsPaise": v} for m, v in trend.items()]
+
+    # Utilization / idle days for the current month: a day with any non-cancelled
+    # trip (any lifecycle step) counts as active.
+    this_month = f"{now.year}-{now.month:02d}"
+    active_days = {
+        str(b.get("date") or "")
+        for b in bookings
+        if b.get("status") != "cancelled" and str(b.get("date") or "").startswith(this_month)
+    }
+    active_days.discard("")
+    days_elapsed = now.day
+    utilization_pct = round(min(len(active_days) / days_elapsed, 1.0) * 100, 1)
+    idle_days = days_elapsed - len(active_days)
+
+    suggestions: list[str] = []
+    total_earnings = sum(r["earningsPaise"] for r in route_demand)
+    if route_demand and total_earnings:
+        top = route_demand[0]
+        share = round(top["earningsPaise"] / total_earnings * 100)
+        if share >= 50 and len(route_demand) > 1:
+            suggestions.append(
+                f"{top['route']} alone brings {share}% of your earnings — one mandi disruption "
+                "would hit hard, so line up a second lane."
+            )
+        # Empty backhaul: repeated one-way trips with no delivered reverse leg.
+        reverse_count = sum(
+            1
+            for b in delivered
+            if _places_match(str(b.get("pickup") or ""), top["route"].split(" ➔ ")[-1])
+            and _places_match(str(b.get("drop") or ""), top["route"].split(" ➔ ")[0])
+        )
+        if top["count"] >= 2 and reverse_count == 0:
+            suggestions.append(
+                f"You run {top['route']} repeatedly and always return empty — check the load board "
+                "for a backhaul before the return leg."
+            )
+        # Pricing vs platform fare trends on delivered trips with distance.
+        own_rates = [
+            _fare_paisa(b) / float(b["distanceKm"])
+            for b in delivered
+            if float(b.get("distanceKm") or 0) > 0
+        ]
+        platform_bookings = await query("transport_bookings", [("status", "==", "delivered")], limit=1000)
+        platform_rates = [
+            _fare_paisa(b) / float(b["distanceKm"])
+            for b in platform_bookings
+            if float(b.get("distanceKm") or 0) > 0
+        ]
+        if own_rates and platform_rates:
+            own_avg = sum(own_rates) / len(own_rates)
+            platform_avg = sum(platform_rates) / len(platform_rates)
+            if own_avg < platform_avg * 0.95:
+                suggestions.append(
+                    f"Your average ₹{own_avg / 100:.2f}/km sits below the platform average "
+                    f"₹{platform_avg / 100:.2f}/km — quote higher on the next bid."
+                )
+    for vehicle in vehicles:
+        if not vehicle.get("active", True):
+            continue
+        for field, label in _DOC_EXPIRY_FIELDS:
+            raw = vehicle.get(field)
+            if not raw:
+                continue
+            try:
+                expires = datetime.fromisoformat(str(raw))
+            except ValueError:
+                continue
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            days_left = (expires.date() - now.date()).days
+            if 0 <= days_left <= 30:
+                suggestions.append(
+                    f"Renew the {label} for {vehicle.get('registrationNo', 'your vehicle')} "
+                    f"within {days_left} day(s) — expired documents block trip acceptance."
+                )
+    if 0 < utilization_pct < 40:
+        suggestions.append(
+            f"Fleet utilization is {utilization_pct}% this month — add available dates or bid on more open loads."
+        )
+    if idle_days >= 10:
+        suggestions.append(
+            f"No trips on {idle_days} day(s) this month — the load board shows demand on those routes."
+        )
+    # Pad with evergreen rules so the payload always carries 3-6 suggestions.
+    evergreen = [
+        "Bid on open loads within 50 km of your home base to cut empty running.",
+        "Keep KYC and vehicle documents current to stay eligible for priority loads.",
+        "Quote detention charges for waits beyond the free grace window.",
+    ]
+    for tip in evergreen:
+        if len(suggestions) >= 3:
+            break
+        if tip not in suggestions:
+            suggestions.append(tip)
+    suggestions = suggestions[:6]
+
+    return {
+        "routeDemand": route_demand,
+        "earningsTrend": earnings_trend,
+        "utilizationPct": utilization_pct,
+        "idleDays": idle_days,
+        "suggestions": suggestions,
     }
 
 
@@ -1923,7 +2578,7 @@ async def transporter_dashboard(uid: str = Depends(_transporter)):
 
     on_trip = {
         b["vehicleId"]: b for b in mine
-        if b.get("vehicleId") and b.get("status") in ("accepted", "enRoute")
+        if b.get("vehicleId") and b.get("status") in TRIP_LIVE_STATUSES
     }
     fleet = [
         {
@@ -2196,8 +2851,10 @@ async def commission_invoice(booking_id: str, uid: str = Depends(_transporter)):
 
 WAITING_PHASES = ("pickup", "drop")
 WAITING_ALLOWED_STATUS = {
-    "pickup": ("accepted", "enRoute"),  # vehicle arrived; load not ready
-    "drop": ("enRoute",),               # vehicle waiting to unload at mandi
+    # vehicle physically at the pickup stop during these steps; load not ready
+    "pickup": ("accepted", "arrivedPickup", "loading", "enRoute"),
+    # vehicle waiting to unload at the mandi during these steps
+    "drop": ("enRoute", "reachedDestination", "unloading"),
 }
 
 
@@ -2340,6 +2997,25 @@ async def rate_farmer(booking_id: str, body: FarmerRatingRequest, uid: str = Dep
     }
     await set_doc(f"transport_bookings/{booking_id}/farmer_rating", "rating", rating_doc)
     booking["farmerRating"] = rating_doc
+    # Mirror into the shared "ratings" collection (same collection the
+    # received-ratings endpoint reads) so GET /transport/ratings/given can
+    # list it; providerId is the rated farmer, so the transporter's own
+    # received-ratings aggregate is untouched.
+    await set_doc(
+        "ratings",
+        f"rat_{booking_id}",
+        {
+            "id": f"rat_{booking_id}",
+            "bookingKind": "transport",
+            "bookingId": booking_id,
+            "stars": body.rating,
+            "comment": body.review,
+            "tags": tags,
+            "raterId": uid,
+            "providerId": booking.get("userId"),
+            "createdAt": rating_doc["createdAt"],
+        },
+    )
     await set_doc("transport_bookings", booking_id, booking)
 
     farmer_id = booking.get("userId")
@@ -2608,7 +3284,7 @@ async def view_shared_trip(token: str):
     booking = await get_doc("transport_bookings", share["bookingId"])
     if booking is None:
         _error(404, "SHARE_NOT_FOUND", "share link not found or revoked")
-    enroute = booking.get("status") == "enRoute"
+    enroute = booking.get("status") in ("enRoute", "reachedDestination", "unloading")
     return {
         "bookingId": booking["id"],
         "status": booking.get("status"),
@@ -2764,7 +3440,12 @@ async def create_instant_booking(
         _error(409, "VEHICLE_UNAVAILABLE", "vehicle is not available on the pickup date")
 
     vt = _vehicle_type(vehicle["vehicleType"])
-    fare = _vehicle_fare(vehicle, vt, body.distanceKm)
+    distance_km, distance_source = await resolve_distance_km(
+        {"lat": body.pickup.lat, "lng": body.pickup.lng},
+        {"lat": body.drop.lat, "lng": body.drop.lng},
+        body.distanceKm,
+    )
+    fare = _vehicle_fare(vehicle, vt, distance_km)
     loading_charge = vt.get("loadingLabor") or 0
     total_fare = fare["totalFare"] + int(loading_charge)
     owner_id = vehicle.get("ownerId")
@@ -2774,7 +3455,8 @@ async def create_instant_booking(
         "userId": uid,
         "transporterId": owner_id,
         "vehicleType": vehicle["vehicleType"],
-        "distanceKm": body.distanceKm,
+        "distanceKm": distance_km,
+        "distanceSource": distance_source,
         "pickup": body.pickup.address,
         "drop": body.drop.address,
         "pickupGeo": {"lat": body.pickup.lat, "lng": body.pickup.lng},
@@ -2908,6 +3590,19 @@ PAYMENT_CLOSED_STATUSES = ("cancelled", "delivered", "breakdown")
 def _fare_paisa(booking: dict) -> int:
     """The agreed fare in integer paisa (bookings store rupees)."""
     return int(round(float(booking.get("fare") or 0) * 100))
+
+
+def _insurance_premium_paisa(booking: dict) -> int:
+    """FT-6: the opted-in transit insurance premium carried by the booking."""
+    insurance = booking.get("insurance") or {}
+    if not insurance.get("optIn"):
+        return 0
+    return int(insurance.get("premiumPaisa") or 0)
+
+
+def _payable_paisa(booking: dict) -> int:
+    """What the booker owes in integer paisa: fare + opted-in insurance premium."""
+    return _fare_paisa(booking) + _insurance_premium_paisa(booking)
 
 
 def _empty_escrow() -> dict:
@@ -3053,7 +3748,7 @@ async def create_booking_payment(
 
 
 async def _create_booking_order(booking: dict, body: BookingPaymentRequest) -> dict:
-    amount_paisa = body.amountPaisa or _fare_paisa(booking)
+    amount_paisa = body.amountPaisa or _payable_paisa(booking)
     if amount_paisa <= 0:
         _error(422, "VALIDATION_ERROR", "nothing to pay on this booking", {"amountPaisa": "fare is zero"})
     order = create_razorpay_order(amount_paisa, booking["id"])
@@ -3066,6 +3761,7 @@ async def _create_booking_order(booking: dict, body: BookingPaymentRequest) -> d
         "orderId": order["id"],
         "amountPaisa": amount_paisa,
         "currency": "INR",
+        "keyId": settings.razorpay_key_id or None,
         "status": "created",
     }
 
@@ -3095,7 +3791,7 @@ async def _verify_booking_payment(booking: dict, body: BookingPaymentRequest) ->
         _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
 
     now = datetime.now(timezone.utc).isoformat()
-    amount_paisa = int(booking.get("pendingOrderAmountPaisa") or _fare_paisa(booking))
+    amount_paisa = int(booking.get("pendingOrderAmountPaisa") or _payable_paisa(booking))
     payment = {
         "amountPaisa": amount_paisa,
         "razorpayOrderId": body.razorpayOrderId,
@@ -3103,6 +3799,10 @@ async def _verify_booking_payment(booking: dict, body: BookingPaymentRequest) ->
         "status": "captured",
         "at": now,
     }
+    insurance_premium = _insurance_premium_paisa(booking)
+    if insurance_premium:
+        payment["farePaisa"] = _fare_paisa(booking)
+        payment["insurancePremiumPaisa"] = insurance_premium
     payments.append(payment)
     booking["payments"] = payments
 
@@ -3119,7 +3819,7 @@ async def _verify_booking_payment(booking: dict, body: BookingPaymentRequest) ->
     await set_doc("transport_bookings", booking["id"], booking)
 
     # Spec D.5: payment in escrow confirms the trip → chat room exists.
-    if booking.get("transporterId") and booking.get("status") in ("accepted", "enRoute"):
+    if booking.get("transporterId") and booking.get("status") in TRIP_LIVE_STATUSES:
         room = await _transport_room_local(booking)
         if room:
             for party in (booking["userId"], booking["transporterId"]):
@@ -3301,6 +4001,25 @@ async def create_transport_payout(
     return payout
 
 
+@router.get("/payouts")
+async def list_transport_payouts(uid: str = Depends(_transporter)):
+    """Payouts this transporter has drawn from the transport wallet, newest
+    first, with the RazorpayX payout id (UTR reference) per row."""
+    payouts = await query("transport_payouts", [("userId", "==", uid)], limit=500)
+    payouts.sort(key=lambda p: p.get("at") or p.get("createdAt") or "", reverse=True)
+    rows = [
+        {
+            "id": p.get("id"),
+            "amountPaisa": p.get("amountPaisa"),
+            "status": p.get("status"),
+            "razorpayPayoutId": p.get("razorpayPayoutId"),
+            "createdAt": p.get("at") or p.get("createdAt"),
+        }
+        for p in payouts
+    ]
+    return {"data": rows, "total": len(rows)}
+
+
 # ==========================================
 # 23. TRANSPORTER RATINGS RECEIVED (P1-27, spec T10)
 # ==========================================
@@ -3323,6 +4042,23 @@ async def my_transport_ratings(uid: str = Depends(_transporter)):
         "data": ratings,
         "total": count,
         "aggregate": {"average": average, "count": count, "tags": tags},
+    }
+
+
+@router.get("/ratings/given")
+async def my_transport_ratings_given(uid: str = Depends(_transporter)):
+    """Ratings this transporter submitted (the FT-3 rate-farmer flow mirrors
+    into the same "ratings" collection), same item shape as /ratings."""
+    ratings = await query(
+        "ratings", [("raterId", "==", uid), ("bookingKind", "==", "transport")], limit=1000
+    )
+    ratings.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+    count = len(ratings)
+    average = round(sum(int(r.get("stars") or 0) for r in ratings) / count, 2) if count else None
+    return {
+        "data": ratings,
+        "total": count,
+        "aggregate": {"average": average, "count": count},
     }
 
 
@@ -3424,7 +4160,7 @@ async def report_breakdown(
     released to the transporter, the remainder is refunded to the booker."""
     booking = await _get_booking(booking_id)
     await _assert_trip_operator(booking, uid)
-    if booking.get("status") not in ("accepted", "enRoute"):
+    if booking.get("status") not in TRIP_LIVE_STATUSES:
         _error(
             409,
             "INVALID_STATUS_TRANSITION",

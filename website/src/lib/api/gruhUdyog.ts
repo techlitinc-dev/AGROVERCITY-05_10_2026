@@ -98,7 +98,19 @@ export const gruhUdyog = {
   rejectOrder: (orderId: string, reason?: string): Promise<unknown> =>
     post<unknown>(`/gruh-udyog/orders/${orderId}/reject`, reason ? { reason } : {}),
 
+  /** POST /gruh-udyog/orders/{id}/cancel */
+  cancelOrder: (orderId: string, reason?: string): Promise<unknown> =>
+    post<unknown>(`/gruh-udyog/orders/${orderId}/cancel`, reason ? { reason } : {}),
+
   /** POST /gruh-udyog/orders/{id}/status */
   updateOrderStatus: (orderId: string, status: string): Promise<unknown> =>
     post<unknown>(`/gruh-udyog/orders/${orderId}/status`, { status }),
+
+  /** GET /gruh-udyog/units/{id}/settlements — period lines, payouts + balance */
+  settlements: (unitId: string): Promise<unknown> =>
+    readOne<unknown>(`/gruh-udyog/units/${unitId}/settlements`),
+
+  /** POST /gruh-udyog/payouts — MPIN-gated payout of the available balance */
+  requestPayout: (payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>('/gruh-udyog/payouts', payload),
 };

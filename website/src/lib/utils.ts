@@ -12,6 +12,16 @@ export function formatNumber(num: number): string {
   return new Intl.NumberFormat('en-IN').format(num);
 }
 
+/** Money is integer paisa on the backend — render ₹ with up to 2 decimals when needed. */
+export function formatPaisa(paisa: number): string {
+  const rupees = (paisa || 0) / 100;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: Number.isInteger(rupees) ? 0 : 2,
+  }).format(rupees);
+}
+
 export function formatWeight(quintals: number): string {
   if (quintals >= 10) {
     return `${formatNumber(quintals)} Quintals (${formatNumber(quintals * 100)} kg)`;

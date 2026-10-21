@@ -39,7 +39,12 @@ NOSHOW_IDEM_SCOPE = "customer.order.no_show"
 QUOTE_IDEM_SCOPE = "customer.quote.create"
 SUBSCRIPTION_IDEM_SCOPE = "customer.subscription.create"
 
-FREQUENCY_DELTAS = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "seasonal": timedelta(days=90)}
+FREQUENCY_DELTAS = {
+    "daily": timedelta(days=1),
+    "weekly": timedelta(days=7),
+    "fortnightly": timedelta(days=14),
+    "seasonal": timedelta(days=90),
+}
 INSPECTION_WINDOW_HOURS = 72
 FARMER_FREE_CANCEL_HOURS = 2
 CUSTOMER_FREE_CANCEL_HOURS = 4
@@ -241,6 +246,55 @@ def _check_hoarding_cap(crop: str, qty: float, config: dict) -> None:
         )
 
 
+def _parse_ts(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except ValueError:
+        return None
+
+
+# Statuses on the fulfilment path whose held escrow is eligible for the
+# T+72h silent auto-release (delivered = inspection passed in the E5 matrix).
+_AUTO_RELEASE_STATUSES = ("delivered", "inspection_passed")
+
+
+async def release_due_customer_escrows() -> dict:
+    """Nightly auto-release (same contract as services.escrow.release_due_escrows):
+    a held deposit whose 72h inspection window closed silently without a dispute
+    is released to the farmer inline — exactly the release path the inspection
+    and QR-handover handlers use."""
+    orders = await query("customer_orders", [], limit=2000)
+    released = paused = pending = 0
+    now = datetime.now(timezone.utc)
+    for order in orders:
+        escrow = order.get("escrow") or {}
+        if escrow.get("status") != "held":
+            continue
+        if escrow.get("disputeOpenedAt") and not escrow.get("disputeResolvedAt"):
+            paused += 1
+            continue
+        if order.get("status") not in _AUTO_RELEASE_STATUSES:
+            pending += 1
+            continue
+        # Clock anchor: physical delivery, else QR custody transfer; without
+        # either the goods were not handed over, so the window never started.
+        anchor = _parse_ts(order.get("deliveredAt")) or _parse_ts(order.get("qrVerifiedAt"))
+        if anchor is None or now <= anchor + timedelta(hours=INSPECTION_WINDOW_HOURS):
+            pending += 1
+            continue
+        if await _release_escrow(order):
+            _append_timeline(order, "escrow_auto_released")
+            order["updatedAt"] = _now()
+            await set_doc("customer_orders", order["id"], order)
+            released += 1
+    return {"released": released, "paused": paused, "pending": pending}
+
+
 async def _write_credit_ledger(order: dict, uid: str) -> None:
     """C9: credit_terms-entitled buyers accrue a customer_credit_ledger entry."""
     plan = await billing.effective_plan(uid, "emarket")
@@ -330,6 +384,14 @@ class CartCheckoutIn(BaseModel):
     lines: list[CartLineIn] = Field(min_length=1)
 
 
+class SubscriptionItem(BaseModel):
+    """SR 7 veggie-box line: one basket entry (e.g. 1 kg tomatoes)."""
+
+    name: str = Field(min_length=1)
+    quantity: float = Field(gt=0)
+    unit: str = "kg"
+
+
 class SubscriptionIn(BaseModel):
     farmerIds: list[str] = Field(min_length=1)
     crop: str
@@ -337,7 +399,23 @@ class SubscriptionIn(BaseModel):
     qtyKg: float = Field(gt=0)
     targetPriceBandPaisa: dict = Field(default_factory=dict)
     deliveryWindow: str = ""
-    frequency: Literal["daily", "weekly", "seasonal"]
+    frequency: Literal["daily", "weekly", "fortnightly", "seasonal"]
+    items: list[SubscriptionItem] | None = None
+    deliveryDay: str | None = None
+    deliverySlot: str | None = None
+    skipDates: list[str] = Field(default_factory=list)
+
+
+class SubscriptionUpdateExtendedIn(SubscriptionUpdateIn):
+    """PUT body — everything SubscriptionUpdateIn allows plus the veggie-box
+    basket fields and skip-a-week controls."""
+
+    items: list[SubscriptionItem] | None = None
+    frequency: Literal["daily", "weekly", "fortnightly", "seasonal"] | None = None
+    deliveryDay: str | None = None
+    deliverySlot: str | None = None
+    skipDates: list[str] | None = None
+    skipNext: bool | None = None
 
 
 def _order_amount_paisa(order: dict) -> int:
@@ -1018,8 +1096,17 @@ async def checkout_cart(
 # ---------------------------------------------------------------- subscriptions
 
 
-def _subscription_next_run(frequency: str) -> str:
-    return (datetime.now(timezone.utc) + FREQUENCY_DELTAS[frequency]).isoformat()
+def _subscription_next_run(frequency: str, skip_dates: list[str] | None = None) -> str:
+    """Next run = now + the frequency delta; weekly/fortnightly boxes skip any
+    occurrence whose calendar day is in skipDates (skip-a-week)."""
+    next_run = datetime.now(timezone.utc) + FREQUENCY_DELTAS[frequency]
+    if frequency in ("weekly", "fortnightly") and skip_dates:
+        skipped = {str(d)[:10] for d in skip_dates}
+        for _ in range(26):  # safety bound: never loop more than half a year
+            if next_run.date().isoformat() not in skipped:
+                break
+            next_run += FREQUENCY_DELTAS[frequency]
+    return next_run.isoformat()
 
 
 @router.get("/subscriptions")
@@ -1044,6 +1131,11 @@ async def create_subscription(
     stored = await idempotency.replay(SUBSCRIPTION_IDEM_SCOPE, idempotency_key)
     if stored is not None:
         return stored
+    # SR 7: veggie-box subscriptions are gated by the app_config/veggie_box
+    # kill-switch; an absent doc means the feature is enabled.
+    veggie_flag = await get_doc("app_config", "veggie_box")
+    if veggie_flag is not None and veggie_flag.get("enabled") is False:
+        _error(409, "FEATURE_DISABLED", "subscription boxes are temporarily unavailable")
     sid = f"sub_{uuid.uuid4().hex[:10]}"
     doc = {
         "id": sid,
@@ -1055,10 +1147,18 @@ async def create_subscription(
         "targetPriceBandPaisa": body.targetPriceBandPaisa,
         "deliveryWindow": body.deliveryWindow,
         "frequency": body.frequency,
-        "nextRunAt": _subscription_next_run(body.frequency),
+        "nextRunAt": _subscription_next_run(body.frequency, body.skipDates),
         "status": "active",
         "createdAt": _now(),
     }
+    if body.items is not None:
+        doc["items"] = [item.model_dump() for item in body.items]
+    if body.deliveryDay:
+        doc["deliveryDay"] = body.deliveryDay
+    if body.deliverySlot:
+        doc["deliverySlot"] = body.deliverySlot
+    if body.skipDates:
+        doc["skipDates"] = list(body.skipDates)
     await set_doc("customer_subscriptions", sid, doc)
     if idempotency_key:
         await idempotency.store(SUBSCRIPTION_IDEM_SCOPE, idempotency_key, doc)
@@ -1079,12 +1179,13 @@ async def cancel_subscription(subscription_id: str, user: dict = Depends(_custom
 @router.put("/subscriptions/{subscription_id}")
 async def update_subscription(
     subscription_id: str,
-    body: SubscriptionUpdateIn,
+    body: SubscriptionUpdateExtendedIn,
     user: dict = Depends(_customer),
 ):
-    """P2-18 (C2): standing-order lifecycle. Only the subscribing customer may
-    pause/resume (active <-> paused, cancelled is terminal) or edit the
-    quantity / delivery window of an active subscription."""
+    """P2-18 (C2) + SR 7: standing-order lifecycle. Only the subscribing
+    customer may pause/resume (active <-> paused, cancelled is terminal), edit
+    the quantity / delivery window / veggie-box basket of an active
+    subscription, or skip upcoming occurrences."""
     sub = await get_doc("customer_subscriptions", subscription_id)
     if sub is None or sub.get("customerId") != user["id"]:
         _error(404, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
@@ -1102,13 +1203,52 @@ async def update_subscription(
     elif requested is not None:
         _error(409, "SUBSCRIPTION_INVALID_TRANSITION", f"subscription is already {current}")
     effective = sub.get("status") or "active"
-    if body.qtyKg is not None or body.deliveryWindow is not None:
+
+    # SR 7 skip-a-week: explicit skipDates replacement and/or skipNext, which
+    # appends the next occurrence's calendar day. Allowed while paused too;
+    # nextRunAt is recomputed so the skipped day is never scheduled.
+    skip_dates = [str(d)[:10] for d in (sub.get("skipDates") or [])]
+    skip_dirty = False
+    if body.skipDates is not None:
+        skip_dates = [str(d)[:10] for d in body.skipDates]
+        skip_dirty = True
+    if body.skipNext:
+        frequency = body.frequency or sub.get("frequency") or "weekly"
+        occurrence = (
+            datetime.now(timezone.utc) + FREQUENCY_DELTAS.get(frequency, timedelta(days=7))
+        ).date().isoformat()
+        if occurrence not in skip_dates:
+            skip_dates.append(occurrence)
+        skip_dirty = True
+    if skip_dirty:
+        sub["skipDates"] = skip_dates
+        sub["nextRunAt"] = _subscription_next_run(
+            body.frequency or sub.get("frequency") or "weekly", skip_dates
+        )
+        sub["updatedAt"] = _now()
+
+    basket_edit = (
+        body.items is not None
+        or body.frequency is not None
+        or body.deliveryDay is not None
+        or body.deliverySlot is not None
+    )
+    if body.qtyKg is not None or body.deliveryWindow is not None or basket_edit:
         if effective != "active":
-            _error(409, "SUBSCRIPTION_NOT_ACTIVE", "qtyKg and deliveryWindow can only be updated while the subscription is active")
+            _error(409, "SUBSCRIPTION_NOT_ACTIVE", "subscription details can only be updated while the subscription is active")
         if body.qtyKg is not None:
             sub["qtyKg"] = body.qtyKg
         if body.deliveryWindow is not None:
             sub["deliveryWindow"] = body.deliveryWindow
+        if body.items is not None:
+            sub["items"] = [item.model_dump() for item in body.items]
+        if body.frequency is not None:
+            sub["frequency"] = body.frequency
+            sub["nextRunAt"] = _subscription_next_run(body.frequency, sub.get("skipDates") or [])
+        if body.deliveryDay is not None:
+            sub["deliveryDay"] = body.deliveryDay
+        if body.deliverySlot is not None:
+            sub["deliverySlot"] = body.deliverySlot
         sub["updatedAt"] = _now()
     await set_doc("customer_subscriptions", subscription_id, sub)
     return sub
@@ -1277,56 +1417,155 @@ async def get_farmer_storefront(farmer_id: str, user: dict = Depends(_customer))
                 credentials.append(
                     {"type": doc_entry.get("type"), "verifiedAt": doc_entry.get("reviewedAt")}
                 )
+    # SR 5 (storefront gap): the latest written product reviews across the
+    # seller's products — same review docs marketplace.py serves per product.
+    reviews: list[dict] = []
+    products = await query("products", [("sellerId", "==", farmer_id)], limit=200)
+    for product in products:
+        product_reviews = await query(f"products/{product['id']}/reviews", [], limit=50)
+        for review in product_reviews:
+            shaped = {
+                "productName": product.get("title") or product["id"],
+                "stars": review.get("rating"),
+                "comment": review.get("comment") or "",
+                "reviewerName": review.get("userName") or "Verified buyer",
+                "createdAt": review.get("createdAt") or review.get("updatedAt") or "",
+            }
+            if review.get("reply"):
+                shaped["reply"] = review["reply"]
+            reviews.append(shaped)
+    reviews.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
     return {
         "farmerId": farmer_id,
         "farmerName": farmer.get("name") or "",
         "farmerRating": farmer.get("rating"),
         "credentials": credentials,
         "lots": storefront_lots,
+        "reviews": reviews[:8],
     }
 
 
 # ---------------------------------------------------------------- planner + favorites
 
 
+_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+
+def _month_name(iso_date: str) -> str:
+    try:
+        return _MONTH_NAMES[int(str(iso_date)[5:7]) - 1]
+    except (ValueError, IndexError):
+        return ""
+
+
 @router.get("/planner")
-async def get_procurement_planner():
-    return {
-        "recommendedCommodities": [
-            {
-                "crop": "Sharbati Wheat",
-                "currentMandiPrice": 3250,
-                "projectedNextMonth": 3600,
-                "priceTrend": "rising",
-                "recommendation": "Pre-book 60% of quarterly volume now before post-Diwali spike",
-                "peakHarvestMonth": "March - April",
-            },
-            {
-                "crop": "Soybean (Yellow)",
-                "currentMandiPrice": 4600,
-                "projectedNextMonth": 4450,
-                "priceTrend": "softening",
-                "recommendation": "Wait for Kharif arrivals to stabilize in 2 weeks",
-                "peakHarvestMonth": "October - November",
-            },
-            {
-                "crop": "Red Onion (Nashik)",
-                "currentMandiPrice": 2800,
-                "projectedNextMonth": 3400,
-                "priceTrend": "sharp_rise",
-                "recommendation": "Execute forward contracts; storage stock depleting fast",
-                "peakHarvestMonth": "November - December",
-            },
-            {
-                "crop": "Basmati 1121 Paddy",
-                "currentMandiPrice": 3800,
-                "projectedNextMonth": 3950,
-                "priceTrend": "stable",
-                "recommendation": "Maintain staggered weekly procurement",
-                "peakHarvestMonth": "October - November",
-            },
-        ]
-    }
+async def get_procurement_planner(user: dict = Depends(_customer)):
+    """Next-week procurement suggestions assembled from the customer's own
+    order history (top-bought crops by volume) plus the newest open
+    market_lots with live rates. Prices quote the freshest open lot, annotated
+    with the 90-day fair-price band; when there is no history and no open lots
+    the envelope comes back empty with an honest explanation rather than
+    invented commodities."""
+    district = user.get("district") or ""
+    orders = await query("customer_orders", [("customerId", "==", user["id"])], limit=500)
+    crop_qty: dict[str, float] = {}
+    crop_last_price: dict[str, float] = {}
+    for order in orders:
+        if order.get("isParent"):
+            continue
+        crop = order.get("crop") or ""
+        if not crop:
+            continue
+        crop_qty[crop] = crop_qty.get(crop, 0.0) + float(order.get("quantityQuintals") or 0)
+        paid = float(order.get("pricePerQuintal") or 0)
+        if paid > 0:
+            crop_last_price[crop] = paid
+    top_crops = sorted(crop_qty, key=lambda c: crop_qty[c], reverse=True)[:5]
+
+    lots = await query("market_lots", [("status", "==", "open")], limit=200)
+    lots.sort(key=lambda l: l.get("createdAt") or "", reverse=True)
+    lot_by_crop: dict[str, dict] = {}
+    for lot in lots:
+        crop = lot.get("crop") or ""
+        if crop and crop not in lot_by_crop:
+            lot_by_crop[crop] = lot
+
+    recommendations: list[dict] = []
+    seen: set[str] = set()
+
+    async def _entry(crop: str, lot: dict | None, qty_bought: float) -> dict:
+        live_rate = float(lot.get("expectedRate") or 0) if lot else 0.0
+        last_paid = crop_last_price.get(crop, 0.0)
+        current = live_rate or last_paid
+        band = await fair_price_band(crop, district)
+        band_min = band.get("minUnitPaisa")
+        band_max = band.get("maxUnitPaisa")
+        if live_rate > 0 and band_min and band_max:
+            live_paisa = int(round(live_rate * 100))
+            trend = (
+                "rising" if live_paisa < band_min
+                else "softening" if live_paisa > band_max
+                else "stable"
+            )
+        else:
+            trend = "stable"
+        projected = round((band_min + band_max) / 200) if band_min and band_max else round(current)
+        available = float(lot.get("quantityQuintals") or 0) if lot else 0.0
+        if qty_bought > 0 and lot is not None:
+            recommendation = (
+                f"You bought {qty_bought:g} q of {crop} before — {available:g} q is open now "
+                f"at Rs {current:g}/q (harvested {_month_name(lot.get('harvestDate') or '') or 'recently'}). "
+                "Rebook early to lock this lot."
+            )
+        elif lot is not None:
+            recommendation = (
+                f"{available:g} q freshly listed at Rs {current:g}/q"
+                + (f", harvested {_month_name(lot.get('harvestDate') or '')}" if lot.get("harvestDate") else "")
+                + " — newest open lot near you."
+            )
+        else:
+            recommendation = (
+                f"A repeat staple of yours ({qty_bought:g} q bought earlier at Rs {last_paid:g}/q). "
+                "No open lot right now — post a demand to invite farmer quotes."
+            )
+        return {
+            "crop": crop,
+            "currentMandiPrice": round(current, 2),
+            "projectedNextMonth": projected,
+            "priceTrend": trend,
+            "recommendation": recommendation,
+            "peakHarvestMonth": _month_name(lot.get("harvestDate") or "") if lot else "",
+            "qtyAvailableQuintals": available,
+            "lotId": lot.get("id") if lot else None,
+            "fairPriceBand": band,
+            "source": "order_history" if qty_bought > 0 else "open_lot",
+        }
+
+    for crop in top_crops:
+        seen.add(crop)
+        recommendations.append(await _entry(crop, lot_by_crop.get(crop), crop_qty[crop]))
+    for lot in lots:
+        if len(recommendations) >= 6:
+            break
+        crop = lot.get("crop") or ""
+        if not crop or crop in seen:
+            continue
+        seen.add(crop)
+        recommendations.append(await _entry(crop, lot, 0.0))
+
+    if not recommendations:
+        return {
+            "recommendedCommodities": [],
+            "generatedAt": _now(),
+            "message": (
+                "No suggestions yet — place a FarmGate order or wait for farmers "
+                "to list open lots in your district."
+            ),
+        }
+    return {"recommendedCommodities": recommendations, "generatedAt": _now()}
 
 
 @router.get("/suppliers/favorites")
@@ -1338,6 +1577,14 @@ async def list_favorite_suppliers(user: dict = Depends(_customer)):
 
 @router.post("/suppliers/favorites", status_code=201)
 async def add_favorite_supplier(body: FavoriteSupplierIn, user: dict = Depends(_customer)):
+    existing = await query(
+        "customer_favorite_suppliers",
+        [("customerId", "==", user["id"]), ("farmerId", "==", body.farmerId)],
+        limit=1,
+    )
+    if existing:
+        # Idempotent re-add: return the current row instead of a duplicate.
+        return existing[0]
     fid = f"fav_{uuid.uuid4().hex[:8]}"
     doc = {
         "id": fid,
@@ -1353,3 +1600,11 @@ async def add_favorite_supplier(body: FavoriteSupplierIn, user: dict = Depends(_
     }
     await set_doc("customer_favorite_suppliers", fid, doc)
     return doc
+
+
+@router.delete("/suppliers/favorites/{favorite_id}", status_code=204)
+async def remove_favorite_supplier(favorite_id: str, user: dict = Depends(_customer)):
+    fav = await get_doc("customer_favorite_suppliers", favorite_id)
+    if fav is None or fav.get("customerId") != user["id"]:
+        _error(404, "FAVORITE_NOT_FOUND", "favorite supplier not found")
+    await delete_doc("customer_favorite_suppliers", favorite_id)

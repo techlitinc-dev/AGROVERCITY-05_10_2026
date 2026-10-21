@@ -16,6 +16,9 @@ export const TransportWalletView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [payoutForm, setPayoutForm] = useState({ amount: 0, mpin: '' });
+  const [tab, setTab] = useState<'wallet' | 'payouts'>('wallet');
+  const [payouts, setPayouts] = useState<Rec[]>([]);
+  const [payoutsLoading, setPayoutsLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,6 +42,27 @@ export const TransportWalletView: React.FC = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  // GET /transport/payouts is transporter-gated — loaded on tab entry.
+  useEffect(() => {
+    if (tab !== 'payouts') return;
+    let mounted = true;
+    setPayoutsLoading(true);
+    transport
+      .payouts()
+      .then((rows) => {
+        if (mounted) setPayouts(asArr(rows).map(asRec));
+      })
+      .catch((e) => {
+        if (mounted) setError(apiErrorMessage(e));
+      })
+      .finally(() => {
+        if (mounted) setPayoutsLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [tab]);
 
   const flash = (msg: string) => {
     setNotice(msg);
@@ -117,6 +141,66 @@ export const TransportWalletView: React.FC = () => {
         <StatCard title="Ledger Entries" value={firstNum(wallet, ['entryCount'], entries.length)} subtitle="Credits & debits on the wallet" icon={Check} colorScheme="blue" />
       </div>
 
+      <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
+        {[
+          { id: 'wallet', label: 'Wallet & Settlements' },
+          { id: 'payouts', label: 'Payouts' },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as 'wallet' | 'payouts')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              tab === t.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'payouts' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
+          <h3 className="font-bold text-sm text-slate-900">Payout History</h3>
+          <p className="text-[11px] text-slate-400">
+            Withdrawals to your verified bank account over the RazorpayX rail, newest first. The UTR column is
+            the RazorpayX payout reference for your bank statement.
+          </p>
+          {payoutsLoading ? (
+            <p className="text-xs text-slate-400 text-center py-6 animate-pulse">Loading payouts…</p>
+          ) : payouts.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6">
+              No payouts yet — use the payout form on the Wallet tab to withdraw your balance.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {payouts.map((p) => {
+                const paisa = firstNum(p, ['amountPaisa'], 0);
+                const utr = firstStr(p, ['razorpayPayoutId'], '—');
+                return (
+                  <div
+                    key={str(p.id) || utr}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 rounded-2xl text-xs"
+                  >
+                    <div>
+                      <p className="font-bold text-slate-800">{formatCurrency(paisa / 100)}</p>
+                      <p className="text-slate-400">{fmtDate(p.createdAt ?? p.at)}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] text-slate-500" title="RazorpayX payout id (UTR)">
+                        {utr}
+                      </span>
+                      <StatusBadge status={str(p.status, 'processed')} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'wallet' && (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Payout request */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
@@ -244,6 +328,8 @@ export const TransportWalletView: React.FC = () => {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

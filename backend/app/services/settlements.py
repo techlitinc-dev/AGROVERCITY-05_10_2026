@@ -40,6 +40,10 @@ PCT_KEYS = {
     "instructor": "courseGMVPct",
     # WS-03 task 3.33: 5% seller-side commission on delivered e-market orders.
     "emarket_seller": "emarketProducePct",
+    # VYAPARI (features/Vyapari.md V11): weekly settlement on the seller's
+    # marketplace trade gross — sellerPct, default 2 (sellerMinRupees applies
+    # to the trade-time commission, not this payout line).
+    "seller": "sellerPct",
 }
 
 # Instructor course commission stays inside the plan's allowed band (§6.8).
@@ -84,6 +88,19 @@ def course_gmv_pct(config: dict, category: str | None = None) -> int:
 def _in_period(date_str: str | None, period_start: str, period_end: str) -> bool:
     day = (date_str or "")[:10]
     return bool(day) and period_start <= day <= period_end
+
+
+def _completed_at(doc: dict) -> str | None:
+    """Settlement date for trade docs: the last `completed` event wins, else
+    the doc's updatedAt/createdAt fallback."""
+    completed = [
+        e.get("at")
+        for e in doc.get("events") or []
+        if isinstance(e, dict) and e.get("status") == "completed"
+    ]
+    if completed:
+        return completed[-1]
+    return doc.get("updatedAt") or doc.get("createdAt")
 
 
 async def run_settlements(period_start: str, period_end: str) -> dict:
@@ -162,6 +179,49 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
         bucket = totals["emarket_seller"].setdefault(farmer_id, {"gross": 0, "sourceIds": []})
         bucket["gross"] += paisa // 100
         bucket["sourceIds"].append(order["id"])
+
+    # VYAPARI (V11): the seller settlement gross is the sum of three streams —
+    # completed purchases bought by a seller-linked user, POS seller_sales, and
+    # completed resale purchases where the seller is the supplier.
+    seller_uids = {
+        u["id"]
+        for u in await query("users", [], limit=5000)
+        if "seller" in (u.get("linkedProfiles") or [])
+    }
+    if seller_uids:
+        trade_purchases = await query("purchases", [("status", "==", "completed")], limit=5000)
+        for purchase in trade_purchases:
+            if not _in_period(_completed_at(purchase), period_start, period_end):
+                continue
+            gross = int(round(float(purchase.get("finalAmount") or purchase.get("totalAmount") or 0)))
+            if gross <= 0:
+                continue
+            buyer_id = purchase.get("buyerId") or ""
+            if buyer_id in seller_uids:
+                bucket = totals["seller"].setdefault(buyer_id, {"gross": 0, "sourceIds": []})
+                bucket["gross"] += gross
+                bucket["sourceIds"].append(purchase["id"])
+            source = purchase.get("source") or {}
+            supplier_id = purchase.get("farmerId") or ""
+            if (
+                supplier_id in seller_uids
+                and isinstance(source, dict)
+                and source.get("type") == "resale_listing"
+            ):
+                bucket = totals["seller"].setdefault(supplier_id, {"gross": 0, "sourceIds": []})
+                bucket["gross"] += gross
+                bucket["sourceIds"].append(purchase["id"])
+        for seller_id in seller_uids:
+            sales = await query(f"users/{seller_id}/seller_sales", [], limit=5000)
+            for sale in sales:
+                if not _in_period(sale.get("createdAt"), period_start, period_end):
+                    continue
+                gross = int(round(float(sale.get("netAmount") or 0)))
+                if gross <= 0:
+                    continue
+                bucket = totals["seller"].setdefault(seller_id, {"gross": 0, "sourceIds": []})
+                bucket["gross"] += gross
+                bucket["sourceIds"].append(sale["id"])
 
     created = updated = 0
     now = datetime.now(timezone.utc).isoformat()

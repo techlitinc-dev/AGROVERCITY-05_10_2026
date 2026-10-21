@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
@@ -11,8 +11,9 @@ from app.models.mandi import SellerRateRequest
 from app.models.seller import BuyerLedgerEntryCreate, ProcurementLotCreate, SaleEntryCreate
 from app.routers.users import require_role
 from app.services import idempotency
+from app.services import gstin as gstin_service
 from app.services import kyc as kyc_service
-from app.services import reports, seller_ai, seller_forecast
+from app.services import reports, seller_ai, seller_forecast, seller_sourcing
 from app.services import settlements as settlements_service
 from app.services.ai.privacy import build_seller_rate_check_state
 from app.services.billing import effective_plan
@@ -598,6 +599,22 @@ async def procurement_receipt(payment_id: str, uid: str = Depends(_farmer_user))
 
 
 # ==========================================
+# WEEKLY SETTLEMENTS (V11)
+# ==========================================
+
+@router.get("/settlements")
+async def seller_settlements(ctx: tuple = Depends(_seller_user)):
+    """V11: this vyapari's weekly settlement lines (role "seller" in the
+    settlements ledger) — same envelope as GET /transport/settlements."""
+    _, uid = ctx
+    docs = await query(
+        "settlements", [("role", "==", "seller"), ("entityId", "==", uid)], limit=1000
+    )
+    docs.sort(key=lambda d: d.get("periodStart", ""), reverse=True)
+    return {"data": docs, "page": 1, "pageSize": 20, "total": len(docs)}
+
+
+# ==========================================
 # TDS 194-O STATEMENTS (S6)
 # ==========================================
 
@@ -1071,8 +1088,63 @@ async def remove_team_member(member_id: str, ctx: tuple = Depends(_seller_user))
 
 
 # ===========================================================================
-# P1-3: Mall order fulfilment (PATCH /v1/seller/orders/{id}/status)
+# P1-3: Mall order fulfilment (GET /v1/seller/orders, PATCH /v1/seller/orders/{id}/status)
 # ===========================================================================
+
+@router.get("/orders")
+async def list_seller_orders(ctx: tuple = Depends(_seller_user)):
+    """Marketplace orders this seller fulfils: own `sellerId` or any item line
+    referencing them (the PATCH status handler's ownership rule, plus the
+    products-catalog fallback the nursery desk and order-invoice PDF use for
+    bare productId lines), newest first. Items are enriched from the products
+    catalog and the buyer is attached for the fulfilment desk."""
+    _, uid = ctx
+    docs = await query("orders", [], limit=2000)
+    mine = []
+    for order in docs:
+        owns = order.get("sellerId") == uid
+        if not owns and order.get("items"):
+            owns = any(
+                isinstance(it, dict) and it.get("sellerId") == uid
+                for it in order["items"]
+            )
+        if not owns and order.get("items"):
+            for it in order["items"]:
+                if not isinstance(it, dict):
+                    continue
+                product = await get_doc("products", it.get("productId") or "")
+                if product is not None and product.get("sellerId") == uid:
+                    owns = True
+                    break
+        if owns:
+            mine.append(order)
+    mine.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    data = []
+    for order in mine:
+        row = dict(order)
+        items = []
+        for it in order.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            product = await get_doc("products", it.get("productId") or "") or {}
+            items.append(
+                {
+                    **it,
+                    "title": product.get("title") or it.get("productId") or "Item",
+                    "price": product.get("discountedPrice") or product.get("price") or 0,
+                    "sellerId": it.get("sellerId") or product.get("sellerId") or "",
+                }
+            )
+        row["items"] = items
+        buyer = await get_user(order.get("userId", "")) or {}
+        row["buyer"] = {
+            "id": order.get("userId", ""),
+            "name": buyer.get("name", ""),
+            "phone": buyer.get("phone", ""),
+        }
+        data.append(row)
+    return {"data": data, "page": 1, "pageSize": 20, "total": len(data)}
+
 
 class SellerOrderStatusPatchIn(BaseModel):
     status: str
@@ -1140,7 +1212,12 @@ async def get_gst_reports(
     """P1-4 (V11): GSTR-style sales register (taxable value, CGST 9%, SGST 9%,
     IGST 18%, and total tax) aggregated across completed sales and orders."""
     user, uid = ctx
-    sales = await query("seller_sales", [("sellerId", "==", uid)], limit=2000)
+    # Sales live in the seller's subcollection (POST /seller/sales writes
+    # users/{uid}/seller_sales) — the top-level `seller_sales` collection the
+    # first cut queried does not exist.
+    sales = await query(f"users/{uid}/seller_sales", [], limit=2000)
+    profile = await _seller_profile_doc(uid)
+    seller_gstin = profile.get("gstNumber") or "—"
 
     def _in_range(dt_str: str) -> bool:
         day = (dt_str or "")[:10]
@@ -1162,7 +1239,7 @@ async def get_gst_reports(
         date_str = s.get("createdAt") or s.get("date") or ""
         if not _in_range(date_str):
             continue
-        amt = float(s.get("amount") or 0.0)
+        amt = float(s.get("netAmount") or 0.0)
         # 18% standard GST rate split (CGST 9% + SGST 9% for intra-state)
         taxable = round(amt / 1.18, 2)
         gst = round(amt - taxable, 2)
@@ -1174,8 +1251,9 @@ async def get_gst_reports(
             "id": s.get("id"),
             "date": date_str[:10],
             "buyer": s.get("buyerName") or "Direct Buyer",
-            "crop": s.get("crop") or "Produce",
-            "quantity": s.get("quantityQuintals") or 0,
+            "crop": s.get("item") or "Produce",
+            "quantity": s.get("quantity") or 0,
+            "unit": s.get("unit") or "",
             "invoiceValue": amt,
             "taxableValue": taxable,
             "cgst": cgst,
@@ -1193,7 +1271,7 @@ async def get_gst_reports(
         "to": to_date,
         "sellerId": uid,
         "sellerName": user.get("name") or "Vyapari",
-        "sellerGstin": user.get("gstin") or "27AAAAA0000A1Z5",
+        "sellerGstin": seller_gstin,
         "summary": {
             "totalSales": total_sales,
             "totalTaxable": round(total_taxable, 2),
@@ -1240,5 +1318,160 @@ async def get_purchase_commission_invoice(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="commission-invoice-{purchase_id}.pdf"'},
     )
+
+
+# ===========================================================================
+# Vyapari business profile (pre-KYC data entry — shop KYC is NOT required here)
+# ===========================================================================
+
+SELLER_PROFILE_DEFAULTS: dict = {
+    "shopName": None,
+    "gstNumber": None,
+    "apmcLicense": None,
+    "businessType": None,
+    "yearsInTrade": None,
+    "buyingCapacityBand": None,
+    "operatingStates": [],
+    "mandis": [],
+    "logoPath": None,
+}
+
+_SELLER_PROFILE_FIELDS = tuple(SELLER_PROFILE_DEFAULTS.keys())
+
+
+class SellerProfileUpsert(BaseModel):
+    """Every field optional — PUT merge-writes the role_profiles/seller doc the
+    generic persona-setup flow also writes."""
+
+    shopName: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    gstNumber: Optional[str] = Field(default=None, max_length=20)
+    apmcLicense: Optional[str] = Field(default=None, max_length=40)
+    businessType: Optional[Literal["mandi_trader", "wholesaler", "processor", "retailer", "exporter"]] = None
+    yearsInTrade: Optional[int] = Field(default=None, ge=0, le=80)
+    buyingCapacityBand: Optional[Literal["under_50k", "50k_2l", "2l_10l", "above_10l"]] = None
+    operatingStates: Optional[list[str]] = None
+    mandis: Optional[list[str]] = None
+    logoPath: Optional[str] = Field(default=None, max_length=300)
+
+
+async def _seller_profile_doc(uid: str) -> dict:
+    doc = await get_doc(f"users/{uid}/role_profiles", "seller")
+    return dict(doc) if doc else {}
+
+
+@router.get("/profile")
+async def get_seller_profile(ctx: tuple = Depends(_seller_user)):
+    """Always 200: the stored profile merged over null/empty defaults."""
+    _, uid = ctx
+    doc = await _seller_profile_doc(uid)
+    profile = {**SELLER_PROFILE_DEFAULTS, **{k: v for k, v in doc.items() if k in _SELLER_PROFILE_FIELDS}}
+    profile["found"] = bool(doc)
+    return profile
+
+
+@router.put("/profile")
+async def put_seller_profile(body: SellerProfileUpsert, ctx: tuple = Depends(_seller_user)):
+    """Merge-write the same users/{uid}/role_profiles/seller doc persona-setup
+    writes. Absent fields are left untouched; PUT is idempotent by nature.
+    A supplied GSTIN must pass services/gstin format verification; a blank
+    value clears the field without validation."""
+    _, uid = ctx
+    doc = await _seller_profile_doc(uid)
+    updates = body.model_dump(exclude_none=True)
+    if "gstNumber" in updates:
+        gst_value = str(updates["gstNumber"]).strip().upper()
+        if not gst_value:
+            updates["gstNumber"] = None  # blank clears the stored GSTIN
+        elif not await gstin_service.verify_gstin(gst_value):
+            _error(
+                422,
+                "INVALID_GSTIN",
+                "gstNumber failed GSTIN format verification",
+                {"gstNumber": "must be a valid 15-character GSTIN (e.g. 27AAAAA0000A1Z5)"},
+            )
+        else:
+            updates["gstNumber"] = gst_value
+    doc.update(updates)
+    if not doc.get("shopName"):
+        _error(422, "VALIDATION_ERROR", "shopName is required on the seller profile", {"shopName": "required"})
+    doc["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc(f"users/{uid}/role_profiles", "seller", doc)
+    profile = {**SELLER_PROFILE_DEFAULTS, **{k: v for k, v in doc.items() if k in _SELLER_PROFILE_FIELDS}}
+    profile["found"] = True
+    return profile
+
+
+@router.get("/sourcing-recommendations")
+async def sourcing_recommendations(
+    limit: int = Query(20, ge=1, le=50),
+    ctx: tuple = Depends(_seller_user),
+):
+    """Deterministic fit-ranking of OPEN lots against this seller's business
+    profile + trade history (services/seller_sourcing.py)."""
+    user, uid = ctx
+    items = await seller_sourcing.recommend_lots(user, uid, limit=limit)
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/buyers")
+async def seller_buyer_directory(
+    q: str | None = None,
+    state: str | None = None,
+    category: str | None = None,
+    ctx: tuple = Depends(_seller_user),
+):
+    """Direct-buyer directory for the vyapari: verified buyers with their open
+    requirement counts and the completed dealings each shared with this seller."""
+    _, uid = ctx
+    buyers = await query("users", [("activeProfile", "==", "directBuyer")], limit=1000)
+    demands = await query("demands", [], limit=2000)
+    purchases = await query("purchases", [], limit=2000)
+    kyc_cases = await query("kyc_cases", [], limit=2000)
+    verified_by_user: dict[str, bool] = {}
+    for case in kyc_cases:
+        if case.get("persona") == "directBuyer" and case.get("status") == "verified":
+            verified_by_user[case.get("userId") or ""] = True
+
+    def _dealings(buyer_uid: str) -> int:
+        return sum(
+            1
+            for p in purchases
+            if p.get("status") == "completed"
+            and {p.get("buyerId"), p.get("farmerId")} == {uid, buyer_uid}
+        )
+
+    needle = (q or "").strip().lower()
+    items = []
+    for buyer in buyers:
+        buyer_uid = buyer.get("id") or ""
+        profile = await get_doc(f"users/{buyer_uid}/role_profiles", "directBuyer") or {}
+        business_name = profile.get("companyName") or buyer.get("businessName") or ""
+        name = buyer.get("name") or ""
+        if needle and needle not in business_name.lower() and needle not in name.lower():
+            continue
+        buyer_state = buyer.get("state") or ""
+        if state and state.strip().lower() not in buyer_state.lower():
+            continue
+        categories = profile.get("categories") or []
+        if category and category.strip().lower() not in [c.lower() for c in categories]:
+            continue
+        items.append(
+            {
+                "uid": buyer_uid,
+                "businessName": business_name,
+                "name": name,
+                "categories": categories,
+                "state": buyer_state,
+                "city": buyer.get("district") or buyer.get("village") or "",
+                "verified": bool(verified_by_user.get(buyer_uid)),
+                "requirementsCount": sum(
+                    1 for d in demands if d.get("buyerId") == buyer_uid and d.get("status") == "open"
+                ),
+                "pastDealingsCount": _dealings(buyer_uid),
+            }
+        )
+    items.sort(key=lambda b: (not b["verified"], -b["pastDealingsCount"], b["businessName"]))
+    return {"items": items[:50], "total": len(items)}
+
 
 

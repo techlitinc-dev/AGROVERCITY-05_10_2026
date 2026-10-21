@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.core.db import query, set_doc
-from app.core.deps import current_user_id
+from app.core.db import get_doc, query, set_doc
+from app.core.deps import admin_user, current_user_id
 from app.services import billing
 from app.services.users import get_user
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+admin_router = APIRouter(prefix="/admin/billing", tags=["billing-admin"])
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -84,6 +85,10 @@ async def subscribe(body: SubscribeIn, uid: str = Depends(current_user_id)):
         _error(404, "PLAN_NOT_FOUND", "plan not found")
     if plan.get("tier") == "free":
         _error(409, "ALREADY_FREE", "the free tier needs no subscription")
+    # Subscription kill-switch: app_config.subscriptionsEnabled (default on).
+    config = await get_doc("app_config", "current") or {}
+    if config.get("subscriptionsEnabled", True) is False:
+        _error(409, "subscriptions_disabled", "new subscriptions are temporarily disabled")
 
     provider_ref = f"sub_dev_{uuid.uuid4().hex[:10]}"
     if settings.razorpay_key_id:
@@ -122,3 +127,34 @@ async def my_invoices(uid: str = Depends(current_user_id)):
     invoices = await query("invoices", [("userId", "==", uid)], limit=200)
     invoices.sort(key=lambda i: i.get("issuedAt", ""), reverse=True)
     return {"data": invoices, "total": len(invoices)}
+
+
+class BillingConfigIn(BaseModel):
+    subscriptionsEnabled: bool
+
+
+@admin_router.get("/config")
+async def get_billing_config(_admin: dict = Depends(admin_user)):
+    """Kill-switch state for new subscriptions (stored on app_config/current)."""
+    config = await get_doc("app_config", "current") or {}
+    return {"subscriptionsEnabled": config.get("subscriptionsEnabled", True) is not False}
+
+
+@admin_router.put("/config")
+async def put_billing_config(body: BillingConfigIn, admin: dict = Depends(admin_user)):
+    config = await get_doc("app_config", "current") or {"id": "current"}
+    previous = config.get("subscriptionsEnabled", True)
+    config["subscriptionsEnabled"] = body.subscriptionsEnabled
+    await set_doc("app_config", "current", config)
+    await set_doc(
+        "audit_logs",
+        f"aud_billing_config_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        {
+            "action": "BILLING_CONFIG_UPDATE",
+            "adminId": admin.get("uid") or admin.get("sub") or admin.get("id"),
+            "previous": {"subscriptionsEnabled": previous},
+            "next": {"subscriptionsEnabled": body.subscriptionsEnabled},
+            "at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {"subscriptionsEnabled": body.subscriptionsEnabled}

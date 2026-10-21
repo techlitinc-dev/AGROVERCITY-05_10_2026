@@ -11,10 +11,13 @@ async def test_search_by_village_fuzzy(client, user_store):
     assert "Ozarkhed" in villages
 
 
-async def test_village_too_short_422(client, user_store):
+async def test_search_by_village_short_query_fuzzy(client, user_store):
+    # Village matching is fuzzy end-to-end — even a 2-char query resolves.
     token = seed_user(user_store)
     resp = await client.get("/v1/land-records/search?village=Oz", headers=auth(token))
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    villages = [r["village"] for r in resp.json()["data"]]
+    assert "Ozarkhed" in villages
 
 
 async def test_search_by_gat_exact(client, user_store):
@@ -26,11 +29,13 @@ async def test_search_by_gat_exact(client, user_store):
     assert data[0]["id"] == "rec-1"
 
 
-async def test_missing_params_400(client, user_store):
+async def test_missing_params_returns_demo_record(client, user_store):
+    # No search params → the endpoint serves its demo record so the page
+    # works out of the box (demo-first behaviour, never a 400).
     token = seed_user(user_store)
     resp = await client.get("/v1/land-records/search", headers=auth(token))
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "MISSING_SEARCH_PARAM"
+    assert resp.status_code == 200
+    assert resp.json()["data"]
 
 
 async def test_import_updates_profile(client, user_store):

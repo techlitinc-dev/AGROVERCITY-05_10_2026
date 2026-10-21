@@ -11,6 +11,7 @@ from app.models.loans import (
     DisburseIn,
     InfoRequestIn,
     LoanDocument,
+    LoanDocumentAttachIn,
     LoanRepaymentOut,
     RejectIn,
     RepaymentIn,
@@ -604,6 +605,31 @@ async def upload_documents(
             ).model_dump()
         )
     loan.setdefault("documents", []).extend(added)
+    loan["updatedAt"] = now
+    await set_doc("loan_applications", applicationId, loan)
+    return loans_service.to_out(loan).model_dump()
+
+
+@router.post("/{applicationId}/documents/from-uploads", status_code=201)
+async def attach_uploaded_document(
+    applicationId: str,
+    body: LoanDocumentAttachIn,
+    uid: str = Depends(_participant),
+):
+    """Attach a document the applicant already uploaded via POST /uploads
+    (JSON variant — the multipart endpoint above keeps working unchanged)."""
+    loan = await _participant_loan(uid, applicationId)
+    if loan.get("userId") != uid:
+        _error(403, "FORBIDDEN_ROLE", "only the applicant can attach loan documents")
+    now = datetime.now(timezone.utc).isoformat()
+    loan.setdefault("documents", []).append(
+        LoanDocument(
+            documentId=uuid.uuid4().hex,
+            name=body.name,
+            storagePath=body.storagePath or body.url,
+            uploadedAt=now,
+        ).model_dump()
+    )
     loan["updatedAt"] = now
     await set_doc("loan_applications", applicationId, loan)
     return loans_service.to_out(loan).model_dump()

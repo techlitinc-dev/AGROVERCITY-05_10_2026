@@ -10,13 +10,34 @@ import {
   Landmark,
   RefreshCcw,
   Link2,
+  Building2,
+  Search,
+  Truck,
+  Sparkles,
+  Star,
+  Megaphone,
+  BookOpen,
+  Bot,
+  Coins,
+  Share2,
+  FileText,
+  Trees,
+  Newspaper,
+  ShoppingBag,
+  CheckCircle2,
+  Calendar,
+  Clock,
+  ShieldCheck,
+  FileCheck,
+  TrendingUp,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { seller, apiClient, apiErrorMessage, unwrapList } from '../../lib/api';
+import { seller, purchases, apiErrorMessage } from '../../lib/api';
 import { StatCard } from '../../components/common/StatCard';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatDateTime } from '../../lib/utils';
+import type { PurchaseOrder } from '../../types';
 import {
   arr,
   cardCls,
@@ -52,11 +73,11 @@ const ORDER_ACTION_LABEL: Record<string, string> = {
   out_for_delivery: 'Mark Delivered',
 };
 
-/** Backend has no GET /seller/orders; /orders is tried best-effort (scoped to the caller). */
+/** GET /seller/orders — orders the seller fulfils (own sellerId or item lines). */
 async function loadSellerOrders(): Promise<Rec[]> {
   try {
-    const res = await apiClient.get('/orders', { params: { scope: 'seller' } });
-    return (unwrapList<unknown>(res.data) as unknown[]).map(rec);
+    const rows = await seller.orders();
+    return (rows as unknown[]).map(rec);
   } catch {
     return [];
   }
@@ -76,12 +97,13 @@ export const SellerHome: React.FC = () => {
   const [ledgers, setLedgers] = useState<Rec[]>([]);
   const [ledgerSummary, setLedgerSummary] = useState<Rec>({});
   const [stockSummary, setStockSummary] = useState<Rec[]>([]);
+  const [recentPurchases, setRecentPurchases] = useState<PurchaseOrder[]>([]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [dash, cf, prods, ords, proc, led, stock] = await Promise.all([
+      const [dash, cf, prods, ords, proc, led, stock, poList] = await Promise.all([
         seller.dashboard().catch(() => ({})),
         seller.cashflow().catch(() => ({})),
         seller.products().catch(() => []),
@@ -89,11 +111,13 @@ export const SellerHome: React.FC = () => {
         seller.procurement().catch(() => []),
         seller.ledgers().catch(() => []),
         seller.stock().catch(() => []),
+        purchases.list().catch(() => []),
       ]);
       setDashboard(rec(dash));
       setCashflow(rec(cf));
       setProducts((prods as unknown[]).map(rec));
       setOrders(ords);
+      setRecentPurchases(poList);
       const procList = arr(proc).map(rec);
       const maybeWrapped = rec(proc);
       setProcurement(procList);
@@ -345,29 +369,138 @@ export const SellerHome: React.FC = () => {
             ))}
           </div>
 
-          {/* Quick links to full pages */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { to: '/seller/procurement', label: 'Procurement Desk', icon: FileSpreadsheet },
-              { to: '/seller/stock', label: 'Stock & Resale', icon: Package },
-              { to: '/seller/pos', label: 'POS Billing', icon: DollarSign },
-              { to: '/seller/rates', label: 'Mandi Rates', icon: Landmark },
-              { to: '/seller/analytics', label: 'Analytics', icon: Store },
-              { to: '/seller/compliance', label: 'Compliance', icon: AlertTriangle },
-              { to: '/seller/demands', label: 'Buyer Demands', icon: Link2 },
-            ].map((l) => (
-              <Link
-                key={l.to}
-                to={l.to}
-                className={`${cardCls} p-3.5 flex items-center gap-2.5 hover:border-emerald-300 transition-all text-xs font-bold text-slate-800`}
-              >
-                <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
-                  <l.icon className="w-4 h-4" />
-                </span>
-                {l.label}
-                <ArrowRight className="w-3.5 h-3.5 ml-auto text-slate-400" />
-              </Link>
-            ))}
+          {/* Upcoming Pickups & Trade Alerts */}
+          {(() => {
+            const pickups = recentPurchases.filter(
+              (p) => p.status === 'pickupScheduled' || Boolean((p as unknown as Rec).pickup)
+            );
+            const pendingAdvance = recentPurchases.filter((p) => p.status === 'confirmed');
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Upcoming Pickups Card */}
+                <div className={`${cardCls} space-y-3`}>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-emerald-600" />
+                      Upcoming Pickups & Logistics
+                    </h3>
+                    <Link to="/seller/purchases" className="text-xs font-bold text-emerald-700 hover:underline">
+                      View All ({pickups.length}) →
+                    </Link>
+                  </div>
+
+                  {pickups.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400 font-semibold">
+                      No active pickups scheduled. Propose agent slots under My Purchases.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {pickups.slice(0, 3).map((po) => {
+                        const pk = rec((po as unknown as Rec).pickup);
+                        return (
+                          <div key={po.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
+                            <div>
+                              <span className="font-bold text-slate-900">{po.crop} ({po.quantityQuintal} Qt)</span>
+                              <p className="text-[10px] text-slate-500">
+                                {str(pk.date) || 'Tomorrow'} ({str(pk.slot) || '07:00-08:00'}) · Vehicle: {str(pk.vehicleNumber) || 'Bolero'}
+                              </p>
+                            </div>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                              Grace: {num(pk.graceMinutes) || 60}m
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Trade Alerts & Pending Advance */}
+                <div className={`${cardCls} space-y-3`}>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      Pending Advances & Trade Alerts
+                    </h3>
+                    <span className="text-xs font-bold text-slate-400">Escrow Queue</span>
+                  </div>
+
+                  {pendingAdvance.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400 font-semibold">
+                      All purchase orders have advances deposited. Farmgate pipeline is clear.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {pendingAdvance.slice(0, 3).map((po) => (
+                        <div key={po.id} className="p-2.5 bg-rose-50/60 rounded-xl border border-rose-100 flex items-center justify-between text-xs">
+                          <div>
+                            <span className="font-bold text-slate-900">Order #{po.id}: {po.crop}</span>
+                            <p className="text-[10px] text-rose-700">Total: {formatCurrency(po.totalAmount)} · Awaiting advance escrow</p>
+                          </div>
+                          <Link
+                            to="/seller/purchases"
+                            className="px-2.5 py-1 text-[11px] font-black bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all"
+                          >
+                            Deposit
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 23-Module Vyapari Hub Directory */}
+          <div className={`${cardCls} space-y-3`}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-emerald-600" />
+                  Vyapari Enterprise Hub — Full Feature Directory (23 Modules)
+                </h3>
+                <p className="text-xs text-slate-500">Produce procurement, APMC mandi trading, AI forecasting, accounting & direct buyer connections</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 text-xs font-bold text-slate-800">
+              {[
+                { to: '/seller/profile', label: '1. Vyapari Business Profile', icon: Building2 },
+                { to: '/seller/lots', label: '2. Lot Search & Discovery', icon: Search },
+                { to: '/seller/purchases', label: '3. My Purchases & Bookings', icon: FileCheck },
+                { to: '/seller/direct-buyers', label: '4. Direct Buyers Network', icon: Building2 },
+                { to: '/seller/ai', label: '5. AI Insights & Sourcing', icon: Sparkles },
+                { to: '/seller/rates', label: '6. Mandi Rates & Arbitrage', icon: Landmark },
+                { to: '/seller/ratings', label: '7. Rate Farmers & Reputation', icon: Star },
+                { to: '/seller/ads', label: '8. Ad Manager & Campaigns', icon: Megaphone },
+                { to: '/seller/diary', label: '9. Farm / Business Diary', icon: BookOpen },
+                { to: '/seller/chatbot', label: '10. Chatbot Support Desk', icon: Bot },
+                { to: '/seller/procure', label: '11. J-Form Procurement', icon: FileSpreadsheet },
+                { to: '/seller/demands', label: '12. Post Crop Demands', icon: Link2 },
+                { to: '/seller/stock', label: '13. Stock & Resale Hub', icon: Package },
+                { to: '/seller/pos', label: '14. Finance CEO & POS Khata', icon: DollarSign },
+                { to: '/seller/catalog', label: '15. E-Market Storefront', icon: Store },
+                { to: '/seller/orders', label: '16. My Shop Orders', icon: ShoppingBag },
+                { to: '/seller/compliance', label: '17. GST & APMC Compliance', icon: ShieldCheck },
+                { to: '/seller/analytics', label: '18. Trade Analytics Desk', icon: TrendingUp },
+                { to: '/seller/news', label: '19. Agri News & Channels', icon: Newspaper },
+                { to: '/seller/coins', label: '20. Coin Rewards (Krushi Ratna)', icon: Coins },
+                { to: '/seller/referrals', label: '21. Refer & Earn Network', icon: Share2 },
+                { to: '/seller/712', label: '22. 7/12 Land Records', icon: FileText },
+                { to: '/seller/trees', label: '23. Tree Plantation Hub', icon: Trees },
+              ].map((l) => (
+                <Link
+                  key={l.to}
+                  to={l.to}
+                  className="p-2.5 rounded-xl bg-slate-50 hover:bg-emerald-50 hover:border-emerald-300 border border-slate-200/80 transition-all flex items-center gap-2"
+                >
+                  <l.icon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">{l.label}</span>
+                </Link>
+              ))}
+            </div>
           </div>
 
           {/* Tab 1: Storefront Catalog */}
@@ -469,6 +602,7 @@ export const SellerHome: React.FC = () => {
                                   .join(', ')}${items.length > 2 ? '…' : ''}`
                               : 'Marketplace order'}
                             {ord.paymentMethod ? ` · ${str(ord.paymentMethod)}` : ''}
+                            {str(rec(ord.buyer).name) ? ` · Buyer: ${str(rec(ord.buyer).name)}` : ''}
                           </p>
                         </div>
                         <div className="flex items-center gap-3">

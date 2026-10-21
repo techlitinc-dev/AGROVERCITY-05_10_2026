@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Wrench, MapPin, Check, Phone, Clock, XCircle, ListChecks } from 'lucide-react';
-import { equipment, apiErrorMessage } from '../../lib/api';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Wrench, MapPin, Check, Phone, Clock, XCircle, ListChecks, Search, Star } from 'lucide-react';
+import { equipment, ratings, apiErrorMessage } from '../../lib/api';
+import type { EquipmentMyBooking } from '../../lib/api/equipment';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
+import { RateUserModal } from '../../components/common/RateUserModal';
 import { formatCurrency } from '../../lib/utils';
 import type { EquipmentMachine } from '../../types';
 
@@ -26,6 +28,22 @@ interface MyBooking {
   status: string;
 }
 
+const MACHINE_TYPES = [
+  { value: '', label: 'All types' },
+  { value: 'tractor', label: 'Tractor' },
+  { value: 'rotavator', label: 'Rotavator' },
+  { value: 'harvester', label: 'Harvester' },
+  { value: 'thresher', label: 'Thresher' },
+  { value: 'sprayer', label: 'Sprayer' },
+  { value: 'seed_drill', label: 'Seed Drill' },
+  { value: 'drone', label: 'Drone' },
+];
+
+// SR 5: a booking whose owner can be rated (booked = FPO auto-confirm,
+// completed = owner-logged job completion)
+const RATEABLE_STATUSES = ['booked', 'completed', 'delivered'];
+const CANCELLABLE_STATUSES = ['pending', 'booked', 'countered'];
+
 export const EquipmentRentalView: React.FC = () => {
   const [machines, setMachines] = useState<EquipmentMachine[]>([]);
   const [myBookings, setMyBookings] = useState<MyBooking[]>([]);
@@ -40,19 +58,50 @@ export const EquipmentRentalView: React.FC = () => {
   const [farmerName, setFarmerName] = useState('Ramesh Patil');
   const [busySlotId, setBusySlotId] = useState<string | null>(null);
   const [busyBookingId, setBusyBookingId] = useState<string | null>(null);
+  // SR 27: search/filter + server-backed bookings list
+  const [tab, setTab] = useState<'browse' | 'bookings'>('browse');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [machineType, setMachineType] = useState('');
+  const [serverBookings, setServerBookings] = useState<EquipmentMyBooking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [rateTarget, setRateTarget] = useState<EquipmentMyBooking | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     equipment
-      .list()
+      .list({
+        ...(debouncedSearch ? { q: debouncedSearch } : {}),
+        ...(machineType ? { type: machineType } : {}),
+      })
       .then((res) => active && setMachines(res))
       .catch((e) => active && setError(apiErrorMessage(e)))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
+  }, [debouncedSearch, machineType]);
+
+  const loadServerBookings = useCallback(async () => {
+    setBookingsLoading(true);
+    try {
+      setServerBookings(await equipment.myBookings());
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBookingsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (tab === 'bookings') loadServerBookings();
+  }, [tab, loadServerBookings]);
 
   const loadSlots = async (machineId: string, date: string) => {
     setSlotsLoading(true);
@@ -139,6 +188,33 @@ export const EquipmentRentalView: React.FC = () => {
     }
   };
 
+  const handleCancelServerBooking = async (id: string) => {
+    setBusyBookingId(id);
+    setError(null);
+    try {
+      await equipment.cancelBooking(id);
+      setNotice('Equipment booking cancelled.');
+      await loadServerBookings();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyBookingId(null);
+    }
+  };
+
+  const submitOwnerRating = async (stars: number, review: string) => {
+    if (!rateTarget) return;
+    const target = rateTarget;
+    await ratings.submit({
+      bookingKind: 'equipment',
+      bookingId: target.id,
+      stars,
+      ...(review ? { comment: review } : {}),
+    });
+    setRateTarget(null);
+    setNotice(`Thanks! You rated the owner of ${target.machineName ?? 'the machine'}.`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="border-b border-slate-200 pb-4">
@@ -163,7 +239,99 @@ export const EquipmentRentalView: React.FC = () => {
         </div>
       )}
 
-      {loading ? (
+      {/* Tabs: browse fleet vs my bookings (SR 27) */}
+      <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
+        {[
+          { id: 'browse', label: 'Browse Machines' },
+          { id: 'bookings', label: `My Bookings (${serverBookings.length})` },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as 'browse' | 'bookings')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              tab === t.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'browse' && (
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by machine, type or location…"
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300"
+            />
+          </div>
+          <select
+            value={machineType}
+            onChange={(e) => setMachineType(e.target.value)}
+            className="px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-semibold text-slate-700"
+          >
+            {MACHINE_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {tab === 'bookings' ? (
+        bookingsLoading ? (
+          <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
+            Loading your bookings…
+          </div>
+        ) : serverBookings.length === 0 ? (
+          <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No equipment bookings yet — browse machines and book a time slot.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {serverBookings.map((b) => (
+              <div
+                key={b.id}
+                className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs"
+              >
+                <div>
+                  <p className="font-bold text-slate-900">{b.machineName ?? b.equipmentId ?? b.id}</p>
+                  <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                    <Clock className="w-3 h-3" /> {b.date ?? '—'} • {b.slotName ?? ''}
+                    {typeof b.priceRupees === 'number' && ` • ${formatCurrency(b.priceRupees)}`}
+                    {b.ownerName ? ` • ${b.ownerName}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={b.status} />
+                  {CANCELLABLE_STATUSES.includes(b.status) && (
+                    <button
+                      onClick={() => handleCancelServerBooking(b.id)}
+                      disabled={busyBookingId === b.id}
+                      className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-[10px] flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <XCircle className="w-3 h-3" /> Cancel
+                    </button>
+                  )}
+                  {RATEABLE_STATUSES.includes(b.status) && (
+                    <button
+                      onClick={() => setRateTarget(b)}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] flex items-center gap-1"
+                    >
+                      <Star className="w-3 h-3" /> Rate owner
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : loading ? (
         <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
           Loading equipment fleet…
         </div>
@@ -217,7 +385,7 @@ export const EquipmentRentalView: React.FC = () => {
       )}
 
       {/* My bookings (created in this session) */}
-      {myBookings.length > 0 && (
+      {tab === 'browse' && myBookings.length > 0 && (
         <div className="space-y-3 pt-4 border-t border-slate-200">
           <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
             <ListChecks className="w-4 h-4 text-emerald-600" /> My Equipment Bookings ({myBookings.length})
@@ -246,6 +414,16 @@ export const EquipmentRentalView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Rate owner modal (SR 5) */}
+      <RateUserModal
+        open={Boolean(rateTarget)}
+        onClose={() => setRateTarget(null)}
+        title="Rate the equipment owner"
+        subtitle={rateTarget ? `${rateTarget.machineName ?? 'Machine'} · ${rateTarget.date ?? ''} — one rating per booking` : undefined}
+        submitLabel="Submit Rating"
+        onSubmit={submitOwnerRating}
+      />
 
       {/* Booking Modal — real slot availability */}
       <ModalSheet

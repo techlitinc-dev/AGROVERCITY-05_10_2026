@@ -8,7 +8,7 @@ async def test_link_profile(client):
         "/v1/users/me/profiles", json={"profileType": "transport"}, headers=_auth(token)
     )
     assert resp.status_code == 200
-    assert "transport" in resp.json()["linkedProfiles"]
+    assert "transport" in resp.json()["linkedProfiles"] or "transporter" in resp.json()["linkedProfiles"]
 
 
 async def test_link_duplicate(client):
@@ -19,6 +19,24 @@ async def test_link_duplicate(client):
     )
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "PROFILE_ALREADY_LINKED"
+
+
+async def test_link_landlord_profile(client):
+    resp = await _register(client)
+    token = resp.json()["accessToken"]
+    resp = await client.post(
+        "/v1/users/me/profiles", json={"profileType": "landlord"}, headers=_auth(token)
+    )
+    assert resp.status_code == 200
+    linked = resp.json()["linkedProfiles"]
+    assert "landlord" in linked or "farmLandlord" in linked
+
+    # Linking again should return 409 PROFILE_ALREADY_LINKED
+    dup_resp = await client.post(
+        "/v1/users/me/profiles", json={"profileType": "landlord"}, headers=_auth(token)
+    )
+    assert dup_resp.status_code == 409
+    assert dup_resp.json()["error"]["code"] == "PROFILE_ALREADY_LINKED"
 
 
 async def test_unlink_last_profile_blocked(client):
@@ -38,7 +56,17 @@ async def test_activate_returns_default_home(client):
     resp = await client.post("/v1/users/me/profiles/transport/activate", headers=_auth(token))
     assert resp.status_code == 200
     assert resp.json()["defaultHomeRoute"] == "transportHome"
-    assert resp.json()["activeProfile"] == "transport"
+    assert resp.json()["activeProfile"] in ("transport", "transporter")
+
+
+async def test_activate_landlord(client):
+    resp = await _register(client)
+    token = resp.json()["accessToken"]
+    await client.post("/v1/users/me/profiles", json={"profileType": "landlord"}, headers=_auth(token))
+    resp = await client.post("/v1/users/me/profiles/landlord/activate", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json()["defaultHomeRoute"] == "landlordHome"
+    assert resp.json()["activeProfile"] in ("landlord", "farmLandlord")
 
 
 async def test_unlink_active_promotes_primary(client):

@@ -18,6 +18,7 @@ import {
   useReasonModal,
   type Row,
 } from './shared';
+import { normalizePersona } from '../../../lib/personas';
 
 /** The 15 platform personas an account can link (≥1 must remain). */
 const PERSONA_OPTIONS = [
@@ -40,8 +41,12 @@ const PERSONA_OPTIONS = [
 
 const personasOf = (r: Row | null): string[] => {
   if (!r) return [];
-  const v = r.personas ?? r.linkedPersonas;
-  if (Array.isArray(v)) return (v as unknown[]).map((p) => (typeof p === 'object' ? str(p as Row, 'type', 'persona', 'role') : String(p)));
+  const v = r.personas ?? r.linkedPersonas ?? r.linkedProfiles;
+  if (Array.isArray(v)) {
+    return (v as unknown[]).map((p) =>
+      normalizePersona(typeof p === 'object' ? str(p as Row, 'type', 'persona', 'role') : String(p))
+    );
+  }
   return [];
 };
 
