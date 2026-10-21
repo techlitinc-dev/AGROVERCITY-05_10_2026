@@ -50,6 +50,9 @@ cd .. && ./run.sh backend &                 # serves :8000, /openapi.json, /v1/.
 
 # 2. LLM key
 export DEEPSEEK_API_KEY=sk-...              # https://platform.deepseek.com (OpenAI-compatible)
+# Kimi works too — the harness speaks any OpenAI-compatible endpoint:
+# export OPENAI_BASE_URL="https://api.moonshot.ai/v1"
+# export OPENAI_API_KEY=<kimi key>   SIM_MODEL=<kimi model id from their docs>
 # optional alternates (any OpenAI-compatible endpoint works):
 # export OPENAI_BASE_URL=...  OPENAI_API_KEY=...  SIM_MODEL=...
 
@@ -475,9 +478,9 @@ if __name__ == "__main__":
     app()
 ```
 
-Run it: `python -m src.cli run --suite smoke` (add `__init__.py` files, run from `sim/`).
+Run it: `python -m sim.cli run --suite smoke` (add `__init__.py` files, run from `sim/`).
 
-**M0 acceptance:** `python -m src.cli run --persona farmer --scenario farmer-sell-wheat`
+**M0 acceptance:** `python -m sim.cli run --persona farmer --scenario farmer-sell-wheat`
 completes; `runs/*.jsonl` shows real HTTP calls to `:8000` (mandi read, lot POST);
 `--mock-llm` works offline; cumulative spend visible per run.
 
@@ -519,7 +522,11 @@ farmer: [auth, users, mandi, market, demands, offers, farmer, purchases, diary,
 customer: [auth, users, marketplace, orders, payments, customer, mall, wishlist, coupons, addresses, notifications]
 ```
 
-`config/scenarios.yaml` — one guided + one open per persona minimum, plus chains:
+`config/scenarios.yaml` — one guided + one open per persona minimum, plus chains.
+**A complete 78-scenario library (all 20 personas × guided/open/adversarial +
+6 chains + 6 admin sweeps + 4 security probes + 2 onboarding flows) already ships
+at `config/scenarios.yaml`** — the examples below show the format; extend rather
+than rewrite:
 
 ```yaml
 scenarios:
@@ -641,7 +648,7 @@ def _consistency_probe(recs, i, out, run_name):
 
 Report it as "suspicions", not verdicts — the heuristic is deliberately simple.
 
-**M1 acceptance:** `python -m src.cli run --suite smoke` (5 personas) then
+**M1 acceptance:** `python -m sim.cli run --suite smoke` (5 personas) then
 `analyze` produces a `report.md` whose Missing-feature board has ≥1 entry with
 a run-log citation, and the Coverage map shows at least one ⚠️ `must_touch` gap.
 
@@ -673,8 +680,8 @@ either is information.
   analyzer never calls the LLM).
 - Report diffing: keep `reports/report-<date>.md`; `analyze --diff <a> <b>`
   lists closed gaps (entries in a not in b) and new regressions (in b not in a).
-- CI/nightly: cron `./run.sh backend && cd sim && python -m src.cli run --suite full
-  && python -m src.cli analyze`; commit `reports/` diff to a branch for review.
+- CI/nightly: cron `./run.sh backend && cd sim && python -m sim.cli run --suite full
+  && python -m sim.cli analyze`; commit `reports/` diff to a branch for review.
 
 ---
 

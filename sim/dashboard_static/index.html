@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agrovercity Sim</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --ink:#e2e8f0; --dim:#94a3b8; --acc:#22c55e;
+          --warn:#f59e0b; --bad:#ef4444; --line:#334155; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--line);
+           position:sticky; top:0; background:var(--bg); z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  .pill { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:2px 12px; color:var(--dim); }
+  .pill.on { color:var(--acc); border-color:var(--acc); }
+  .pill.bad { color:var(--bad); border-color:var(--bad); }
+  button { background:var(--acc); color:#052e16; border:0; border-radius:8px; padding:6px 14px; font-weight:600; cursor:pointer; }
+  button.ghost { background:var(--card); color:var(--ink); border:1px solid var(--line); }
+  select, input { background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  nav { display:flex; gap:6px; padding:10px 18px 0; }
+  nav button { border-radius:8px 8px 0 0; background:var(--card); color:var(--dim); border:1px solid var(--line); border-bottom:0; }
+  nav button.on { color:var(--ink); background:#172033; }
+  main { padding:16px 18px 40px; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .card h3 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td, th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; }
+  .stream { height:380px; overflow:auto; font:12px/1.6 ui-monospace, monospace; background:#0b1120;
+            border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .ev-step { color:var(--dim); } .ev-run_start { color:#60a5fa; } .ev-run_end { color:var(--acc); }
+  .ev-suite_start, .ev-suite_end { color:#c084fc; font-weight:700; }
+  .badge { display:inline-block; border-radius:6px; padding:1px 8px; font-size:12px; }
+  .b-done { background:#14532d; color:#86efac; } .b-gave_up, .b-fail { background:#450a0a; color:#fca5a5; }
+  .b-stuck_repeat, .b-stuck_no_progress, .b-step_cap { background:#451a03; color:#fcd34d; }
+  .b-blocked_identity { background:#1e3a8a; color:#93c5fd; }
+  .muted { color:var(--dim); } .score { color:var(--warn); font-weight:700; }
+  .quote { border-left:3px solid var(--line); padding-left:10px; color:var(--dim); font-style:italic; }
+  .tl { font:12px ui-monospace, monospace; max-height:260px; overflow:auto; }
+  .tl div { padding:1px 0; border-bottom:1px dotted #1b2740; }
+  .ok { color:var(--acc); } .no { color:var(--bad); }
+  a { color:#60a5fa; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌾 Sim Dashboard</h1>
+  <span id="llm" class="pill">LLM: …</span>
+  <span id="status" class="pill">idle</span>
+  <span id="cost" class="pill">$0.0000</span>
+  <span style="flex:1"></span>
+  <select id="suite">
+    <option value="smoke">smoke (~$0.10)</option>
+    <option value="full">full · 78 scenarios (~$0.50)</option>
+  </select>
+  <button onclick="startRun()">▶ Run suite</button>
+  <button class="ghost" onclick="analyze()">Analyze</button>
+</header>
+<nav id="tabs">
+  <button data-tab="live" class="on">Live</button>
+  <button data-tab="report">Report</button>
+  <button data-tab="gaps">Gaps</button>
+  <button data-tab="personas">Personas</button>
+  <button data-tab="coverage">Coverage</button>
+</nav>
+<main>
+  <section id="tab-live" class="tab">
+    <div class="grid">
+      <div class="card" style="grid-column:1/-1">
+        <h3>Live step stream <span class="muted">(websocket)</span></h3>
+        <div id="stream" class="stream"><div class="muted">connecting…</div></div>
+      </div>
+      <div class="card">
+        <h3>Runs on disk</h3>
+        <table id="runs"><thead><tr><th>scenario</th><th>persona</th><th>outcome</th><th>steps</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="card">
+        <h3>Debriefs</h3>
+        <div id="debriefs" class="muted">run analyze first</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-report" class="tab" hidden>
+    <div class="grid">
+      <div class="card"><h3>Executive summary</h3><div id="exec">—</div></div>
+      <div class="card"><h3>Friction index (SLO)</h3><table id="fric"><thead><tr><th>scenario</th><th>outcome</th><th>p95</th><th>SLO</th><th>sat</th></tr></thead><tbody></tbody></table></div>
+      <div class="card"><h3>Security probes</h3><div id="sec">—</div></div>
+      <div class="card"><h3>Dataflow suspicions</h3><div id="susp">—</div></div>
+      <div class="card" style="grid-column:1/-1"><h3>Failures</h3><table id="fails"><thead><tr><th>endpoint</th><th>errors</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section id="tab-gaps" class="tab" hidden>
+    <div class="card"><h3>Missing-feature board <span class="muted">(ranked · score = freq × breadth × domain weight)</span></h3>
+      <table id="gaps"><thead><tr><th>#</th><th>finding</th><th>class</th><th>score</th><th>personas</th><th>evidence</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section id="tab-personas" class="tab" hidden>
+    <div class="grid" id="personaCards"></div>
+  </section>
+
+  <section id="tab-coverage" class="tab" hidden>
+    <div class="card"><h3>must_touch coverage per persona <span class="muted">(⚠️ = persona never touched it)</span></h3>
+      <div id="cov">run a suite + analyze first</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.hidden = t.id !== 'tab-' + b.dataset.tab);
+  refresh();
+});
+
+let ws;
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = e => addEvent(JSON.parse(e.data));
+  ws.onclose = () => setTimeout(connect, 1500);
+}
+function addEvent(ev) {
+  const box = $('#stream');
+  if (box.firstElementChild?.classList.contains('muted')) box.innerHTML = '';
+  const div = document.createElement('div');
+  const t = new Date(ev.ts * 1000).toLocaleTimeString();
+  if (ev.type === 'step') {
+    div.className = 'ev-step';
+    div.textContent = `${t} · ${ev.scenario} · ${ev.persona} · step ${ev.step} → ${ev.action} ${ev.endpoint || ''} — ${ev.reason}`;
+  } else {
+    div.className = 'ev-' + ev.type;
+    div.textContent = `${t} · ${ev.type.toUpperCase()} · ${ev.scenario || ev.run_id} ${ev.persona || ''} ${ev.outcome || ''}`;
+  }
+  box.appendChild(div); box.scrollTop = box.scrollHeight;
+}
+
+async function startRun() {
+  const suite = $('#suite').value;
+  const r = await fetch('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                     body: JSON.stringify({suite})});
+  const j = await r.json();
+  if (j.error) alert(j.error);
+}
+async function analyze() { await fetch('/api/analyze', {method: 'POST'}).catch(()=>{}); location.reload(); }
+
+async function refresh() {
+  const st = await (await fetch('/api/status')).json();
+  $('#llm').textContent = 'LLM: ' + (st.llm_key_set ? 'key set' : 'NO KEY');
+  $('#llm').className = 'pill ' + (st.llm_key_set ? 'on' : 'bad');
+  $('#cost').textContent = '$' + (st.current?.budget?.usd ?? 0).toFixed(4);
+  const cur = st.current;
+  $('#status').textContent = cur ? `RUNNING ${cur.suite}: ${cur.done}/${cur.total} · ${cur.scenario || ''} step ${cur.step}` : 'idle';
+  $('#status').className = 'pill ' + (cur ? 'on' : '');
+
+  const runs = await (await fetch('/api/runs')).json();
+  $('#runs tbody').innerHTML = runs.map(r =>
+    `<tr><td>${esc(r.scenario)}</td><td>${esc(r.persona)}</td>
+     <td><span class="badge b-${esc(r.outcome)}">${esc(r.outcome)}</span></td><td>${r.steps ?? ''}</td></tr>`).join('');
+
+  const deb = await (await fetch('/api/debriefs')).json();
+  $('#debriefs').innerHTML = deb.slice(0, 12).map(d =>
+    `<p><b>${esc(d.file.split('--').pop().replace('.debrief.json',''))}</b> — sat ${d.satisfaction ?? '?'}/5<br>
+     <span class="muted">${esc((d.verbatim_frustration || d.blockers?.[0]?.what || 'ok').slice(0, 140))}</span></p>`).join('') || '<span class="muted">none yet</span>';
+
+  const rep = await (await fetch('/api/report')).json();
+  if (rep.executive) {
+    $('#exec').innerHTML = Object.entries(rep.executive).map(([k, v]) => `<div><b>${esc(k.replaceAll('_',' '))}:</b> ${esc(v)}</div>`).join('') +
+      (rep.satisfaction_avg ? `<div><b>avg satisfaction:</b> ${rep.satisfaction_avg}/5</div>` : '');
+    $('#fric tbody').innerHTML = (rep.friction || []).map(f =>
+      `<tr><td>${esc(f.scenario)}</td><td>${esc(f.outcome)}</td><td>${f.p95_ms}ms</td>
+       <td>${f.slo_ok ? '<span class="ok">✓</span>' : '<span class="no">✗</span>'}</td><td>${f.satisfaction ?? '-'}</td></tr>`).join('');
+    $('#sec').innerHTML = (rep.security || []).map(s => `<div>${s.result === 'pass' ? '✅' : '❌'} ${esc(s.title)}</div>`).join('') || '—';
+    $('#susp').innerHTML = (rep.suspicions || []).map(s =>
+      `<div class="no">⚠ ${esc(s.created)} → ${esc(s.read_via)} (${s.status}) <span class="muted">${esc(s.run)}</span></div>`).join('') || '<span class="ok">none</span>';
+    $('#fails tbody').innerHTML = (rep.failures || []).map(f => `<tr><td><code>${esc(f.op)}</code></td><td>${f.count}</td></tr>`).join('');
+    $('#gaps tbody').innerHTML = (rep.missing_features || []).map((g, i) =>
+      `<tr><td>${i+1}</td><td>${esc(g.title)}</td><td>${esc(g.class)}</td><td class="score">${g.score}</td>
+       <td>${esc((g.personas || []).slice(0,4).join(', '))}</td>
+       <td class="muted">${esc((g.evidence || []).map(e => e.kind + '@' + (e.run||'').split('/').pop()).slice(0,2).join('; '))}</td></tr>`).join('');
+  }
+  const per = await (await fetch('/api/personas')).json();
+  $('#personaCards').innerHTML = per.map(p =>
+    `<div class="card"><h3>${esc(p.persona)} · ${esc(p.scenario)}</h3>
+     <div class="badge b-${esc(p.outcome)}">${esc(p.outcome)}</div>
+     <span class="muted"> ${p.steps} steps · sat ${p.satisfaction ?? '-'}</span>
+     ${p.quote ? `<p class="quote">“${esc(p.quote)}”</p>` : ''}
+     <div class="tl">${(p.timeline || []).slice(0, 12).map(t =>
+       `<div>${t.step}. ${esc(t.action)} ${t.target ? `<code>${esc(t.target)}</code>` : ''} → ${esc(t.status ?? t.result ?? '')}</div>`).join('')}</div>
+     <p class="muted">touched: ${esc((p.touched || []).slice(0, 10).join(', '))}</p></div>`).join('');
+  if (rep.coverage) {
+    $('#cov').innerHTML = Object.entries(rep.coverage.per_persona || {}).map(([pid, c]) => {
+      const miss = (c.must_touch || []).filter(k => !(c.seen || []).includes(k));
+      return `<p><b>${esc(pid)}</b> (${c.ops_hit} ops) — ${miss.length ? '<span class="no">⚠️ ' + esc(miss.join(', ')) + '</span>' : '<span class="ok">✓ all must_touch seen</span>'}</p>`;
+    }).join('');
+  }
+}
+connect(); refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

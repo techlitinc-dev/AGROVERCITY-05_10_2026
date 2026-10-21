@@ -1,0 +1,20 @@
+# Severity weights: rank = frequency x persona_breadth x domain_weight (specs §18h)
+domain_weights:
+  auth: 3
+  payments: 3
+  kyc: 3
+  loans: 3
+  insurance: 3
+  wallet: 3
+  settlements: 3
+  market: 2
+  orders: 2
+  offers: 2
+  purchases: 2
+  transport: 2
+  bookings: 2
+  subscriptions: 2
+  dairy: 2
+  chatbot: 2
+  support: 2
+  default: 1

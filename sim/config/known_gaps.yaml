@@ -1,0 +1,8 @@
+# Human verdicts from the review queue (specs §18a).
+# Entries here are suppressed from future missing-feature boards.
+# format:
+#   - title: "pause subscription"
+#     verdict: real | not-real | data-gap | duplicate-of
+#     note: "checked with 2 farmers 2026-11-02 — real"
+#     closed_by: <commit or ticket id, optional>
+verdicts: []

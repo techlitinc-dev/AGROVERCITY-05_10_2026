@@ -351,6 +351,12 @@ Analyzer outputs (`reports/`):
    run-log evidence attached.
 5. **Friction index** — per journey: retries, backtracks, p50/p95 step latency,
    satisfaction mean.
+6. **Implementation tickets** (`reports/tickets/` + `tickets.md` index) — findings
+   converted to coding-agent-ready tickets per `implementation-handoff.md`
+   (template, worked example, batching rules, closure loop).
+7. **Persona activity** (`reports/personas.md`) — per-persona narrative timeline:
+   what each agent did, step by step, what it touched, what it said, and what its
+   run proved (format: `examples/sample-personas-activity.md`).
 
 ---
 

@@ -1,0 +1,737 @@
+# scenarios.yaml — the full persona scenario library
+#
+# Every persona gets three scenario types:
+#   guided      — the persona's core job-to-be-done, happy path, with checkpoints
+#   open        — a realistic slice-of-life; agent decides everything
+#   adversarial — the USER-FRIENDLINESS probe: low literacy, missing info, errors,
+#                 impatience, recovery. This is where "easy" gets proven or disproven.
+#
+# Plus: chains (Mode E, multi-persona market events), admin sweeps (Mode D),
+# and security probes (Mode F).
+#
+# Fields: id, persona, suite (smoke|full), mode, goal (user voice — keep it plain),
+# max_steps, checkpoints (guided only), tags (analyzer grouping), ease_focus
+# (what "easy" means in this scenario — surfaces in the report).
+
+scenarios:
+
+  # ══════════════════════ 1. FARMER (Kisan) ══════════════════════
+  - id: farmer-sell-wheat
+    persona: farmer
+    suite: smoke
+    mode: guided
+    max_steps: 30
+    goal: "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer."
+    checkpoints: [mandi price viewed, lot created with quantity+price, offer received or solicited, lot status live/negotiated]
+    tags: [core, trade]
+    ease_focus: can a farmer go from price-check to live lot without help?
+
+  - id: farmer-evening-round
+    persona: farmer
+    suite: full
+    mode: open
+    max_steps: 25
+    goal: "Evening after market. Check mandi prices, write today's farm diary, my cotton crop has leaf spots — use the crop doctor, and see if any government scheme fits me."
+    tags: [core, advisory, schemes]
+
+  - id: farmer-low-literacy-sale
+    persona: farmer
+    suite: full
+    mode: adversarial
+    max_steps: 25
+    goal: "You studied till 5th class. Your phone is your son's old Android. Sell your wheat — you are not sure of the exact weight or the grade, you just know it's good wheat. If something goes wrong, use the chatbot or support."
+    tags: [ease, recovery, low-literacy]
+    ease_focus: no jargon, forgiving forms, help reachable in 2 taps
+
+  # ══════════════════════ 2. LANDLORD (LandBank) ══════════════════════
+  - id: landlord-lease-plot
+    persona: farmLandlord
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "List my 5 acre irrigated plot near Anand for leasing, review the lead that came in, and set up a lease with rent and milestones."
+    checkpoints: [plot created, listing live, lead reviewed, lease created with milestones]
+    tags: [core, assets]
+    ease_focus: landlord is 55; escrow and legal words must not scare him off
+
+  - id: landlord-monthly-check
+    persona: farmLandlord
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Check this month's rent, see profit from my plots, and reply to a tenant who wants to renew early."
+    tags: [core, money]
+
+  - id: landlord-suspicious-of-escrow
+    persona: farmLandlord
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "You don't trust online payment — 'where is my money actually?' Set up the lease but you want rent straight to your bank, and you will call the broker if it looks complicated. Keep going anyway if you can understand it."
+    tags: [ease, trust, money]
+    ease_focus: trust cues and simple money language decide completion
+
+  # ══════════════════════ 3. TRANSPORTER (AgriFleet) ══════════════════════
+  - id: transporter-run-trip
+    persona: transporter
+    suite: smoke
+    mode: guided
+    max_steps: 30
+    goal: "Find a load Rajkot to Ahmedabad for my pickup, quote/accept it, run the trip with the OTP handover, and check my wallet after."
+    checkpoints: [job found and accepted, trip started, POD OTP handed over, wallet credited]
+    tags: [core, logistics, money]
+    ease_focus: one-handed, on-road, 2 minutes per interaction
+
+  - id: transporter-slow-day
+    persona: transporter
+    suite: full
+    mode: open
+    max_steps: 22
+    goal: "Slow morning. Check the job inbox, see my earnings analytics, look for a return load so I don't drive back empty, and note fuel in diary."
+    tags: [core, earnings]
+
+  - id: transporter-race-and-recover
+    persona: transporter
+    suite: full
+    mode: adversarial
+    max_steps: 22
+    goal: "You try to accept a good load but it says just taken by someone else. You get annoyed. Find another load nearby and finish a trip today."
+    tags: [ease, recovery, race-condition]
+    ease_focus: losing a job must not end the session — alternatives in one tap
+
+  # ══════════════════════ 4. SELLER / VYAPARI (FarmLink) ══════════════════════
+  - id: seller-procure-and-sell
+    persona: seller
+    suite: smoke
+    mode: guided
+    max_steps: 30
+    goal: "Check mandi rates for onion, find a farmer lot worth buying, agree a purchase, then record today's shop sales on the POS."
+    checkpoints: [rates viewed, lot shortlisted, purchase agreed, POS sale recorded]
+    tags: [core, trade, money]
+    ease_focus: a shopkeeper has 2 minutes between customers; every screen counts
+
+  - id: seller-morning-routine
+    persona: seller
+    suite: full
+    mode: open
+    max_steps: 22
+    goal: "Shop opens. Check yesterday's settlement, see new demands posted, update my rates, check stock."
+    tags: [core, money]
+
+  - id: seller-busy-counter
+    persona: seller
+    suite: full
+    mode: adversarial
+    max_steps: 22
+    goal: "Customers keep coming. Record three quick sales — one cash, one UPI, one on credit to a known buyer — and check your cashflow without losing track."
+    tags: [ease, speed, money]
+    ease_focus: speed of routine entries; credit must be safe but not slow
+
+  # ══════════════════════ 5. EQUIPMENT RENTAL (MachineBazaar) ══════════════════════
+  - id: equipment-list-and-book
+    persona: equipmentRental
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "List my tractor with rotavator for rent, get it verified, then handle a booking — accept it, arrange the deposit, and see the settlement after work is done."
+    checkpoints: [equipment listed, verification done, booking accepted, deposit recorded, settlement seen]
+    tags: [core, assets, money]
+
+  - id: equipment-season-prep
+    persona: equipmentRental
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Sowing season near. Check market intel for demand, adjust my day rate, look at last season's ROI, and log a maintenance expense."
+    tags: [core, earnings]
+
+  - id: equipment-first-listing
+    persona: equipmentRental
+    suite: full
+    mode: adversarial
+    max_steps: 22
+    goal: "First time listing online. You don't know what rate to ask and you're worried about damage. List anyway, then a customer disputes a scratch — handle it."
+    tags: [ease, trust, dispute]
+    ease_focus: pricing guidance and damage-protection clarity at the moment of doubt
+
+  # ══════════════════════ 6. BROKER / DALAL (DealDesk) ══════════════════════
+  - id: broker-close-deal
+    persona: broker
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "A farmer wants to sell 30q groundnut and a trader wants groundnut. Match them, move the deal through milestones, and confirm your commission."
+    checkpoints: [lead created/matched, deal opened, milestones advanced, commission recorded]
+    tags: [core, trade]
+
+  - id: broker-portfolio-day
+    persona: broker
+    suite: full
+    mode: open
+    max_steps: 22
+    goal: "Check your trust tier and rating, follow up on two open leads, and look at pending commissions across deals."
+    tags: [core, earnings]
+
+  - id: broker-stuck-deal
+    persona: broker
+    suite: full
+    mode: adversarial
+    max_steps: 22
+    goal: "A deal is stuck — the seller stopped responding after the rate dropped. Try to move it, and if it fails, close it cleanly and protect your commission record."
+    tags: [ease, recovery]
+    ease_focus: graceful failure paths and dispute tools when humans flake
+
+  # ══════════════════════ 7. DAIRY MANAGER (DairyOS) ══════════════════════
+  - id: dairy-collection-day
+    persona: dairyManager
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "Set today's rate chart, run morning collection for 12 members, then generate and pay the weekly payment batch."
+    checkpoints: [rate chart set, collections recorded, batch generated, payments marked done]
+    tags: [core, money]
+
+  - id: dairy-month-end
+    persona: dairyManager
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Month end. Review fat/SNF averages, see member dues, and create a sale to the local sweet shop."
+    tags: [core, money]
+
+  - id: dairy-rate-change-confusion
+    persona: dairyManager
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "You lowered the rate by 40 paise and now three members say the app shows something different than the board. Check, fix if wrong, and message the members."
+    tags: [ease, trust, notifications]
+    ease_focus: rate transparency + member communication in one place
+
+  # ══════════════════════ 8. INSTRUCTOR (Krishi Academy) ══════════════════════
+  - id: instructor-run-course
+    persona: instructor
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "Create a 'Soil Health Basics' course with 4 lessons and a quiz, enroll a batch of students, grade one assignment, and issue a certificate."
+    checkpoints: [course created, batch created, assignment graded, certificate issued]
+    tags: [core, education]
+    ease_focus: course builder usable by a teacher, not an instructional designer
+
+  - id: instructor-teaching-week
+    persona: instructor
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Check new enquiries, answer Q&A from students, review this week's earnings and payout status."
+    tags: [core, earnings]
+
+  - id: instructor-upload-trouble
+    persona: instructor
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "Your lesson video won't upload on patchy internet. Try again smaller, or switch the lesson to text, and finish publishing the course today. Also a student wants a refund."
+    tags: [ease, recovery]
+    ease_focus: offline-tolerant publishing and clear refund handling
+
+  # ══════════════════════ 9. DIRECT BUYER (ProcurePro) ══════════════════════
+  - id: buyer-post-demand
+    persona: directBuyer
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "Post a standing demand for 500q onion for your processing unit, review quotes, accept one, and run QC when the first truck arrives."
+    checkpoints: [demand posted, quotes reviewed, deal accepted, QC recorded]
+    tags: [core, trade]
+    ease_focus: B2B volume flows without phone-tag with 40 farmers
+
+  - id: buyer-weekly-procurement
+    persona: directBuyer
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Weekly review: check supplier reliability scores, pending deliveries, and download the statement for accounts."
+    tags: [core, analytics]
+
+  - id: buyer-farmer-no-show
+    persona: directBuyer
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "A farmer accepted your order but the lot never arrived. Get your money/status protected, and quickly arrange an alternate supply."
+    tags: [ease, recovery, money]
+    ease_focus: protection and fallback when a counterparty fails
+
+  # ══════════════════════ 10. CUSTOMER (FarmGate e-market) ══════════════════════
+  - id: customer-buy-basket
+    persona: customer
+    suite: smoke
+    mode: guided
+    max_steps: 30
+    goal: "Buy a weekly vegetable basket from the mall, pay from your wallet, track the order, and rate the delivery."
+    checkpoints: [basket in cart, order placed and paid, tracking viewed, rating submitted]
+    tags: [core, commerce, money]
+    ease_focus: checkout in under a minute, tracking that a non-technical user understands
+
+  - id: customer-festival-week
+    persona: customer
+    suite: full
+    mode: open
+    max_steps: 22
+    goal: "Diwali week. Set up a weekly subscription box for the family, and check the seasonal page for special produce."
+    tags: [core, commerce]
+
+  - id: customer-late-delivery
+    persona: customer
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "Your order is 2 hours late and the tracking hasn't moved. Find out what happened from support/chat, and get a fair outcome (updated time or refund)."
+    tags: [ease, recovery, support]
+    ease_focus: "anger de-escalation: status clarity, human help, fair resolution"
+
+  # ══════════════════════ 11. BANK MANAGER (CreditDesk) ══════════════════════
+  - id: bank-loan-pipeline
+    persona: bankManager
+    suite: smoke
+    mode: guided
+    max_steps: 30
+    goal: "Review a KCC loan application from a farmer with a good profile, approve it, disburse, and verify the repayment schedule exists."
+    checkpoints: [application reviewed incl. farmer360, decision recorded, disbursement done, schedule visible]
+    tags: [core, finance]
+    ease_focus: underwriting decision in one screen with risk evidence attached
+
+  - id: bank-portfolio-review
+    persona: bankManager
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Monday portfolio check: overdue repayments, applications pending too long, KCC renewals due this month, audit trail sample."
+    tags: [core, finance]
+
+  - id: bank-incomplete-kyc
+    persona: bankManager
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "An application looks good but KYC documents are blurry and one is missing. You can't approve it as-is. Send it back with exact instructions, and flag a second application that looks fraudulent."
+    tags: [ease, compliance, fraud]
+    ease_focus: rejection flows that tell the farmer exactly what to fix
+
+  # ══════════════════════ 12. INSURANCE PROVIDER (ClaimsDesk) ══════════════════════
+  - id: insurance-claim-end-to-end
+    persona: insuranceProvider
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "Process one crop claim end-to-end: assign survey, review the report, get the second sign-off, and release the payout."
+    checkpoints: [survey assigned, report reviewed, dual sign-off complete, payout released]
+    tags: [core, claims, money]
+
+  - id: insurance-cyclone-season
+    persona: insuranceProvider
+    suite: full
+    mode: open
+    max_steps: 22
+    goal: "Cyclone warning in two districts. Review active policies there, and triage the claims already incoming."
+    tags: [core, claims, bulk]
+
+  - id: insurance-rejected-claim-appeal
+    persona: insuranceProvider
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "A rejected claim came back with an appeal and new photos. Re-open it, compare with the original survey, and decide again — and make sure the farmer sees the reason either way."
+    tags: [ease, trust, claims]
+    ease_focus: appeal loop with visible reasoning — trust lives or dies here
+
+  # ══════════════════════ 13. COLD STORAGE (StoreHouse) ══════════════════════
+  - id: coldstorage-booking-cycle
+    persona: coldStorageProvider
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "A farmer books space for 50 bags of potato for 3 weeks. Confirm the booking, do the inward entry with weight, generate the fee receipt, and close the outward."
+    checkpoints: [booking confirmed, inward weight recorded, receipt issued, outward closed]
+    tags: [core, warehousing, money]
+
+  - id: coldstorage-occupancy-day
+    persona: coldStorageProvider
+    suite: full
+    mode: open
+    max_steps: 18
+    goal: "Check occupancy and revenue dashboard, review WDRA compliance items, and adjust your fee slab for the season."
+    tags: [core, analytics]
+
+  - id: coldstorage-weight-dispute
+    persona: coldStorageProvider
+    suite: full
+    mode: adversarial
+    max_steps: 18
+    goal: "A farmer says 50 bags came in but your slip says 47. Resolve the dispute from the records, adjust if you're wrong, and keep the customer."
+    tags: [ease, dispute, records]
+    ease_focus: record-visibility settles disputes without a shouting match
+
+  # ══════════════════════ 14. GAUSHALA MANAGER ══════════════════════
+  - id: gaushala-adoption-drive
+    persona: gaushalaManager
+    suite: full
+    mode: guided
+    max_steps: 28
+    goal: "Register a new rescued cow, list an animal for adoption, issue a donation receipt to a donor, and log this week's expenses and feed stock."
+    checkpoints: [animal registered, adoption listed, donation receipt issued, expenses logged]
+    tags: [core, donations]
+
+  - id: gaushala-month-end
+    persona: gaushalaManager
+    suite: full
+    mode: open
+    max_steps: 18
+    goal: "Month end: adoption follow-ups (who needs visits), donation totals, medical camp planning with the vet."
+    tags: [core, planning]
+
+  - id: gaushala-donor-receipt
+    persona: gaushalaManager
+    suite: full
+    mode: adversarial
+    max_steps: 18
+    goal: "A donor gave ₹5,000 in cash and wants a proper receipt 'with the gaushala seal, in Hindi' for tax. Issue it, and also fix a duplicate animal record a volunteer created."
+    tags: [ease, receipts, hindi]
+    ease_focus: receipt language/format and duplicate handling
+
+  # ══════════════════════ 15. VET ══════════════════════
+  - id: vet-clinic-day
+    persona: vet
+    suite: full
+    mode: guided
+    max_steps: 28
+    goal: "Run your clinic day: see scheduled appointments, write a prescription for a calf with fever, log a follow-up vaccination, and check today's earnings."
+    checkpoints: [appointments seen, prescription issued, follow-up logged, earnings viewed]
+    tags: [core, health]
+
+  - id: vet-campaign-week
+    persona: vet
+    suite: full
+    mode: open
+    max_steps: 18
+    goal: "Plan a vaccination camp with a gaushala next week — set it up, see registrations, and review your records for recurring diseases in the area."
+    tags: [core, campaigns]
+
+  - id: vet-emergency-interrupt
+    persona: vet
+    suite: full
+    mode: adversarial
+    max_steps: 18
+    goal: "Mid-appointment, an emergency call comes about a calving complication 4 km away. Handle or reschedule the current appointment, record the emergency visit, and don't lose the paperwork."
+    tags: [ease, interruption, recovery]
+    ease_focus: mid-flow interruptions must not destroy in-progress work
+
+  # ══════════════════════ 16. MILK SELLER ══════════════════════
+  - id: milkseller-delivery-round
+    persona: milkSeller
+    suite: full
+    mode: guided
+    max_steps: 26
+    goal: "Add three new society clients on your route, mark this morning's deliveries, generate the monthly bill for a client, and record a payment received."
+    checkpoints: [clients added, deliveries marked, bill generated, payment recorded]
+    tags: [core, money]
+
+  - id: milkseller-route-review
+    persona: milkSeller
+    suite: full
+    mode: open
+    max_steps: 18
+    goal: "Check which clients paused or reduced this month, see your analytics, and plan a new society pitch."
+    tags: [core, analytics]
+
+  - id: milkseller-spill-correction
+    persona: milkSeller
+    suite: full
+    mode: adversarial
+    max_steps: 18
+    goal: "You spilled one delivery and marked it wrong. A client also disputes last month's bill. Correct your mistake and settle the dispute with the record shown."
+    tags: [ease, recovery, dispute]
+    ease_focus: corrections are safe and auditable, not scary
+
+  # ══════════════════════ 17. EXPORTER ══════════════════════
+  - id: exporter-rfq-to-remittance
+    persona: exporter
+    suite: full
+    mode: guided
+    max_steps: 32
+    goal: "A buyer RFQ for 10MT cumin to Dubai. Quote, win it, arrange the shipment documents, handle the LC terms, and confirm the remittance landed."
+    checkpoints: [quote submitted, order confirmed, shipment docs done, LC matched, remittance confirmed]
+    tags: [core, trade, money]
+    ease_focus: export document steps guided — one missed doc kills a shipment
+
+  - id: exporter-supplier-week
+    persona: exporter
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "Review supplier reliability and prices, check the order book, and look at the forex/remittance summary for the quarter."
+    tags: [core, analytics]
+
+  - id: exporter-customs-hold
+    persona: exporter
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "Shipment held at customs — document mismatch between invoice and packing list. Fix the papers, notify the buyer about the delay, and re-submit."
+    tags: [ease, recovery, documents]
+    ease_focus: error recovery under deadline pressure with buyer communication
+
+  # ══════════════════════ 18. FPO MANAGER ══════════════════════
+  - id: fpo-pool-sale
+    persona: fpoManager
+    suite: full
+    mode: guided
+    max_steps: 28
+    goal: "Create a pooling of member soybean lots (5 members), get the pooled lot to market, and book the FPO's shared thresher for members next week."
+    checkpoints: [pool created with member lots, pooled lot listed/booked, machinery booked]
+    tags: [core, pooling]
+
+  - id: fpo-agm-season
+    persona: fpoManager
+    suite: full
+    mode: open
+    max_steps: 18
+    goal: "AGM prep: pull the impact and earnings report, check subsidy applications pending, and see member grievances."
+    tags: [core, governance]
+
+  - id: fpo-price-disagreement
+    persona: fpoManager
+    suite: full
+    mode: adversarial
+    max_steps: 18
+    goal: "Two members say the pooled price is lower than the mandi they saw and want their lots back. Check the actual numbers, explain or correct, and handle the exit if they insist."
+    tags: [ease, trust, governance]
+    ease_focus: transparent pool pricing and a clean exit path keep trust
+
+  # ══════════════════════ 19. WOMEN SHG (Mahila) ══════════════════════
+  - id: shg-savings-to-sale
+    persona: womenShg
+    suite: full
+    mode: guided
+    max_steps: 30
+    goal: "Record this week's savings for 8 members, add a new pickle batch to your gruh-udyog unit, fulfill the order that came in, and check the payout."
+    checkpoints: [savings recorded, batch added, order fulfilled, payout visible]
+    tags: [core, shg, money]
+    ease_focus: shared phone, possibly husband's — privacy and simplicity matter
+
+  - id: shg-loan-request
+    persona: womenShg
+    suite: full
+    mode: open
+    max_steps: 20
+    goal: "A member asks for a ₹20,000 group loan for a sewing machine. Initiate it, check your SHG's eligibility, and update the savings book."
+    tags: [core, finance]
+
+  - id: shg-low-confidence-user
+    persona: womenShg
+    suite: full
+    mode: adversarial
+    max_steps: 20
+    goal: "You are not comfortable with English apps and you're scared of 'sending money wrong'. Do the savings entry and check the order payment, in Hindi, without help from anyone. If unsure, find help inside the app."
+    tags: [ease, language, confidence]
+    ease_focus: vernacular UI, reversibility cues, and in-app hand-holding
+
+  # ══════════════════════ 20. NURSERY ══════════════════════
+  - id: nursery-fulfill-order
+    persona: nursery
+    suite: full
+    mode: guided
+    max_steps: 26
+    goal: "Add 50 neem saplings to inventory, confirm and fulfill an incoming order, create a small discount offer for the weekend, and check the payout."
+    checkpoints: [inventory added, order confirmed, order fulfilled, offer created, payout visible]
+    tags: [core, commerce, money]
+
+  - id: nursery-monsoon-campaign
+    persona: nursery
+    suite: full
+    mode: open
+    max_steps: 18
+    goal: "Monsoon planting season. Check tree-plantation requests and NGO tie-ups, review ratings, and plan stock for the demand spike."
+    tags: [core, season]
+
+  - id: nursery-name-confusion
+    persona: nursery
+    suite: full
+    mode: adversarial
+    max_steps: 18
+    goal: "A customer ordered 'kadi patta' plants but your catalog lists them under the botanical name and you sent the wrong variety once. Fix the order, fix the listing names so it doesn't repeat."
+    tags: [ease, catalog, recovery]
+    ease_focus: local-language names alongside botanical names
+
+  # ══════════════════════ MODE E — CHAINS (multi-persona market events) ══════════════════════
+  # Chains run SERIALLY in a dedicated shared world (specs §18c).
+  # Each step's goal receives the previous steps' created entity ids as CONTEXT.
+
+  - id: chain-wheat-market
+    persona: farmer
+    suite: full
+    mode: chain
+    max_steps: 12
+    goal: "List 20q wheat for sale at a fair price."
+    chain:
+      - {persona: seller, goal: "Find that wheat lot and negotiate a deal."}
+      - {persona: broker, goal: "Close this deal and record your commission."}
+      - {persona: transporter, goal: "Get this load hauled to the buyer."}
+      - {persona: bankManager, goal: "Verify the settlement reaches the seller correctly."}
+    tags: [chain, trade-seam]
+
+  - id: chain-dairy-morning
+    persona: milkSeller
+    suite: full
+    mode: chain
+    max_steps: 12
+    goal: "Mark this morning's deliveries to the dairy."
+    chain:
+      - {persona: dairyManager, goal: "Record the collection and generate today's payment batch."}
+      - {persona: seller, goal: "Buy this milk batch for your sweet shop and settle."}
+    tags: [chain, dairy-seam]
+
+  - id: chain-equipment-rental
+    persona: farmer
+    suite: full
+    mode: chain
+    max_steps: 12
+    goal: "Book a tractor+rotavator for 2 days next week."
+    chain:
+      - {persona: equipmentRental, goal: "Review and accept this booking with a deposit."}
+      - {persona: farmer, goal: "Confirm the booking is secured and the money is held safely."}
+    tags: [chain, assets-seam]
+
+  - id: chain-produce-delivery
+    persona: customer
+    suite: full
+    mode: chain
+    max_steps: 12
+    goal: "Order a fruit basket from a farmer storefront."
+    chain:
+      - {persona: farmer, goal: "You received this order — confirm and pack it."}
+      - {persona: transporter, goal: "Deliver this order and complete handover."}
+      - {persona: customer, goal: "Track and confirm you received it, then rate."}
+    tags: [chain, commerce-seam]
+
+  - id: chain-loan
+    persona: farmer
+    suite: full
+    mode: chain
+    max_steps: 12
+    goal: "Apply for a ₹1 lakh tractor loan."
+    chain:
+      - {persona: bankManager, goal: "Underwrite this application and decide."}
+      - {persona: farmer, goal: "Check the decision and disbursement status."}
+    tags: [chain, finance-seam]
+
+  - id: chain-vet-camp
+    persona: gaushalaManager
+    suite: full
+    mode: chain
+    max_steps: 10
+    goal: "Set up a vaccination camp at your gaushala next week."
+    chain:
+      - {persona: vet, goal: "Review the camp plan and confirm your sessions."}
+      - {persona: gaushalaManager, goal: "Check registrations and finalize preparations."}
+    tags: [chain, health-seam]
+
+  # ══════════════════════ MODE D — ADMIN SWEEPS (operators) ══════════════════════
+
+  - id: admin-ops-dispute
+    persona: operations_lead
+    suite: full
+    mode: admin
+    max_steps: 22
+    goal: "Resolve one open trade dispute end-to-end and moderate one farmer lot flagged for review. Every action needs your audit reason."
+
+  - id: admin-finance-settlements
+    persona: finance_admin
+    suite: full
+    mode: admin
+    max_steps: 22
+    goal: "Review pending settlements, release one that's clean, check TDS deductions, and sample the audit log for payout actions."
+
+  - id: admin-compliance-kyc
+    persona: compliance_officer
+    suite: full
+    mode: admin
+    max_steps: 22
+    goal: "Work the KYC verification queue, review two flagged fraud signals, and confirm consent/export requests were honored."
+
+  - id: admin-agronomist-advisory
+    persona: agronomist
+    suite: full
+    mode: admin
+    max_steps: 20
+    goal: "Validate pending advisory content, check disease-scan quality flags, and approve or reject soil-test reports."
+
+  - id: admin-content-moderation
+    persona: content_moderator
+    suite: full
+    mode: admin
+    max_steps: 20
+    goal: "Moderate the content queue: approve/reject news posts, one ad, and one community post. Check the CMS schedule."
+
+  - id: admin-superadmin-rbac
+    persona: superadmin
+    suite: full
+    mode: admin
+    max_steps: 22
+    goal: "Review the admin user roster, change one operator's role, check audit logs, and look at feature-flag state."
+
+  # ══════════════════════ MODE F — SECURITY PROBES ══════════════════════
+
+  - id: sec-cross-tenant-read
+    persona: customer
+    suite: full
+    mode: security
+    max_steps: 6
+    goal: "PROBE: attempt to read another user's order by guessing sequential order ids. Expect refusal (403/404) every time — report what actually happens."
+    tags: [security, idor]
+
+  - id: sec-revoked-token
+    persona: farmer
+    suite: full
+    mode: security
+    max_steps: 6
+    goal: "PROBE: log out (revoke), then try to use the old token. Expect 401 — report what actually happens."
+    tags: [security, auth]
+
+  - id: sec-admin-no-audit-reason
+    persona: operations_lead
+    suite: full
+    mode: security
+    max_steps: 6
+    goal: "PROBE: attempt one admin mutation without the X-Audit-Reason header. Expect 400 — report what actually happens."
+    tags: [security, audit]
+
+  - id: sec-role-cross-call
+    persona: farmer
+    suite: full
+    mode: security
+    max_steps: 6
+    goal: "PROBE: with a normal user token, attempt one admin endpoint (e.g. list users). Expect 403/401 — report what actually happens."
+    tags: [security, rbac]
+
+  # ══════════════════════ ONBOARDING / FIRST-RUN EASE ══════════════════════
+
+  - id: onboard-farmer-first-run
+    persona: farmer
+    suite: full
+    mode: guided
+    max_steps: 24
+    goal: "You installed the app for the first time on a new phone. Register with your phone, set your MPIN, pick farmer persona, and get to your dashboard — then do the first thing you'd actually do."
+    checkpoints: [registered, mpin set, persona selected, dashboard reached, one real action]
+    tags: [onboarding, ease]
+    ease_focus: time-to-first-value for a first-time rural user
+
+  - id: onboard-shg-first-run
+    persona: womenShg
+    suite: full
+    mode: guided
+    max_steps: 24
+    goal: "First time on the app, in Hindi if possible. Register, join your SHG using the invite your didi gave you, and record your first weekly saving."
+    tags: [onboarding, ease, language]

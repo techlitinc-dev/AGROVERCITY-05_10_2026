@@ -1,0 +1,39 @@
+# Persona → catalog tags allowed in the always-on tool index (specs §6).
+# The rest stays reachable via search_tools (which is also a gap-detector).
+#
+# IMPORTANT: tag names come from your routers' `tags=` params. Print the real
+# ones first:   python -m sim.cli catalog --tags
+# Then fix this file. Until then, the harness falls back to keyword matching
+# (ops whose path/summary contains the persona id or these keywords).
+# `admin*` tags are NEVER whitelisted for non-admin personas — enforced in code.
+
+_default: [auth, users, notifications, search, faq, support, chat, addresses, uploads, reference, app-config]
+
+farmer:        [mandi, market, lots, demands, offers, purchases, contracts, farmer, diary, pnl, advisory, weather, climate, schemes, finance, loans, insurance, kyc, vault, bank-accounts, farmer-crops, soil-tests, water, product-alerts, price-alerts, saved-searches, equipment, transport, marketplace, coupons, wishlist, orders, payments, ratings, follows, referrals, tasks, gamification, tree]
+farmLandlord:  [land, plots, leases, listings, leads, land-records]
+transporter:   [transport, vehicles, bookings, loads, trips, drivers, wallet, payouts, compliance, ads, diary]
+seller:        [seller, market, lots, demands, offers, purchases, procurement, resale, rates, pos, stock, orders, settlements, tds, cashflow, analytics, team, compliance, ads]
+equipmentRental: [equipment, equipment-rental, bookings, contracts, deposits, disputes, settlements, verification, market]
+broker:        [broker, leads, deals, commissions, vault, disputes, milestones, trust]
+dairyManager:  [dairy, dairy-manager, members, rates, batches, collections, sales, reports]
+instructor:    [courses, teachers, batches, sessions, assignments, certificates, earnings, enquiries]
+directBuyer:   [direct-buyer, demands, standing-orders, offers, qc, statements, reliability, buyer-org, team, feed, analytics]
+customer:      [marketplace, mall, products, cart, orders, order-tracking, payments, wallet, subscriptions, customer, demands, quotes, procurements, storefronts, seasonal, wishlist, coupons, product-alerts, pickup, ratings]
+bankManager:   [loans, applications, review, disbursement, repayments, finance, credit-score, kcc, farmer360, audit]
+insuranceProvider: [insurance, policies, claims, survey, rates, provider]
+coldStorageProvider: [post-harvest, cold-storage, facilities, bookings, receipts, fees]
+gaushalaManager: [livestock, gaushala, cattle, adoptions, receipts, expenses]
+vet:           [livestock, vets, practices, appointments, prescriptions, campaigns, earnings, records]
+milkSeller:    [milk-seller, clients, deliveries, bills, analytics]
+exporter:      [exporter, rfqs, quotes, shipments, lc, remittances, suppliers, analytics]
+fpoManager:    [fpo, pools, machinery, verification, members]
+womenShg:      [women, shg, savings, loans, gruh-udyog, units, products, batches, subsidies, garden-plans, directory, certifications]
+nursery:       [nursery, inventory, batches, orders, offers, payouts, ratings, tree]
+
+# Admin operators (Mode D) — mutations carry X-Audit-Reason automatically.
+operations_lead:     [admin, admin-console, disputes, lots, orders, moderation]
+finance_admin:       [admin, admin-console, settlements, billing, tds, payouts, audit]
+compliance_officer:  [admin, admin-console, kyc, fraud, consents, data-export, audit-logs]
+agronomist:          [admin, admin-console, advisory, soil-tests, disease-scan, content]
+content_moderator:   [admin, admin-console, content, news, ads, posts, cms]
+superadmin:          [admin, admin-console, admin-sop, rbac, users, audit, feature-flags, partner-api]

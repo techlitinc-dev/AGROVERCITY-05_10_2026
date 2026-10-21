@@ -1,0 +1,18 @@
+backend_url: "http://localhost:8000"
+model: "deepseek-flash"          # overridden by SIM_MODEL env
+api_key_env: "DEEPSEEK_API_KEY"  # or OPENAI_API_KEY when OPENAI_BASE_URL is set
+budget_usd: 5.0
+concurrency: 3                   # guided/open parallel; chains & market world stay serial (specs §18c)
+step_timeout_s: 20
+llm_timeout_s: 30
+llm_max_tokens: 240
+llm_temperature: 0.4
+llm_retries: 2
+max_steps_default: 30
+poll_tries: 5                    # async_wait read-back polling (specs §18b)
+poll_interval_s: 3
+# deepseek-flash off-peak USD per 1M tokens (peak = 2x, specs §3)
+price_in_miss: 0.15
+price_in_hit: 0.003
+price_out: 0.60
+allow_nonlocal_backend: false    # set true only for a dedicated staging box

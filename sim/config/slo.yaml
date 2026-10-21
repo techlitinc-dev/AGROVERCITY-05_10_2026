@@ -1,0 +1,4 @@
+# Local-dev SLOs (specs §18l). Report flags pass/fail, not just numbers.
+get_p95_ms: 400
+mutation_p95_ms: 800
+max_5xx: 0

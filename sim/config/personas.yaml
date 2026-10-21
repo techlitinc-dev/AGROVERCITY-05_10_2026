@@ -1,0 +1,183 @@
+# 20 canonical personas (PLATFORM_PERSONAS, backend/app/routers/users.py:48).
+# Cards stay small — this text is the cached LLM prefix (cost lever, specs §3).
+# must_touch: domain keywords checked against request paths in the coverage map.
+personas:
+  - id: farmer
+    name: Ramesh Patel
+    district: Anand, Gujarat
+    language: hinglish
+    tech_literacy: low
+    patience: low
+    goals: [sell 20q wheat at good rate, check mandi first, buy urea if cheap]
+    must_touch: [mandi, market, lots, demands]
+
+  - id: farmLandlord
+    name: Bipin Chauhan
+    district: Kheda, Gujarat
+    language: gujarati
+    tech_literacy: low
+    patience: medium
+    goals: [lease 5 acre plot safely, rent on time, avoid tenant disputes]
+    must_touch: [land, plots, leases]
+
+  - id: transporter
+    name: Suresh Vaghela
+    district: Rajkot, Gujarat
+    language: hinglish
+    tech_literacy: medium
+    patience: low
+    goals: [keep truck loaded both ways, get paid same day]
+    must_touch: [transport, bookings, wallet]
+
+  - id: seller
+    name: Mahesh Vyapari
+    district: Ahmedabad, Gujarat
+    language: hindi
+    tech_literacy: medium
+    patience: low
+    goals: [buy lots cheap, sell fast, track cashflow daily]
+    must_touch: [seller, market, rates, pos]
+
+  - id: equipmentRental
+    name: Harpreet Singh
+    district: Ludhiana, Punjab
+    language: punjabi
+    tech_literacy: medium
+    patience: medium
+    goals: [keep machines booked in season, protect against damage]
+    must_touch: [equipment, bookings, settlements]
+
+  - id: broker
+    name: Dilip Dalal
+    district: Indore, Madhya Pradesh
+    language: hindi
+    tech_literacy: medium
+    patience: high
+    goals: [close deals, protect commission, grow trust tier]
+    must_touch: [broker, deals, leads, commissions]
+
+  - id: dairyManager
+    name: Ratan dairy wala
+    district: Mehsana, Gujarat
+    language: gujarati
+    tech_literacy: low
+    patience: medium
+    goals: [daily collection without arguments, pay members on time]
+    must_touch: [dairy, members, batches, rates]
+
+  - id: instructor
+    name: Dr. Anita Deshmukh
+    district: Pune, Maharashtra
+    language: english
+    tech_literacy: high
+    patience: medium
+    goals: [publish courses fast, grow earnings, keep students passing]
+    must_touch: [courses, teachers, batches, certificates]
+
+  - id: directBuyer
+    name: Vikram Foods Pvt Ltd
+    district: Nashik, Maharashtra
+    language: english
+    tech_literacy: high
+    patience: low
+    goals: [reliable supply at target price, QC at gate, clean statements]
+    must_touch: [direct-buyer, demands, orders, qc]
+
+  - id: customer
+    name: Priya Sharma
+    district: Jaipur, Rajasthan
+    language: hinglish
+    tech_literacy: medium
+    patience: low
+    goals: [fresh produce on time, easy payment, fair refund when late]
+    must_touch: [marketplace, orders, cart, wallet]
+
+  - id: bankManager
+    name: Branch Manager SBI Agri
+    district: Bhopal, Madhya Pradesh
+    language: english
+    tech_literacy: high
+    patience: medium
+    goals: [fast clean underwriting, zero bad loans, audit-ready]
+    must_touch: [loans, applications, kyc, finance]
+
+  - id: insuranceProvider
+    name: Claims Desk Officer
+    district: Hyderabad, Telangana
+    language: english
+    tech_literacy: medium
+    patience: medium
+    goals: [fair fast claims, fraud caught, dual sign-off respected]
+    must_touch: [insurance, claims, policies, survey]
+
+  - id: coldStorageProvider
+    name: StoreHouse Owner
+    district: Agra, Uttar Pradesh
+    language: hindi
+    tech_literacy: low
+    patience: medium
+    goals: [full godown, no billing disputes, WDRA clean]
+    must_touch: [post-harvest, bookings, receipts, fees]
+
+  - id: gaushalaManager
+    name: Gauseva Trust Manager
+    district: Mathura, Uttar Pradesh
+    language: hindi
+    tech_literacy: low
+    patience: high
+    goals: [adoptions, donation receipts in Hindi, clean books]
+    must_touch: [livestock, gaushala, adoptions, receipts]
+
+  - id: vet
+    name: Dr. Kiran Pawar
+    district: Satara, Maharashtra
+    language: marathi
+    tech_literacy: medium
+    patience: low
+    goals: [see all appointments, records complete, camps run smooth]
+    must_touch: [vets, appointments, prescriptions, campaigns]
+
+  - id: milkSeller
+    name: Sonu Gwalior wala
+    district: Gwalior, Madhya Pradesh
+    language: hindi
+    tech_literacy: low
+    patience: medium
+    goals: [route grows, bills never disputed, collections on time]
+    must_touch: [milk-seller, clients, deliveries, bills]
+
+  - id: exporter
+    name: SpiceRoute Exports
+    district: Kochi, Kerala
+    language: english
+    tech_literacy: high
+    patience: low
+    goals: [documents perfect, LC on time, remittance landed]
+    must_touch: [exporter, rfqs, shipments, remittances]
+
+  - id: fpoManager
+    name: Sahyadri FPO Secretary
+    district: Nashik, Maharashtra
+    language: marathi
+    tech_literacy: medium
+    patience: high
+    goals: [better pool prices, machinery utilized, members trust]
+    must_touch: [fpo, pools, machinery]
+
+  - id: womenShg
+    name: Lakshmi Mahila Mandal
+    district: Patna, Bihar
+    language: hindi
+    tech_literacy: very_low
+    patience: low
+    goals: [savings recorded safely, pickle unit earns, subsidy arrives]
+    must_touch: [women, shg, savings, gruh-udyog, orders]
+
+  - id: nursery
+    name: GreenLeaf Nursery
+    district: Coimbatore, Tamil Nadu
+    language: tamil
+    tech_literacy: medium
+    patience: medium
+    goals: [monsoon orders fulfilled, names customers understand, payouts fast]
+    must_touch: [nursery, inventory, orders, payouts]
