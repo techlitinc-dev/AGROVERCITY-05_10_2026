@@ -408,3 +408,127 @@ python -m sim.cli report --json           # machine-readable
 
 Iterate: fix/implement from the report → re-seed → `sim run` → diff reports.
 That's the loop this spec exists to support.
+
+---
+
+## 17. Scaling: how many agents do you actually need?
+
+Short answer: **diversity of scenarios, not headcount, is the lever.** A gap is
+found the first time any agent hits it; the 10,000th identical agent adds nothing.
+
+**Why gaps saturate.** The action space is bounded: ~1,495 endpoints × ~20 roles
+means the space of distinct user intents is a few thousand, at most. The Tier-0
+suite samples ~1,600 intent-attempts; ~100 personas × ~50 scenarios would sample
+it densely. Past that, extra agents are repeats — they improve *confidence in the
+ranking*, not the *number of findings*.
+
+**Cost of 1M LLM agents** (deepseek-flash off-peak): 1M × 20 steps × ~800 fresh
+tokens ≈ 16B input + 2.4B output ≈ **$3,000–4,000 per run** — and you need many
+runs to iterate. That money buys statistical polish on a gap list 20 personas
+already produced for ~$0.50.
+
+**What scale genuinely buys** (so we use the right tool per question):
+
+| Tier | Agents | Agent type | Question it answers | Cost/run |
+|---|---|---|---|---|
+| **0** (spec'd, M0–M3) | 20–100 | LLM, deep | Requirements, options, gaps, friction | ~$0.50–5 |
+| **1** (~M3.5) | 300–500 | LLM, shallow — 1 scenario each | Error/friction *rates* per journey with confidence intervals | ~$10 |
+| **2** (optional) | 5k–50k | Template clones — no LLM at runtime; LLM generates the behavioral templates once, replays with jitter | Load on staging, market dynamics (price formation, demand spikes) | infra only |
+| **3** (only if economics become the question) | 100k+ | Actor-model / OASIS-style economy sim | Emergent macro behavior (crashes, cascades, equilibrium) | serious infra |
+
+Tiers 2–3 are *market simulation*, not requirements discovery. Adopt them only
+when the question changes from "what's missing" to "what happens at volume."
+
+**The multiplier that beats headcount — Mode E: chained multi-agent scenarios.**
+Real usage is *interactions*, not isolated users. Chain 3–5 agents through one
+market event, e.g.:
+
+```yaml
+- id: market-chain-wheat
+  mode: chain
+  steps:
+    - farmer: "sell 20q wheat"            # creates lot
+    - seller: "find wheat lots, counter"  # offers
+    - broker: "close the deal"            # milestone + commission
+    - transporter: "haul it"              # booking + POD
+    - bankManager: "settle"               # escrow / settlement review
+  success: deal settled end-to-end
+```
+
+One chain exercises the seams *between* personas (handoffs, notifications,
+escrow timing, data consistency across roles) — where most real gaps live —
+for the price of ~5 agent-runs. 20 chains > 1M isolated agents for finding
+integration gaps.
+
+**Getting "exact" requirements.** No simulation produces exact requirements —
+it produces evidence-ranked candidates. Exactness comes from triangulation:
+sim breadth (Tier 0–1) + 5 real humans on the top-10 gaps (ground truth) +
+production analytics after launch. Budget for the human pass before building
+anything expensive from the report.
+
+---
+
+## 18. Hardening — traps the first version must handle
+
+**(a) Triage taxonomy — feature gap vs data gap vs bug vs harness gap.**
+A blocker is classified at debrief time; the analyzer buckets accordingly.
+Seed checklist per persona: the seeded world must answer that persona's top-3
+intents (e.g. farmer needs mandi rates for their district). `config/known_gaps.yaml`
+carries human verdicts; verified entries are suppressed from future boards.
+Analyzer emits `review_queue.md` — top 20 findings with evidence links and a
+verdict field for the human pass.
+
+**(b) Async/cron boundaries.** Escrow release, payouts, fraud scan run via the
+`jobs` routers on cron. After any payment/escrow/settlement action, the harness
+polls the relevant read endpoint (≤5 tries) or invokes the job HTTP endpoint if
+exposed; only then may a missing result count as a finding. Such steps are tagged
+`async_wait` and excluded from stuck-watchdog trip counts.
+
+**(c) World isolation & collisions.** Concurrent runs share one seeded world →
+non-reproducible interference (run A's seller buys run B's lot). Rules: entities
+created by a run carry its run-id; guided journeys get pre-allocated private
+entities from `seed_sim.py`; chains and market scenarios run **serially** in a
+dedicated shared world; admin sweeps claim distinct queue items.
+
+**(d) Payment boundary — verify before M1.** The website has no payment SDK;
+checkout flows through backend wallet/gateway endpoints whose dev behavior is
+unverified. Before M1, run one scripted checkout against dev by hand. If the
+gateway isn't dev-friendly, declare `payments/*` a documented boundary (agent
+stops at order creation and notes it) so commerce scenarios don't all false-alarm.
+
+**(e) Golden traces for regression.** When a scenario first passes cleanly,
+freeze its action sequence + recorded responses as a replayable fixture — the
+same pattern as `backend/tests/fixtures/ai/golden`. LLM runs discover; fixtures
+regress. Report diffs then reflect product changes, not agent whimsy
+(temperature 0.4 still drifts).
+
+**(f) Security probes — Mode F, cheap.** ~4 steps each, whole bug class the UX
+modes never touch: agent A reads agent B's order/lot/claim (expect 403/404);
+replay a revoked/expired token (expect 401); admin mutation without
+`X-Audit-Reason` (expect 400); cross-role endpoint call (expect 403).
+
+**(g) Debrief hallucination guard.** The analyzer mechanically drops debrief
+`missing_features`/`blockers` entries that don't fuzzy-match a logged step or a
+zero-result `search_tools` query. Enforce the evidence rule in code, not prompt.
+
+**(h) Severity weights.** Rank = frequency × persona breadth × domain weight
+(`config/severity.yaml`: payments/kyc/auth/logistics-fare = 3, core commerce = 2,
+engagement/gamification = 1).
+
+**(i) Identity coverage for all 20.** Only 12 personas have `quick-login` seeds
+today. Add dev-only `backend/scripts/seed_sim_identities.py` ensuring one-command
+identity for all 20 personas + 6 operators; otherwise unseeded personas emit
+"blocked" noise that is a harness gap, not a product finding.
+
+**(j) UI coverage cross-check — zero LLM.** Statically extract endpoint
+references from `website/src/lib/api/*.ts` (~65 modules) and diff against sim
+coverage: UI-called-but-never-simulated → missing scenario; simulated-but-never-
+UI-called → possibly unnecessary API. Bridges the API-level sim and the real app
+until M4 browser mode.
+
+**(k) Paired chat flows.** Customer↔farmer, student↔instructor: both sides are
+agents, run as a two-agent chain. Lone-agent chat tests nothing real.
+
+**(l) Smoothness SLOs.** `config/slo.yaml` with local-dev thresholds (e.g.
+GET p95 ≤ 400 ms, mutation p95 ≤ 800 ms, zero 5xx). The friction index reports
+pass/fail against SLOs, not just numbers.
