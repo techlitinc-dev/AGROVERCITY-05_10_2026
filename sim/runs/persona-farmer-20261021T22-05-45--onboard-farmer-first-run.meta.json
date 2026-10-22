@@ -1,0 +1,34 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "onboard-farmer-first-run",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "guided",
+  "max_steps": 24,
+  "goal": "You installed the app for the first time on a new phone. Register with your phone, set your MPIN, pick farmer persona, and get to your dashboard \u2014 then do the first thing you'd actually do.",
+  "checkpoints": [
+   "registered",
+   "mpin set",
+   "persona selected",
+   "dashboard reached",
+   "one real action"
+  ],
+  "tags": [
+   "onboarding",
+   "ease"
+  ],
+  "ease_focus": "time-to-first-value for a first-time rural user"
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 24
+ },
+ "budget": {
+  "usd": 0.1783,
+  "calls": 203,
+  "in_tokens": 802749,
+  "out_tokens": 96413,
+  "cached_tokens": 0
+ }
+}

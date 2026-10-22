@@ -1,0 +1,34 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Register API /v1/auth/register returned 422 because it asked for idToken, state, district which were not known beforehand",
+   "step": 8,
+   "evidence": "POST /v1/auth/register → 422 | step 9 says validation ne idToken, state, district maanga"
+  },
+  {
+   "what": "OTP verify API /v1/auth/otp/verify returned 422 so could not get token needed for registration",
+   "step": 21,
+   "evidence": "POST /v1/auth/otp/verify → 422"
+  }
+ ],
+ "missing_features": [
+  "Register endpoint ka exact body schema with phone, name, MPIN, farmer role, state, district, idToken (searched multiple times in steps 3-7, 9-12 but nahi mila)",
+  "OTP send/verify ka exact request body schema - phone aur OTP kis key mein bhejna hai (steps 16-19 search kiya par endpoint call ke pehle poora schema nahi mila)",
+  "Farmer persona select karne ka endpoint ya option (goal mein tha par trace mein sirf search hai, koi dashboard/selection nahi mila)",
+  "MPIN set karne ka alag endpoint ya flow (goal mein tha par trace mein koi successful MPIN step nahi hai)",
+  "New user onboarding jo pehle call se pehle phone → OTP → register → MPIN → persona ka flow bataye"
+ ],
+ "confusing": [
+  "Register ke exact field names baar-baar search kiya - steps 3-7, 9-12 alag-alag wording mein same cheez dhoondhte rahe par schema nahi mila",
+  "Register endpoint validation me idToken, state, district maanga - yeh pehle pata nahi tha, isliye seedha POST maar ke 422 aaya",
+  "OTP send toh ho gaya lekin verify 422 aaya, kya galat field bheji yeh samajh nahi aaya"
+ ],
+ "unnecessary": [
+  "Step 8 mein register endpoint ka schema pata nahi tha tabhi POST kiya, jisse faltu mein 422 aaya",
+  "Steps 10 aur 11 mein bilkul same query dobara dali - pehle search se answer nahi mila toh repeat kiya",
+  "Steps 18 aur 19 mein OTP body fields ke liye same search dobara kiya"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Arre pehle hi register karne mein 422 aa gaya, OTP bhej toh diya lekin verify ka schema samajh nahi aaya, kheti ka kaam chhod ke yeh search-search karna pad raha hai!"
+}

@@ -8,7 +8,8 @@ import statistics as stats
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from .config import (REPORTS_DIR, RUNS_DIR, known_gaps, personas, severity, slo)
+from .config import (PERSONA_REPORTS_DIR, REPORTS_DIR, RUNS_DIR,
+                     known_gaps, personas, severity, slo)
 from .tools import extract_ids
 
 TITLES = {
@@ -21,10 +22,12 @@ STUCK_OUTCOMES = {"stuck_repeat", "stuck_no_progress"}
 MUTATING = {"POST", "PUT", "PATCH"}
 
 
-def _runs() -> list[tuple[Path, dict, list[dict], dict | None]]:
+def _runs(persona: str | None = None) -> list[tuple[Path, dict, list[dict], dict | None]]:
     out = []
     for meta_p in sorted(RUNS_DIR.glob("*.meta.json")):
         meta = json.loads(meta_p.read_text())
+        if persona and meta.get("scenario", {}).get("persona") != persona:
+            continue
         stem = str(meta_p).replace(".meta.json", "")
         log_p = Path(stem + ".jsonl")
         log = [json.loads(l) for l in log_p.read_text().splitlines() if l.strip()] if log_p.exists() else []
@@ -34,8 +37,9 @@ def _runs() -> list[tuple[Path, dict, list[dict], dict | None]]:
     return out
 
 
-def analyze() -> dict:
-    runs = _runs()
+def analyze(persona: str | None = None) -> dict:
+    runs = _runs(persona)
+    out_dir = PERSONA_REPORTS_DIR / persona if persona else REPORTS_DIR
     sev = severity()
     slo_cfg = slo()
     suppressed = {v["title"].lower() for v in known_gaps() if v.get("verdict") in ("not-real", "duplicate-of")}
@@ -171,7 +175,7 @@ def analyze() -> dict:
                          "satisfaction": (deb or {}).get("satisfaction")})
 
     report = {
-        "meta": {"runs": len(runs), "generated": time_str(),
+        "meta": {"runs": len(runs), "generated": time_str(), "persona": persona,
                  "cost_usd": _total_cost(runs)},
         "executive": {
             "missing_features": len(scored),
@@ -203,11 +207,11 @@ def analyze() -> dict:
         "satisfaction_avg": round(sum(satisfaction) / len(satisfaction), 2) if satisfaction else None,
     }
 
-    REPORTS_DIR.mkdir(exist_ok=True)
-    (REPORTS_DIR / "report.json").write_text(json.dumps(report, indent=1, ensure_ascii=False))
-    _render_report_md(report)
-    _render_personas(runs)
-    _render_review_queue(report)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "report.json").write_text(json.dumps(report, indent=1, ensure_ascii=False))
+    _render_report_md(report, out_dir)
+    _render_personas(runs, out_dir)
+    _render_review_queue(report, out_dir)
     return report
 
 
@@ -257,9 +261,10 @@ def _consistency_probe(log, i, out, run_name):
 
 
 # ── markdown renderers ─────────────────────────────────────────────────────
-def _render_report_md(r: dict):
+def _render_report_md(r: dict, out_dir: Path):
     L = ["# Agrovercity Sim Report", "", f"generated: {r['meta']['generated']} · "
-         f"runs: {r['meta']['runs']} · cumulative cost: ${r['meta']['cost_usd']}", ""]
+         f"runs: {r['meta']['runs']} · cumulative cost: ${r['meta']['cost_usd']}" +
+         (f" · persona: {r['meta']['persona']}" if r['meta'].get('persona') else ""), ""]
     ex = r["executive"]
     L += ["## 1. Executive summary", "",
           f"- missing-feature candidates: **{ex['missing_features']}**",
@@ -308,10 +313,10 @@ def _render_report_md(r: dict):
         L += ["## 9. Verbatim frustrations", ""]
         L += [f"> \"{d['verbatim_frustration']}\"\n> — {d['persona']}, {d['scenario']}\n" for d in q[:8]]
     L += ["---", "*Suspicions are heuristics, not verdicts — work the review queue.*", ""]
-    (REPORTS_DIR / "report.md").write_text("\n".join(L))
+    (out_dir / "report.md").write_text("\n".join(L))
 
 
-def _render_personas(runs):
+def _render_personas(runs, out_dir: Path):
     pmap = personas()
     items = []
     md = ["# Persona Activity", ""]
@@ -351,11 +356,11 @@ def _render_personas(runs):
         if len(tl) > 14:
             md.append(f"… ({len(tl) - 14} more steps in runs/{meta_p.name.replace('.meta.json', '.jsonl')})")
         md.append("")
-    (REPORTS_DIR / "personas.json").write_text(json.dumps(items, indent=1, ensure_ascii=False))
-    (REPORTS_DIR / "personas.md").write_text("\n".join(md))
+    (out_dir / "personas.json").write_text(json.dumps(items, indent=1, ensure_ascii=False))
+    (out_dir / "personas.md").write_text("\n".join(md))
 
 
-def _render_review_queue(r: dict):
+def _render_review_queue(r: dict, out_dir: Path):
     L = ["# Review queue — human verdicts (specs §18a)", "",
          "Verdicts go to config/known_gaps.yaml; not-real/duplicate-of suppress,",
          "closed_by records the fix commit.", ""]
@@ -364,4 +369,4 @@ def _render_review_queue(r: dict):
         L.append(f"- [ ] #{n} [{e['class']}] {e['title']}  ")
         L.append(f"      evidence: {ev.get('kind', '?')} @ {ev.get('run', '?')} · "
                  f"personas: {', '.join(e['personas'][:4])} · score {e['score']}")
-    (REPORTS_DIR / "review_queue.md").write_text("\n".join(L) + "\n")
+    (out_dir / "review_queue.md").write_text("\n".join(L) + "\n")

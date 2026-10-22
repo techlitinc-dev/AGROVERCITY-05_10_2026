@@ -1,0 +1,36 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Rajkot se Ahmedabad ka load kabhi nahi mila, sirf Malegaon-Surat / Nasik-Surat wale loads aa rahe the.",
+   "step": 3,
+   "evidence": "Trace mein baar-baar 'abhi list mein Rajkot-Ahmedabad load nahi dikha' aur 'Malegaon-Surat aa raha hai' likha hai, jaise steps 3, 6, 8, 12, 13, 16, 17, 19 mein."
+  },
+  {
+   "what": "list_open_loads endpoint ke query params / filter schema ka pata nahi chala.",
+   "step": 3,
+   "evidence": "User ne multiple SEARCH calls mein pucha: 'Endpoint ke query params dekh lunga taaki sahi filter laga saku', 'list_open_loads ke query params chahiye', 'filter query params kya hain' — par koi response se params nahi mile."
+  },
+  {
+   "what": "Koi load select, quote, accept, OTP handover ya wallet check tak pahuncha nahi.",
+   "step": 20,
+   "evidence": "Saare 20 steps sirf loads dhoondhne tak limited hain; koi POST /bid, POST /accept, OTP verify, ya GET /wallet call nahi hai."
+  }
+ ],
+ "missing_features": [
+  "Origin-destination city filter ya search option loads list mein",
+  "Endpoint query parameters ki clear documentation / schema",
+  "Load ID se directly quote/bid karne ka easy rasta"
+ ],
+ "confusing": [
+  "GET /v1/transport/loads baar-baar same bina koi query param change kiye maarna, phir bhi result same aana",
+  "List mein Rajkot-Ahmedabad ke bajaye Malegaon-Surat / Nasik-Surat loads dikhna",
+  "Query params dhoondhne ke liye SEARCH karna padna bajaye UI mein filters dikhne ke"
+ ],
+ "unnecessary": [
+  "Steps 1-2, 4-10, 14, 15, 18, 20 — sab same GET /v1/transport/loads repeat ho gaye bina filter try kiye",
+  "Steps 3, 6, 8, 12, 13, 16, 17, 19 — ek hi query params wala SEARCH baar-baar repeat ho gaya"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Bhai itni der laga di, phir bhi Rajkot se Ahmedabad ka ek bhi load nahi mila, aur wallet toh dekhe hi nahi — bas Malegaon-Surat dikhaata raha, time barbaad ho gaya."
+}

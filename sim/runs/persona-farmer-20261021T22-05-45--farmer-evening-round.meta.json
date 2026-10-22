@@ -1,0 +1,27 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "farmer-evening-round",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "open",
+  "max_steps": 25,
+  "goal": "Evening after market. Check mandi prices, write today's farm diary, my cotton crop has leaf spots \u2014 use the crop doctor, and see if any government scheme fits me.",
+  "tags": [
+   "core",
+   "advisory",
+   "schemes"
+  ]
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 25
+ },
+ "budget": {
+  "usd": 0.1704,
+  "calls": 194,
+  "in_tokens": 763757,
+  "out_tokens": 93128,
+  "cached_tokens": 0
+ }
+}

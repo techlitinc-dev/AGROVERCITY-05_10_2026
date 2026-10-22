@@ -11,7 +11,8 @@ from pathlib import Path
 import typer
 
 from . import catalog as cat
-from .config import REPORTS_DIR, ROOT, RUNS_DIR, llm_credentials, scenarios, settings
+from .config import (PERSONA_REPORTS_DIR, REPORTS_DIR, ROOT, RUNS_DIR,
+                     llm_credentials, personas, scenarios, settings)
 
 app = typer.Typer(add_completion=False, help="Agrovercity persona simulation harness")
 
@@ -81,11 +82,24 @@ def seed():
 @app.command()
 def run(suite: str = typer.Option("smoke", "--suite", "-s"),
         scenario: str | None = typer.Option(None, "--scenario", help="run one scenario id"),
+        persona: str | None = typer.Option(None, "--persona", "-p",
+                                           help="run all scenarios for one persona"),
         budget: float | None = typer.Option(None, "--budget-usd"),
         mock_llm: bool = typer.Option(False, "--mock-llm", help="zero-cost harness self-test")):
-    """Run a suite (or one scenario) against the backend."""
+    """Run a suite (or one scenario / one persona) against the backend."""
     from .runner import Runner
-    if scenario:
+    if scenario and persona:
+        raise SystemExit("use either --scenario or --persona, not both")
+    picked = None
+    if persona:
+        pmap = personas()
+        if persona not in pmap:
+            raise SystemExit(f"unknown persona '{persona}' — known: {', '.join(sorted(pmap))}")
+        picked = [s for s in scenarios() if s["persona"] == persona]
+        if not picked:
+            raise SystemExit(f"no scenarios defined for persona '{persona}'")
+        suite = f"persona-{persona}"
+    elif scenario:
         picked = [s for s in scenarios() if s["id"] == scenario]
         if not picked:
             raise SystemExit(f"unknown scenario '{scenario}'")
@@ -95,19 +109,24 @@ def run(suite: str = typer.Option("smoke", "--suite", "-s"),
     if not mock_llm and not llm_credentials()[0]:
         raise SystemExit("no LLM key — export DEEPSEEK_API_KEY (or OPENAI_*), or use --mock-llm")
     runner = Runner()
-    results = asyncio.run(runner.run_suite(suite, budget_usd=budget, mock_llm=mock_llm))
+    results = asyncio.run(runner.run_suite(suite, budget_usd=budget, mock_llm=mock_llm,
+                                           only=picked))
     for r in results:
         o = r["outcome"]
         typer.echo(f"{r['scenario']['id']}: {o.get('outcome')} ({o.get('steps', 0)} steps)")
-    typer.echo("→ python -m sim.cli analyze")
+    typer.echo("→ python -m sim.cli analyze" + (f" --persona {persona}" if persona else ""))
 
 
 @app.command()
-def analyze():
-    """runs/ → reports/ (zero LLM cost — safe to re-run freely)."""
+def analyze(persona: str | None = typer.Option(None, "--persona", "-p",
+                                               help="report only this persona's runs into persona_reports/<id>/")):
+    """runs/ → reports/ (or persona_reports/<id>/) — zero LLM cost, safe to re-run."""
     from .analyzer import analyze
-    rep = analyze()
-    typer.echo(f"report: {REPORTS_DIR / 'report.md'}")
+    if persona and persona not in personas():
+        raise SystemExit(f"unknown persona '{persona}' — known: {', '.join(sorted(personas()))}")
+    rep = analyze(persona=persona)
+    out_dir = PERSONA_REPORTS_DIR / persona if persona else REPORTS_DIR
+    typer.echo(f"report: {out_dir / 'report.md'}")
     typer.echo(f"  missing-feature candidates: {rep['executive']['missing_features']}")
     typer.echo(f"  userflow obstacles: {rep['executive']['userflow_obstacles']}")
     typer.echo(f"  dataflow suspicions: {rep['executive']['dataflow_suspicions']}")
@@ -116,11 +135,13 @@ def analyze():
 
 
 @app.command()
-def tickets():
-    """report.json → reports/tickets/ (coding-agent ready, see implementation-handoff.md)."""
+def tickets(persona: str | None = typer.Option(None, "--persona", "-p",
+                                               help="generate from persona_reports/<id>/report.json")):
+    """report.json → reports/tickets/ (or persona_reports/<id>/tickets/)."""
     from .tickets import generate
-    written = generate()
-    typer.echo(f"{len(written)} tickets → {REPORTS_DIR / 'tickets'} (index: reports/tickets.md)")
+    out_dir = PERSONA_REPORTS_DIR / persona if persona else REPORTS_DIR
+    written = generate(out_dir)
+    typer.echo(f"{len(written)} tickets → {out_dir / 'tickets'} (index: {out_dir / 'tickets.md'})")
 
 
 @app.command()

@@ -44,13 +44,17 @@ Quote: "{quote}"
 """
 
 
-def generate() -> list[Path]:
-    rep_p = REPORTS_DIR / "report.json"
+def generate(out_dir: Path | None = None) -> list[Path]:
+    rep_dir = out_dir or REPORTS_DIR
+    rep_p = rep_dir / "report.json"
     if not rep_p.exists():
-        raise SystemExit("no report.json — run: python -m sim.cli analyze")
+        raise SystemExit(f"no report.json at {rep_p} — run: python -m sim.cli analyze"
+                         + (f" --persona {out_dir.name}" if out_dir else ""))
     rep = json.loads(rep_p.read_text())
-    out = REPORTS_DIR / "tickets"
+    out = rep_dir / "tickets"
     out.mkdir(exist_ok=True)
+    for stale in out.glob("GAP-*.md"):
+        stale.unlink()
     quotes = {d["scenario"]: d.get("verbatim_frustration") for d in rep.get("debriefs", [])}
     written = []
     for n, f in enumerate(rep.get("missing_features", [])[:30], 1):
@@ -66,5 +70,5 @@ def generate() -> list[Path]:
         p.write_text(md)
         written.append(p)
     index = ["# Tickets (from latest report)", ""] + [f"- [{p.name}](tickets/{p.name})" for p in written]
-    (REPORTS_DIR / "tickets.md").write_text("\n".join(index) + "\n")
+    (rep_dir / "tickets.md").write_text("\n".join(index) + "\n")
     return written

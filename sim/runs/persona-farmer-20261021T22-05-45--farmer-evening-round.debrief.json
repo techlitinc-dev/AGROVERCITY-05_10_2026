@@ -1,0 +1,36 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "No endpoint found to write today's farm diary",
+   "step": 10,
+   "evidence": "Step 10 SEARCH guessed '/v1/diary ke neeche create/update' but no such endpoint appeared; steps 3-18 kept searching for diary without success"
+  },
+  {
+   "what": "No Crop Doctor / disease detection endpoint found for cotton leaf spots",
+   "step": 12,
+   "evidence": "Steps 6, 12, 14, 15 searched for 'crop doctor', 'disease', 'cotton leaf spots' but the only result mentioned was 'dairy-mandi'"
+  },
+  {
+   "what": "No government scheme endpoint found",
+   "step": 14,
+   "evidence": "Steps 4, 6, 11, 12, 14, 15 searched for 'sarkari yojna' / 'government schemes farmer' but no matching API path was returned"
+  }
+ ],
+ "missing_features": [
+  "Farm diary create/update endpoint under /v1/diary",
+  "Crop doctor / disease detection API for cotton leaf spot symptoms",
+  "Government schemes / farmer benefits endpoint",
+  "A search/discovery feature that returns relevant endpoints instead of unrelated 'dairy-mandi'"
+ ],
+ "confusing": [
+  "Repeated the same SEARCH many times expecting different endpoints to appear (steps 3-15, 17-18)",
+  "Used only generic SEARCH instead of a clear menu, help, or API documentation path"
+ ],
+ "unnecessary": [
+  "Called GET /v1/mandi/prices again in step 2 and step 16 after already getting the price in step 1",
+  "Made many near-identical SEARCH calls from step 3 through step 18"
+ ],
+ "satisfaction": 2,
+ "verbatim_frustration": "Mandi ka daam to aa gaya, lekin baar-baar search karne ke baad bhi diary, crop doctor aur sarkari yojna ka koi raasta nahi mila."
+}

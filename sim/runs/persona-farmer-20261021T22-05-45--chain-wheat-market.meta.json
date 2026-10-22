@@ -1,0 +1,44 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "chain-wheat-market",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "chain",
+  "max_steps": 12,
+  "goal": "List 20q wheat for sale at a fair price.",
+  "chain": [
+   {
+    "persona": "seller",
+    "goal": "Find that wheat lot and negotiate a deal."
+   },
+   {
+    "persona": "broker",
+    "goal": "Close this deal and record your commission."
+   },
+   {
+    "persona": "transporter",
+    "goal": "Get this load hauled to the buyer."
+   },
+   {
+    "persona": "bankManager",
+    "goal": "Verify the settlement reaches the seller correctly."
+   }
+  ],
+  "tags": [
+   "chain",
+   "trade-seam"
+  ]
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 30
+ },
+ "budget": {
+  "usd": 0.034,
+  "calls": 35,
+  "in_tokens": 147269,
+  "out_tokens": 19862,
+  "cached_tokens": 0
+ }
+}

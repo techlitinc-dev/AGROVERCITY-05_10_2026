@@ -57,11 +57,13 @@ class Tools:
             except Exception:
                 body = {"raw": r.text[:200]}
             rec = {"op_id": op_id, "method": op["method"], "path": path,
+                   "query": params.get("query") or {},
                    "tag": op["tag"], "status": r.status_code, "latency_ms": latency,
                    "resp_excerpt": compact(body)}
         except Exception as e:
-            rec = {"op_id": op_id, "method": op["method"], "path": path, "tag": op["tag"],
-                   "status": 0, "latency_ms": int((time.time() - t0) * 1000),
+            rec = {"op_id": op_id, "method": op["method"], "path": path,
+                   "query": params.get("query") or {},
+                   "tag": op["tag"], "status": 0, "latency_ms": int((time.time() - t0) * 1000),
                    "resp_excerpt": json.dumps({"transport_error": type(e).__name__})}
         self.log.append(rec)
         return {"status": rec["status"], "latency_ms": rec["latency_ms"],

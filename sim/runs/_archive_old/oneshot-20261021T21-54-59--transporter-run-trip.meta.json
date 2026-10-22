@@ -1,0 +1,49 @@
+{
+ "run_id": "oneshot-20261021T21-54-59",
+ "scenario": {
+  "id": "transporter-run-trip",
+  "persona": "transporter",
+  "suite": "oneshot",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Find a load Rajkot to Ahmedabad for my pickup, quote/accept it, run the trip with the OTP handover, and check my wallet after.",
+  "checkpoints": [
+   "job found and accepted",
+   "trip started",
+   "POD OTP handed over",
+   "wallet credited"
+  ],
+  "tags": [
+   "core",
+   "logistics",
+   "money"
+  ],
+  "ease_focus": "one-handed, on-road, 2 minutes per interaction"
+ },
+ "outcome": {
+  "outcome": "stuck_repeat",
+  "steps": 23,
+  "act": {
+   "action": "call_endpoint",
+   "reason": "Bina filter ke sirf Surat wala load aa raha hai, Rajkot-Ahmedabad dhoondhne ke liye query params try karta hoon.",
+   "endpoint_id": "list_open_loads_v1_transport_loads_get",
+   "params": {
+    "path": {},
+    "query": {
+     "origin": "Rajkot",
+     "destination": "Ahmedabad"
+    },
+    "body": {}
+   },
+   "expectation": "Maybe filtered loads Rajkot to Ahmedabad appear.",
+   "satisfaction": 4
+  }
+ },
+ "budget": {
+  "usd": 0.0179,
+  "calls": 23,
+  "in_tokens": 80954,
+  "out_tokens": 9518,
+  "cached_tokens": 0
+ }
+}

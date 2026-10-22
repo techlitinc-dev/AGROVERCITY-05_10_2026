@@ -1,0 +1,32 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Equipment booking create endpoint nahi mila",
+   "step": 1,
+   "evidence": "Step 1 mein bola 'endpoint list mein koi saaf equipment booking wala nahi dikh raha', aur steps 4-5 mein 'create booking ka rasta nahi mila' likha hai."
+  },
+  {
+   "what": "Tractor+rotavator ki listing/catalog nahi dikh rahi",
+   "step": 6,
+   "evidence": "Step 6 mein bola 'pehle equipment list/catalog dhoondhke dekhunga ki tractor+rotavator kahan dikhte hain', lekin steps 6-12 tak bhi koi listing ya catalog wala endpoint nahi mila."
+  }
+ ],
+ "missing_features": [
+  "Equipment booking create karne wala endpoint",
+  "Tractor/rotavator equipment catalog ya rental listings dekhne ka feature",
+  "2 din ke liye date select karke booking karne ka option",
+  "Equipment category mein tractor+rotavator search/filter karne ka feature"
+ ],
+ "confusing": [
+  "Baar baar same check-in aur payment order wale endpoints milna jab equipment booking search ki",
+  "'Check-in pins' endpoint equipment booking search mein aana",
+  "Alag-alag terms (equipment, implements, rental, machinery, catalog) search karne ke baad bhi same results aana"
+ ],
+ "unnecessary": [
+  "Steps 2 se 12 tak lagbhag same search baar baar repeat karna — 'equipment booking', 'create equipment booking', 'equipment catalog', 'machinery rental', 'equipment rental listings', 'tractor equipment listing' jaise similar keywords se search karna",
+  "Payment order endpoint dhoondhna jab abhi tak booking create hi nahi hui"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Arre baar baar wahi check-in aur payment wale endpoints aa rahe hain, tractor+rotavator book karne ka rasta hi nahi mil raha!"
+}

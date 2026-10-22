@@ -1,0 +1,26 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "sec-revoked-token",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "security",
+  "max_steps": 6,
+  "goal": "PROBE: log out (revoke), then try to use the old token. Expect 401 \u2014 report what actually happens.",
+  "tags": [
+   "security",
+   "auth"
+  ]
+ },
+ "outcome": {
+  "outcome": "fail",
+  "steps": 1
+ },
+ "budget": {
+  "usd": 0.0956,
+  "calls": 113,
+  "in_tokens": 416812,
+  "out_tokens": 55201,
+  "cached_tokens": 0
+ }
+}

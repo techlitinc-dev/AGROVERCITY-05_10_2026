@@ -1,0 +1,36 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "chain-equipment-rental",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "chain",
+  "max_steps": 12,
+  "goal": "Book a tractor+rotavator for 2 days next week.",
+  "chain": [
+   {
+    "persona": "equipmentRental",
+    "goal": "Review and accept this booking with a deposit."
+   },
+   {
+    "persona": "farmer",
+    "goal": "Confirm the booking is secured and the money is held safely."
+   }
+  ],
+  "tags": [
+   "chain",
+   "assets-seam"
+  ]
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 12
+ },
+ "budget": {
+  "usd": 0.0439,
+  "calls": 47,
+  "in_tokens": 198100,
+  "out_tokens": 23595,
+  "cached_tokens": 0
+ }
+}

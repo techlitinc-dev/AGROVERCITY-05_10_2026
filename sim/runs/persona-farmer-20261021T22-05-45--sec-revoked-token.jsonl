@@ -1,0 +1,1 @@
+{"op_id": "use_token_after_logout", "method": "GET", "path": "/v1/users/me", "tag": "security", "status": 200, "latency_ms": 0, "resp_excerpt": "{\"probe\": \"FAIL \\u2014 revoked token accepted\"}"}

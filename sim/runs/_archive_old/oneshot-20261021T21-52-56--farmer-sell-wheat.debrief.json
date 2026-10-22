@@ -1,0 +1,35 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Anand mandi ke ghehu ka sahi rate nahi mila kyunki /v1/mandi/prices endpoint ke query params pata nahi chale",
+   "step": 2,
+   "evidence": "SEARCH: 'Mujhe Anand mandi mein ghehu ka aaj ka rate chahiye, kaunse params dene hain pata nahi.'"
+  },
+  {
+   "what": "Bar bar tomato/dairy jaisi galat commodity ka rate aa raha tha, wheat ka nahi",
+   "step": 13,
+   "evidence": "SEARCH: 'baar baar tomato ka rate aa raha hai'"
+  },
+  {
+   "what": "Price check ke bina aage lot create nahi kar paya, offer bhi nahi dekh paya",
+   "step": 26,
+   "evidence": "Trace mein sirf GET /v1/mandi/prices aur SEARCH calls hain, koi lot creation ya offer response nahi"
+  }
+ ],
+ "missing_features": [
+  "Query params dhoondhne mein madad karne wala helper/search ya dropdown jisme mandi aur commodity select kar sake",
+  "Hinglish/voice input se seedha rate nikalne ka option",
+  "Urea ka rate check karne ka alag saral option"
+ ],
+ "confusing": [
+  "Ek hi GET endpoint /v1/mandi/prices ko 20+ baar alag-alag expectation se try karna",
+  "Search mein baar baar 'sahi query params kya hain' puchna lekin jawab se samajh nahi aaya"
+ ],
+ "unnecessary": [
+  "Steps 2-4 aur 9-10, 13, 15-16, 20 mein same params related search repeat karna",
+  "Steps 5-26 mein same API endpoint ko bar-bar bina naye params ke bulaana"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Bhai, itni der se Anand ka gehu ka bhav nikaal raha hoon, har baar kuchh aur hi aa jaata hai, params ka koi sahi jawaab nahi milta, dimaag kharab ho gaya!"
+}

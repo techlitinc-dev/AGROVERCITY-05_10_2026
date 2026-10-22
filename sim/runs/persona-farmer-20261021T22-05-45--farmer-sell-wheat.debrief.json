@@ -1,0 +1,23 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "16 baar same GET /v1/mandi/prices call kiya, lekin asal price numbers kabhi nahi dikhaye aur lot create nahi ho paya",
+   "step": 1,
+   "evidence": "Trace mein step 1 se 16 tak sirf GET /v1/mandi/prices → 200 hai, response body missing hai, aur koi /v1/lots POST ya offer respond API nahi hai"
+  }
+ ],
+ "missing_features": [
+  "mandi price API ka response body mein Anand APMC wheat ka min/modal/max price dikhana — trace mein sirf 200 status hai",
+  "20 quintal wheat ka lot create karne ka endpoint / option",
+  "kisi buyer offer ka jawab dene ka feature"
+ ],
+ "confusing": [
+  "GET /v1/mandi/prices ko baar-baar call karna — samajh nahi aaya ki ek baar call karne ke baad price kyun nahi mila ya kya alag karna chahiye"
+ ],
+ "unnecessary": [
+  "12th se 16th tak same GET /v1/mandi/prices call karna — pehle kai calls ke baad bhi wahi endpoint hit kiya bina naye result ke"
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Baar-baar mandi price check kiya par asal rate hi nahi dikhaya, aur abhi tak lot banane ka option bhi nahi mila — time barbaad ho raha hai!"
+}

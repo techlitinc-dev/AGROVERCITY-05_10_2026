@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent          # sim/
 CONFIG_DIR = ROOT / "config"
 RUNS_DIR = ROOT / "runs"
 REPORTS_DIR = ROOT / "reports"
+PERSONA_REPORTS_DIR = ROOT / "persona_reports"
 
 
 def _load_yaml(name: str) -> dict:

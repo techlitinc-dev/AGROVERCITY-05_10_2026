@@ -33,5 +33,19 @@
   "exp": 1792684498.5025034,
   "via": "quick-login",
   "checked_at": 1792605298.5025108
+ },
+ "broker": {
+  "uid": "dev-user-6",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlci02IiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjcwNjcxMH0.Ftjn-jEmgevO69YnDKkFSV8FzRMH4HWNUKRm-FBseTg",
+  "exp": 1792699510.3934336,
+  "via": "quick-login",
+  "checked_at": 1792620310.3934424
+ },
+ "equipmentRental": {
+  "uid": "dev-user-4",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlci00IiwidHlwZSI6ImFjY2VzcyIsImV4cCI6MTc5MjcwNjcxMH0.rwSlDNbL_m-v5NYUVngA2na4fRYZnxjsCNiAKSZ5DNI",
+  "exp": 1792699510.492779,
+  "via": "quick-login",
+  "checked_at": 1792620310.4927871
  }
 }

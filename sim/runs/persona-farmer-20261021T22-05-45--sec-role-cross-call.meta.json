@@ -1,0 +1,26 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "sec-role-cross-call",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "security",
+  "max_steps": 6,
+  "goal": "PROBE: with a normal user token, attempt one admin endpoint (e.g. list users). Expect 403/401 \u2014 report what actually happens.",
+  "tags": [
+   "security",
+   "rbac"
+  ]
+ },
+ "outcome": {
+  "outcome": "pass",
+  "steps": 1
+ },
+ "budget": {
+  "usd": 0.0956,
+  "calls": 113,
+  "in_tokens": 416812,
+  "out_tokens": 55201,
+  "cached_tokens": 0
+ }
+}

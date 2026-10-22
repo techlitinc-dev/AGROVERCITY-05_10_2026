@@ -1,0 +1,26 @@
+{
+ "completed": false,
+ "blockers": [
+  {
+   "what": "Lot review mein bhejne ka button kaam nahi kar raha, baar-baar 409 error aa raha hai",
+   "step": 5,
+   "evidence": "Step 5 POST /v1/market/lots/lot_1fa88f65ddf8/submit-for-review → 409, phir step 12 mein same endpoint → 409, aur step 16 mein fir same → 409. Is wajah se gehu ka lot active/list nahi ho paya."
+  }
+ ],
+ "missing_features": [
+  "Koi chatbot ya support option dikh nahi raha jahan main 409 error ka matlab pooch sakoon — goal mein likha tha 'if something goes wrong use chatbot or support' par trace mein kabhi invoke nahi hua.",
+  "Lot ka weight aur grade check karne ka koi option nahi mila, main sirf 'good wheat' jaanta tha.",
+  "Urea ko cart mein daalne ya seedhe kharidne ka button/karwayi nahi dikhi — sirf product details tak gaye."
+ ],
+ "confusing": [
+  "Teen baar 'submit-for-review' dabaya lekin har baar 409 aaya; mujhe samajh nahi aaya ki lot already submitted hai ya koi aur problem hai.",
+  "Mandi rates ko 4 baar alag-alag step mein kholna pada, har baar same lag raha tha.",
+  "Lot details baar-baar check karna pada kyunki status saaf nahi dikh raha tha."
+ ],
+ "unnecessary": [
+  "Step 1, 2, 10, 15 mein baar-baar mandi prices dekhna — ek baar mein hi kaam ban jaata.",
+  "Step 4, 9, 14, 17 mein baar-baar same lot details lena — status update waise bhi submit error ki wajah se nahi badla."
+ ],
+ "satisfaction": 1,
+ "verbatim_frustration": "Bhai, teen baar submit dabaya par baar-baar 409 aa raha hai, koi batayega bhi nahi iska matlab kya hai!"
+}

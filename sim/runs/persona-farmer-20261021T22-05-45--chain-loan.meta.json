@@ -1,0 +1,36 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "chain-loan",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "chain",
+  "max_steps": 12,
+  "goal": "Apply for a \u20b91 lakh tractor loan.",
+  "chain": [
+   {
+    "persona": "bankManager",
+    "goal": "Underwrite this application and decide."
+   },
+   {
+    "persona": "farmer",
+    "goal": "Check the decision and disbursement status."
+   }
+  ],
+  "tags": [
+   "chain",
+   "finance-seam"
+  ]
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 30
+ },
+ "budget": {
+  "usd": 0.0956,
+  "calls": 113,
+  "in_tokens": 416812,
+  "out_tokens": 55201,
+  "cached_tokens": 0
+ }
+}

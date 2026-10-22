@@ -59,8 +59,8 @@ class Runner:
 
     # ── public entry points ─────────────────────────────────────────────
     async def run_suite(self, suite: str, budget_usd: float | None = None,
-                        mock_llm: bool = False) -> list[dict]:
-        picked = [s for s in scenarios() if suite in ("all", s.get("suite", "smoke"))]
+                        mock_llm: bool = False, only: list | None = None) -> list[dict]:
+        picked = only or [s for s in scenarios() if suite in ("all", s.get("suite", "smoke"))]
         if not picked:
             raise SystemExit(f"no scenarios match suite '{suite}'")
         key, base = _creds()

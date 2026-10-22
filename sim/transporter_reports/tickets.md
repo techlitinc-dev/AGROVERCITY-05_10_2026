@@ -1,0 +1,12 @@
+# Tickets (from latest report)
+
+- [GAP-001-koi-load-select-quote-accept-otp-handove.md](tickets/GAP-001-koi-load-select-quote-accept-otp-handove.md)
+- [GAP-002-bar-bar-tomato-dairy-jaisi-galat-commodi.md](tickets/GAP-002-bar-bar-tomato-dairy-jaisi-galat-commodi.md)
+- [GAP-003-query-params-dhoondhne-mein-madad-karne-.md](tickets/GAP-003-query-params-dhoondhne-mein-madad-karne-.md)
+- [GAP-004-urea-ka-rate-check-karne-ka-alag-saral-o.md](tickets/GAP-004-urea-ka-rate-check-karne-ka-alag-saral-o.md)
+- [GAP-005-anand-mandi-ke-ghehu-ka-sahi-rate-nahi-m.md](tickets/GAP-005-anand-mandi-ke-ghehu-ka-sahi-rate-nahi-m.md)
+- [GAP-006-price-check-ke-bina-aage-lot-create-nahi.md](tickets/GAP-006-price-check-ke-bina-aage-lot-create-nahi.md)
+- [GAP-007-origin-destination-city-filter-ya-search.md](tickets/GAP-007-origin-destination-city-filter-ya-search.md)
+- [GAP-008-endpoint-query-parameters-ki-clear-docum.md](tickets/GAP-008-endpoint-query-parameters-ki-clear-docum.md)
+- [GAP-009-rajkot-se-ahmedabad-ka-load-kabhi-nahi-m.md](tickets/GAP-009-rajkot-se-ahmedabad-ka-load-kabhi-nahi-m.md)
+- [GAP-010-list-open-loads-endpoint-ke-query-params.md](tickets/GAP-010-list-open-loads-endpoint-ke-query-params.md)

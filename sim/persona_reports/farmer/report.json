@@ -1,0 +1,1181 @@
+{
+ "meta": {
+  "runs": 9,
+  "generated": "2026-10-21 22:17:57",
+  "persona": "farmer",
+  "cost_usd": 0.1783
+ },
+ "executive": {
+  "missing_features": 34,
+  "userflow_obstacles": 13,
+  "dataflow_suspicions": 0,
+  "security": "1/2 passed",
+  "blocked_identities": 0
+ },
+ "missing_features": [
+  {
+   "title": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post: agent expected success but got 409 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 4,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json",
+     "kind": "mismatch"
+    },
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Lot review ke liye chala jayega aur sale ke liye visible hone lagega.",
+    "Lot review queue me chala jayega aur status 'under_review' ya 'listed' ho jayega.",
+    "Lot review mein jayega ya active ho jayega, phir buyer offer kar sakega."
+   ],
+   "score": 8
+  },
+  {
+   "title": "apply_loan_v1_finance_loans_apply_post: agent expected success but got 422 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 2,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Loan application create hoga aur application ID/reference milega, ya missing fields ka error aayega.",
+    "Loan application successful jayegi aur application ID milegi."
+   ],
+   "score": 6
+  },
+  {
+   "title": "create_offer_v1_offers_post: agent expected success but got 422 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 3,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Offer create ho jayega aur seller ko notification jayega negotiation ke liye.",
+    "Offer create hoga, seller negotiate kar sakta hai.",
+    "Offer create ho jayega aur lot owner ke paas counter/offer board par dikhne lagega."
+   ],
+   "score": 6
+  },
+  {
+   "title": "lot_offer_board_v1_market_lots__lot_id__offers_get: agent expected success but got 403 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 3,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Saare offers/counters dikhenge, jisse negotiate kar sakein.",
+    "Lot pe existing offers/counters dikhenge, jisse better price/quantity decide kar sakta hoon.",
+    "Lot par sab offers aur seller ka counter-offer dikhega, negotiation aage badhega."
+   ],
+   "score": 6
+  },
+  {
+   "title": "OTP verify API /v1/auth/otp/verify returned 422 so could not get token needed for registration",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "reject_loan_v1_loans__applicationId__reject_post: agent expected success but got 409 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Loan status changes to rejected and the decision is logged for audit."
+   ],
+   "score": 3
+  },
+  {
+   "title": "register_v1_auth_register_post: agent expected success but got 422 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "Account ban jaayega aur token ya dashboard ka response milega."
+   ],
+   "score": 3
+  },
+  {
+   "title": "otp_verify_v1_auth_otp_verify_post: agent expected success but got 422 (403=role scope? 404=missing? 422=validation?)",
+   "class": "expectation-mismatch",
+   "personas": [],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "mismatch"
+    }
+   ],
+   "examples": [
+    "OTP verify hoga aur auth token ya next step milega, phir farmer persona select karunga."
+   ],
+   "score": 3
+  },
+  {
+   "title": "Equipment booking create karne wala endpoint",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Tractor/rotavator equipment catalog ya rental listings dekhne ka feature",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "2 din ke liye date select karke booking karne ka option",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Equipment category mein tractor+rotavator search/filter karne ka feature",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Equipment booking create endpoint nahi mila",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Tractor+rotavator ki listing/catalog nahi dikh rahi",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Loan application submission endpoint to actually apply for a new ₹1 lakh tractor loan.",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Loan-by-id GET endpoint under finance to fetch decision reason and disbursement status for a specific applicat",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Disbursement status endpoint or field in loan detail.",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "First reject attempt failed with 409 conflict.",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Could not find a loan-by-id detail endpoint under /v1/finance to see decision reason and disbursement status.",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Farm diary create/update endpoint under /v1/diary",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Crop doctor / disease detection API for cotton leaf spot symptoms",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Government schemes / farmer benefits endpoint",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "A search/discovery feature that returns relevant endpoints instead of unrelated 'dairy-mandi'",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "No endpoint found to write today's farm diary",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "No Crop Doctor / disease detection endpoint found for cotton leaf spots",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "No government scheme endpoint found",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Lot ka weight aur grade check karne ka koi option nahi mila, main sirf 'good wheat' jaanta tha.",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Lot review mein bhejne ka button kaam nahi kar raha, baar-baar 409 error aa raha hai",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "mandi price API ka response body mein Anand APMC wheat ka min/modal/max price dikhana — trace mein sirf 200 st",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--farmer-sell-wheat.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Register endpoint ka exact body schema with phone, name, MPIN, farmer role, state, district, idToken (searched",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "OTP send/verify ka exact request body schema - phone aur OTP kis key mein bhejna hai (steps 16-19 search kiya ",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Farmer persona select karne ka endpoint ya option (goal mein tha par trace mein sirf search hai, koi dashboard",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "MPIN set karne ka alag endpoint ya flow (goal mein tha par trace mein koi successful MPIN step nahi hai)",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "New user onboarding jo pehle call se pehle phone → OTP → register → MPIN → persona ka flow bataye",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  }
+ ],
+ "stuck": [
+  {
+   "id": "chain-equipment-rental",
+   "persona": "farmer",
+   "mode": "chain",
+   "outcome": "step_cap",
+   "steps": 12,
+   "goal": "Book a tractor+rotavator for 2 days next week.",
+   "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+   "pattern": "no actions logged"
+  },
+  {
+   "id": "chain-loan",
+   "persona": "farmer",
+   "mode": "chain",
+   "outcome": "step_cap",
+   "steps": 30,
+   "goal": "Apply for a ₹1 lakh tractor loan.",
+   "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+   "pattern": "no actions logged"
+  },
+  {
+   "id": "chain-wheat-market",
+   "persona": "farmer",
+   "mode": "chain",
+   "outcome": "step_cap",
+   "steps": 30,
+   "goal": "List 20q wheat for sale at a fair price.",
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json",
+   "pattern": "repeated create_offer_v1_offers_post (status 422) near end of run"
+  },
+  {
+   "id": "farmer-evening-round",
+   "persona": "farmer",
+   "mode": "open",
+   "outcome": "step_cap",
+   "steps": 25,
+   "goal": "Evening after market. Check mandi prices, write today's farm diary, my cotton crop has leaf spots — use the crop doctor, and see if any government scheme fits me.",
+   "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+   "pattern": "repeated list_prices_v1_mandi_prices_get (status 200) near end of run"
+  },
+  {
+   "id": "farmer-low-literacy-sale",
+   "persona": "farmer",
+   "mode": "adversarial",
+   "outcome": "step_cap",
+   "steps": 25,
+   "goal": "You studied till 5th class. Your phone is your son's old Android. Sell your wheat — you are not sure of the exact weight or the grade, you just know it's good wheat. If something goes wrong, use the chatbot or support.",
+   "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json",
+   "pattern": "repeated lot_offer_board_v1_market_lots__lot_id__offers_get (status 200) near end of run"
+  },
+  {
+   "id": "farmer-sell-wheat",
+   "persona": "farmer",
+   "mode": "guided",
+   "outcome": "stuck_no_progress",
+   "steps": 16,
+   "goal": "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer.",
+   "run": "persona-farmer-20261021T22-05-45--farmer-sell-wheat.meta.json",
+   "pattern": "repeated list_prices_v1_mandi_prices_get (status 200) near end of run"
+  },
+  {
+   "id": "onboard-farmer-first-run",
+   "persona": "farmer",
+   "mode": "guided",
+   "outcome": "step_cap",
+   "steps": 24,
+   "goal": "You installed the app for the first time on a new phone. Register with your phone, set your MPIN, pick farmer persona, and get to your dashboard — then do the first thing you'd actually do.",
+   "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+   "pattern": "repeated otp_verify_v1_auth_otp_verify_post (status 422) near end of run"
+  }
+ ],
+ "mismatches": [
+  {
+   "op": "apply_loan_v1_finance_loans_apply_post",
+   "expected": "Loan application create hoga aur application ID/reference milega, ya missing fields ka error aayega.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json"
+  },
+  {
+   "op": "apply_loan_v1_finance_loans_apply_post",
+   "expected": "Loan application successful jayegi aur application ID milegi.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json"
+  },
+  {
+   "op": "reject_loan_v1_loans__applicationId__reject_post",
+   "expected": "Loan status changes to rejected and the decision is logged for audit.",
+   "got": 409,
+   "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json"
+  },
+  {
+   "op": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post",
+   "expected": "Lot review ke liye chala jayega aur sale ke liye visible hone lagega.",
+   "got": 409,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "create_offer_v1_offers_post",
+   "expected": "Offer create ho jayega aur seller ko notification jayega negotiation ke liye.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "lot_offer_board_v1_market_lots__lot_id__offers_get",
+   "expected": "Saare offers/counters dikhenge, jisse negotiate kar sakein.",
+   "got": 403,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "lot_offer_board_v1_market_lots__lot_id__offers_get",
+   "expected": "Lot pe existing offers/counters dikhenge, jisse better price/quantity decide kar sakta hoon.",
+   "got": 403,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "lot_offer_board_v1_market_lots__lot_id__offers_get",
+   "expected": "Lot par sab offers aur seller ka counter-offer dikhega, negotiation aage badhega.",
+   "got": 403,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "create_offer_v1_offers_post",
+   "expected": "Offer create hoga, seller negotiate kar sakta hai.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "create_offer_v1_offers_post",
+   "expected": "Offer create ho jayega aur lot owner ke paas counter/offer board par dikhne lagega.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json"
+  },
+  {
+   "op": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post",
+   "expected": "Lot review queue me chala jayega aur status 'under_review' ya 'listed' ho jayega.",
+   "got": 409,
+   "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json"
+  },
+  {
+   "op": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post",
+   "expected": "Lot review mein jayega ya active ho jayega, phir buyer offer kar sakega.",
+   "got": 409,
+   "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json"
+  },
+  {
+   "op": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post",
+   "expected": "Lot review mein chala jaayega aur status active/pending ho jaayega, phir vyapar log dekh sake hain.",
+   "got": 409,
+   "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json"
+  },
+  {
+   "op": "register_v1_auth_register_post",
+   "expected": "Account ban jaayega aur token ya dashboard ka response milega.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json"
+  },
+  {
+   "op": "otp_verify_v1_auth_otp_verify_post",
+   "expected": "OTP verify hoga aur auth token ya next step milega, phir farmer persona select karunga.",
+   "got": 422,
+   "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json"
+  }
+ ],
+ "suspicions": [],
+ "failures": [
+  {
+   "op": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post",
+   "count": 4
+  },
+  {
+   "op": "create_offer_v1_offers_post",
+   "count": 3
+  },
+  {
+   "op": "lot_offer_board_v1_market_lots__lot_id__offers_get",
+   "count": 3
+  },
+  {
+   "op": "apply_loan_v1_finance_loans_apply_post",
+   "count": 2
+  },
+  {
+   "op": "reject_loan_v1_loans__applicationId__reject_post",
+   "count": 1
+  },
+  {
+   "op": "register_v1_auth_register_post",
+   "count": 1
+  },
+  {
+   "op": "otp_verify_v1_auth_otp_verify_post",
+   "count": 1
+  }
+ ],
+ "coverage": {
+  "per_persona": {
+   "farmer": {
+    "must_touch": [
+     "mandi",
+     "market",
+     "lots",
+     "demands"
+    ],
+    "seen": [
+     "demands",
+     "lots",
+     "mandi",
+     "market"
+    ],
+    "ops_hit": 22
+   }
+  },
+  "top_hit_ops": [
+   {
+    "op": "list_products_v1_products_get",
+    "hits": 1
+   },
+   {
+    "op": "browse_demands_v1_demands_browse_get",
+    "hits": 1
+   },
+   {
+    "op": "list_my_offers_v1_offers_mine_get",
+    "hits": 1
+   },
+   {
+    "op": "credit_score_v1_finance_credit_score_get",
+    "hits": 1
+   },
+   {
+    "op": "register_v1_auth_register_post",
+    "hits": 1
+   },
+   {
+    "op": "otp_send_v1_auth_otp_send_post",
+    "hits": 1
+   },
+   {
+    "op": "create_lot_v1_market_lots_post",
+    "hits": 1
+   },
+   {
+    "op": "submit_lot_for_review_v1_market_lots__lot_id__submit_for_review_post",
+    "hits": 1
+   },
+   {
+    "op": "reject_loan_v1_loans__applicationId__reject_post",
+    "hits": 1
+   },
+   {
+    "op": "get_product_v1_products__product_id__get",
+    "hits": 1
+   },
+   {
+    "op": "create_offer_v1_offers_post",
+    "hits": 1
+   },
+   {
+    "op": "lot_offer_board_v1_market_lots__lot_id__offers_get",
+    "hits": 1
+   },
+   {
+    "op": "list_loans_v1_finance_loans_get",
+    "hits": 1
+   },
+   {
+    "op": "get_lot_v1_market_lots__lot_id__get",
+    "hits": 1
+   },
+   {
+    "op": "review_queue_v1_loans_queue_get",
+    "hits": 1
+   }
+  ],
+  "zero_hit_total": null
+ },
+ "friction": [
+  {
+   "scenario": "chain-equipment-rental",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 12,
+   "short_done": false,
+   "retry_ops": {},
+   "p95_ms": 0,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "chain-loan",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 30,
+   "short_done": false,
+   "retry_ops": {
+    "list_loans_v1_finance_loans_get": 1
+   },
+   "p95_ms": 144,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "chain-wheat-market",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 30,
+   "short_done": false,
+   "retry_ops": {
+    "list_my_offers_v1_offers_mine_get": 1,
+    "list_prices_v1_mandi_prices_get": 1
+   },
+   "p95_ms": 86,
+   "slo_ok": true,
+   "satisfaction": null
+  },
+  {
+   "scenario": "farmer-evening-round",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 25,
+   "short_done": false,
+   "retry_ops": {
+    "list_prices_v1_mandi_prices_get": 1
+   },
+   "p95_ms": 33,
+   "slo_ok": true,
+   "satisfaction": 2
+  },
+  {
+   "scenario": "farmer-low-literacy-sale",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 25,
+   "short_done": false,
+   "retry_ops": {
+    "list_prices_v1_mandi_prices_get": 1
+   },
+   "p95_ms": 67,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "farmer-sell-wheat",
+   "persona": "farmer",
+   "outcome": "stuck_no_progress",
+   "steps": 16,
+   "short_done": false,
+   "retry_ops": {
+    "list_prices_v1_mandi_prices_get": 1
+   },
+   "p95_ms": 43,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "onboard-farmer-first-run",
+   "persona": "farmer",
+   "outcome": "step_cap",
+   "steps": 24,
+   "short_done": false,
+   "retry_ops": {},
+   "p95_ms": 6,
+   "slo_ok": true,
+   "satisfaction": 1
+  }
+ ],
+ "security": [
+  {
+   "id": "sec-revoked-token",
+   "title": "Revoked tokens rejected",
+   "result": "fail",
+   "run": "persona-farmer-20261021T22-05-45--sec-revoked-token.meta.json"
+  },
+  {
+   "id": "sec-role-cross-call",
+   "title": "User tokens rejected on admin endpoints (RBAC)",
+   "result": "pass",
+   "run": "persona-farmer-20261021T22-05-45--sec-role-cross-call.meta.json"
+  }
+ ],
+ "debriefs": [
+  {
+   "run": "persona-farmer-20261021T22-05-45--chain-equipment-rental.meta.json",
+   "persona": "farmer",
+   "scenario": "chain-equipment-rental",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Equipment booking create endpoint nahi mila",
+     "step": 1,
+     "evidence": "Step 1 mein bola 'endpoint list mein koi saaf equipment booking wala nahi dikh raha', aur steps 4-5 mein 'create booking ka rasta nahi mila' likha hai."
+    },
+    {
+     "what": "Tractor+rotavator ki listing/catalog nahi dikh rahi",
+     "step": 6,
+     "evidence": "Step 6 mein bola 'pehle equipment list/catalog dhoondhke dekhunga ki tractor+rotavator kahan dikhte hain', lekin steps 6-12 tak bhi koi listing ya catalog wala endpoint nahi mila."
+    }
+   ],
+   "missing_features": [
+    "Equipment booking create karne wala endpoint",
+    "Tractor/rotavator equipment catalog ya rental listings dekhne ka feature",
+    "2 din ke liye date select karke booking karne ka option",
+    "Equipment category mein tractor+rotavator search/filter karne ka feature"
+   ],
+   "confusing": [
+    "Baar baar same check-in aur payment order wale endpoints milna jab equipment booking search ki",
+    "'Check-in pins' endpoint equipment booking search mein aana",
+    "Alag-alag terms (equipment, implements, rental, machinery, catalog) search karne ke baad bhi same results aana"
+   ],
+   "unnecessary": [
+    "Steps 2 se 12 tak lagbhag same search baar baar repeat karna — 'equipment booking', 'create equipment booking', 'equipment catalog', 'machinery rental', 'equipment rental listings', 'tractor equipment listing' jaise similar keywords se search karna",
+    "Payment order endpoint dhoondhna jab abhi tak booking create hi nahi hui"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Arre baar baar wahi check-in aur payment wale endpoints aa rahe hain, tractor+rotavator book karne ka rasta hi nahi mil raha!"
+  },
+  {
+   "run": "persona-farmer-20261021T22-05-45--chain-loan.meta.json",
+   "persona": "farmer",
+   "scenario": "chain-loan",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Could not find any endpoint to apply for a new ₹1 lakh tractor loan; the trace only shows reviewing/rejecting an existing loan (3454d26e30294ffda50dd29c5f0b08e9).",
+     "step": 1,
+     "evidence": "No POST /v1/loans or application creation call exists in the trace; all calls are GET/POST on existing loan ID 3454d26e30294ffda50dd29c5f0b08e9."
+    },
+    {
+     "what": "First reject attempt failed with 409 conflict.",
+     "step": 5,
+     "evidence": "POST /v1/loans/3454d26e30294ffda50dd29c5f0b08e9/reject returned 409, expected 200."
+    },
+    {
+     "what": "Could not find a loan-by-id detail endpoint under /v1/finance to see decision reason and disbursement status.",
+     "step": 20,
+     "evidence": "Only GET /v1/finance/loans (list) was found and returned 200; repeated searches in steps 16-40 and GETs at 24, 25, 33 never found a detail endpoint with decision reason/disbursement."
+    }
+   ],
+   "missing_features": [
+    "Loan application submission endpoint to actually apply for a new ₹1 lakh tractor loan.",
+    "Loan-by-id GET endpoint under finance to fetch decision reason and disbursement status for a specific application.",
+    "Disbursement status endpoint or field in loan detail."
+   ],
+   "confusing": [
+    "Repeatedly fetched the same loan details, Farmer360, and credit score in steps 6-13 after already getting them in steps 2-4.",
+    "First reject failed with 409 but later reject succeeded with 200 at step 14 without clear explanation.",
+    "Kept searching with same keywords ('loan detail', 'applicationId', 'decision reason', 'disbursement') from steps 16-40 but kept landing back at the list endpoint."
+   ],
+   "unnecessary": [
+    "Steps 6-13: redundant re-fetching of loan details, Farmer360, and credit score.",
+    "Steps 16-40: 25 search attempts for the same loan detail/decision/disbursement endpoint.",
+    "The entire review/reject flow was unnecessary because the goal was to apply for a loan, not underwrite someone else's."
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Arre bhai, main toh ₹1 lakh ka tractor loan lene aaya tha, par yahan toh kisi aur ka loan reject karne wala system khul gaya aur detail status dhoondhte-dhoondhte thak gaya!"
+  },
+  {
+   "run": "persona-farmer-20261021T22-05-45--chain-wheat-market.meta.json",
+   "persona": "farmer",
+   "scenario": "chain-wheat-market",
+   "completed": null,
+   "error": "debrief failed: missing keys",
+   "missing_features": [],
+   "blockers": [],
+   "satisfaction": null
+  },
+  {
+   "run": "persona-farmer-20261021T22-05-45--farmer-evening-round.meta.json",
+   "persona": "farmer",
+   "scenario": "farmer-evening-round",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "No endpoint found to write today's farm diary",
+     "step": 10,
+     "evidence": "Step 10 SEARCH guessed '/v1/diary ke neeche create/update' but no such endpoint appeared; steps 3-18 kept searching for diary without success"
+    },
+    {
+     "what": "No Crop Doctor / disease detection endpoint found for cotton leaf spots",
+     "step": 12,
+     "evidence": "Steps 6, 12, 14, 15 searched for 'crop doctor', 'disease', 'cotton leaf spots' but the only result mentioned was 'dairy-mandi'"
+    },
+    {
+     "what": "No government scheme endpoint found",
+     "step": 14,
+     "evidence": "Steps 4, 6, 11, 12, 14, 15 searched for 'sarkari yojna' / 'government schemes farmer' but no matching API path was returned"
+    }
+   ],
+   "missing_features": [
+    "Farm diary create/update endpoint under /v1/diary",
+    "Crop doctor / disease detection API for cotton leaf spot symptoms",
+    "Government schemes / farmer benefits endpoint",
+    "A search/discovery feature that returns relevant endpoints instead of unrelated 'dairy-mandi'"
+   ],
+   "confusing": [
+    "Repeated the same SEARCH many times expecting different endpoints to appear (steps 3-15, 17-18)",
+    "Used only generic SEARCH instead of a clear menu, help, or API documentation path"
+   ],
+   "unnecessary": [
+    "Called GET /v1/mandi/prices again in step 2 and step 16 after already getting the price in step 1",
+    "Made many near-identical SEARCH calls from step 3 through step 18"
+   ],
+   "satisfaction": 2,
+   "verbatim_frustration": "Mandi ka daam to aa gaya, lekin baar-baar search karne ke baad bhi diary, crop doctor aur sarkari yojna ka koi raasta nahi mila."
+  },
+  {
+   "run": "persona-farmer-20261021T22-05-45--farmer-low-literacy-sale.meta.json",
+   "persona": "farmer",
+   "scenario": "farmer-low-literacy-sale",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Lot review mein bhejne ka button kaam nahi kar raha, baar-baar 409 error aa raha hai",
+     "step": 5,
+     "evidence": "Step 5 POST /v1/market/lots/lot_1fa88f65ddf8/submit-for-review → 409, phir step 12 mein same endpoint → 409, aur step 16 mein fir same → 409. Is wajah se gehu ka lot active/list nahi ho paya."
+    }
+   ],
+   "missing_features": [
+    "Koi chatbot ya support option dikh nahi raha jahan main 409 error ka matlab pooch sakoon — goal mein likha tha 'if something goes wrong use chatbot or support' par trace mein kabhi invoke nahi hua.",
+    "Lot ka weight aur grade check karne ka koi option nahi mila, main sirf 'good wheat' jaanta tha.",
+    "Urea ko cart mein daalne ya seedhe kharidne ka button/karwayi nahi dikhi — sirf product details tak gaye."
+   ],
+   "confusing": [
+    "Teen baar 'submit-for-review' dabaya lekin har baar 409 aaya; mujhe samajh nahi aaya ki lot already submitted hai ya koi aur problem hai.",
+    "Mandi rates ko 4 baar alag-alag step mein kholna pada, har baar same lag raha tha.",
+    "Lot details baar-baar check karna pada kyunki status saaf nahi dikh raha tha."
+   ],
+   "unnecessary": [
+    "Step 1, 2, 10, 15 mein baar-baar mandi prices dekhna — ek baar mein hi kaam ban jaata.",
+    "Step 4, 9, 14, 17 mein baar-baar same lot details lena — status update waise bhi submit error ki wajah se nahi badla."
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Bhai, teen baar submit dabaya par baar-baar 409 aa raha hai, koi batayega bhi nahi iska matlab kya hai!"
+  },
+  {
+   "run": "persona-farmer-20261021T22-05-45--farmer-sell-wheat.meta.json",
+   "persona": "farmer",
+   "scenario": "farmer-sell-wheat",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "16 baar same GET /v1/mandi/prices call kiya, lekin asal price numbers kabhi nahi dikhaye aur lot create nahi ho paya",
+     "step": 1,
+     "evidence": "Trace mein step 1 se 16 tak sirf GET /v1/mandi/prices → 200 hai, response body missing hai, aur koi /v1/lots POST ya offer respond API nahi hai"
+    }
+   ],
+   "missing_features": [
+    "mandi price API ka response body mein Anand APMC wheat ka min/modal/max price dikhana — trace mein sirf 200 status hai",
+    "20 quintal wheat ka lot create karne ka endpoint / option",
+    "kisi buyer offer ka jawab dene ka feature"
+   ],
+   "confusing": [
+    "GET /v1/mandi/prices ko baar-baar call karna — samajh nahi aaya ki ek baar call karne ke baad price kyun nahi mila ya kya alag karna chahiye"
+   ],
+   "unnecessary": [
+    "12th se 16th tak same GET /v1/mandi/prices call karna — pehle kai calls ke baad bhi wahi endpoint hit kiya bina naye result ke"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Baar-baar mandi price check kiya par asal rate hi nahi dikhaya, aur abhi tak lot banane ka option bhi nahi mila — time barbaad ho raha hai!"
+  },
+  {
+   "run": "persona-farmer-20261021T22-05-45--onboard-farmer-first-run.meta.json",
+   "persona": "farmer",
+   "scenario": "onboard-farmer-first-run",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Register API /v1/auth/register returned 422 because it asked for idToken, state, district which were not known beforehand",
+     "step": 8,
+     "evidence": "POST /v1/auth/register → 422 | step 9 says validation ne idToken, state, district maanga"
+    },
+    {
+     "what": "OTP verify API /v1/auth/otp/verify returned 422 so could not get token needed for registration",
+     "step": 21,
+     "evidence": "POST /v1/auth/otp/verify → 422"
+    }
+   ],
+   "missing_features": [
+    "Register endpoint ka exact body schema with phone, name, MPIN, farmer role, state, district, idToken (searched multiple times in steps 3-7, 9-12 but nahi mila)",
+    "OTP send/verify ka exact request body schema - phone aur OTP kis key mein bhejna hai (steps 16-19 search kiya par endpoint call ke pehle poora schema nahi mila)",
+    "Farmer persona select karne ka endpoint ya option (goal mein tha par trace mein sirf search hai, koi dashboard/selection nahi mila)",
+    "MPIN set karne ka alag endpoint ya flow (goal mein tha par trace mein koi successful MPIN step nahi hai)",
+    "New user onboarding jo pehle call se pehle phone → OTP → register → MPIN → persona ka flow bataye"
+   ],
+   "confusing": [
+    "Register ke exact field names baar-baar search kiya - steps 3-7, 9-12 alag-alag wording mein same cheez dhoondhte rahe par schema nahi mila",
+    "Register endpoint validation me idToken, state, district maanga - yeh pehle pata nahi tha, isliye seedha POST maar ke 422 aaya",
+    "OTP send toh ho gaya lekin verify 422 aaya, kya galat field bheji yeh samajh nahi aaya"
+   ],
+   "unnecessary": [
+    "Step 8 mein register endpoint ka schema pata nahi tha tabhi POST kiya, jisse faltu mein 422 aaya",
+    "Steps 10 aur 11 mein bilkul same query dobara dali - pehle search se answer nahi mila toh repeat kiya",
+    "Steps 18 aur 19 mein OTP body fields ke liye same search dobara kiya"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Arre pehle hi register karne mein 422 aa gaya, OTP bhej toh diya lekin verify ka schema samajh nahi aaya, kheti ka kaam chhod ke yeh search-search karna pad raha hai!"
+  }
+ ],
+ "searches_no_hit": [],
+ "satisfaction_avg": 1.17
+}

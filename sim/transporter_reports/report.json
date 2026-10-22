@@ -1,0 +1,349 @@
+{
+ "meta": {
+  "runs": 2,
+  "generated": "2026-10-21 21:56:45",
+  "cost_usd": 0.0205
+ },
+ "executive": {
+  "missing_features": 10,
+  "userflow_obstacles": 4,
+  "dataflow_suspicions": 0,
+  "security": "0/0 passed",
+  "blocked_identities": 0
+ },
+ "missing_features": [
+  {
+   "title": "Koi load select, quote, accept, OTP handover ya wallet check tak pahuncha nahi.",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 3
+  },
+  {
+   "title": "Bar bar tomato/dairy jaisi galat commodity ka rate aa raha tha, wheat ka nahi",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 2
+  },
+  {
+   "title": "Query params dhoondhne mein madad karne wala helper/search ya dropdown jisme mandi aur commodity select kar sa",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Urea ka rate check karne ka alag saral option",
+   "class": "feature-gap",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Anand mandi ke ghehu ka sahi rate nahi mila kyunki /v1/mandi/prices endpoint ke query params pata nahi chale",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Price check ke bina aage lot create nahi kar paya, offer bhi nahi dekh paya",
+   "class": "bug-suspicion",
+   "personas": [
+    "farmer"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "farmer",
+     "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Origin-destination city filter ya search option loads list mein",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Endpoint query parameters ki clear documentation / schema",
+   "class": "feature-gap",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+     "kind": "debrief"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "Rajkot se Ahmedabad ka load kabhi nahi mila, sirf Malegaon-Surat / Nasik-Surat wale loads aa rahe the.",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  },
+  {
+   "title": "list_open_loads endpoint ke query params / filter schema ka pata nahi chala.",
+   "class": "bug-suspicion",
+   "personas": [
+    "transporter"
+   ],
+   "runs": 1,
+   "evidence": [
+    {
+     "persona": "transporter",
+     "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+     "kind": "blocker"
+    }
+   ],
+   "score": 1
+  }
+ ],
+ "stuck": [
+  {
+   "id": "farmer-sell-wheat",
+   "persona": "farmer",
+   "mode": "guided",
+   "outcome": "stuck_no_progress",
+   "steps": 27,
+   "goal": "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer.",
+   "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+   "pattern": "repeated list_prices_v1_mandi_prices_get (status 200) near end of run"
+  },
+  {
+   "id": "transporter-run-trip",
+   "persona": "transporter",
+   "mode": "guided",
+   "outcome": "stuck_repeat",
+   "steps": 23,
+   "goal": "Find a load Rajkot to Ahmedabad for my pickup, quote/accept it, run the trip with the OTP handover, and check my wallet after.",
+   "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+   "pattern": "repeated list_open_loads_v1_transport_loads_get (status 200) near end of run"
+  }
+ ],
+ "mismatches": [],
+ "suspicions": [],
+ "failures": [],
+ "coverage": {
+  "per_persona": {
+   "transporter": {
+    "must_touch": [
+     "transport",
+     "bookings",
+     "wallet"
+    ],
+    "seen": [
+     "transport"
+    ],
+    "ops_hit": 1
+   },
+   "farmer": {
+    "must_touch": [
+     "mandi",
+     "market",
+     "lots",
+     "demands"
+    ],
+    "seen": [
+     "mandi"
+    ],
+    "ops_hit": 1
+   }
+  },
+  "top_hit_ops": [
+   {
+    "op": "list_prices_v1_mandi_prices_get",
+    "hits": 1
+   },
+   {
+    "op": "list_open_loads_v1_transport_loads_get",
+    "hits": 1
+   }
+  ],
+  "zero_hit_total": null
+ },
+ "friction": [
+  {
+   "scenario": "farmer-sell-wheat",
+   "persona": "farmer",
+   "outcome": "stuck_no_progress",
+   "steps": 27,
+   "short_done": false,
+   "retry_ops": {
+    "list_prices_v1_mandi_prices_get": 1
+   },
+   "p95_ms": 109,
+   "slo_ok": true,
+   "satisfaction": 1
+  },
+  {
+   "scenario": "transporter-run-trip",
+   "persona": "transporter",
+   "outcome": "stuck_repeat",
+   "steps": 23,
+   "short_done": false,
+   "retry_ops": {
+    "list_open_loads_v1_transport_loads_get": 1
+   },
+   "p95_ms": 91,
+   "slo_ok": true,
+   "satisfaction": 1
+  }
+ ],
+ "security": [],
+ "debriefs": [
+  {
+   "run": "oneshot-20261021T21-52-56--farmer-sell-wheat.meta.json",
+   "persona": "farmer",
+   "scenario": "farmer-sell-wheat",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Anand mandi ke ghehu ka sahi rate nahi mila kyunki /v1/mandi/prices endpoint ke query params pata nahi chale",
+     "step": 2,
+     "evidence": "SEARCH: 'Mujhe Anand mandi mein ghehu ka aaj ka rate chahiye, kaunse params dene hain pata nahi.'"
+    },
+    {
+     "what": "Bar bar tomato/dairy jaisi galat commodity ka rate aa raha tha, wheat ka nahi",
+     "step": 13,
+     "evidence": "SEARCH: 'baar baar tomato ka rate aa raha hai'"
+    },
+    {
+     "what": "Price check ke bina aage lot create nahi kar paya, offer bhi nahi dekh paya",
+     "step": 26,
+     "evidence": "Trace mein sirf GET /v1/mandi/prices aur SEARCH calls hain, koi lot creation ya offer response nahi"
+    }
+   ],
+   "missing_features": [
+    "Query params dhoondhne mein madad karne wala helper/search ya dropdown jisme mandi aur commodity select kar sake",
+    "Hinglish/voice input se seedha rate nikalne ka option",
+    "Urea ka rate check karne ka alag saral option"
+   ],
+   "confusing": [
+    "Ek hi GET endpoint /v1/mandi/prices ko 20+ baar alag-alag expectation se try karna",
+    "Search mein baar baar 'sahi query params kya hain' puchna lekin jawab se samajh nahi aaya"
+   ],
+   "unnecessary": [
+    "Steps 2-4 aur 9-10, 13, 15-16, 20 mein same params related search repeat karna",
+    "Steps 5-26 mein same API endpoint ko bar-bar bina naye params ke bulaana"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Bhai, itni der se Anand ka gehu ka bhav nikaal raha hoon, har baar kuchh aur hi aa jaata hai, params ka koi sahi jawaab nahi milta, dimaag kharab ho gaya!"
+  },
+  {
+   "run": "oneshot-20261021T21-54-59--transporter-run-trip.meta.json",
+   "persona": "transporter",
+   "scenario": "transporter-run-trip",
+   "completed": false,
+   "blockers": [
+    {
+     "what": "Rajkot se Ahmedabad ka load kabhi nahi mila, sirf Malegaon-Surat / Nasik-Surat wale loads aa rahe the.",
+     "step": 3,
+     "evidence": "Trace mein baar-baar 'abhi list mein Rajkot-Ahmedabad load nahi dikha' aur 'Malegaon-Surat aa raha hai' likha hai, jaise steps 3, 6, 8, 12, 13, 16, 17, 19 mein."
+    },
+    {
+     "what": "list_open_loads endpoint ke query params / filter schema ka pata nahi chala.",
+     "step": 3,
+     "evidence": "User ne multiple SEARCH calls mein pucha: 'Endpoint ke query params dekh lunga taaki sahi filter laga saku', 'list_open_loads ke query params chahiye', 'filter query params kya hain' — par koi response se params nahi mile."
+    },
+    {
+     "what": "Koi load select, quote, accept, OTP handover ya wallet check tak pahuncha nahi.",
+     "step": 20,
+     "evidence": "Saare 20 steps sirf loads dhoondhne tak limited hain; koi POST /bid, POST /accept, OTP verify, ya GET /wallet call nahi hai."
+    }
+   ],
+   "missing_features": [
+    "Origin-destination city filter ya search option loads list mein",
+    "Endpoint query parameters ki clear documentation / schema",
+    "Load ID se directly quote/bid karne ka easy rasta"
+   ],
+   "confusing": [
+    "GET /v1/transport/loads baar-baar same bina koi query param change kiye maarna, phir bhi result same aana",
+    "List mein Rajkot-Ahmedabad ke bajaye Malegaon-Surat / Nasik-Surat loads dikhna",
+    "Query params dhoondhne ke liye SEARCH karna padna bajaye UI mein filters dikhne ke"
+   ],
+   "unnecessary": [
+    "Steps 1-2, 4-10, 14, 15, 18, 20 — sab same GET /v1/transport/loads repeat ho gaye bina filter try kiye",
+    "Steps 3, 6, 8, 12, 13, 16, 17, 19 — ek hi query params wala SEARCH baar-baar repeat ho gaya"
+   ],
+   "satisfaction": 1,
+   "verbatim_frustration": "Bhai itni der laga di, phir bhi Rajkot se Ahmedabad ka ek bhi load nahi mila, aur wallet toh dekhe hi nahi — bas Malegaon-Surat dikhaata raha, time barbaad ho gaya."
+  }
+ ],
+ "searches_no_hit": [],
+ "satisfaction_avg": 1.0
+}

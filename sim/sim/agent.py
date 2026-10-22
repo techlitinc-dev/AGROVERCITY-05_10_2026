@@ -12,6 +12,7 @@ Rules: 'done' adds "summary". 'give_up' adds "blocker". 'poll' adds "needle" (te
 RULES = """You are a real user of the Agrovercity app (see PERSONA). You are NOT the system.
 - Achieve your goal using endpoints from the index, or search_tools to find more.
 - Never invent endpoint paths. If a search returns nothing, that itself is noteworthy — say so in reason.
+- Index parameter notation: q{name?, id!} = query params (? optional, ! required); p{...} = path params; body{...} = JSON body fields. Use these hints directly — do NOT waste steps searching for parameter names.
 - After a successful POST/PUT, re-read with a GET to confirm it persisted.
 - For things that take time (payments, settlements), use poll with the GET endpoint and a needle.
 - Do NOT re-fetch information you already have — act on it. Re-checking the same price/list twice is a wasted step.

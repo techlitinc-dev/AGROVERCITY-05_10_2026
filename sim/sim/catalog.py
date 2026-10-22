@@ -15,6 +15,7 @@ _NON_ADMIN_BLOCK = ("admin",)
 def fetch() -> list[dict]:
     url = f"{settings()['backend_url']}/openapi.json"
     spec = httpx.get(url, timeout=30).json()
+    schemas = spec.get("components", {}).get("schemas", {})
     ops = []
     for path, methods in spec.get("paths", {}).items():
         for method, op in methods.items():
@@ -28,10 +29,56 @@ def fetch() -> list[dict]:
                 "tag": (op.get("tags") or ["misc"])[0],
                 "admin": any(t.lower().startswith(_NON_ADMIN_BLOCK) for t in (op.get("tags") or []))
                          or "/admin" in path,
+                "params": _params(op, schemas),
             })
     RUNS_DIR.mkdir(exist_ok=True)
     CATALOG_PATH.write_text(json.dumps({"ops": ops}, indent=1))
     return ops
+
+
+def _schema_kind(schema: dict, schemas: dict) -> str:
+    """Compact type label for a parameter/property schema."""
+    if not isinstance(schema, dict):
+        return "str"
+    if "$ref" in schema:
+        schema = schemas.get(schema["$ref"].rsplit("/", 1)[-1], {})
+    if "enum" in schema and schema["enum"]:
+        return "|".join(str(e) for e in schema["enum"][:6])
+    t = schema.get("type") or ("obj" if schema.get("properties") else "str")
+    return {"integer": "int", "number": "float", "boolean": "bool", "array": "list",
+            "object": "obj", "string": "str"}.get(t, str(t))
+
+
+def _params(op: dict, schemas: dict) -> dict:
+    """Extract query/path params and top-level body field names — the discovery fix."""
+    out = {"query": [], "path": [], "body": []}
+    for p in op.get("parameters", []) or []:
+        entry = {"name": p.get("name", "?"), "required": bool(p.get("required")),
+                 "kind": _schema_kind(p.get("schema", {}), schemas)}
+        if p.get("description"):
+            entry["hint"] = str(p["description"])[:80]
+        loc = p.get("in", "query")
+        if loc in out:
+            out[loc].append(entry)
+    body = (op.get("requestBody", {}) or {}).get("content", {}) or {}
+    media = body.get("application/json") or next(iter(body.values()), {}) or {}
+    bschema = media.get("schema", {}) or {}
+    if bschema.get("$ref"):
+        bschema = schemas.get(bschema["$ref"].rsplit("/", 1)[-1], {}) or {}
+    props = bschema.get("properties", {}) or {}
+    out["body"] = [{"name": k, "required": k in (bschema.get("required") or []),
+                    "kind": _schema_kind(v, schemas)} for k, v in props.items()]
+    return out
+
+
+def _fmt_params(p: dict) -> str:
+    bits = []
+    for loc, mark in (("query", "q"), ("path", "p")):
+        if p.get(loc):
+            bits.append(f"{mark}{{{', '.join(x['name'] + ('!' if x['required'] else '?') for x in p[loc])}}}")
+    if p.get("body"):
+        bits.append(f"body{{{', '.join(x['name'] + ('!' if x['required'] else '?') for x in p['body'])}}}")
+    return " ".join(bits)
 
 
 def _slug(method: str, path: str) -> str:
@@ -55,7 +102,9 @@ def search(ops: list[dict], query: str, k: int = 5, allow_admin: bool = False) -
     for op in ops:
         if op["admin"] and not allow_admin:
             continue
-        hay = f"{op['tag']} {op['path']} {op['summary']}".lower()
+        pnames = " ".join(x["name"] for sec in ("query", "path", "body")
+                          for x in (op.get("params") or {}).get(sec, []))
+        hay = f"{op['tag']} {op['path']} {op['summary']} {pnames}".lower()
         tokens = set(re.findall(r"[a-z0-9]+", hay))
         score = len(q & tokens)
         if score:
@@ -83,5 +132,9 @@ def tool_index(ops: list[dict], persona_id: str, whitelist: list[str] | None) ->
     for op in ops:
         if not whitelist and op["tag"] in ("auth", "users", "notifications") and op not in picked:
             picked.append(op)
-    lines = [f"- {o['op_id']} {o['method']} {o['path']} — {o['summary']}" for o in picked]
+    lines = []
+    for o in picked:
+        hint = _fmt_params(o.get("params") or {})
+        lines.append(f"- {o['op_id']} {o['method']} {o['path']} — {o['summary']}"
+                     + (f" · {hint}" if hint else ""))
     return "\n".join(lines[:80])          # hard cap — the prefix must stay small (specs §3)

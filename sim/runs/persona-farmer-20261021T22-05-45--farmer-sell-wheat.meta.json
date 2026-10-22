@@ -1,0 +1,46 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "farmer-sell-wheat",
+  "persona": "farmer",
+  "suite": "smoke",
+  "mode": "guided",
+  "max_steps": 30,
+  "goal": "Sell 20 quintal wheat from my harvest. First check today's mandi price in Anand, then create a lot and respond to any offer.",
+  "checkpoints": [
+   "mandi price viewed",
+   "lot created with quantity+price",
+   "offer received or solicited",
+   "lot status live/negotiated"
+  ],
+  "tags": [
+   "core",
+   "trade"
+  ],
+  "ease_focus": "can a farmer go from price-check to live lot without help?"
+ },
+ "outcome": {
+  "outcome": "stuck_no_progress",
+  "steps": 16,
+  "act": {
+   "action": "call_endpoint",
+   "reason": "Baar baar Pimpalgaon ka daam aa raha hai, mujhe Anand mandi ka aaj ka bhav chahiye.",
+   "endpoint_id": "list_prices_v1_mandi_prices_get",
+   "params": {
+    "query": {
+     "crop": "wheat",
+     "district": "Anand"
+    }
+   },
+   "expectation": "Anand mandi mein wheat ka aaj ka min/max/modal price milega.",
+   "satisfaction": 3
+  }
+ },
+ "budget": {
+  "usd": 0.1358,
+  "calls": 158,
+  "in_tokens": 611470,
+  "out_tokens": 73473,
+  "cached_tokens": 0
+ }
+}

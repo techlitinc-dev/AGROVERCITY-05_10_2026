@@ -1,0 +1,28 @@
+{
+ "run_id": "persona-farmer-20261021T22-05-45",
+ "scenario": {
+  "id": "farmer-low-literacy-sale",
+  "persona": "farmer",
+  "suite": "full",
+  "mode": "adversarial",
+  "max_steps": 25,
+  "goal": "You studied till 5th class. Your phone is your son's old Android. Sell your wheat \u2014 you are not sure of the exact weight or the grade, you just know it's good wheat. If something goes wrong, use the chatbot or support.",
+  "tags": [
+   "ease",
+   "recovery",
+   "low-literacy"
+  ],
+  "ease_focus": "no jargon, forgiving forms, help reachable in 2 taps"
+ },
+ "outcome": {
+  "outcome": "step_cap",
+  "steps": 25
+ },
+ "budget": {
+  "usd": 0.1729,
+  "calls": 197,
+  "in_tokens": 776738,
+  "out_tokens": 93995,
+  "cached_tokens": 0
+ }
+}
