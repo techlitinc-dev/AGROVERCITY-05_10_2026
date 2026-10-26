@@ -6,6 +6,7 @@ import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from firebase_admin import auth as firebase_auth
+from google.api_core.exceptions import ResourceExhausted
 from pydantic import ValidationError
 
 from app.core.config import settings
@@ -102,7 +103,10 @@ async def check_phone_status(body: PhoneCheckRequest):
     phone = _normalize_phone(body.phone)
     if not phone:
         _error(422, "VALIDATION_ERROR", "valid phone number is required")
-    users = await query("users", [("phone", "==", phone)])
+    try:
+        users = await query("users", [("phone", "==", phone)])
+    except ResourceExhausted:
+        _error(503, "STORE_QUOTA_EXHAUSTED", "database quota exhausted — retry shortly or upgrade the Firebase plan")
     if not users:
         return PhoneCheckResponse(exists=False, hasMpin=False)
     user_with_mpin = next((u for u in users if u.get("mpinHash")), None)

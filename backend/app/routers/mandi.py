@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.cache import cache_get, cache_set
+from app.core.cache import cache_delete, cache_get, cache_set
 from app.core.db import get_doc, query
 from app.core.deps import current_user_id
 from app.routers.users import require_role
+from app.services import agmarknet, agmarknet_sync
 from app.services.mandi_forecast import CACHE_COLLECTION as FORECAST_COLLECTION
 from app.services.mandi_forecast import forecast_doc_id
 from app.services.mandi_smart import build_smart_select_state, decide_smart_select
@@ -16,6 +17,13 @@ from app.services.users import get_user
 router = APIRouter(prefix="/mandi", tags=["mandi"])
 
 MANDI_ROLES = ("farmer", "seller", "broker", "directBuyer")
+
+# Agmarknet live feed caches: dashboard rows 15 min, filter catalog 24 h,
+# manual refresh lock 10 min (the upstream scrape itself takes ~30 s).
+LIVE_CACHE_TTL_SECONDS = 900
+FILTERS_CACHE_TTL_SECONDS = 24 * 3600
+REFRESH_LOCK_TTL_SECONDS = 600
+REFRESH_RUNNING_TTL_SECONDS = 300
 
 # Smart mandi selection (brief M12, SDR) — question set / AI-feature tag / cache
 # live in services/mandi_smart.py (rule 10); the AI call is never triggered by a
@@ -115,6 +123,8 @@ async def compare(
     if quantityQuintals <= 0:
         _error(422, "INVALID_QUANTITY", "quantityQuintals must be greater than 0", {"quantityQuintals": "must be greater than 0"})
     docs = await query("mandi_prices", [], limit=1000)
+    # National Agmarknet aggregates are benchmarks, not sellable mandis.
+    docs = [d for d in docs if d.get("source") != "agmarknet"]
     docs = [d for d in docs if _crop_match(target_crop, d.get("commodity", ""))]
     if not docs:
         # Fallback to all nearby mandis for benchmark comparison
@@ -230,6 +240,8 @@ async def smart_select(body: SmartSelectRequest, user: dict = Depends(_mandi_use
         _error(422, "INVALID_QUANTITY", "quantityQuintals must be at least 1")
 
     docs = await query("mandi_prices", [], limit=1000)
+    # National Agmarknet aggregates are benchmarks, not sellable mandis.
+    docs = [d for d in docs if d.get("source") != "agmarknet"]
     docs = [d for d in docs if _crop_match(crop, d.get("commodity", ""))]
     if not docs:
         _error(
@@ -317,3 +329,143 @@ async def smart_select(body: SmartSelectRequest, user: dict = Depends(_mandi_use
             "candidates": candidates,
         }
     }
+
+
+# ---------- Agmarknet live feed (captcha-free dashboard endpoint) ----------
+
+
+def _live_error(exc: agmarknet.AgmarknetError):
+    _error(502, "AGMARKNET_UNAVAILABLE", str(exc))
+
+
+@router.get("/live/filters")
+async def live_filters(user: dict = Depends(_mandi_user)):
+    """Commodity groups / commodities / states + allowed date range."""
+    cached = await cache_get("agmarknet:filters")
+    if cached is not None:
+        return json.loads(cached)
+    try:
+        data = await agmarknet.fetch_filters()
+    except agmarknet.AgmarknetError as exc:
+        _live_error(exc)
+    price_range = (data.get("range_data") or [{}])[0].get("price") or {}
+    payload = {
+        "groups": [
+            {"id": g["id"], "name": g["cmdt_grp_name"]}
+            for g in data.get("cmdt_group_data", [])
+            if isinstance(g.get("id"), int)
+        ],
+        "commodities": [
+            {"id": c["cmdt_id"], "name": c["cmdt_name"], "groupId": c.get("cmdt_group_id")}
+            for c in data.get("cmdt_data", [])
+        ],
+        "states": [
+            {"id": s["state_id"], "name": s["state_name"]}
+            for s in data.get("state_data", [])
+        ],
+        "marketsCount": len(data.get("market_data") or []),
+        "fromDate": price_range.get("from_date"),
+        "toDate": price_range.get("to_date"),
+        "source": "agmarknet.gov.in",
+    }
+    await cache_set("agmarknet:filters", json.dumps(payload), ttl_seconds=FILTERS_CACHE_TTL_SECONDS)
+    return payload
+
+
+@router.get("/live")
+async def live_prices(
+    groupId: int | None = None,
+    commodityId: int | None = None,
+    commodity: str | None = None,
+    date: str | None = None,
+    user: dict = Depends(_mandi_user),
+):
+    """Daily modal price / arrival / MSP rows straight from Agmarknet."""
+    key = f"agmarknet:live:{groupId}-{commodityId}-{commodity}-{date}"
+    cached = await cache_get(key)
+    if cached is not None:
+        return json.loads(cached)
+
+    commodity_ids = [commodityId] if commodityId else None
+    if commodity and not commodity_ids:
+        filters = await agmarknet.fetch_filters()
+        wanted = commodity.strip().lower()
+        commodity_ids = [
+            c["cmdt_id"]
+            for c in filters.get("cmdt_data", [])
+            if wanted in c["cmdt_name"].lower()
+        ][:20]
+        if not commodity_ids:
+            _error(404, "NO_DATA", f"no Agmarknet commodity matches '{commodity}'")
+
+    try:
+        records = await agmarknet.fetch_dashboard(
+            group_ids=[groupId] if groupId else None,
+            commodity_ids=commodity_ids,
+            on_date=date,
+        )
+    except agmarknet.AgmarknetError as exc:
+        _live_error(exc)
+
+    data = [n for n in (agmarknet_sync.normalize_record(r) for r in records) if n]
+    data.sort(key=lambda r: r["modalPrice"], reverse=True)
+    payload = {
+        "data": data,
+        "count": len(data),
+        "reportedDate": max((r["reportedDate"] for r in data), default=None),
+        "source": "agmarknet.gov.in",
+        "fetchedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await cache_set(key, json.dumps(payload), ttl_seconds=LIVE_CACHE_TTL_SECONDS)
+    return payload
+
+
+@router.post("/live/refresh")
+async def live_refresh(user: dict = Depends(_mandi_user)):
+    """Scrape Agmarknet now and upsert into mandi_prices / mandi_price_history.
+
+    Throttled: while a refresh runs (or ran < 10 min ago) the last result is
+    returned instead of hitting the upstream again.
+    """
+    running = await cache_get("agmarknet:refresh:lock")
+    if running is not None:
+        return {**json.loads(running), "throttled": True}
+    await cache_set("agmarknet:refresh:lock", json.dumps({"status": "running"}), ttl_seconds=REFRESH_LOCK_TTL_SECONDS)
+    try:
+        result = await agmarknet_sync.refresh_from_agmarknet()
+    except Exception:  # noqa: BLE001 — clear the lock so the next call can retry
+        await cache_delete("agmarknet:refresh:lock")
+        raise
+    result["throttled"] = False
+    await cache_set("agmarknet:refresh:lock", json.dumps(result), ttl_seconds=REFRESH_LOCK_TTL_SECONDS)
+    return result
+
+
+@router.get("/analytics/movers")
+async def analytics_movers(
+    groupId: int | None = None,
+    commodity: str | None = None,
+    user: dict = Depends(_mandi_user),
+):
+    """Top gainers / losers by 1-day change + MSP spread (Agmarknet data)."""
+    try:
+        records = await agmarknet.fetch_dashboard(
+            group_ids=[groupId] if groupId else None
+        )
+        rows = [n for n in (agmarknet_sync.normalize_record(r) for r in records) if n]
+        source = "live"
+    except agmarknet.AgmarknetError:
+        rows = await agmarknet_sync.stored_snapshot()
+        source = "stored"
+    if commodity:
+        wanted = commodity.strip().lower()
+        rows = [r for r in rows if wanted in r["commodity"].lower()]
+    if not rows:
+        _error(404, "NO_DATA", "no Agmarknet data available yet — run POST /mandi/live/refresh")
+    payload = {
+        **agmarknet_sync.movers(rows),
+        "count": len(rows),
+        "reportedDate": max((r["reportedDate"] for r in rows), default=None),
+        "source": source,
+    }
+    return payload

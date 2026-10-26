@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 
 from app.core.cache import cache_get, cache_set
 from app.core.config import settings
-from app.core.db import get_doc, query, query_cursor, set_doc
+from app.core.db import delete_doc, get_doc, query, query_cursor, set_doc
 from app.core.deps import current_user_id
 from app.models.advisory import (
+    SCAN_MODES,
     CropPlanConfirmIn,
     CropPlanConfirmOut,
     CropPlanIn,
@@ -140,7 +141,9 @@ async def sowing_intent(body: SowingIntentIn, user: dict = Depends(_farmer)):
         await require_data_sharing(user["id"])
     except ConsentRequiredError as exc:
         _error(403, "CONSENT_REQUIRED", str(exc))
-    season = advisory_service.current_season()
+    # Season auto-detection: derive the cropping season from the planned
+    # sowing month (falls back to the current calendar season).
+    season = advisory_service.season_for_date(body.plannedDate)
     await set_doc(
         "crop_cycles",
         f"{user['id']}_{body.crop}_{season}",
@@ -157,7 +160,7 @@ async def sowing_intent(body: SowingIntentIn, user: dict = Depends(_farmer)):
             "createdAt": datetime.now(timezone.utc).isoformat(),
         },
     )
-    return {"recorded": True, "isIntent": True}
+    return {"recorded": True, "isIntent": True, "season": season}
 
 
 # ---------- Disease scan (M9, SDR + vision) ----------
@@ -168,17 +171,22 @@ async def disease_scan(
     image: UploadFile = File(...),
     plotId: str | None = Form(None),
     cropHint: str | None = Form(None),
+    scanMode: str | None = Form(None),
     user: dict = Depends(_farmer),
 ):
+    mode = (scanMode or "general").strip().lower()
+    if mode not in SCAN_MODES:
+        mode = "general"
     data = await storage.validate_upload(image)
     blob_path, _ = storage.upload_user_file(
         user["id"], data, image.filename or "scan", image.content_type, prefix="scans"
     )
     photo_url = storage.signed_download_url(blob_path)
+    model_bytes = advisory_service.downscale_for_vision(data)
 
     # Gate the image BEFORE diagnosis (M9); the gate model call lives in
     # services/advisory.py (rule 10 — never a model outside the gateway).
-    gate = await advisory_service.disease_image_gate(data)
+    gate = await advisory_service.disease_image_gate(model_bytes)
     if not gate["is_plant_leaf"] or not gate["quality_ok"]:
         retake = RETAKE_NOT_LEAF if not gate["is_plant_leaf"] else RETAKE_BLURRY
         return {
@@ -189,7 +197,7 @@ async def disease_scan(
             "scanId": None,
         }
 
-    results = await get_disease_adapter().scan(data, crop_hint=cropHint)
+    results = await get_disease_adapter().scan(model_bytes, crop_hint=cropHint, scan_mode=mode)
     demo = settings.ai_provider == "shim"
     top = results[0] if results else None
     confidence = float(top.confidence) if top else 0.0
@@ -202,6 +210,7 @@ async def disease_scan(
             "scan_id": scan_id,
             "farmerId": user["id"],
             "plotId": plotId,
+            "scanMode": mode,
             "photo_url": photo_url,
             "diagnosis": top.model_dump() if top else None,
             "confidence": confidence,
@@ -243,6 +252,7 @@ async def disease_scan(
         "gate": {**gate, "passed": True},
         "retake": None,
         "results": [result.model_dump() for result in results],
+        "scanMode": mode,
         "demo": demo,
         "scanId": scan_id,
     }
@@ -266,6 +276,7 @@ async def disease_scans(
             {
                 "scanId": doc.get("scan_id"),
                 "plotId": doc.get("plotId"),
+                "scanMode": doc.get("scanMode", "general"),
                 "photoUrl": doc.get("photo_url"),
                 "diagnosis": doc.get("diagnosis"),
                 "confidence": doc.get("confidence"),
@@ -275,6 +286,15 @@ async def disease_scans(
         ],
         "nextCursor": next_cursor,
     }
+
+
+@router.delete("/disease-scans/{scan_id}")
+async def delete_disease_scan(scan_id: str, user: dict = Depends(_farmer)):
+    doc = await get_doc("disease_scans", scan_id)
+    if doc is None or doc.get("farmerId") != user["id"]:
+        _error(404, "NOT_FOUND", "scan not found")
+    await delete_doc("disease_scans", scan_id)
+    return {"deleted": True, "scanId": scan_id}
 
 
 # ---------- NPK calculator ----------
@@ -290,7 +310,8 @@ async def npk(body: NpkIn, user: dict = Depends(_farmer)):
 
 @router.post("/crop-plan", response_model=CropPlanOut)
 async def crop_plan(body: CropPlanIn, user: dict = Depends(_farmer)):
-    """Suggest 2-3 crops with rationale. Never creates a crop_cycle (`suggest`)."""
+    """Suggest 2-3 detailed crop plans. Never creates a crop_cycle (`suggest`)."""
+    season = body.season or advisory_service.current_season()
     cache_key = advisory_service.crop_plan_cache_key(body)
     cached = await cache_get(cache_key)
     if cached is not None:
@@ -299,6 +320,7 @@ async def crop_plan(body: CropPlanIn, user: dict = Depends(_farmer)):
             return CropPlanOut(
                 options=[CropPlanOption(**opt) for opt in payload["options"]],
                 source=payload.get("source", "fallback"),
+                season=season,
                 cached=True,
                 decisionId=None,
                 automationLevel="suggest",
@@ -312,7 +334,9 @@ async def crop_plan(body: CropPlanIn, user: dict = Depends(_farmer)):
         json.dumps({"options": [opt.model_dump() for opt in options], "source": source}),
         ttl_seconds=CROP_PLAN_CACHE_TTL_SECONDS,
     )
-    return CropPlanOut(options=options, source=source, cached=False, automationLevel="suggest")
+    return CropPlanOut(
+        options=options, source=source, season=season, cached=False, automationLevel="suggest"
+    )
 
 
 @router.post("/crop-plan/confirm", response_model=CropPlanConfirmOut)
@@ -322,7 +346,13 @@ async def crop_plan_confirm(
     user: dict = Depends(_farmer),
 ):
     """Farmer-confirmed plan: create a real crop_cycle + schedule its tasks."""
-    season = body.season or advisory_service.current_season()
+    # Season: explicit choice wins; otherwise auto-detect from the planned date.
+    if body.season:
+        season = body.season
+    elif body.plannedDate:
+        season = advisory_service.season_for_date(body.plannedDate)
+    else:
+        season = advisory_service.current_season()
     cycle_id = f"{user['id']}_{body.crop}_{season}"
     existing = await get_doc("crop_cycles", cycle_id)
     created = existing is None
@@ -340,6 +370,7 @@ async def crop_plan_confirm(
                 "isIntent": False,
                 "fromPlanner": True,
                 "rationale": body.rationale,
+                "planDetails": body.planDetails,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
             },
         )

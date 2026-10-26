@@ -15,6 +15,18 @@ apiClient.interceptors.request.use((config) => {
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // The instance default Content-Type above makes axios's default
+  // transformRequest JSON-encode FormData bodies (image:{} → 422 on
+  // multipart endpoints). Drop it so the browser sets multipart with a
+  // boundary instead. Applies to every direct apiClient FormData call too
+  // (uploads, KYC, deal/purchase attachments, disease scans).
+  if (config.data instanceof FormData && config.headers) {
+    if (typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type');
+    } else {
+      delete (config.headers as Record<string, unknown>)['Content-Type'];
+    }
+  }
   return config;
 });
 

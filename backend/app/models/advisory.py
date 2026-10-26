@@ -50,11 +50,26 @@ class CropPlanOption(BaseModel):
     rationale: str
     # Indicative revenue estimate in integer paisa; 0 when no mandi data exists.
     estimatedRevenuePaisa: int = 0
+    # Detailed agronomy plan (AI-generated; sensible agronomy defaults in the
+    # deterministic fallback). Everything is indicative advisory, not a quote.
+    variety: str = ""
+    sowingWindow: str = ""
+    durationDays: int = 0
+    waterRequirement: str = ""
+    expectedYieldQuintalPerAcre: float = 0
+    estimatedCostPaisa: int = 0
+    expectedProfitPaisa: int = 0
+    marketOutlook: str = ""
+    risks: list[str] = []
+    tasks: list[str] = []
 
 
 class CropPlanOut(BaseModel):
     options: list[CropPlanOption]
     source: Literal["ai", "fallback"]
+    # The season the plan was generated for — the explicitly requested one, or
+    # the auto-detected current season when the client omitted it.
+    season: str = ""
     cached: bool = False
     decisionId: str | None = None
     automationLevel: str = "suggest"
@@ -67,6 +82,9 @@ class CropPlanConfirmIn(BaseModel):
     plotId: str | None = None
     plannedDate: str | None = None
     rationale: str | None = None
+    # Full planner option (crop plan details as shown to the farmer) — stored
+    # on the created crop_cycle so the AI-plan dashboard can re-render it.
+    planDetails: dict | None = None
 
 
 class CropPlanConfirmOut(BaseModel):
@@ -85,6 +103,15 @@ class PestDisease(BaseModel):
     organicTreatment: str
     dosage: str
     estimatedCost: float
+    # Richer clinical readout (optional so scans stored before this change
+    # still validate).
+    severity: str = "moderate"  # low | moderate | high
+    preventiveCare: str = ""  # cultural / field-hygiene practices
+    biologicalControl: str = ""  # biocontrol agents & IPM tactics
+    safetyPrecautions: str = ""  # PPE, re-entry & pre-harvest intervals
+
+
+SCAN_MODES = ("disease", "pest", "nutrient", "weed", "general")
 
 
 class NpkIn(BaseModel):

@@ -105,3 +105,22 @@ export function getStatusColor(status: string): { bg: string; text: string; bord
 export function cn(...classes: (string | boolean | undefined | null)[]): string {
   return classes.filter(Boolean).join(' ');
 }
+
+/**
+ * Indian cropping season auto-detection from a calendar month — mirrors
+ * `current_season()` in the backend advisory service.
+ * Kharif: Jun–Oct, Zaid: Mar–May, Rabi: Nov–Feb.
+ */
+export function detectSeason(date: Date = new Date()): 'Kharif' | 'Rabi' | 'Zaid' {
+  const month = date.getMonth() + 1;
+  if (month >= 6 && month <= 10) return 'Kharif';
+  if (month >= 3 && month <= 5) return 'Zaid';
+  return 'Rabi';
+}
+
+/** Season auto-detection for a planned sowing date (YYYY-MM-DD). */
+export function detectSeasonForDate(dateString: string): 'Kharif' | 'Rabi' | 'Zaid' {
+  const d = new Date(`${dateString}T00:00:00`);
+  if (isNaN(d.getTime())) return detectSeason();
+  return detectSeason(d);
+}

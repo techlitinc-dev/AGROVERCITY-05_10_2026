@@ -43,6 +43,65 @@ async def languages():
     return {"languages": LANGUAGES, "regionalMapping": REGIONAL_MAPPING}
 
 
+@router.get("/reference/crops-suggest")
+async def crops_suggest(q: str = "", limit: int = 8):
+    """Lightweight crop catalog search for typeahead dropdowns.
+
+    Merges the `crops` reference collection (vernacular names, aliases,
+    category) with the MSP-notified crop names, deduped by name. An empty
+    query returns the first `limit` catalog entries so the dropdown can show
+    suggestions as soon as it is focused.
+    """
+    needle = (q or "").strip().lower()
+    cap = max(1, min(limit, 25))
+    items: list[dict] = []
+    seen: set[str] = set()
+
+    def _matches(*values) -> bool:
+        if not needle:
+            return True
+        for value in values:
+            if isinstance(value, (list, tuple, set)):
+                if any(needle in str(v).lower() for v in value if v is not None):
+                    return True
+            elif value is not None and needle in str(value).lower():
+                return True
+        return False
+
+    catalog = await query("crops", [], limit=1000)
+    for doc in catalog:
+        key = str(doc.get("name") or "").lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if _matches(doc.get("name"), doc.get("vernacularName"), doc.get("aliases")):
+            items.append(
+                {
+                    "name": doc.get("name"),
+                    "vernacularName": doc.get("vernacularName"),
+                    "category": doc.get("category"),
+                    "mspPaisa": doc.get("msp_paisa"),
+                }
+            )
+    msp_docs = await query("msp_reference", [], limit=500)
+    for doc in msp_docs:
+        key = str(doc.get("crop") or "").lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if _matches(doc.get("crop")):
+            items.append(
+                {
+                    "name": doc.get("crop"),
+                    "vernacularName": None,
+                    "category": "msp",
+                    "mspPaisa": doc.get("msp_paisa"),
+                }
+            )
+    items.sort(key=lambda item: str(item["name"]).lower())
+    return {"items": items[:cap], "query": q}
+
+
 @router.get("/reference/msp")
 async def msp_reference():
     """Crop → minimum support price in integer paisa.

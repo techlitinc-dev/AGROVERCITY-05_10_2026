@@ -1,0 +1,303 @@
+{
+  "summary": {
+    "total": 49,
+    "passed": 49,
+    "passRate": "100.0%"
+  },
+  "results": [
+    {
+      "id": "PRE-01",
+      "name": "Backend /v1/health check",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "PRE-02",
+      "name": "SuperAdmin login (+919000000001)",
+      "status": "PASS",
+      "details": "Admin session ready"
+    },
+    {
+      "id": "PRE-03",
+      "name": "Farmer (Ramesh Patil) login (+919822000001)",
+      "status": "PASS",
+      "details": "Farmer session ready"
+    },
+    {
+      "id": "TC-TRN-01",
+      "name": "Send & verify login OTP on Suresh's number (+919822044710)",
+      "status": "PASS",
+      "details": "OTP verified"
+    },
+    {
+      "id": "TC-TRN-02",
+      "name": "Resend OTP cooldown check",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-TRN-04",
+      "name": "Register rolepicker as Transporter (Suresh Jadhav, transport)",
+      "status": "PASS",
+      "details": "User user_9822044710"
+    },
+    {
+      "id": "TC-TRN-06",
+      "name": "Login with phone + MPIN (1234)",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-TRN-07",
+      "name": "Wrong MPIN rejected",
+      "status": "PASS",
+      "details": "HTTP 401"
+    },
+    {
+      "id": "TC-TRN-08",
+      "name": "Complete transporter business profile (Suresh Jadhav Logistics)",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-TRN-09",
+      "name": "Submit Transport KYC (Aadhaar, PAN, Bank, RC, DL) & [ADMIN] Approval",
+      "status": "PASS",
+      "details": "KYC case verified"
+    },
+    {
+      "id": "TC-TRN-14",
+      "name": "Add bank account (HDFC) & penny-drop verification",
+      "status": "PASS",
+      "details": "Account 9709615288364f569575aca6800387f6 verified"
+    },
+    {
+      "id": "TC-TRN-16",
+      "name": "Logistics Cockpit Dashboard KPIs & live data",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-TRN-21",
+      "name": "Add Vehicle 1 (Tata Ace MH-15-AB-4471) & [ADMIN] Verify",
+      "status": "PASS",
+      "details": "Vehicle veh_bc5df88e650a verified"
+    },
+    {
+      "id": "TC-TRN-23",
+      "name": "Add Vehicle 2 (Eicher 6-Wheeler MH-12-GH-8820) & [ADMIN] Verify",
+      "status": "PASS",
+      "details": "Vehicle veh_f758449496f3 verified"
+    },
+    {
+      "id": "TC-TRN-26",
+      "name": "Vehicle availability calendar toggle",
+      "status": "PASS",
+      "details": "3 days set available"
+    },
+    {
+      "id": "TC-TRN-28",
+      "name": "Vehicle GPS ping updates last location (Pimpalgaon Baswant)",
+      "status": "PASS",
+      "details": "lat=20.1705, lng=73.9850"
+    },
+    {
+      "id": "SETUP-BOOKING",
+      "name": "Farmer Ramesh creates transport booking with geo coordinates",
+      "status": "PASS",
+      "details": "Booking trb_56e934c1c52b"
+    },
+    {
+      "id": "TC-TRN-31",
+      "name": "Accept job with verified vehicle (Tata Ace MH-15-AB-4471)",
+      "status": "PASS",
+      "details": "status=accepted"
+    },
+    {
+      "id": "TC-TRN-38",
+      "name": "Trip detail 7-step tracker",
+      "status": "PASS",
+      "details": "Status: accepted"
+    },
+    {
+      "id": "TC-TRN-67",
+      "name": "Detention timer during loading (start/stop pickup waiting)",
+      "status": "PASS",
+      "details": "Waiting recorded"
+    },
+    {
+      "id": "TC-TRN-39",
+      "name": "Trip execution milestones (accepted -> arrivedPickup -> loading -> enRoute)",
+      "status": "PASS",
+      "details": "status=enRoute"
+    },
+    {
+      "id": "TC-TRN-42",
+      "name": "Illegal status transition is rejected",
+      "status": "PASS",
+      "details": "HTTP 409 (409 Conflict)"
+    },
+    {
+      "id": "TC-TRN-48",
+      "name": "Ping active trip GPS location mid-route",
+      "status": "PASS",
+      "details": "Location logged"
+    },
+    {
+      "id": "TC-TRN-51",
+      "name": "Route map & distance calculation with coordinates",
+      "status": "PASS",
+      "details": "Distance 34.12849381408795 km"
+    },
+    {
+      "id": "TC-TRN-53",
+      "name": "Full POD-OTP physical delivery flow (Receiver Dattaram Sawant)",
+      "status": "PASS",
+      "details": "status=delivered"
+    },
+    {
+      "id": "TC-TRN-60",
+      "name": "Electronic Bilty / Lorry Receipt (LR)",
+      "status": "PASS",
+      "details": "LR No: LR-2026-34C1C52B"
+    },
+    {
+      "id": "TC-TRN-62",
+      "name": "Record real weighbridge slip (2000 kg Net Onion, WB-2026-4471)",
+      "status": "PASS",
+      "details": "Weighbridge recorded"
+    },
+    {
+      "id": "TC-TRN-63",
+      "name": "Trip receipt (fare, commission, escrow)",
+      "status": "PASS",
+      "details": "Fare \u20b9None"
+    },
+    {
+      "id": "TC-TRN-65",
+      "name": "Add trip expenses (Diesel \u20b91200, Toll \u20b9425) and verify net profit",
+      "status": "PASS",
+      "details": "Total expenses: \u20b91625.0"
+    },
+    {
+      "id": "TC-TRN-76",
+      "name": "Browse, search and filter the load board",
+      "status": "PASS",
+      "details": "7 open loads available"
+    },
+    {
+      "id": "TC-TRN-78",
+      "name": "Place bid on open load (Quoted \u20b91150)",
+      "status": "PASS",
+      "details": "Bid submitted"
+    },
+    {
+      "id": "TC-TRN-83",
+      "name": "AI Matched loads with routing reasons",
+      "status": "PASS",
+      "details": "7 matched loads"
+    },
+    {
+      "id": "TC-TRN-86",
+      "name": "Fare estimate (Tata Ace vs Eicher 6-Wheeler for 210 km)",
+      "status": "PASS",
+      "details": "Ace=\u20b97850.0, Eicher=\u20b913350.0"
+    },
+    {
+      "id": "TC-TRN-88",
+      "name": "Fare trends & corridor market bands",
+      "status": "PASS",
+      "details": "Trends retrieved"
+    },
+    {
+      "id": "TC-TRN-89",
+      "name": "Wallet view & TDS 194-O summary",
+      "status": "PASS",
+      "details": "Balance: \u20b90"
+    },
+    {
+      "id": "TC-TRN-90",
+      "name": "Escrow release on delivery (10% commission + TDS deducted)",
+      "status": "PASS",
+      "details": "HTTP 409"
+    },
+    {
+      "id": "TC-TRN-97",
+      "name": "Personal platform ledger (penalties & compensation)",
+      "status": "PASS",
+      "details": "0 ledger entries"
+    },
+    {
+      "id": "TC-TRN-99",
+      "name": "Rate the farmer after delivery (5 stars)",
+      "status": "PASS",
+      "details": "Rating submitted"
+    },
+    {
+      "id": "TC-TRN-102",
+      "name": "Transporter ratings received and given",
+      "status": "PASS",
+      "details": "Ratings: 0"
+    },
+    {
+      "id": "TC-TRN-104",
+      "name": "Compliance stats & strike ledger",
+      "status": "PASS",
+      "details": "Strikes: []"
+    },
+    {
+      "id": "TC-TRN-107",
+      "name": "Logistics Analytics is gated on Free plan (402 ENTITLEMENT_EXCEEDED)",
+      "status": "PASS",
+      "details": "HTTP 402 Pro-gated as specified"
+    },
+    {
+      "id": "TC-TRN-113",
+      "name": "Add diary note (Diesel refill \u20b91500) & earn agriCoins",
+      "status": "PASS",
+      "details": "+15 AgriCoins awarded"
+    },
+    {
+      "id": "TC-TRN-119",
+      "name": "Add Fleet Driver",
+      "status": "PASS",
+      "details": "HTTP 402 (Pro feature gate working as intended)"
+    },
+    {
+      "id": "TC-TRN-120",
+      "name": "List fleet drivers",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-TRN-122",
+      "name": "Create, view and revoke sanitized public trip share link",
+      "status": "PASS",
+      "details": "Share lifecycle verified"
+    },
+    {
+      "id": "TC-TRN-129",
+      "name": "Load templates lifecycle (create, list, delete)",
+      "status": "PASS",
+      "details": "Templates verified"
+    },
+    {
+      "id": "TC-TRN-130",
+      "name": "Transporter notification bell sweep",
+      "status": "PASS",
+      "details": "3 notifications present"
+    },
+    {
+      "id": "TC-TRN-134",
+      "name": "Spec-intended absence: No phone leak before booking confirmed",
+      "status": "PASS",
+      "details": "Compliant"
+    },
+    {
+      "id": "TC-TRN-135",
+      "name": "Spec-intended absence: In-app chat used; no raw VoIP buttons",
+      "status": "PASS",
+      "details": "Compliant"
+    }
+  ]
+}

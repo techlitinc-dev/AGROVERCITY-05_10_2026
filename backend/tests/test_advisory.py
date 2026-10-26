@@ -116,10 +116,15 @@ async def test_intent_recorded_with_flag(client, user_store):
         headers=auth(token),
     )
     assert resp.status_code == 201
-    assert resp.json() == {"recorded": True, "isIntent": True}
-    doc = user_store["crop_cycles/uid-1_onion_Kharif"]
+    body = resp.json()
+    assert body["recorded"] is True
+    assert body["isIntent"] is True
+    # Season is auto-detected from the planned sowing month.
+    assert body["season"] in ("Kharif", "Rabi", "Zaid")
+    doc = user_store[f"crop_cycles/uid-1_onion_{body['season']}"]
     assert doc["isIntent"] is True
     assert doc["district"] == "Nashik"
+    assert doc["season"] == body["season"]
 
 
 async def test_intent_without_consent_403(client, user_store):
@@ -194,7 +199,7 @@ async def test_saturation_red_emits_task(client, user_store):
 async def test_disease_gate_blocks_non_leaf(client, user_store, monkeypatch):
     from app.services.ai import gateway
 
-    async def fake_analyze(image_bytes, prompt, schema=None, module="x"):
+    async def fake_analyze(image_bytes, prompt, schema=None, module="x", model=None):
         return {"is_plant_leaf": False, "quality_ok": True, "confidence": 0.9}
 
     monkeypatch.setattr(gateway, "analyze_image", fake_analyze)
@@ -215,7 +220,7 @@ async def test_disease_gate_blocks_non_leaf(client, user_store, monkeypatch):
 async def test_disease_low_confidence_creates_ticket(client, user_store, monkeypatch):
     from app.services.ai import gateway
 
-    async def fake_analyze(image_bytes, prompt, schema=None, module="x"):
+    async def fake_analyze(image_bytes, prompt, schema=None, module="x", model=None):
         return {
             "is_plant_leaf": True,
             "quality_ok": True,
@@ -270,3 +275,73 @@ async def test_disease_treatment_emits_task(client, user_store):
     assert resp.status_code == 200
     tasks = [doc for key, doc in user_store.items() if key.startswith("tasks/")]
     assert any(doc.get("kind") == "disease_treatment" for doc in tasks)
+
+
+async def test_disease_scan_richer_prescription_fields(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    result = resp.json()["results"][0]
+    assert result["severity"] in ("low", "moderate", "high")
+    assert "preventiveCare" in result
+    assert "biologicalControl" in result
+    assert "safetyPrecautions" in result
+
+
+async def test_disease_scan_mode_persisted_and_echoed(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        data={"scanMode": "pest"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["scanMode"] == "pest"
+    scan_id = body["scanId"]
+    history = await client.get("/v1/advisory/disease-scans", headers=auth(token))
+    assert history.status_code == 200
+    row = next(r for r in history.json()["data"] if r["scanId"] == scan_id)
+    assert row["scanMode"] == "pest"
+
+
+async def test_disease_scan_invalid_mode_falls_back_to_general(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        data={"scanMode": "not-a-mode"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["scanMode"] == "general"
+
+
+async def test_disease_scan_delete_removes_report(client, user_store):
+    token = seed_user(user_store)
+    resp = await client.post(
+        "/v1/advisory/disease-scan",
+        files={"image": ("scan.png", PNG_BYTES, "image/png")},
+        headers=auth(token),
+    )
+    assert resp.status_code == 200
+    scan_id = resp.json()["scanId"]
+
+    deleted = await client.delete(f"/v1/advisory/disease-scans/{scan_id}", headers=auth(token))
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True, "scanId": scan_id}
+
+    history = await client.get("/v1/advisory/disease-scans", headers=auth(token))
+    assert scan_id not in [r["scanId"] for r in history.json()["data"]]
+    assert not any(key.startswith(f"disease_scans/{scan_id}") for key in user_store)
+
+    # Second delete is a 404, and unknown ids 404 too.
+    again = await client.delete(f"/v1/advisory/disease-scans/{scan_id}", headers=auth(token))
+    assert again.status_code == 404
+    missing = await client.delete("/v1/advisory/disease-scans/scan_nope", headers=auth(token))
+    assert missing.status_code == 404

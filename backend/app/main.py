@@ -1,3 +1,5 @@
+import logging
+
 import sentry_sdk
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -330,19 +332,29 @@ async def request_validation_handler(request: Request, exc: RequestValidationErr
 @app.on_event("startup")
 async def startup():
     init_firebase()
-    await seed_schemes()
-    await seed_insurance_rates()
-    await seed_insurance_schemes()
-    await seed_content()
-    await seed_gyan()
-    await seed_livestock()
-    await seed_tree()
-    await seed_seasonal()
-    await seed_cold_storage()
-    await seed_courses()
-    await seed_ai_config()
-    await seed_plans()
-    await seed_superadmin()
+    # Content seeds are idempotent dev fixtures. A transient Firestore error
+    # (e.g. a quota window) must not take the whole API down — log and continue;
+    # the failed seed retries on the next boot.
+    seeds = (
+        seed_schemes,
+        seed_insurance_rates,
+        seed_insurance_schemes,
+        seed_content,
+        seed_gyan,
+        seed_livestock,
+        seed_tree,
+        seed_seasonal,
+        seed_cold_storage,
+        seed_courses,
+        seed_ai_config,
+        seed_plans,
+        seed_superadmin,
+    )
+    for seed in seeds:
+        try:
+            await seed()
+        except Exception as exc:  # noqa: BLE001 — startup seeds never block boot
+            logging.getLogger(__name__).warning("startup seed %s skipped: %s", seed.__name__, exc)
 
 
 # TODO(day-later): remove or keep env-gated permanently before release.

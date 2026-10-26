@@ -68,6 +68,7 @@ export const Sidebar: React.FC = () => {
             items: [
               { to: '/farmer', label: 'Farmer Cockpit', icon: LayoutDashboard },
               { to: '/farmer/crops', label: 'My Crops / माझी पिके', icon: Sprout },
+              { to: '/farmer/crop-plan', label: 'AI Crop Plan / पीक नियोजन', icon: Sparkles },
               { to: '/farmer/crop-doctor', label: 'AI Crop Doctor (रोग निदान)', icon: Stethoscope },
               { to: '/farmer/mandi', label: 'Live Mandi Prices', icon: TrendingUp },
               { to: '/farmer/lots', label: 'Sell Produce Lots', icon: Package },

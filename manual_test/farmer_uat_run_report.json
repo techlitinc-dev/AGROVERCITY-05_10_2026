@@ -1,0 +1,267 @@
+{
+  "summary": {
+    "total": 43,
+    "passed": 42,
+    "passRate": "97.7%"
+  },
+  "results": [
+    {
+      "id": "PRE-01",
+      "name": "Backend /v1/health check",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "PRE-02",
+      "name": "SuperAdmin login (+919000000001)",
+      "status": "PASS",
+      "details": "Admin session ready"
+    },
+    {
+      "id": "TC-FRM-01",
+      "name": "Register new farmer account with OTP & MPIN",
+      "status": "PASS",
+      "details": "User user_9822000001"
+    },
+    {
+      "id": "TC-FRM-02",
+      "name": "Login with phone + MPIN (4321)",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-FRM-03",
+      "name": "Wrong MPIN rejection",
+      "status": "PASS",
+      "details": "HTTP 401"
+    },
+    {
+      "id": "TC-FRM-06",
+      "name": "Submit KYC & Admin verification",
+      "status": "PASS",
+      "details": "Case kyc_user_982_farmer verified"
+    },
+    {
+      "id": "TC-FRM-08",
+      "name": "Add primary bank account (SBI Nashik)",
+      "status": "PASS",
+      "details": "Account 761cbd6bde5245969c890295a1d2340d primary=True"
+    },
+    {
+      "id": "TC-FRM-09",
+      "name": "Verify bank account with penny-drop",
+      "status": "PASS",
+      "details": "verifyStatus=verified"
+    },
+    {
+      "id": "TC-FRM-11",
+      "name": "Edit profile farm details (Black Cotton soil, Drip)",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-FRM-12",
+      "name": "Search, import and download 7/12 land record (Gat 312)",
+      "status": "PASS",
+      "details": "Record rec-312 imported & PDF fetched"
+    },
+    {
+      "id": "TC-FRM-13",
+      "name": "Upload vault documents (Soil Health Card)",
+      "status": "PASS",
+      "details": "Doc ID 251b250b1193436996d6c7f07f354bfb"
+    },
+    {
+      "id": "TC-FRM-14",
+      "name": "Enable data sharing consent",
+      "status": "PASS",
+      "details": "dataSharing=True, location=True"
+    },
+    {
+      "id": "TC-FRM-18",
+      "name": "Weather capsule for Pimpalgaon Baswant (Nashik)",
+      "status": "PASS",
+      "details": "temp=None\u00b0C"
+    },
+    {
+      "id": "TC-FRM-21",
+      "name": "Record sowing intent (Onion planned for 2026-10-25)",
+      "status": "PASS",
+      "details": "Cycle created"
+    },
+    {
+      "id": "TC-FRM-26",
+      "name": "AI Crop Doctor disease diagnostics",
+      "status": "FAIL",
+      "details": "HTTP 404 (Known Gap - Endpoint Missing)"
+    },
+    {
+      "id": "TC-FRM-30",
+      "name": "Browse mandi prices (Nashik)",
+      "status": "PASS",
+      "details": "5 prices returned"
+    },
+    {
+      "id": "TC-FRM-31",
+      "name": "Mandi price compare across APMCs",
+      "status": "PASS",
+      "details": "Comparison retrieved"
+    },
+    {
+      "id": "TC-FRM-36",
+      "name": "Create Mandi price alert (Onion > \u20b91600/q)",
+      "status": "PASS",
+      "details": "Alert created ID pal_6b4ec19b1f95"
+    },
+    {
+      "id": "TC-FRM-38",
+      "name": "Post produce lot (Onion 20q @ \u20b91450/q) - Draft/Open",
+      "status": "PASS",
+      "details": "Lot lot_0a0d5afdbc36"
+    },
+    {
+      "id": "TC-FRM-41",
+      "name": "Edit lot details (Updated rate \u20b91480, grade A+)",
+      "status": "PASS",
+      "details": "HTTP 200"
+    },
+    {
+      "id": "TC-FRM-39",
+      "name": "Submit lot for admin review",
+      "status": "PASS",
+      "details": "status=pending_review"
+    },
+    {
+      "id": "TC-FRM-46",
+      "name": "Lot offer board & trust summary",
+      "status": "PASS",
+      "details": "Offers=0"
+    },
+    {
+      "id": "TC-FRM-50",
+      "name": "Browse buyer demands",
+      "status": "PASS",
+      "details": "6 active demands"
+    },
+    {
+      "id": "TC-FRM-59",
+      "name": "Vehicle catalog & fare estimate (35 km Tata Ace)",
+      "status": "PASS",
+      "details": "\u20b91725.0"
+    },
+    {
+      "id": "TC-FRM-60",
+      "name": "Book transport (Tata Ace with transit insurance)",
+      "status": "PASS",
+      "details": "Booking trb_79630a4b342b"
+    },
+    {
+      "id": "TC-FRM-63",
+      "name": "Booking milestones and electronic Bilty",
+      "status": "PASS",
+      "details": "Bilty generated"
+    },
+    {
+      "id": "TC-FRM-69",
+      "name": "Post load to auction board (20q Onion)",
+      "status": "PASS",
+      "details": "Load load_5ca9a16978"
+    },
+    {
+      "id": "TC-FRM-72",
+      "name": "Save recurring load template",
+      "status": "PASS",
+      "details": "Template ID tmpl_5bcee28710"
+    },
+    {
+      "id": "TC-FRM-74",
+      "name": "Add farm diary expense entry (DAP fertilizer \u20b92700)",
+      "status": "PASS",
+      "details": "Entry e0aafa25b96c4202ad6c34aa4b2ce3e0"
+    },
+    {
+      "id": "TC-FRM-75",
+      "name": "Farm P&L analytics summary",
+      "status": "PASS",
+      "details": "Expense: \u20b90"
+    },
+    {
+      "id": "TC-FRM-94",
+      "name": "Book Soil Health Test for Gat 312",
+      "status": "PASS",
+      "details": "Booking st_40a4f82aa855"
+    },
+    {
+      "id": "TC-FRM-97",
+      "name": "Register animal (Gir Cow Pashu Aadhaar) & log milk yield",
+      "status": "PASS",
+      "details": "Animal c_c967788517"
+    },
+    {
+      "id": "TC-FRM-99",
+      "name": "Browse vets & book clinic visit",
+      "status": "PASS",
+      "details": "Vet vet-1 booked"
+    },
+    {
+      "id": "TC-FRM-105",
+      "name": "Browse Gaushalas & organic manure availability",
+      "status": "PASS",
+      "details": "3 gaushalas listed"
+    },
+    {
+      "id": "TC-FRM-108",
+      "name": "Carbon credit estimate & Tree plantation registration",
+      "status": "PASS",
+      "details": "Plantation registered"
+    },
+    {
+      "id": "TC-FRM-114",
+      "name": "Crop Insurance policies & PMFBY premium calculation",
+      "status": "PASS",
+      "details": "Farmer Premium \u20b92100.00"
+    },
+    {
+      "id": "TC-FRM-121",
+      "name": "Kisan credit score & KCC EMI calculation",
+      "status": "PASS",
+      "details": "Score=650, EMI=\u20b94326.34"
+    },
+    {
+      "id": "TC-FRM-124",
+      "name": "Apply for KCC crop loan (\u20b950,000 @ 7%)",
+      "status": "PASS",
+      "details": "Loan App ID 904243fd768f4725928a8707d8ed7470"
+    },
+    {
+      "id": "TC-FRM-135",
+      "name": "Browse Krishi Mall & add items to cart",
+      "status": "PASS",
+      "details": "Product prod-1 added to cart"
+    },
+    {
+      "id": "TC-FRM-138",
+      "name": "Checkout Krishi Mall order with sandbox UPI",
+      "status": "PASS",
+      "details": "Order None"
+    },
+    {
+      "id": "TC-FRM-148",
+      "name": "Kisan Coins balance & reward tier",
+      "status": "PASS",
+      "details": "Coins balance: 45"
+    },
+    {
+      "id": "TC-FRM-156",
+      "name": "Browse equipment rental catalog & slot availability",
+      "status": "PASS",
+      "details": "2 equipment listed"
+    },
+    {
+      "id": "TC-FRM-161",
+      "name": "Notifications list & alert preferences",
+      "status": "PASS",
+      "details": "HTTP 200"
+    }
+  ]
+}

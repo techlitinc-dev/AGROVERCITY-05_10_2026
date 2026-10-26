@@ -1,4 +1,4 @@
-import { post, readList, readOne } from './http';
+import { del, post, readList, readOne } from './http';
 
 /** Advisory namespace — AI agronomist scans, crop plans, pest radar. */
 export const advisory = {
@@ -10,37 +10,40 @@ export const advisory = {
   sowingIntent: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/advisory/sowing-intent', payload),
 
-  /** POST /advisory/disease-scan */
-  diseaseScan: (payload: FormData | Record<string, unknown>): Promise<any> =>
-    post<any>('/advisory/disease-scan', payload),
+  /** POST /advisory/disease-scan — multipart; ~60 s timeout for slow vision calls. */
+  diseaseScan: (
+    payload: FormData | Record<string, unknown>,
+    opts?: { timeout?: number; onUploadProgress?: (percent: number) => void },
+  ): Promise<any> => post<any>('/advisory/disease-scan', payload, opts),
 
   /** GET /advisory/disease-scans */
   diseaseScans: (): Promise<unknown[]> => readList<unknown[]>('/advisory/disease-scans'),
+
+  /** DELETE /advisory/disease-scans/{scanId} — remove one of my scan reports. */
+  deleteDiseaseScan: (scanId: string): Promise<any> =>
+    del<any>(`/advisory/disease-scans/${scanId}`),
 
   /** POST /advisory/npk */
   npkAdvice: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/advisory/npk', payload),
 
-  /** POST /advisory/crop-plan */
+  /**
+   * POST /advisory/crop-plan — long-running: the planner calls the AI
+   * agronomist and can take a few minutes on a slow network (results cache
+   * 6h server-side).
+   */
   cropPlan: (payload: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>('/advisory/crop-plan', payload),
+    post<unknown>('/advisory/crop-plan', payload, { timeout: 300000 }),
+
+  /** GET /reference/crops-suggest — crop catalog typeahead (name/vernacular/aliases). */
+  cropSuggest: (q: string): Promise<unknown> =>
+    readOne<unknown>('/reference/crops-suggest', { params: { q, limit: 8 } }),
 
   /** POST /advisory/crop-plan/confirm */
   confirmCropPlan: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/advisory/crop-plan/confirm', payload),
 
-  /** GET /advisory/pest-radar */
-  pestRadar: (params?: Record<string, unknown>): Promise<unknown[]> =>
-    readList<unknown[]>('/advisory/pest-radar', { params }),
-
   /** GET /admin/... excluded — admin advisory lives in admin.fieldOps */
-  /** POST /soil-tests/book */
-  bookSoilTest: (payload: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>('/soil-tests/book', payload),
-
-  /** GET /soil-tests */
-  soilTests: (): Promise<unknown[]> => readList<unknown[]>('/soil-tests'),
-
   /** Climate: GET /climate/carbon-potential */
   carbonPotential: (params?: Record<string, unknown>): Promise<unknown> =>
     readOne<unknown>('/climate/carbon-potential', { params }),

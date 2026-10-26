@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   TrendingUp,
   Search,
@@ -16,6 +16,7 @@ import {
   ArrowRight,
   ShieldCheck,
   Star,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -48,6 +49,333 @@ interface ChartPoint {
   day: string;
   price: number;
 }
+
+interface LiveRow {
+  commodity: string;
+  group: string;
+  modalPrice: number;
+  oneDayAgoPrice: number | null;
+  twoDayAgoPrice: number | null;
+  arrivalMt: number | null;
+  msp: number | null;
+  reportedDate: string;
+  trend: string;
+  changePercent: number | null;
+  aboveMsp: boolean | null;
+}
+
+/** Agmarknet live feed — scraped daily modal prices / arrivals / MSP. */
+const AgmarknetLiveSection: React.FC<{ onNotice: (msg: string) => void }> = ({ onNotice }) => {
+  const [groups, setGroups] = useState<{ id: number; name: string }[]>([]);
+  const [commodities, setCommodities] = useState<{ id: number; name: string; groupId?: number }[]>([]);
+  const [groupId, setGroupId] = useState<number | 'all'>('all');
+  const [commodityId, setCommodityId] = useState<number | null>(null);
+  const [commodityQuery, setCommodityQuery] = useState('');
+  const [rows, setRows] = useState<LiveRow[]>([]);
+  const [reportedDate, setReportedDate] = useState<string | null>(null);
+  const [movers, setMovers] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    mandi
+      .liveFilters()
+      .then((f: any) => {
+        if (!active) return;
+        setGroups(asArray(f?.groups) as { id: number; name: string }[]);
+        setCommodities(asArray(f?.commodities) as { id: number; name: string; groupId?: number }[]);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params: Record<string, unknown> = {};
+      if (commodityId) params.commodityId = commodityId;
+      else if (groupId !== 'all') params.groupId = groupId;
+      const res: any = await mandi.live(params);
+      const list = Array.isArray(res) ? res : asArray(res?.data);
+      setRows(list as unknown as LiveRow[]);
+      setReportedDate(res?.reportedDate ?? null);
+    } catch (e) {
+      setError(apiErrorMessage(e) || 'Live Agmarknet prices are unavailable right now.');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [groupId, commodityId]);
+
+  const loadMovers = useCallback(async () => {
+    try {
+      setMovers(await mandi.movers(groupId !== 'all' ? { groupId } : undefined));
+    } catch {
+      setMovers(null);
+    }
+  }, [groupId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+  useEffect(() => {
+    loadMovers();
+  }, [loadMovers]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const res: any = await mandi.liveRefresh();
+      if (res?.throttled) {
+        onNotice(`Agmarknet data already refreshed at ${res?.refreshedAt?.slice(11, 16) || '—'} — showing cached snapshot.`);
+      } else {
+        onNotice(
+          `Agmarknet synced: ${res?.commodities ?? 0} commodities · ${res?.historyPoints ?? 0} history points · reported ${res?.reportedDate ?? '—'}.`,
+        );
+      }
+      await Promise.all([load(), loadMovers()]);
+    } catch (e) {
+      setError(apiErrorMessage(e) || 'Refresh failed. Please try again shortly.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const commodityOptions = useMemo(() => {
+    const q = commodityQuery.trim().toLowerCase();
+    const inGroup = commodities.filter((c) => groupId === 'all' || c.groupId === groupId);
+    const pool = q ? inGroup.filter((c) => c.name.toLowerCase().includes(q)) : inGroup;
+    return pool.slice(0, 60);
+  }, [commodities, groupId, commodityQuery]);
+
+  const trendIcon = (r: LiveRow) =>
+    r.trend === 'up' ? (
+      <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
+        <ArrowUpRight className="w-3.5 h-3.5" /> {r.changePercent !== null ? `${r.changePercent.toFixed(1)}%` : '—'}
+      </span>
+    ) : r.trend === 'down' ? (
+      <span className="inline-flex items-center gap-1 text-rose-600 font-bold">
+        <ArrowDownRight className="w-3.5 h-3.5" /> {r.changePercent !== null ? `${r.changePercent.toFixed(1)}%` : '—'}
+      </span>
+    ) : (
+      <span className="text-slate-400 font-bold">flat</span>
+    );
+
+  return (
+    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 sm:p-5 space-y-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center">
+            <TrendingUp className="w-5 h-5" />
+          </span>
+          <div>
+            <h2 className="font-extrabold text-sm text-slate-900">Agmarknet Live Feed</h2>
+            <p className="text-[11px] text-slate-500">
+              Daily modal prices straight from agmarknet.gov.in
+              {reportedDate ? ` · reported ${reportedDate}` : ''}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <select
+              value={commodityId ?? ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCommodityId(v ? Number(v) : null);
+                setCommodityQuery('');
+              }}
+              className="pl-7 pr-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 max-w-[220px]"
+            >
+              <option value="">All commodities{groupId !== 'all' ? ' in group' : ''}</option>
+              {(commodityQuery
+                ? commodityOptions
+                : commodities.filter((c) => groupId === 'all' || c.groupId === groupId).slice(0, 200)
+              ).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <input
+            value={commodityQuery}
+            onChange={(e) => {
+              setCommodityQuery(e.target.value);
+              setCommodityId(null);
+            }}
+            placeholder="Filter commodity…"
+            className="w-36 px-3 py-2 text-xs rounded-xl border border-slate-300 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Syncing…' : 'Sync Now'}
+          </button>
+        </div>
+      </div>
+
+      {/* Group chips */}
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          onClick={() => {
+            setGroupId('all');
+            setCommodityId(null);
+          }}
+          className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
+            groupId === 'all'
+              ? 'bg-slate-900 border-slate-900 text-white'
+              : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
+          }`}
+        >
+          Featured
+        </button>
+        {groups.map((g) => (
+          <button
+            key={g.id}
+            onClick={() => {
+              setGroupId(g.id);
+              setCommodityId(null);
+            }}
+            className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
+              groupId === g.id
+                ? 'bg-emerald-600 border-emerald-600 text-white'
+                : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
+            }`}
+          >
+            {g.name}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-[11px] font-semibold text-rose-800">
+          {error}
+        </div>
+      )}
+
+      {/* Live table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-100">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
+              <th className="px-3 py-2.5 font-extrabold">Commodity</th>
+              <th className="px-3 py-2.5 font-extrabold text-right">Modal ₹/qtl</th>
+              <th className="px-3 py-2.5 font-extrabold text-right">1-Day Δ</th>
+              <th className="px-3 py-2.5 font-extrabold text-right hidden sm:table-cell">Arrival (MT)</th>
+              <th className="px-3 py-2.5 font-extrabold text-right hidden md:table-cell">MSP ₹/qtl</th>
+              <th className="px-3 py-2.5 font-extrabold text-right">vs MSP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-slate-400 font-bold animate-pulse">
+                  Fetching live Agmarknet prices…
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-slate-400 font-bold">
+                  No prices reported for this selection yet.
+                </td>
+              </tr>
+            ) : (
+              rows.map((r) => (
+                <tr key={r.commodity} className="hover:bg-emerald-50/40 transition-colors">
+                  <td className="px-3 py-2.5">
+                    <div className="font-bold text-slate-800">{r.commodity}</div>
+                    <div className="text-[10px] text-slate-400">{r.group}</div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-black text-slate-900 tabular-nums">
+                    ₹{r.modalPrice.toLocaleString('en-IN')}
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{trendIcon(r)}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-500 tabular-nums hidden sm:table-cell">
+                    {r.arrivalMt !== null ? r.arrivalMt.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-slate-500 tabular-nums hidden md:table-cell">
+                    {r.msp !== null ? `₹${r.msp.toLocaleString('en-IN')}` : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {r.msp === null ? (
+                      <span className="text-slate-300">—</span>
+                    ) : r.aboveMsp === false ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                        BELOW MSP
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        ABOVE MSP
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Analytics strip */}
+      {movers && (asArray(movers?.gainers).length > 0 || asArray(movers?.losers).length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+          <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100">
+            <div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 mb-1.5">
+              Top Gainers (1-day)
+            </div>
+            <div className="space-y-1">
+              {asArray(movers?.gainers)
+                .slice(0, 3)
+                .map((g: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-800 truncate">{asStr(g?.commodity, '—')}</span>
+                    <span className="font-black text-emerald-700 tabular-nums">
+                      +{asNum(g?.changePercent).toFixed(1)}%
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+          <div className="p-3 rounded-2xl bg-rose-50/70 border border-rose-100">
+            <div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700 mb-1.5">
+              Top Losers (1-day)
+            </div>
+            <div className="space-y-1">
+              {asArray(movers?.losers)
+                .slice(0, 3)
+                .map((g: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-800 truncate">{asStr(g?.commodity, '—')}</span>
+                    <span className="font-black text-rose-700 tabular-nums">{asNum(g?.changePercent).toFixed(1)}%</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+          <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-100">
+            <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-700 mb-1.5">
+              MSP Watch
+            </div>
+            <div className="text-[11px] text-amber-900 font-semibold leading-relaxed">
+              {asNum(movers?.mspBelowCount)} of {asNum(movers?.mspTotalCount)} MSP-tracked crops traded below
+              support price on {asStr(movers?.reportedDate, 'the latest report day')}.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const MandiPricesView: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -292,6 +620,9 @@ export const MandiPricesView: React.FC = () => {
           <button onClick={() => setNotice(null)} className="font-bold hover:underline">Dismiss</button>
         </div>
       )}
+
+      {/* Agmarknet live feed — scraped daily modal prices + analytics */}
+      <AgmarknetLiveSection onNotice={(msg) => setNotice(msg)} />
 
       {/* Saved markets (SR 11) — compact strip since this view has no markets-list UI */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 space-y-3">

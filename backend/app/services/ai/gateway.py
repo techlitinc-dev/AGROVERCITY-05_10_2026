@@ -22,6 +22,22 @@ log = logging.getLogger(__name__)
 RETRY_ATTEMPTS = 2
 RETRY_BASE_DELAY_SECONDS = 0.05
 
+# When the provider answers with a quota/rate-limit error, retrying is wasted
+# work: a daily-quota 429 asks for hours of backoff. Mark the provider down
+# for a short cooldown and serve deterministic answers instantly instead —
+# two failed scan calls with retries used to burn ~7 s before falling back.
+PROVIDER_QUOTA_COOLDOWN_SECONDS = 600
+_gemini_down_until: float = 0.0
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    text = str(exc).upper()
+    return "RESOURCE_EXHAUSTED" in text or "429" in text
+
+
+def _provider_cooled_down() -> bool:
+    return _gemini_down_until > 0 and time.monotonic() < _gemini_down_until
+
 # USD per 1M tokens — published list input rates (spend-review doc):
 # jev $0.042/M (envelope anchor), Gemini 2.5 Flash $0.30/M in, Flash-Lite
 # $0.10/M in. Operators track live pricing via AI_COST_*_PER_1M env vars.
@@ -61,6 +77,7 @@ def _get_gemini_client() -> GeminiClient:
 
 
 async def _with_retries(fn, *args, **kwargs):
+    global _gemini_down_until
     last_exc: Exception | None = None
     for attempt in range(RETRY_ATTEMPTS + 1):
         try:
@@ -68,6 +85,10 @@ async def _with_retries(fn, *args, **kwargs):
         except budget.BudgetExhausted:
             raise
         except Exception as exc:  # noqa: BLE001 — retry any transport/model error
+            if _is_quota_error(exc):
+                _gemini_down_until = time.monotonic() + PROVIDER_QUOTA_COOLDOWN_SECONDS
+                log.warning("AI provider quota exhausted — cooling down %ss", PROVIDER_QUOTA_COOLDOWN_SECONDS)
+                raise
             last_exc = exc
             if attempt < RETRY_ATTEMPTS:
                 await asyncio.sleep(RETRY_BASE_DELAY_SECONDS * (2**attempt))
@@ -212,6 +233,17 @@ async def generate(prompt: str, opts: dict | None = None) -> str:
         )
         return text
 
+    if _provider_cooled_down():
+        # Provider is rate/quota-limited — a live call would fail anyway.
+        text = await shim.generate(clean_prompt, opts)
+        await decision_log.log_decision(
+            module=module, question_set_id="generate.v1", version="v1",
+            state={"prompt": clean_prompt}, answers={"text": text},
+            confidence=0.0, latency_ms=int((time.monotonic() - started) * 1000),
+            cost_usd=0.0, model=settings.ai_gemini_model, source="fallback", fallback_used=True,
+        )
+        return text
+
     try:
         model = opts.get("model") or settings.ai_gemini_model
         if await budget.over_budget(model):
@@ -224,8 +256,11 @@ async def generate(prompt: str, opts: dict | None = None) -> str:
             max_output_tokens=int(opts.get("max_output_tokens", 800)),
             json_schema=opts.get("json_schema"),
             language=opts.get("language"),
+            model=model,
+            thinking_budget=opts.get("thinking_budget"),
         )
-        cost = _estimate_cost("gemini", clean_prompt + text)
+        cost_kind = "gemini_lite" if "lite" in model else "gemini"
+        cost = _estimate_cost(cost_kind, clean_prompt + text)
         await budget.record_cost(model, cost)
         await decision_log.log_decision(
             module=module, question_set_id="generate.v1", version="v1",
@@ -252,6 +287,7 @@ async def analyze_image(
     prompt: str,
     schema: dict | None = None,
     module: str = "equipment_booking_rec",
+    model: str | None = None,
 ) -> dict:
     """Image analysis via Gemini vision; shim answer on any failure."""
     started = time.monotonic()
@@ -265,13 +301,24 @@ async def analyze_image(
             cost_usd=0.0, model="shim", source="shim", fallback_used=False,
         )
         return res
+    if _provider_cooled_down():
+        # Provider is rate/quota-limited — a live call would fail anyway.
+        res = await shim.analyze_image(image_bytes, clean_prompt, schema)
+        await decision_log.log_decision(
+            module=module, question_set_id="vision.analyze.v1", version="v1",
+            state={"prompt": clean_prompt}, answers=res,
+            confidence=0.0, latency_ms=int((time.monotonic() - started) * 1000),
+            cost_usd=0.0, model=model or settings.ai_gemini_model, source="fallback", fallback_used=True,
+        )
+        return res
+    resolved_model = model or settings.ai_gemini_model
     try:
-        res = await _with_retries(_get_gemini_client().analyze_image, image_bytes, clean_prompt, schema)
+        res = await _with_retries(_get_gemini_client().analyze_image, image_bytes, clean_prompt, schema, resolved_model)
         await decision_log.log_decision(
             module=module, question_set_id="vision.analyze.v1", version="v1",
             state={"prompt": clean_prompt}, answers=res,
             confidence=float(res.get("confidence", 0.9)), latency_ms=int((time.monotonic() - started) * 1000),
-            cost_usd=0.005, model=settings.ai_gemini_model, source="gemini", fallback_used=False,
+            cost_usd=0.005, model=resolved_model, source="gemini", fallback_used=False,
         )
         return res
     except Exception as exc:  # noqa: BLE001 — degrade, never error
@@ -281,7 +328,7 @@ async def analyze_image(
             module=module, question_set_id="vision.analyze.v1", version="v1",
             state={"prompt": clean_prompt}, answers=res,
             confidence=0.0, latency_ms=int((time.monotonic() - started) * 1000),
-            cost_usd=0.0, model=settings.ai_gemini_model, source="fallback", fallback_used=True,
+            cost_usd=0.0, model=resolved_model, source="fallback", fallback_used=True,
         )
         return res
 

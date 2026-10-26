@@ -1,6 +1,12 @@
 """Gemini wrapper via the google-genai SDK (AI Studio key direct — never
 OpenRouter for Gemini). Used for generate / analyze_image / embed and token
-counting for cost logging."""
+counting for cost logging.
+
+The google-genai SDK is synchronous; every network call runs in a worker
+thread (`asyncio.to_thread`) so a slow model round-trip never blocks the
+FastAPI event loop.
+"""
+import asyncio
 import json
 import logging
 
@@ -32,6 +38,8 @@ class GeminiClient:
         max_output_tokens: int = 800,
         json_schema: dict | None = None,
         language: str | None = None,
+        model: str | None = None,
+        thinking_budget: int | None = None,
     ) -> str:
         from google.genai import types
 
@@ -45,17 +53,32 @@ class GeminiClient:
             max_output_tokens=max_output_tokens,
             response_mime_type="application/json" if json_schema else None,
             response_schema=json_schema,
+            thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget)
+            if thinking_budget is not None
+            else None,
         )
-        response = client.models.generate_content(model=self.model, contents=contents, config=config)
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=model or self.model,
+            contents=contents,
+            config=config,
+        )
         return response.text or ""
 
-    async def analyze_image(self, image_bytes: bytes, prompt: str, schema: dict | None = None) -> dict:
+    async def analyze_image(
+        self,
+        image_bytes: bytes,
+        prompt: str,
+        schema: dict | None = None,
+        model: str | None = None,
+    ) -> dict:
         from google.genai import types
 
         client = self._client()
         mime_type = "image/png" if image_bytes.startswith(b"\x89PNG") else "image/jpeg"
-        response = client.models.generate_content(
-            model=self.model,
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=model or self.model,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                 prompt,
@@ -72,7 +95,8 @@ class GeminiClient:
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         client = self._client()
-        response = client.models.embed_content(
+        response = await asyncio.to_thread(
+            client.models.embed_content,
             model=settings.ai_gemini_embed_model,
             contents=texts,
         )

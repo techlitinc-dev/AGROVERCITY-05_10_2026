@@ -18,6 +18,7 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.core.config import settings
 from app.core.db import query
 from app.models.advisory import (
     CropPlanIn,
@@ -32,6 +33,34 @@ from app.services.ai import config_store, gateway
 log = logging.getLogger(__name__)
 
 DISEASE_GATE_MODULE = "advisory_disease_gate"
+
+# Model-side image size: phone photos arrive at 3–12 MP and vision latency +
+# token cost scale with pixels. The stored scan keeps the original; only the
+# bytes sent to the gate/diagnosis models are downscaled.
+VISION_MAX_DIMENSION = 1024
+
+
+def downscale_for_vision(image_bytes: bytes, max_dim: int = VISION_MAX_DIMENSION) -> bytes:
+    """Resize the largest side to max_dim px (JPEG q85) for model calls.
+
+    Non-destructive and fail-safe: anything unreadable or already small is
+    returned unchanged so a resize bug can never break scanning.
+    """
+    try:
+        import io
+
+        from PIL import Image
+
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            if max(img.size) <= max_dim:
+                return image_bytes
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, "JPEG", quality=85)
+            return buf.getvalue()
+    except Exception as exc:  # noqa: BLE001 — never break the scan on resize
+        log.warning("vision downscale failed, using original bytes: %s", exc)
+        return image_bytes
 
 GATE_PROMPT = (
     "Decide whether this image is a usable crop-disease scan input. Return ONLY JSON "
@@ -78,29 +107,83 @@ def _crop_plan_prompt(body: CropPlanIn) -> str:
         f"You are an Indian agronomy planner. Inputs — soil: {body.soil}; "
         f"irrigation: {body.irrigation}; plot: {body.plotSizeAcres} acres; "
         f"recent crops: {history}; district: {body.district}; season: {season}. "
-        "Recommend 2-3 rotating crops suited to these inputs. Output ONLY valid JSON "
-        'matching {"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0}]} '
-        f"with the rationale written in {language}."
+        "Recommend 2-3 rotating crops suited to these inputs. For EACH crop give a "
+        "plan: recommended variety, sowing window for the season, crop "
+        "duration in days, water requirement (low/medium/high + irrigation count), "
+        "expected yield in quintals per acre, estimated cultivation cost in INR, "
+        "expected revenue in INR for the given plot, expected profit in INR, a short "
+        "market outlook, exactly 2 key risks, and a 3-4 step task checklist from land "
+        "preparation to harvest. Monetary values are integer paisa (1 INR = 100 paisa). "
+        "Keep every text field to one short line — the answer must stay small and fast. "
+        "Be realistic for Maharashtra agro-climatic conditions; never promise prices. "
+        "Output ONLY valid JSON matching the requested schema, with the rationale "
+        f"written in {language}."
     )
+
+
+# Gemini structured-output schema for the detailed crop plan. Hand-written (no
+# $defs) so it can go straight into response_schema.
+CROP_PLAN_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "crop": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "estimatedRevenuePaisa": {"type": "integer"},
+                    "variety": {"type": "string"},
+                    "sowingWindow": {"type": "string"},
+                    "durationDays": {"type": "integer"},
+                    "waterRequirement": {"type": "string"},
+                    "expectedYieldQuintalPerAcre": {"type": "number"},
+                    "estimatedCostPaisa": {"type": "integer"},
+                    "expectedProfitPaisa": {"type": "integer"},
+                    "marketOutlook": {"type": "string"},
+                    "risks": {"type": "array", "items": {"type": "string"}},
+                    "tasks": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["crop", "rationale"],
+            },
+        }
+    },
+    "required": ["options"],
+}
 
 
 async def generate_crop_options(body: CropPlanIn) -> tuple[list[CropPlanOption], str]:
-    """One model call + exactly one repair retry; deterministic fallback."""
-    raw = await gateway.generate(
-        _crop_plan_prompt(body), {"module": CROP_PLAN_MODULE}
-    )
+    """One Gemini-flash call (structured JSON) + exactly one repair retry;
+    deterministic fallback on any failure."""
+    opts = {
+        "module": CROP_PLAN_MODULE,
+        # Latency-critical: the farmer watches a progress bar, so pin the
+        # fastest verified flash model (gemini-3.5-flash — ~2s here vs ~20s
+        # for flash-lite on this key, minutes for the full flash models).
+        "model": settings.ai_gemini_model_plan,
+        "json_schema": CROP_PLAN_JSON_SCHEMA,
+        # On 3.x flash models max_output_tokens also caps the hidden thinking
+        # budget — a cap near the visible answer size truncates the JSON and
+        # triggers the repair retry (double wait). 4096 leaves ample headroom.
+        "max_output_tokens": 4096,
+    }
+    raw = await gateway.generate(_crop_plan_prompt(body), opts)
     try:
         parsed = CropPlanPayload.model_validate(json.loads(_clean_json_str(raw)))
         return parsed.options, "ai"
     except (json.JSONDecodeError, ValidationError, ValueError) as first_error:
         repair_prompt = (
             "Rewrite the following as strictly valid JSON matching "
-            '{"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0}]}:\n'
+            '{"options":[{"crop":"","rationale":"","estimatedRevenuePaisa":0,'
+            '"variety":"","sowingWindow":"","durationDays":0,"waterRequirement":"",'
+            '"expectedYieldQuintalPerAcre":0,"estimatedCostPaisa":0,'
+            '"expectedProfitPaisa":0,"marketOutlook":"","risks":[],"tasks":[]}]}:\n'
             f"{raw}\nValidation error: {first_error}"
         )
-        repaired = await gateway.generate(
-            repair_prompt, {"module": CROP_PLAN_MODULE}
-        )
+        repaired = await gateway.generate(repair_prompt, opts)
         try:
             parsed = CropPlanPayload.model_validate(json.loads(_clean_json_str(repaired)))
             return parsed.options, "ai"
@@ -150,8 +233,25 @@ def _rupees_to_paisa(value) -> int:
 
 
 def current_season(today: date | None = None) -> str:
+    """Auto-detect the Indian cropping season from the calendar month.
+
+    Kharif (south-west monsoon): Jun–Oct; Rabi (winter): Nov–Feb;
+    Zaid (short summer): Mar–May.
+    """
     month = (today or date.today()).month
-    return "Kharif" if 6 <= month <= 10 else "Rabi"
+    if 6 <= month <= 10:
+        return "Kharif"
+    if 3 <= month <= 5:
+        return "Zaid"
+    return "Rabi"
+
+
+def season_for_date(iso_date: str) -> str:
+    """Season auto-detection for a planned sowing date (YYYY-MM-DD)."""
+    try:
+        return current_season(date.fromisoformat(iso_date))
+    except (TypeError, ValueError):
+        return current_season()
 
 
 async def crop_modal_price_paisa(crop: str, district: str | None = None) -> int | None:
@@ -289,11 +389,99 @@ def crop_plan_cache_key(inp: CropPlanIn) -> str:
     return f"advisory_crop_plan:{district}:{season}:{profile_class(inp)}:{inp.lang}"
 
 
+# Indicative agronomy facts for the deterministic fallback planner — durations,
+# water needs, improved varieties and per-acre cultivation cost/yield norms.
+# Prices are NEVER listed here (rule 1): revenue stays mandi-linked, 0 when a
+# crop has no observed modal price.
+CROP_FACTS: dict[str, dict] = {
+    "soybean": {
+        "variety": "JS-9560 / Kalitur",
+        "durationDays": 100,
+        "waterRequirement": "low-medium — 2-3 irrigations",
+        "yieldQPerAcre": 9.0,
+        "costPerAcre": 9000,
+    },
+    "wheat": {
+        "variety": "HD-2967 / Lokwan",
+        "durationDays": 135,
+        "waterRequirement": "medium — 3-4 irrigations",
+        "yieldQPerAcre": 15.0,
+        "costPerAcre": 12000,
+    },
+    "onion": {
+        "variety": "Nashik Red / N-53",
+        "durationDays": 120,
+        "waterRequirement": "high — frequent light irrigations",
+        "yieldQPerAcre": 100.0,
+        "costPerAcre": 45000,
+    },
+    "cotton": {
+        "variety": "Bt cotton (BG-II)",
+        "durationDays": 180,
+        "waterRequirement": "medium-high — 4-6 irrigations",
+        "yieldQPerAcre": 10.0,
+        "costPerAcre": 18000,
+    },
+    "tomato": {
+        "variety": "Deshi hybrid (Karnataka/Local)",
+        "durationDays": 105,
+        "waterRequirement": "high — drip every 2-3 days",
+        "yieldQPerAcre": 80.0,
+        "costPerAcre": 40000,
+    },
+    "maize": {
+        "variety": "DHM-117 / Ganga hybrid",
+        "durationDays": 100,
+        "waterRequirement": "medium — 3-5 irrigations",
+        "yieldQPerAcre": 22.0,
+        "costPerAcre": 10000,
+    },
+    "gram": {
+        "variety": "Jaki-9218 / Vishal",
+        "durationDays": 100,
+        "waterRequirement": "low — 1-2 light irrigations",
+        "yieldQPerAcre": 8.0,
+        "costPerAcre": 8000,
+    },
+    "mustard": {
+        "variety": "Pusa Bold / DRMR-1501",
+        "durationDays": 110,
+        "waterRequirement": "low — 1-2 irrigations",
+        "yieldQPerAcre": 6.0,
+        "costPerAcre": 7000,
+    },
+}
+DEFAULT_CROP_FACTS = {
+    "variety": "locally popular improved variety",
+    "durationDays": 110,
+    "waterRequirement": "medium — as per soil moisture",
+    "yieldQPerAcre": 10.0,
+    "costPerAcre": 12000,
+}
+
+SEASON_SOWING_WINDOWS = {
+    "kharif": "Jun–Jul (with monsoon onset)",
+    "rabi": "Oct–Nov (after monsoon withdrawal)",
+    "zaid": "Mar–Apr (short summer window)",
+}
+
+GENERIC_PLAN_RISKS = ["Weather variability — insure under PMFBY", "Pest & disease pressure"]
+GENERIC_PLAN_TASKS = [
+    "Land preparation and levelling",
+    "Sowing on the recommended window date",
+    "First irrigation / germination check",
+    "Weeding and top-dressing",
+    "Pest scouting every week",
+    "Harvest at full maturity",
+]
+
+
 async def deterministic_crop_options(inp: CropPlanIn) -> list[CropPlanOption]:
     """Rule-based planner fallback: rotate away from the farmer's recent crops.
 
     Candidates come from the agronomy rotation table; each option's indicative
     revenue is mandi-linked (0 when no mandi price exists — never invented).
+    Detail fields come from the CROP_FACTS agronomy table above.
     """
     history = {crop.strip().lower() for crop in (inp.cropHistory or []) if crop.strip()}
     candidates = list(DEFAULT_ALTERNATIVES)
@@ -302,13 +490,20 @@ async def deterministic_crop_options(inp: CropPlanIn) -> list[CropPlanOption]:
             if alt not in candidates:
                 candidates.append(alt)
     fresh = [crop for crop in candidates if crop.lower() not in history] or candidates
+    season = (inp.season or current_season()).strip().lower()
+    window = SEASON_SOWING_WINDOWS.get(
+        season, "at the start of the season, with soil moisture"
+    )
     options: list[CropPlanOption] = []
     for crop in fresh[:3]:
+        facts = CROP_FACTS.get(crop.lower(), DEFAULT_CROP_FACTS)
         price_paisa = await crop_modal_price_paisa(crop, inp.district)
         estimated = 0
         if price_paisa:
-            # Indicative revenue for the declared plot (≈ 20 quintals/acre).
-            estimated = int(price_paisa * 20 * inp.plotSizeAcres)
+            # Indicative revenue for the declared plot from the mandi-linked price.
+            estimated = int(price_paisa * facts["yieldQPerAcre"] * inp.plotSizeAcres)
+        cost = int(facts["costPerAcre"] * inp.plotSizeAcres * 100)  # ₹/acre → paisa
+        profit = max(0, estimated - cost) if estimated else 0
         rationale = (
             f"Rotates away from your recent {', '.join(sorted(history)) or 'crops'} and "
             f"suits {inp.soil} soil with {inp.irrigation} irrigation."
@@ -319,7 +514,24 @@ async def deterministic_crop_options(inp: CropPlanIn) -> list[CropPlanOption]:
             )
         )
         options.append(
-            CropPlanOption(crop=crop, rationale=rationale, estimatedRevenuePaisa=estimated)
+            CropPlanOption(
+                crop=crop,
+                rationale=rationale,
+                estimatedRevenuePaisa=estimated,
+                variety=facts["variety"],
+                sowingWindow=window,
+                durationDays=facts["durationDays"],
+                waterRequirement=facts["waterRequirement"],
+                expectedYieldQuintalPerAcre=facts["yieldQPerAcre"],
+                estimatedCostPaisa=cost,
+                expectedProfitPaisa=profit,
+                marketOutlook=(
+                    "Check live mandi prices before sowing; indicative revenue uses "
+                    "the highest observed modal price for this crop."
+                ),
+                risks=list(GENERIC_PLAN_RISKS),
+                tasks=list(GENERIC_PLAN_TASKS),
+            )
         )
     return options
 

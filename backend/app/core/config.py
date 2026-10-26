@@ -30,11 +30,20 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     cron_secret: str = ""
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     ai_provider: str = "shim"
     ai_jev_model: str = "typesafe/jev-1.13"
-    ai_gemini_model: str = "gemini-2.5-flash"
-    ai_gemini_model_lite: str = "gemini-2.5-flash-lite"
+    ai_gemini_model: str = "gemini-3.8-flash"
+    ai_gemini_model_lite: str = "gemini-3.5-flash-lite"
+    # Crop planner: latency-critical (the farmer watches a progress bar), so it
+    # pins the fastest verified flash model — operators override via
+    # AI_GEMINI_MODEL_PLAN. (3.5-flash-lite benches ~20s/TTFB on some keys;
+    # 3.5-flash benches ~2s.)
+    ai_gemini_model_plan: str = "gemini-3.5-flash"
+    # Leaf-clinic vision scans are latency-critical (the farmer watches a
+    # progress animation), so they pin a flash-class model independent of
+    # AI_GEMINI_MODEL — operators override via AI_GEMINI_MODEL_VISION.
+    ai_gemini_model_vision: str = "gemini-3.5-flash"
     ai_gemini_model_pro: str = "gemini-2.5-pro"
     ai_gemini_embed_model: str = "gemini-embedding-001"
     ai_daily_budget_usd: float = 50.0

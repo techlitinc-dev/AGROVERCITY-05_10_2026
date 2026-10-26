@@ -136,6 +136,10 @@ export async function readPaged<T>(url: string, opts: ReadOpts<T[]> = {}): Promi
 export interface MutateOpts {
   params?: Params;
   headers?: Record<string, string>;
+  /** Per-request timeout override (ms) — long-running AI endpoints use this. */
+  timeout?: number;
+  /** Upload progress callback (0–100) for multipart bodies. */
+  onUploadProgress?: (percent: number) => void;
 }
 
 export async function mutate<T>(
@@ -151,6 +155,14 @@ export async function mutate<T>(
       data: body,
       params: opts.params,
       headers: opts.headers,
+      timeout: opts.timeout,
+      ...(opts.onUploadProgress
+        ? {
+            onUploadProgress: (e: { loaded: number; total?: number }) => {
+              if (e.total) opts.onUploadProgress!(Math.round((e.loaded / e.total) * 100));
+            },
+          }
+        : {}),
     });
     return (res.data?.data ?? res.data) as T;
   } catch (e) {

@@ -29,6 +29,7 @@ const KisanCoinsView = lazy(() => import('../community/KisanCoinsView').then((m)
 const FarmerDairyView = lazy(() => import('./FarmerDairyView').then((m) => ({ default: m.FarmerDairyView })));
 const LivestockHubView = lazy(() => import('./LivestockHubView').then((m) => ({ default: m.LivestockHubView })));
 const MyCropsView = lazy(() => import('./MyCropsView').then((m) => ({ default: m.MyCropsView })));
+const AiCropPlanView = lazy(() => import('./AiCropPlanView').then((m) => ({ default: m.AiCropPlanView })));
 const AiCropDoctorView = lazy(() => import('./AiCropDoctorView').then((m) => ({ default: m.AiCropDoctorView })));
 
 /** 1. Farmer / Kisan Hub (18 journeys) */
@@ -63,5 +64,6 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/dairy" element={<FarmerDairyView />} />
     <Route path="/farmer/livestock" element={<LivestockHubView />} />
     <Route path="/farmer/crops" element={<MyCropsView />} />
+    <Route path="/farmer/crop-plan" element={<AiCropPlanView />} />
   </>
 );

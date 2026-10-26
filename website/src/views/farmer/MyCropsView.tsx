@@ -2,17 +2,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Sprout,
   FlaskConical,
-  Radar,
-  TestTube2,
   Plus,
   RefreshCw,
   CheckCircle2,
   ChevronRight,
+  Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
-import { advisory, farmerCrops, apiErrorMessage } from '../../lib/api';
+import { Link } from 'react-router-dom';
+import { advisory, farmerCrops, users, apiErrorMessage, ApiError } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { formatDate } from '../../lib/utils';
+import { CropTypeahead, CropChipsInput } from '../../components/common/CropTypeahead';
+import { formatDate, detectSeason, detectSeasonForDate } from '../../lib/utils';
 import { useAuthStore } from '../../stores/authStore';
 
 const asRecord = (v: unknown): Record<string, unknown> =>
@@ -37,20 +39,17 @@ const stageIndex = (stage: string): number => {
   return idx >= 0 ? idx : 1;
 };
 
-type Tab = 'crops' | 'npk' | 'pest' | 'soil';
+type Tab = 'crops' | 'npk';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'crops', label: 'My Crop Cycles / माझी पिके', icon: Sprout },
   { key: 'npk', label: 'NPK Calculator', icon: FlaskConical },
-  { key: 'pest', label: 'Pest Radar (5 km)', icon: Radar },
-  { key: 'soil', label: 'Soil Tests / माती चाचणी', icon: TestTube2 },
 ];
 
 export const MyCropsView: React.FC = () => {
   const { user } = useAuthStore();
   const [tab, setTab] = useState<Tab>('crops');
   const [cycles, setCycles] = useState<unknown[]>([]);
-  const [soilTests, setSoilTests] = useState<unknown[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -66,11 +65,16 @@ export const MyCropsView: React.FC = () => {
     soil: 'black',
     irrigation: 'drip',
     plotSizeAcres: 2,
-    cropHistory: '',
+    cropHistory: [] as string[],
     season: '',
   });
   const [planOptions, setPlanOptions] = useState<unknown[] | null>(null);
+  const [planSeason, setPlanSeason] = useState('');
   const [savingCrop, setSavingCrop] = useState(false);
+
+  // Data-sharing consent gate (the backend requires it for sowing intents)
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [grantingConsent, setGrantingConsent] = useState(false);
 
   // Stage update modal
   const [stageCycle, setStageCycle] = useState<Record<string, unknown> | null>(null);
@@ -82,43 +86,13 @@ export const MyCropsView: React.FC = () => {
   const [npkResult, setNpkResult] = useState<Record<string, unknown> | null>(null);
   const [npkBusy, setNpkBusy] = useState(false);
 
-  // Pest radar
-  const [pestAlerts, setPestAlerts] = useState<unknown[] | null>(null);
-  const [pestBusy, setPestBusy] = useState(false);
-
-  // Soil test booking
-  const [soilForm, setSoilForm] = useState({
-    address: '',
-    slotDate: new Date().toISOString().slice(0, 10),
-    slotHalf: 'am' as 'am' | 'pm',
-  });
-  const [bookingSoil, setBookingSoil] = useState(false);
-
   const farmerDistrict = asStr(user?.district);
-  const [radarLat, setRadarLat] = useState<number | ''>('');
-  const [radarLng, setRadarLng] = useState<number | ''>('');
-
-  const locateMe = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setRadarLat(Number(pos.coords.latitude.toFixed(5)));
-        setRadarLng(Number(pos.coords.longitude.toFixed(5)));
-      },
-      () => undefined
-    );
-  };
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [c, s] = await Promise.all([
-        farmerCrops.list().catch(() => []),
-        advisory.soilTests().catch(() => []),
-      ]);
-      setCycles(c);
-      setSoilTests(s);
+      setCycles(await farmerCrops.list().catch(() => []));
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -131,25 +105,65 @@ export const MyCropsView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeSeason = useMemo(() => {
-    const month = new Date().getMonth() + 1;
-    return month >= 6 && month <= 10 ? 'Kharif' : 'Rabi';
-  }, []);
+  const activeSeason = useMemo(() => detectSeason(), []);
+
+  // Season auto-detection: the planned sowing month decides the season.
+  const intentSeason = useMemo(
+    () => detectSeasonForDate(intentForm.plannedDate),
+    [intentForm.plannedDate]
+  );
 
   // ---- add crop ----
-  const handleSowingIntent = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const recordSowingIntent = async () => {
+    if (!intentForm.crop.trim()) {
+      setError('Choose a crop first — pick from the list or type your own.');
+      return;
+    }
     setSavingCrop(true);
     setError(null);
     try {
-      await advisory.sowingIntent({ crop: intentForm.crop, plannedDate: intentForm.plannedDate });
+      await advisory.sowingIntent({ crop: intentForm.crop.trim(), plannedDate: intentForm.plannedDate });
       setAddModalOpen(false);
-      setNotice(`${intentForm.crop} sowing intent recorded for ${intentForm.plannedDate}.`);
+      setConsentModalOpen(false);
+      setNotice(
+        `${intentForm.crop.trim()} sowing intent recorded for ${intentForm.plannedDate} (${intentSeason} season).`
+      );
       setCycles(await farmerCrops.list());
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'CONSENT_REQUIRED') {
+        // The backend refuses to record a sowing intent until the farmer
+        // grants the data-sharing consent — ask for it inline instead of
+        // dead-ending on the raw error.
+        setConsentModalOpen(true);
+      } else {
+        setError(apiErrorMessage(err));
+      }
+    } finally {
+      setSavingCrop(false);
+    }
+  };
+
+  const handleSowingIntent = (e: React.FormEvent) => {
+    e.preventDefault();
+    void recordSowingIntent();
+  };
+
+  const grantConsentAndRecord = async () => {
+    setGrantingConsent(true);
+    setError(null);
+    try {
+      const current = await users.getConsents();
+      await users.updateConsents({
+        dataSharing: true,
+        location: current.location === true,
+        marketing: current.marketing === true,
+      });
+      setConsentModalOpen(false);
+      await recordSowingIntent();
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
-      setSavingCrop(false);
+      setGrantingConsent(false);
     }
   };
 
@@ -163,15 +177,13 @@ export const MyCropsView: React.FC = () => {
           soil: planForm.soil,
           irrigation: planForm.irrigation,
           plotSizeAcres: planForm.plotSizeAcres,
-          cropHistory: planForm.cropHistory
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
+          cropHistory: planForm.cropHistory,
           district: farmerDistrict || 'Nashik',
           season: planForm.season || undefined,
         })
       );
       setPlanOptions(asArray(res.options));
+      setPlanSeason(asStr(res.season, planForm.season || activeSeason));
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -188,8 +200,9 @@ export const MyCropsView: React.FC = () => {
       await advisory.confirmCropPlan({
         crop,
         district: farmerDistrict || 'Nashik',
-        season: planForm.season || undefined,
+        season: planSeason || undefined,
         rationale: asStr(option.rationale),
+        planDetails: option,
       });
       setAddModalOpen(false);
       setPlanOptions(null);
@@ -245,43 +258,6 @@ export const MyCropsView: React.FC = () => {
     }
   };
 
-  // ---- pest radar ----
-  const handlePestRadar = async () => {
-    if (radarLat === '' || radarLng === '') {
-      setError('Set your farm coordinates first — use "My location" or type them in.');
-      return;
-    }
-    setPestBusy(true);
-    setError(null);
-    try {
-      const res = asRecord(await advisory.pestRadar({ lat: radarLat, lng: radarLng }));
-      setPestAlerts(asArray(res.data ?? res.alerts));
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setPestBusy(false);
-    }
-  };
-
-  // ---- soil test ----
-  const handleSoilBook = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBookingSoil(true);
-    setError(null);
-    try {
-      await advisory.bookSoilTest({
-        address: soilForm.address,
-        slot: `${soilForm.slotDate} ${soilForm.slotHalf}`,
-      });
-      setNotice(`Soil test booked for ${soilForm.slotDate} (${soilForm.slotHalf === 'am' ? 'morning' : 'afternoon'}).`);
-      setSoilTests(await advisory.soilTests());
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setBookingSoil(false);
-    }
-  };
-
   const inputCls = 'w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:border-emerald-600';
   const labelCls = 'block text-xs font-bold text-slate-700 mb-1';
 
@@ -294,7 +270,7 @@ export const MyCropsView: React.FC = () => {
             My Crops & Agronomy Tools <span className="text-sm font-bold text-slate-500">/ माझी पिके</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Crop cycles, sowing plans, fertiliser math, pest alerts and soil health — {activeSeason} season
+            Crop cycles, sowing plans and fertiliser math — {activeSeason} season
             {farmerDistrict ? ` • ${farmerDistrict}` : ''}
           </p>
         </div>
@@ -307,10 +283,17 @@ export const MyCropsView: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+          <Link
+            to="/farmer/crop-plan"
+            className="px-4 py-2.5 rounded-2xl border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold text-xs flex items-center gap-2 transition-all"
+          >
+            <Sparkles className="w-4 h-4" /> AI Crop Plan
+          </Link>
           <button
             onClick={() => {
               setAddModalOpen(true);
               setPlanOptions(null);
+              setPlanSeason('');
             }}
             className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm"
           >
@@ -383,6 +366,11 @@ export const MyCropsView: React.FC = () => {
                       </div>
                     </div>
                     {asStr(c.notes) && <p className="text-[11px] text-slate-600">{asStr(c.notes)}</p>}
+                    {c.fromPlanner === true && (
+                      <p className="text-[10px] font-bold text-violet-600 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> AI-planned{c.planDetails ? ` — ${asStr(asRecord(c.planDetails).variety)}` : ''}
+                      </p>
+                    )}
                     <button
                       onClick={() => openStageModal(c)}
                       className="w-full py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[10px] flex items-center justify-center gap-1"
@@ -395,7 +383,7 @@ export const MyCropsView: React.FC = () => {
             </div>
           )}
         </div>
-      ) : tab === 'npk' ? (
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <form onSubmit={handleNpk} className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
             <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
@@ -472,143 +460,6 @@ export const MyCropsView: React.FC = () => {
             )}
           </div>
         </div>
-      ) : tab === 'pest' ? (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                <Radar className="w-4 h-4 text-emerald-600" /> Pest & Disease Radar — 5 km around your farm
-              </h3>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-                <input
-                  type="number"
-                  step="0.00001"
-                  placeholder="Lat"
-                  value={radarLat}
-                  onChange={(e) => setRadarLat(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-28 px-3 py-1.5 text-xs rounded-xl border border-slate-300 font-mono"
-                />
-                <input
-                  type="number"
-                  step="0.00001"
-                  placeholder="Lng"
-                  value={radarLng}
-                  onChange={(e) => setRadarLng(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-28 px-3 py-1.5 text-xs rounded-xl border border-slate-300 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={locateMe}
-                  className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-[10px]"
-                >
-                  My location
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={handlePestRadar}
-              disabled={pestBusy}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60 self-start sm:self-auto"
-            >
-              {pestBusy ? 'Scanning…' : 'Scan Now'}
-            </button>
-          </div>
-          {pestAlerts === null ? (
-            <p className="text-xs text-slate-400 text-center py-6">Run the radar to see nearby pest reports from fellow farmers.</p>
-          ) : pestAlerts.length === 0 ? (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> No pest or disease reports within 5 km — crops look safe today.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {pestAlerts.map((raw, i) => {
-                const a = asRecord(raw);
-                const risk = asStr(a.riskLevel, 'green');
-                return (
-                  <div key={i} className="p-3.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <p className="font-bold text-slate-900">{asStr(a.disease ?? a.pest, 'Pest report')}</p>
-                      <p className="text-[10px] text-slate-500">
-                        {asStr(a.crop)} • {asNum(a.distanceKm).toFixed(1)} km away • reported {formatDate(asStr(a.reportedAt))}
-                      </p>
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
-                        risk === 'red'
-                          ? 'bg-rose-50 text-rose-700 border-rose-200'
-                          : risk === 'yellow'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      }`}
-                    >
-                      {risk}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <form onSubmit={handleSoilBook} className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
-            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-              <TestTube2 className="w-4 h-4 text-emerald-600" /> Book a Soil Test
-            </h3>
-            <div>
-              <label className={labelCls}>Collection Address *</label>
-              <textarea
-                rows={2}
-                className={inputCls}
-                value={soilForm.address}
-                onChange={(e) => setSoilForm((f) => ({ ...f, address: e.target.value }))}
-                placeholder="Gat No. 312, Pimpalgaon Baswant, Nashik"
-                required
-                minLength={10}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelCls}>Date</label>
-                <input type="date" className={inputCls} value={soilForm.slotDate} onChange={(e) => setSoilForm((f) => ({ ...f, slotDate: e.target.value }))} required />
-              </div>
-              <div>
-                <label className={labelCls}>Slot</label>
-                <select className={inputCls} value={soilForm.slotHalf} onChange={(e) => setSoilForm((f) => ({ ...f, slotHalf: e.target.value as 'am' | 'pm' }))}>
-                  <option value="am">Morning (AM)</option>
-                  <option value="pm">Afternoon (PM)</option>
-                </select>
-              </div>
-            </div>
-            <button type="submit" disabled={bookingSoil} className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
-              {bookingSoil ? 'Booking…' : 'Book Collection Visit'}
-            </button>
-          </form>
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
-            <h3 className="font-bold text-sm text-slate-900">My Soil Tests ({soilTests.length})</h3>
-            {soilTests.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">No soil tests booked yet.</p>
-            ) : (
-              soilTests.map((raw, i) => {
-                const t = asRecord(raw);
-                return (
-                  <div key={asStr(t.id, String(i))} className="p-3.5 bg-slate-50 rounded-2xl flex items-center justify-between gap-3 text-xs">
-                    <div>
-                      <p className="font-bold text-slate-900">{formatDate(asStr(t.bookedAt ?? t.slot))}</p>
-                      <p className="text-[10px] text-slate-500">{asStr(t.address)}</p>
-                      {t.resultPdfUrl ? (
-                        <a href={asStr(t.resultPdfUrl)} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-emerald-700 hover:underline">
-                          Download report PDF
-                        </a>
-                      ) : null}
-                    </div>
-                    <StatusBadge status={asStr(t.status, 'booked')} />
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
       )}
 
       {/* Add-crop modal: quick intent or AI plan */}
@@ -617,6 +468,7 @@ export const MyCropsView: React.FC = () => {
         onClose={() => {
           setAddModalOpen(false);
           setPlanOptions(null);
+          setPlanSeason('');
         }}
         title="Add Crop Cycle"
         description="Record a sowing intent or let the AI planner suggest crops for your plot"
@@ -628,6 +480,7 @@ export const MyCropsView: React.FC = () => {
             onClick={() => {
               setAddMode('intent');
               setPlanOptions(null);
+              setPlanSeason('');
             }}
             className={`px-4 py-1.5 rounded-xl text-xs font-bold ${addMode === 'intent' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'}`}
           >
@@ -647,18 +500,24 @@ export const MyCropsView: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Crop</label>
-                <select className={inputCls} value={intentForm.crop} onChange={(e) => setIntentForm((f) => ({ ...f, crop: e.target.value }))}>
-                  <option value="Soybean">Soybean (सोयाबीन)</option>
-                  <option value="Wheat">Wheat (गहू)</option>
-                  <option value="Onion">Onion (कांदा)</option>
-                  <option value="Cotton">Cotton (कापूस)</option>
-                  <option value="Tomato">Tomato (टमाटर)</option>
-                </select>
+                <CropTypeahead
+                  value={intentForm.crop}
+                  onChange={(crop) => setIntentForm((f) => ({ ...f, crop }))}
+                  inputCls={inputCls}
+                />
               </div>
               <div>
                 <label className={labelCls}>Planned Sowing Date</label>
                 <input type="date" className={inputCls} value={intentForm.plannedDate} onChange={(e) => setIntentForm((f) => ({ ...f, plannedDate: e.target.value }))} required />
               </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+              <p className="text-[10px] font-semibold text-emerald-800">
+                Season auto-detected from your sowing month
+              </p>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wide">
+                {intentSeason}
+              </span>
             </div>
             <button type="submit" disabled={savingCrop} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
               {savingCrop ? 'Recording…' : 'Record Sowing Intent'}
@@ -692,37 +551,66 @@ export const MyCropsView: React.FC = () => {
               <div>
                 <label className={labelCls}>Season</label>
                 <select className={inputCls} value={planForm.season} onChange={(e) => setPlanForm((f) => ({ ...f, season: e.target.value }))}>
-                  <option value="">Current ({activeSeason})</option>
+                  <option value="">Auto — current ({activeSeason})</option>
                   <option value="Kharif">Kharif</option>
                   <option value="Rabi">Rabi</option>
                   <option value="Zaid">Zaid</option>
                 </select>
+                {planForm.season === '' && (
+                  <p className="mt-1 text-[9px] font-bold text-emerald-700">
+                    ✓ Auto-detected for {activeSeason} — the AI plans for the current season
+                  </p>
+                )}
               </div>
               <div className="col-span-2">
-                <label className={labelCls}>Crop History (comma separated)</label>
-                <input className={inputCls} value={planForm.cropHistory} onChange={(e) => setPlanForm((f) => ({ ...f, cropHistory: e.target.value }))} placeholder="e.g. Wheat, Chickpea" />
+                <label className={labelCls}>Crop History (last few seasons)</label>
+                <CropChipsInput
+                  crops={planForm.cropHistory}
+                  onChange={(crops) => setPlanForm((f) => ({ ...f, cropHistory: crops }))}
+                  placeholder={planForm.cropHistory.length === 0 ? 'Add crops you grew recently — e.g. Wheat, Onion' : 'Add another crop…'}
+                />
               </div>
             </div>
             <button type="submit" disabled={savingCrop} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
-              {savingCrop ? 'Planning…' : 'Suggest Crops'}
+              {savingCrop ? 'Planning…' : 'Suggest Crops with AI'}
             </button>
           </form>
         ) : (
           <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold text-slate-600">
+                {planOptions.length} AI plan{planOptions.length === 1 ? '' : 's'} for {planSeason} season
+              </p>
+              <Link to="/farmer/crop-plan" className="text-[10px] font-bold text-violet-700 hover:underline flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> Open full dashboard
+              </Link>
+            </div>
             {planOptions.length === 0 && <p className="text-xs text-slate-400">No suggestions available right now.</p>}
             {planOptions.map((raw, i) => {
               const o = asRecord(raw);
               return (
                 <div key={i} className="p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <h4 className="font-bold text-sm text-slate-900 capitalize">{asStr(o.crop, 'Crop')}</h4>
-                    {asNum(o.estimatedRevenuePaisa) > 0 && (
-                      <span className="text-[11px] font-black text-emerald-700">
-                        ~₹{Math.round(asNum(o.estimatedRevenuePaisa) / 100).toLocaleString('en-IN')}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {asStr(o.variety) && (
+                        <span className="text-[10px] font-semibold text-slate-500">{asStr(o.variety)}</span>
+                      )}
+                      {asNum(o.estimatedRevenuePaisa) > 0 && (
+                        <span className="text-[11px] font-black text-emerald-700">
+                          ~₹{Math.round(asNum(o.estimatedRevenuePaisa) / 100).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[11px] text-slate-600">{asStr(o.rationale)}</p>
+                  {(asNum(o.durationDays) > 0 || asStr(o.sowingWindow)) && (
+                    <p className="text-[10px] text-slate-500">
+                      {asStr(o.sowingWindow) && <>Sow: {asStr(o.sowingWindow)}</>}
+                      {asNum(o.durationDays) > 0 && <> • ~{asNum(o.durationDays)} days</>}
+                      {asNum(o.expectedYieldQuintalPerAcre) > 0 && <> • ~{asNum(o.expectedYieldQuintalPerAcre)} q/acre</>}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleConfirmPlan(o)}
@@ -772,6 +660,46 @@ export const MyCropsView: React.FC = () => {
             {savingStage ? 'Saving…' : 'Save Update'}
           </button>
         </form>
+      </ModalSheet>
+
+      {/* Data-sharing consent gate — the backend requires it before it will
+          record a sowing intent (403 CONSENT_REQUIRED). */}
+      <ModalSheet
+        isOpen={consentModalOpen}
+        onClose={() => setConsentModalOpen(false)}
+        title="Allow data sharing? / डेटा साझाकरण की आवश्यकता है"
+        description="Recording a sowing intent needs your consent"
+        maxWidth="sm"
+      >
+        <div className="space-y-3">
+          <div className="p-3.5 bg-slate-50 rounded-2xl space-y-2 text-[11px] text-slate-600">
+            <p className="flex items-start gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              Your crop, district and sowing month are shared anonymised with nearby farmers to
+              power the over-sowing radar and better advisories for everyone.
+            </p>
+            <p className="flex items-start gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              Nothing is shared with buyers or third parties. You can change this any time in
+              Settings → Data Consents.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void grantConsentAndRecord()}
+            disabled={grantingConsent || savingCrop}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60"
+          >
+            {grantingConsent ? 'Allowing…' : 'Allow & Record Intent'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConsentModalOpen(false)}
+            className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs"
+          >
+            Not now
+          </button>
+        </div>
       </ModalSheet>
     </div>
   );

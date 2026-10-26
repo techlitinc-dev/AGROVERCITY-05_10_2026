@@ -1,3 +1,10 @@
+import os
+
+# Tests must stay hermetic: force the deterministic AI shim regardless of what
+# AI_PROVIDER the local .env points at (pydantic-settings gives real env vars
+# priority over the .env file). Must be set before any app import below.
+os.environ["AI_PROVIDER"] = "shim"
+
 import importlib
 import pkgutil
 

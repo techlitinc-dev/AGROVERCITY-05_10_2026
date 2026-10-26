@@ -35,6 +35,19 @@ export const mandi = {
   /** GET /mandi/favorites — saved markets ({items: [...]} envelope; typed shape in follows.ts). */
   favoritesList: (): Promise<unknown[]> => readItems<unknown>('/mandi/favorites'),
 
+  /** GET /mandi/live/filters — Agmarknet commodity groups / commodities / states. */
+  liveFilters: (): Promise<unknown> => readOne<unknown>('/mandi/live/filters'),
+
+  /** GET /mandi/live — daily modal price / arrival / MSP rows from Agmarknet. */
+  live: (params?: Record<string, unknown>): Promise<any> => readOne<any>('/mandi/live', { params }),
+
+  /** POST /mandi/live/refresh — scrape Agmarknet into mandi_prices/history (throttled). */
+  liveRefresh: (): Promise<any> => post<any>('/mandi/live/refresh'),
+
+  /** GET /mandi/analytics/movers — top gainers/losers + MSP spread. */
+  movers: (params?: Record<string, unknown>): Promise<any> =>
+    readOne<any>('/mandi/analytics/movers', { params }),
+
   /** POST /mandi/favorites — body {mandiId}; 404 for unknown mandi. */
   addFavorite: (mandiId: string): Promise<unknown> =>
     post<unknown>('/mandi/favorites', { mandiId }),
