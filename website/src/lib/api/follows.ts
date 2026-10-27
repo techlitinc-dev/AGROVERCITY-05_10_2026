@@ -50,3 +50,26 @@ export const addMandiFavorite = (mandiId: string): Promise<void> =>
 
 export const removeMandiFavorite = (mandiId: string): Promise<void> =>
   del<void>(`/mandi/favorites/${encodeURIComponent(mandiId)}`);
+
+/** Commodity watchlist — the mandi terminal wishlist (commodity-level). */
+export interface CommodityWatchItem {
+  commodity: string;
+  slug: string;
+  group?: string;
+  since: string;
+}
+
+export const getCommodityWatchlist = async (): Promise<CommodityWatchItem[]> => {
+  try {
+    const res = await apiClient.get('/mandi/watchlist');
+    return unwrapItems<CommodityWatchItem>(res.data?.data ?? res.data);
+  } catch (e) {
+    handleApiError(e);
+  }
+};
+
+export const addCommodityWatchlist = (commodity: string, group?: string): Promise<void> =>
+  post<void>('/mandi/watchlist', { commodity, group });
+
+export const removeCommodityWatchlist = (slug: string): Promise<void> =>
+  del<void>(`/mandi/watchlist/${encodeURIComponent(slug)}`);

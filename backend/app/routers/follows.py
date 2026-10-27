@@ -4,7 +4,11 @@ Cross-persona "Saved Items & Followed Profiles" backend:
   - follows:        doc id f"{followerId}_{targetId}" in collection "follows"
   - mandi favorites: doc id f"{uid}_{mandiId}" in collection "mandi_favorites"
     (name/district/state denormalized from the "mandis" doc).
+  - commodity watchlist: doc id f"{uid}_{slug}" in collection "commodity_watchlist"
+    (the mandi terminal wishlist — commodity-level, prices resolved client-side
+    from the Agmarknet live feed so no join is needed here).
 """
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -130,4 +134,58 @@ async def add_mandi_favorite(body: MandiFavoriteIn, uid: str = Depends(current_u
 async def remove_mandi_favorite(mandi_id: str, uid: str = Depends(current_user_id)):
     """Remove a mandi favorite (idempotent)."""
     await delete_doc("mandi_favorites", f"{uid}_{mandi_id}")
+    return {"status": "removed"}
+
+
+# ---------------------------------------------------------------- commodity watchlist
+
+class CommodityWatchIn(BaseModel):
+    commodity: str
+    group: Optional[str] = None  # denormalized for display when the live feed is down
+
+
+def _watch_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_") or "unknown"
+
+
+@router.get("/mandi/watchlist")
+async def list_watchlist(uid: str = Depends(current_user_id)):
+    """List the current user's commodity watchlist (terminal wishlist)."""
+    docs = await query("commodity_watchlist", [("uid", "==", uid)], limit=200)
+    docs.sort(key=lambda d: d.get("createdAt", ""))
+    items = [
+        {
+            "commodity": d.get("commodity"),
+            "slug": d.get("slug"),
+            "group": d.get("group", ""),
+            "since": d.get("createdAt", ""),
+        }
+        for d in docs
+        if d.get("commodity")
+    ]
+    return {"items": items}
+
+
+@router.post("/mandi/watchlist", status_code=201)
+async def add_watchlist(body: CommodityWatchIn, uid: str = Depends(current_user_id)):
+    """Pin a commodity to the watchlist (idempotent — same slug overwrites)."""
+    commodity = (body.commodity or "").strip()
+    if not commodity:
+        _error(422, "VALIDATION_ERROR", "commodity is required")
+    slug = _watch_slug(commodity)
+    doc = {
+        "uid": uid,
+        "commodity": commodity,
+        "slug": slug,
+        "group": (body.group or "").strip(),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("commodity_watchlist", f"{uid}_{slug}", doc)
+    return {"status": "saved", **doc}
+
+
+@router.delete("/mandi/watchlist/{slug}")
+async def remove_watchlist(slug: str, uid: str = Depends(current_user_id)):
+    """Remove a commodity from the watchlist (idempotent)."""
+    await delete_doc("commodity_watchlist", f"{uid}_{slug}")
     return {"status": "removed"}

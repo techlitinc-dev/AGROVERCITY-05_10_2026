@@ -154,15 +154,16 @@ test.describe('Module 5 — Sell Produce: Lots & Offers (TC-FRM-38…49)', () =>
     S.onionVariety = `Nashik Red UAT${RUN}`;
     await page.goto('/farmer/lots');
 
-    // Step 1: modal opens, crop select offers exactly the spec'd list.
+    // Step 1: modal opens, crop field is a typeahead fed by the live crop catalog.
     const modal = await openLotModal(page);
-    const cropSelect = modalField(modal, 'Crop');
-    for (const crop of [/soybean/i, /wheat/i, /cotton/i, /onion/i, /tur/i]) {
-      await expect(modal.getByRole('option', { name: crop })).toHaveCount(1);
+    const cropInput = modalField(modal, 'Crop');
+    const cropOptions = modal.locator('#lot-crop-options option');
+    for (const crop of [/Soybean/, /Wheat/, /Cotton/, /Onion/, /Grapes/]) {
+      await expect(cropOptions.filter({ hasText: crop })).toHaveCount(1);
     }
 
-    // Step 2: fill data, moderation-review checkbox unchecked → "Save as Draft".
-    await cropSelect.selectOption('Onion');
+    // Step 2: fill data — posting goes live directly (no review step).
+    await cropInput.fill('Onion');
     await modalField(modal, 'Variety').fill(S.onionVariety);
     await modalField(modal, 'Quantity (q)').fill(String(FARMER.lotOnion.quantityQ));
     await modalField(modal, 'Quality Grade').selectOption(FARMER.lotOnion.grade);
@@ -173,15 +174,12 @@ test.describe('Module 5 — Sell Produce: Lots & Offers (TC-FRM-38…49)', () =>
     await modalField(modal, 'Produce Sample Photo URL').fill(
       'https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?auto=format&fit=crop&w=600&q=80',
     );
-    const reviewCheck = modal.locator('#submitReviewCheck');
-    await expect(reviewCheck).toBeChecked(); // checked by default
-    await reviewCheck.uncheck();
-    const saveBtn = modal.getByRole('button', { name: 'Save as Draft' });
-    await expect(saveBtn).toBeVisible();
+    const postBtn = modal.getByRole('button', { name: 'Post Produce Lot' });
+    await expect(postBtn).toBeVisible();
 
-    // Step 3: save → status open, appears in My Lots.
-    await saveBtn.click();
-    await expect(page.getByText('Produce lot saved as draft.')).toBeVisible();
+    // Step 3: post → status open, appears in My Lots.
+    await postBtn.click();
+    await expect(page.getByText(/Produce lot posted/)).toBeVisible();
     const card = lotCard(page, S.onionVariety);
     await expect(card.getByRole('heading', { name: /onion/i })).toBeVisible();
     await expect(card.getByText('Open', { exact: true })).toBeVisible();
@@ -214,13 +212,11 @@ test.describe('Module 5 — Sell Produce: Lots & Offers (TC-FRM-38…49)', () =>
     S.grapesVariety = `Thompson Seedless UAT${RUN}`;
     await page.goto('/farmer/lots');
 
-    // Step 1: open modal with review checkbox ticked → button reads "Submit for Review".
+    // Step 1: open modal — the crop typeahead is fed by the live catalog, which
+    // includes Grapes; posting is direct (no moderation checkbox anymore).
     const modal = await openLotModal(page);
-    const reviewCheck = modal.locator('#submitReviewCheck');
-    await expect(reviewCheck).toBeChecked();
-    await expect(modal.getByRole('button', { name: 'Submit for Review' })).toBeVisible();
-    // DEFECT (soft): the crop select has no Grapes option (manual posts a grapes lot).
-    expect.soft(modal.getByRole('option', { name: /grapes/i }), 'crop select should offer Grapes').toHaveCount(0);
+    await expect(modal.getByRole('button', { name: 'Post Produce Lot' })).toBeVisible();
+    await expect(modal.locator('#lot-crop-options option').filter({ hasText: /Grapes/ })).toHaveCount(1);
     await page.keyboard.press('Escape'); // close modal — lot is created via API below
 
     // Create the grapes lot (submitForReview=true) through the same endpoint the UI calls.
@@ -266,7 +262,7 @@ test.describe('Module 5 — Sell Produce: Lots & Offers (TC-FRM-38…49)', () =>
     // Step 1: empty form (clear the required Variety + Pickup fields) → HTML5 required errors, no creation.
     await modalField(modal, 'Variety').fill('');
     await modalField(modal, 'Pickup Location / Gate').fill('');
-    await modal.getByRole('button', { name: 'Submit for Review' }).click();
+    await modal.getByRole('button', { name: 'Post Produce Lot' }).click();
     await expect(modal.locator('input:invalid')).not.toHaveCount(0);
     await expect(modal.getByRole('heading', { name: 'Post New Produce Lot' })).toBeVisible(); // still open
 
@@ -275,7 +271,7 @@ test.describe('Module 5 — Sell Produce: Lots & Offers (TC-FRM-38…49)', () =>
     await modalField(modal, 'Pickup Location / Gate').fill(FARMER.lotOnion.pickup);
     await modalField(modal, 'Quantity (q)').fill('-5');
     await modalField(modal, 'Expected Price (₹/q)').fill('1450');
-    await modal.getByRole('button', { name: 'Submit for Review' }).click();
+    await modal.getByRole('button', { name: 'Post Produce Lot' }).click();
     await expect(page.locator('div.text-rose-800').filter({ hasText: 'invalid lot' })).toBeVisible();
     // DEFECT (soft): the specific field message ("must be greater than 0") is not surfaced in the UI.
     expect
@@ -285,7 +281,7 @@ test.describe('Module 5 — Sell Produce: Lots & Offers (TC-FRM-38…49)', () =>
     // Step 3: price −10 → error.
     await modalField(modal, 'Quantity (q)').fill('20');
     await modalField(modal, 'Expected Price (₹/q)').fill('-10');
-    await modal.getByRole('button', { name: 'Submit for Review' }).click();
+    await modal.getByRole('button', { name: 'Post Produce Lot' }).click();
     await expect(page.locator('div.text-rose-800').filter({ hasText: 'invalid lot' })).toBeVisible();
     // DEFECT (soft): specific "must be 0 or more" message not surfaced.
     expect

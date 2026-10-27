@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Package,
   Plus,
@@ -8,14 +8,63 @@ import {
   Trash2,
   Pencil,
   Check,
+  TrendingUp,
 } from 'lucide-react';
-import { lots, offers, apiErrorMessage } from '../../lib/api';
+import { lots, offers, apiErrorMessage, readOne, readList } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
-import type { ProduceLot, TradeOffer } from '../../types';
+import type { ProduceLot, TradeOffer, MandiPrice } from '../../types';
 
 type OfferFilter = 'received' | 'sent';
+
+interface CatalogCrop {
+  name: string;
+  vernacularName?: string | null;
+  category?: string | null;
+  mspPaisa?: number | null;
+}
+
+/**
+ * Real released crop varieties (ICAR / state agri-university catalogs,
+ * Maharashtra-relevant). Used only as typeahead suggestions — farmers can
+ * always type a variety that is not listed.
+ */
+const CROP_VARIETIES: [string, string[]][] = [
+  ['soybean', ['JS 335', 'JS 9560', 'JS 2034', 'JS 93-05', 'NRC 86']],
+  ['wheat', ['Lokwan', 'HD 2967', 'HD 3086', 'GW 322', 'DDK 1029 (Khapli)']],
+  ['cotton', ['Bt Cotton BG-II (RCH 659)', 'Bunny Bt', 'NHH 44', 'PKV Hy-2']],
+  ['onion', ['Nashik Red', 'Agrifound Dark Red', 'Phule Samarth', 'Arka Kalyan']],
+  ['pigeonpea', ['BDN 711', 'BDN 716', 'ASHA (ICPL 87119)']],
+  ['tur', ['BDN 711', 'BDN 716', 'ASHA (ICPL 87119)']],
+  ['chickpea', ['JG 11', 'JAKI 9218', 'Vishal', 'Phule G 0515']],
+  ['maize', ['DHM 117', 'HQPM 1', 'Pratap QPM 1', 'NK 6240']],
+  ['groundnut', ['JL 24', 'TAG 24', 'TG 37A', 'Girnar 3']],
+  ['mustard', ['Pusa Mustard 21', 'Varuna', 'RH 749']],
+  ['rice', ['Basmati (Pusa 1121)', 'IR 64', 'Ratna', 'Swarna MTU 7029']],
+  ['paddy', ['Basmati (Pusa 1121)', 'IR 64', 'Ratna', 'Swarna MTU 7029']],
+  ['sorghum', ['CSH 16', 'CSH 30', 'CSV 216 (Maldandi)']],
+  ['jowar', ['CSH 16', 'CSH 30', 'CSV 216 (Maldandi)']],
+  ['bajra', ['HB 3', 'ICTP 8203', 'Dhanashakti']],
+  ['millet', ['HB 3', 'ICTP 8203', 'Dhanashakti']],
+  ['tomato', ['Pusa Ruby', 'Arka Vikas', 'US 440 Hybrid', 'Phule Raja']],
+  ['potato', ['Kufri Jyoti', 'Kufri Pukhraj', 'Kufri Chipsona']],
+  ['grapes', ['Thompson Seedless', 'Sharad Seedless', 'Flame Seedless']],
+  ['sugarcane', ['Co 86032', 'CoM 0265', 'VSI 434']],
+  ['moong', ['SGC 16 (Samrat)', 'IPM 02-3', 'Kopargaon']],
+  ['green gram', ['SGC 16 (Samrat)', 'IPM 02-3', 'Kopargaon']],
+  ['urad', ['Pant U 31', 'KU 301', 'VBN 5']],
+  ['black gram', ['Pant U 31', 'KU 301', 'VBN 5']],
+  ['chilli', ['Byadgi', 'Guntur Sannam', 'Jwala', 'Phule Jyoti']],
+  ['turmeric', ['Salem', 'Rajapuri', 'Krishna', 'Phule Swarupa']],
+  ['garlic', ['Agrifound White', 'Yamuna Safed', 'Bhima Purple']],
+  ['watermelon', ['Sugar Baby', 'Arka Jyoti', 'Dushyant']],
+  ['banana', ['Grand Naine', 'Robusta', 'Dwarf Cavendish']],
+  ['mango', ['Kesar', 'Alphonso (Hapus)', 'Totapuri', 'Langra']],
+  ['pomegranate', ['Bhagwa', 'Ganesh', 'Arakta']],
+  ['orange', ['Nagpur Mandarin', 'Mosambi (Satgudi)']],
+  ['cauliflower', ['Pusa Katki', 'Phule Gauri', 'Him Palam']]
+];
 
 export const ProduceLotsView: React.FC = () => {
   const [lotsList, setLotsList] = useState<ProduceLot[]>([]);
@@ -29,19 +78,23 @@ export const ProduceLotsView: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingLot, setEditingLot] = useState<ProduceLot | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<TradeOffer | null>(null);
-  const [counterPrice, setCounterPrice] = useState<number>(4750);
+  const [counterPrice, setCounterPrice] = useState<number>(0);
 
-  // Lot form state
-  const [newCrop, setNewCrop] = useState('Soybean');
-  const [newVariety, setNewVariety] = useState('JS 335');
-  const [newQuantity, setNewQuantity] = useState(20);
+  // Real reference data: crop catalog (vernacular names + MSP) and mandi modal
+  // prices, both served live from the backend — never hardcoded sample rows.
+  const [cropCatalog, setCropCatalog] = useState<CatalogCrop[]>([]);
+  const [mandiRows, setMandiRows] = useState<MandiPrice[]>([]);
+
+  // Lot form state — starts empty (no prefilled sample values).
+  const [newCrop, setNewCrop] = useState('');
+  const [newVariety, setNewVariety] = useState('');
+  const [newQuantity, setNewQuantity] = useState<number>(20);
   const [newGrade, setNewGrade] = useState<'A' | 'B' | 'C' | 'Ungraded'>('A');
-  const [newPrice, setNewPrice] = useState(4750);
+  const [newPrice, setNewPrice] = useState<number>(0);
   const [newLocation, setNewLocation] = useState('Pimpalgaon Baswant, Nashik');
   const [newVillage, setNewVillage] = useState('Pimplas');
-  const [newHarvestDate, setNewHarvestDate] = useState('2026-10-25');
-  const [newPhotos, setNewPhotos] = useState('https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?auto=format&fit=crop&w=600&q=80');
-  const [submitForReviewCheck, setSubmitForReviewCheck] = useState(true);
+  const [newHarvestDate, setNewHarvestDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newPhotos, setNewPhotos] = useState('');
 
   const reload = async () => {
     const [l, o] = await Promise.all([lots.list(), offers.mine()]);
@@ -55,11 +108,55 @@ export const ProduceLotsView: React.FC = () => {
     reload()
       .catch((e) => active && setError(apiErrorMessage(e)))
       .finally(() => active && setLoading(false));
+    // Full crop catalog (vernacular names + MSP) for the crop typeahead.
+    readOne<{ items: CatalogCrop[] }>('/reference/crops-suggest', { params: { q: '', limit: 100 } })
+      .then((res) => active && setCropCatalog(res?.items ?? []))
+      .catch(() => {});
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Live mandi benchmark rows for the typed crop — real APMC/Agmarknet prices.
+  useEffect(() => {
+    const crop = newCrop.trim();
+    if (!crop) {
+      setMandiRows([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      readList<MandiPrice>('/mandi/prices', { params: { crop, pageSize: 6 } })
+        .then((rows) => {
+          const anyRows = rows as (MandiPrice & { distanceKm?: number })[];
+          const local = anyRows.filter((r) => r.distanceKm != null);
+          const national = anyRows.filter((r) => r.distanceKm == null);
+          setMandiRows([...local, ...national].slice(0, 3) as MandiPrice[]);
+        })
+        .catch(() => setMandiRows([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [newCrop]);
+
+  // Real released varieties matching the typed crop (falls back to empty = free text).
+  const varietyOptions = useMemo(() => {
+    const needle = newCrop.trim().toLowerCase();
+    if (needle.length < 2) return [];
+    for (const [key, list] of CROP_VARIETIES) {
+      if (needle.includes(key)) return list;
+    }
+    return [];
+  }, [newCrop]);
+
+  // MSP: catalog row first, else any mandi row that carries the notified MSP.
+  const mspPerQuintal = useMemo(() => {
+    const fromCatalog = cropCatalog.find(
+      (c) => c.name.toLowerCase() === newCrop.trim().toLowerCase()
+    )?.mspPaisa;
+    if (fromCatalog) return Math.round(fromCatalog / 100);
+    const fromMandi = (mandiRows as (MandiPrice & { msp?: number })[]).find((r) => r.msp)?.msp;
+    return fromMandi ?? null;
+  }, [cropCatalog, newCrop, mandiRows]);
 
   const visibleOffers = offersList.filter((o) =>
     offerFilter === 'received' ? o.senderRole !== 'farmer' : o.senderRole === 'farmer'
@@ -73,24 +170,30 @@ export const ProduceLotsView: React.FC = () => {
     setNewGrade(lot.grade);
     setNewPrice(lot.expectedPricePerQuintal);
     setNewLocation(lot.location);
+    setNewVillage(lot.village || '');
+    setNewHarvestDate(lot.harvestDate || new Date().toISOString().slice(0, 10));
+    setNewPhotos((lot as ProduceLot & { photos?: string[] }).photos?.[0] || '');
     setCreateModalOpen(true);
   };
 
   const resetForm = () => {
     setEditingLot(null);
-    setNewCrop('Soybean');
-    setNewVariety('JS 335');
+    setNewCrop('');
+    setNewVariety('');
     setNewQuantity(20);
     setNewGrade('A');
-    setNewPrice(4750);
+    setNewPrice(0);
     setNewLocation('Pimpalgaon Baswant, Nashik');
+    setNewVillage('Pimplas');
+    setNewHarvestDate(new Date().toISOString().slice(0, 10));
+    setNewPhotos('');
   };
 
   const handleSaveLot = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     try {
-      const photosArray = newPhotos ? [newPhotos.trim()] : [];
+      const photosArray = newPhotos.trim() ? [newPhotos.trim()] : [];
       if (editingLot) {
         const updated = await lots.update(editingLot.id, {
           crop: newCrop,
@@ -106,6 +209,7 @@ export const ProduceLotsView: React.FC = () => {
         setLotsList((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
         setNotice(`Lot #${updated.id} updated.`);
       } else {
+        // Post directly to the marketplace — no moderation gate.
         const created = await lots.create({
           crop: newCrop,
           variety: newVariety,
@@ -116,10 +220,10 @@ export const ProduceLotsView: React.FC = () => {
           village: newVillage,
           harvestDate: newHarvestDate,
           photos: photosArray,
-          submitForReview: submitForReviewCheck,
+          submitForReview: false,
         });
         setLotsList((prev) => [created, ...prev]);
-        setNotice(submitForReviewCheck ? 'Produce lot submitted for admin moderation.' : 'Produce lot saved as draft.');
+        setNotice('Produce lot posted — live for buyers now.');
       }
       setCreateModalOpen(false);
       resetForm();
@@ -226,7 +330,7 @@ export const ProduceLotsView: React.FC = () => {
             Produce Lots & Direct B2B Selling
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Post verified produce lots, receive direct quotes from institutional buyers, and negotiate in 1 round
+            Post produce lots directly to the marketplace, receive quotes from institutional buyers, and negotiate in 1 round
           </p>
         </div>
 
@@ -498,35 +602,46 @@ export const ProduceLotsView: React.FC = () => {
           resetForm();
         }}
         title={editingLot ? 'Edit Produce Lot' : 'Post New Produce Lot'}
-        description={editingLot ? 'Update quantity, grade or expected price' : 'List harvested crop for direct B2B buyer discovery'}
+        description={editingLot ? 'Update quantity, grade or expected price' : 'List harvested crop — the lot goes live for buyers as soon as you post'}
         maxWidth="lg"
       >
         <form onSubmit={handleSaveLot} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Crop</label>
-              <select
+              <input
+                type="text"
+                list="lot-crop-options"
                 value={newCrop}
                 onChange={(e) => setNewCrop(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
-              >
-                <option value="Soybean">Soybean (सोयाबीन)</option>
-                <option value="Wheat">Wheat (गेहूं)</option>
-                <option value="Cotton">Cotton (कपास)</option>
-                <option value="Onion">Onion (प्याज)</option>
-                <option value="Tur / Arhar">Tur / Arhar (तुवर दाल)</option>
-              </select>
+                placeholder="Type to search crops — e.g. Onion, Soybean, कांदा"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                required
+              />
+              <datalist id="lot-crop-options">
+                {cropCatalog.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.vernacularName || c.category || ''}
+                  </option>
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Variety</label>
               <input
                 type="text"
+                list="lot-variety-options"
                 value={newVariety}
                 onChange={(e) => setNewVariety(e.target.value)}
-                placeholder="e.g. JS 335 / Lokwan"
+                placeholder={varietyOptions.length > 0 ? varietyOptions.join(' / ') : 'e.g. JS 335, Nashik Red'}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
                 required
               />
+              <datalist id="lot-variety-options">
+                {varietyOptions.map((v) => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
             </div>
           </div>
 
@@ -535,6 +650,8 @@ export const ProduceLotsView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Quantity (q)</label>
               <input
                 type="number"
+                min={0.5}
+                step={0.5}
                 value={newQuantity}
                 onChange={(e) => setNewQuantity(Number(e.target.value))}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
@@ -558,6 +675,7 @@ export const ProduceLotsView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Expected Price (₹/q)</label>
               <input
                 type="number"
+                min={1}
                 value={newPrice}
                 onChange={(e) => setNewPrice(Number(e.target.value))}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold text-emerald-800"
@@ -565,6 +683,51 @@ export const ProduceLotsView: React.FC = () => {
               />
             </div>
           </div>
+
+          {(mspPerQuintal !== null || mandiRows.length > 0) && (
+            <div className="p-3 bg-sky-50 rounded-2xl border border-sky-200 space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-sky-700 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5" />
+                Live market guidance{newCrop.trim() ? ` for ${newCrop.trim()}` : ''} (real APMC / Agmarknet data)
+              </p>
+              {mspPerQuintal !== null && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600">Govt. MSP (notified minimum)</span>
+                  <span className="flex items-center gap-2">
+                    <strong className="text-slate-900">{formatCurrency(mspPerQuintal)}/q</strong>
+                    <button
+                      type="button"
+                      onClick={() => setNewPrice(mspPerQuintal)}
+                      className="px-2 py-0.5 rounded-lg bg-white border border-sky-200 text-sky-700 font-bold text-[10px] hover:bg-sky-100"
+                    >
+                      Use MSP
+                    </button>
+                  </span>
+                </div>
+              )}
+              {mandiRows.map((row) => {
+                const r = row as MandiPrice & { mandiName?: string; date?: string };
+                return (
+                  <div key={r.id} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-600">
+                      {(r.mandiName || (r as any).mandi || 'APMC Mandi')}
+                      {r.date || (r as any).priceDate ? ` · ${r.date || (r as any).priceDate}` : ''} (modal)
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <strong className="text-slate-900">{formatCurrency(r.modalPrice)}/q</strong>
+                      <button
+                        type="button"
+                        onClick={() => setNewPrice(Math.round(r.modalPrice))}
+                        className="px-2 py-0.5 rounded-lg bg-white border border-sky-200 text-sky-700 font-bold text-[10px] hover:bg-sky-100"
+                      >
+                        Use
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -605,32 +768,22 @@ export const ProduceLotsView: React.FC = () => {
               type="text"
               value={newPhotos}
               onChange={(e) => setNewPhotos(e.target.value)}
-              placeholder="https://..."
+              placeholder="https://… (optional)"
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
             />
           </div>
-
-          {!editingLot && (
-            <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
-              <input
-                type="checkbox"
-                id="submitReviewCheck"
-                checked={submitForReviewCheck}
-                onChange={(e) => setSubmitForReviewCheck(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded"
-              />
-              <label htmlFor="submitReviewCheck" className="text-xs font-bold text-emerald-900 cursor-pointer">
-                Submit directly for APMC / Admin Moderation Review
-              </label>
-            </div>
-          )}
 
           <button
             type="submit"
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md transition-all mt-2"
           >
-            {editingLot ? 'Save Lot Changes' : (submitForReviewCheck ? 'Submit for Review' : 'Save as Draft')}
+            {editingLot ? 'Save Lot Changes' : 'Post Produce Lot'}
           </button>
+          {!editingLot && (
+            <p className="text-[10px] text-slate-400 text-center">
+              Your lot goes live immediately — no admin review step. Buyers see your first name and village only.
+            </p>
+          )}
         </form>
       </ModalSheet>
 

@@ -53,7 +53,7 @@ async def crops_suggest(q: str = "", limit: int = 8):
     suggestions as soon as it is focused.
     """
     needle = (q or "").strip().lower()
-    cap = max(1, min(limit, 25))
+    cap = max(1, min(limit, 100))
     items: list[dict] = []
     seen: set[str] = set()
 
