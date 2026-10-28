@@ -20,11 +20,9 @@ import { transport, uploads, apiClient, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
-import type { TransportBooking, TransportVehicle } from '../../types';
+import type { TransportBooking, TransportVehicle, VehicleCatalogEntry } from '../../types';
 import { asArr, asRec, firstNum, firstStr, fmtDate, str, type Rec } from './utils';
 
-/** Vehicle-type catalog names accepted by POST /transport/vehicles. */
-const VEHICLE_TYPES = ['Tata Ace', 'Bolero Maxi', 'Tractor Trolley', 'Eicher 6-Wheeler', 'Reefer Cold Van', '10-Wheeler Truck'];
 const PERMIT_TYPES = ['State Permit', 'National Permit'];
 
 interface VehicleForm {
@@ -44,9 +42,9 @@ interface VehicleForm {
 }
 
 const EMPTY_VEHICLE: VehicleForm = {
-  vehicleType: 'Tractor Trolley',
+  vehicleType: '',
   registrationNo: '',
-  capacityTonnes: 3,
+  capacityTonnes: 0,
   permitType: 'State Permit',
   baseFare: '',
   perKmRate: '',
@@ -69,6 +67,8 @@ const vehAvailable = (v: TransportVehicle): boolean => v.availableNow ?? v.avail
 export const FleetView: React.FC = () => {
   const [tab, setTab] = useState<'vehicles' | 'drivers'>('vehicles');
   const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
+  // Rate card from GET /transport/vehicles — the add-vehicle type dropdown.
+  const [catalog, setCatalog] = useState<VehicleCatalogEntry[]>([]);
   const [drivers, setDrivers] = useState<Rec[]>([]);
   const [bookings, setBookings] = useState<TransportBooking[]>([]);
   const [compliance, setCompliance] = useState<Rec>({});
@@ -91,14 +91,16 @@ export const FleetView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [v, d, b] = await Promise.all([
+      const [v, d, b, cat] = await Promise.all([
         transport.myVehicles(),
         transport.drivers().catch(() => [] as unknown[]),
         transport.bookings({ pageSize: 200 }).catch(() => [] as TransportBooking[]),
+        transport.vehicles().catch(() => [] as unknown[]),
       ]);
       setVehicles(v);
       setDrivers(asArr(d).map(asRec));
       setBookings(b.filter((x) => LIVE_TRIP_STATUSES.includes(x.status)));
+      setCatalog(asArr(cat) as unknown as VehicleCatalogEntry[]);
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -521,9 +523,15 @@ export const FleetView: React.FC = () => {
                 value={vehForm.vehicleType}
                 onChange={(e) => setVehForm({ ...vehForm, vehicleType: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                required
               >
-                {VEHICLE_TYPES.map((t) => (
-                  <option key={t}>{t}</option>
+                <option value="" disabled>
+                  {catalog.length === 0 ? 'No vehicle types on the rate card' : 'Select vehicle type'}
+                </option>
+                {catalog.map((t) => (
+                  <option key={t.type} value={t.type}>
+                    {t.type}
+                  </option>
                 ))}
               </select>
             </div>

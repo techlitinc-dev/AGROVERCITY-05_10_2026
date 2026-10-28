@@ -69,20 +69,10 @@ from app.services.users import get_user
 
 router = APIRouter(prefix="/transport", tags=["transport"])
 
-CORE_VEHICLE_TYPES = [
-    {"type": "Tata Ace", "baseFare": 500, "perKmRate": 35, "capacityTonnes": 0.75},
-    {"type": "Bolero Maxi", "baseFare": 800, "perKmRate": 45, "capacityTonnes": 1.5},
-    {"type": "Tractor Trolley", "baseFare": 1000, "perKmRate": 30, "capacityTonnes": 3.0},
-]
-
-EXTENDED_VEHICLE_TYPES = [
-    {"type": "Eicher 6-Wheeler", "baseFare": 1800, "perKmRate": 55, "capacityTonnes": 6.0},
-    {"type": "Reefer Cold Van", "baseFare": 2200, "perKmRate": 65, "capacityTonnes": 3.5},
-    {"type": "10-Wheeler Truck", "baseFare": 3500, "perKmRate": 75, "capacityTonnes": 16.0},
-]
-
-ALL_VEHICLE_TYPES = CORE_VEHICLE_TYPES + EXTENDED_VEHICLE_TYPES
-VEHICLE_TYPES = ALL_VEHICLE_TYPES
+# Vehicle rate card lives in the `vehicle_catalog` Firestore collection —
+# seeded by scripts/seed_vehicle_catalog.py, editable by ops. Nothing here is
+# hardcoded: empty catalog ⇒ empty fleet board (seed the collection first).
+VEHICLE_CATALOG_COLLECTION = "vehicle_catalog"
 
 # Aligned with services/settlements.py DEFAULT_CONFIG.transportPct (10%).
 TRANSPORT_COMMISSION_RATE = 0.10
@@ -405,89 +395,6 @@ TRIP_LIVE_STATUSES = (
     "reachedDestination", "unloading",
 )
 
-INITIAL_OPEN_LOADS = [
-    {
-        "id": "load_nsk_azp_01",
-        "userId": "farmer_demo_1",
-        "farmerName": "राजाराम पाटिल",
-        "farmerPhone": "+91 98234 56781",
-        "pickupLocation": "पिंपलगाव बसवंत, नासिक",
-        "dropLocation": "आज़ादपुर फल-सब्जी मंडी, दिल्ली",
-        "crop": "टमाटर (Tomato)",
-        "quantityQuintals": 35.0,
-        "packaging": "Plastic Crates (प्लास्टिक क्रेट्स)",
-        "perishable": True,
-        "preferredVehicleType": "Eicher 6-Wheeler",
-        "pickupDate": "2026-09-28",
-        "targetFare": 38000,
-        "distanceKm": 1250,
-        "notes": "ताजा टमाटर, 24 घंटे में पहुंचना चाहिए।",
-        "status": "open",
-        "bidsCount": 2,
-        "createdAt": "2026-09-27T08:00:00Z",
-    },
-    {
-        "id": "load_nfd_vsh_02",
-        "userId": "farmer_demo_2",
-        "farmerName": "सचिन कदम",
-        "farmerPhone": "+91 97654 32109",
-        "pickupLocation": "निफाड, नासिक",
-        "dropLocation": "वाशी APMC मार्केट, नवी मुंबई",
-        "crop": "लाल प्याज (Red Onion)",
-        "quantityQuintals": 60.0,
-        "packaging": "Gunny Bags (जूट बोरी)",
-        "perishable": False,
-        "preferredVehicleType": "Eicher 6-Wheeler",
-        "pickupDate": "2026-09-29",
-        "targetFare": 14500,
-        "distanceKm": 210,
-        "notes": "सूखा उच्च गुणवत्ता प्याज, वाटरप्रूफ तिरपाल आवश्यक।",
-        "status": "open",
-        "bidsCount": 3,
-        "createdAt": "2026-09-27T09:30:00Z",
-    },
-    {
-        "id": "load_dnd_nsk_03",
-        "userId": "farmer_demo_3",
-        "farmerName": "बापूसाहेब शिंदे",
-        "farmerPhone": "+91 99221 44556",
-        "pickupLocation": "दिंडोरी, नासिक",
-        "dropLocation": "नासिक APMC मंडी",
-        "crop": "अनार (Pomegranate)",
-        "quantityQuintals": 12.0,
-        "packaging": "Wooden Boxes (लकड़ी पेटी)",
-        "perishable": True,
-        "preferredVehicleType": "Bolero Maxi",
-        "pickupDate": "2026-09-28",
-        "targetFare": 2800,
-        "distanceKm": 35,
-        "notes": "एक्सपोर्ट ग्रेड अनार, सावधानीपूर्वक लोडिंग।",
-        "status": "open",
-        "bidsCount": 1,
-        "createdAt": "2026-09-27T10:15:00Z",
-    },
-    {
-        "id": "load_mal_srt_04",
-        "userId": "farmer_demo_4",
-        "farmerName": "गजानन खैरनार",
-        "farmerPhone": "+91 98812 77665",
-        "pickupLocation": "मालेगाव, नासिक",
-        "dropLocation": "सूरत सरदार मार्केट, गुजरात",
-        "crop": "हरी मिर्च व शिमला (Chilli & Capsicum)",
-        "quantityQuintals": 22.0,
-        "packaging": "Plastic Crates (क्रेट्स)",
-        "perishable": True,
-        "preferredVehicleType": "Bolero Maxi",
-        "pickupDate": "2026-09-30",
-        "targetFare": 9500,
-        "distanceKm": 230,
-        "notes": "सुबह 5 बजे से पहले मंडी पहुंचाना है।",
-        "status": "open",
-        "bidsCount": 0,
-        "createdAt": "2026-09-27T11:00:00Z",
-    },
-]
-
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
     raise HTTPException(
@@ -529,11 +436,31 @@ async def _booking_persona(uid: str = Depends(current_user_id)) -> str:
     return uid
 
 
-def _vehicle_type(name: str) -> dict:
-    for vt in VEHICLE_TYPES:
-        if vt["type"] == name:
+async def _vehicle_catalog(extended: bool | None = None) -> list[dict]:
+    """Vehicle rate card from the `vehicle_catalog` collection (seeded by
+    scripts/seed_vehicle_catalog.py). `extended=None` returns everything."""
+    docs = await query(VEHICLE_CATALOG_COLLECTION, [], limit=500)
+    docs = [d for d in docs if d.get("active", True)]
+    if extended is not None:
+        docs = [d for d in docs if bool(d.get("extended", False)) == extended]
+    docs.sort(key=lambda d: (d.get("sortOrder") or 0, d.get("type") or ""))
+    return docs
+
+
+async def _catalog_entry(vehicle_type: str | None) -> dict | None:
+    if not vehicle_type:
+        return None
+    for vt in await _vehicle_catalog():
+        if vt.get("type") == vehicle_type:
             return vt
-    _error(422, "UNKNOWN_VEHICLE_TYPE", "unknown vehicle type", {"vehicleType": "unknown type"})
+    return None
+
+
+async def _vehicle_type(name: str) -> dict:
+    entry = await _catalog_entry(name)
+    if entry is None:
+        _error(422, "UNKNOWN_VEHICLE_TYPE", "unknown vehicle type", {"vehicleType": "unknown type"})
+    return entry
 
 
 async def _get_booking(booking_id: str) -> dict:
@@ -713,13 +640,6 @@ def _vehicle_available_on(vehicle: dict, date_iso: str, today_iso: str) -> bool:
     return date_iso in dates or today_iso in dates
 
 
-def _catalog_entry(vehicle_type: str | None) -> dict | None:
-    for vt in VEHICLE_TYPES:
-        if vt["type"] == vehicle_type:
-            return vt
-    return None
-
-
 def _vehicle_fare(vehicle: dict, catalog: dict, distance_km: float) -> dict:
     """Custom perKmRate/baseFare override the catalog when present."""
     base = vehicle.get("baseFare") or catalog["baseFare"]
@@ -734,7 +654,7 @@ def _vehicle_fare(vehicle: dict, catalog: dict, distance_km: float) -> dict:
 
 @router.get("/vehicles")
 async def list_vehicle_types(extended: bool = False, uid: str = Depends(_viewer)):
-    types = ALL_VEHICLE_TYPES if extended else CORE_VEHICLE_TYPES
+    types = await _vehicle_catalog(extended=None if extended else False)
     return {"data": [VehicleTypeOut(**vt).model_dump() for vt in types]}
 
 
@@ -972,7 +892,7 @@ async def update_transporter_profile(body: TransportProfileUpdate, uid: str = De
 
 @router.post("/fare-estimate", response_model=FareEstimateOut)
 async def fare_estimate(body: FareEstimateRequest, uid: str = Depends(_viewer)):
-    vt = _vehicle_type(body.vehicleType)
+    vt = await _vehicle_type(body.vehicleType)
     distance_km = body.distanceKm
     distance_source = "client"
     if body.pickup and body.drop:
@@ -1011,7 +931,7 @@ async def fare_estimate(body: FareEstimateRequest, uid: str = Depends(_viewer)):
 
 @router.post("/bookings")
 async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)):
-    vt = _vehicle_type(body.vehicleType)
+    vt = await _vehicle_type(body.vehicleType)
     if body.lotId is not None:
         lot = await get_doc("market_lots", body.lotId)
         if lot is None or lot.get("farmerId") != uid:
@@ -1761,11 +1681,6 @@ async def list_open_loads(
     uid: str = Depends(_viewer),
 ):
     loads = await query("transport_loads", [], limit=500)
-    if not loads:
-        # Pre-seed realistic open loads in DB
-        for item in INITIAL_OPEN_LOADS:
-            await set_doc("transport_loads", item["id"], item)
-        loads = list(INITIAL_OPEN_LOADS)
 
     loads = [ld for ld in loads if ld.get("status") == "open"]
     if crop:
@@ -3264,7 +3179,7 @@ async def rebook_trip(booking_id: str, body: RebookRequest, uid: str = Depends(_
         _error(403, "FORBIDDEN", "only the original booker can rebook this trip")
     if original.get("status") not in ("delivered", "cancelled"):
         _error(409, "ILLEGAL_TRANSITION", f"cannot rebook from {original.get('status')}")
-    vt = _vehicle_type(original["vehicleType"])
+    vt = await _vehicle_type(original["vehicleType"])
     fare = vt["baseFare"] + vt["perKmRate"] * original["distanceKm"]
     doc = {
         "id": f"trb_{uuid.uuid4().hex[:12]}",
@@ -3312,7 +3227,7 @@ async def rebook_trip(booking_id: str, body: RebookRequest, uid: str = Depends(_
 @router.post("/load-templates", status_code=201)
 async def create_load_template(body: LoadTemplateRequest, uid: str = Depends(_booker)):
     """Farmer saves a repeatable load (the weekly Nashik→Vashi mandi run)."""
-    _vehicle_type(body.preferredVehicleType)  # validate against the catalog
+    await _vehicle_type(body.preferredVehicleType)  # validate against the catalog
     doc = {
         "id": f"tmpl_{uuid.uuid4().hex[:10]}",
         "userId": uid,
@@ -3542,7 +3457,7 @@ async def nearby_vehicles(
         anchor = _vehicle_anchor_point(vehicle)
         if anchor is None:
             continue
-        catalog = _catalog_entry(vehicle.get("vehicleType"))
+        catalog = await _catalog_entry(vehicle.get("vehicleType"))
         if catalog is None:
             continue  # unpriceable fleet entries stay off the board
         capacity_kg = round(float(vehicle.get("capacityTonnes") or 0) * 1000)
@@ -3610,7 +3525,7 @@ async def create_instant_booking(
     if not (vehicle.get("availableNow") or body.pickupDate in (vehicle.get("availableDates") or [])):
         _error(409, "VEHICLE_UNAVAILABLE", "vehicle is not available on the pickup date")
 
-    vt = _vehicle_type(vehicle["vehicleType"])
+    vt = await _vehicle_type(vehicle["vehicleType"])
     distance_km, distance_source = await resolve_distance_km(
         {"lat": body.pickup.lat, "lng": body.pickup.lng},
         {"lat": body.drop.lat, "lng": body.drop.lng},

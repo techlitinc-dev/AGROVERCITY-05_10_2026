@@ -21,7 +21,7 @@ import { transport, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
-import type { TransportVehicle, TransportBooking } from '../../types';
+import type { VehicleCatalogEntry, TransportBooking } from '../../types';
 
 const asRecord = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -41,18 +41,6 @@ const firstNum = (r: Record<string, unknown>, keys: string[], fb = 0): number =>
   return fb;
 };
 
-/** Fleet-card display names → backend catalog names (transport.py VEHICLE_TYPES),
- *  used when prefilling the Post Vehicle Demand form from a catalog card. */
-const TEMPLATE_VEHICLE: Record<string, string> = {
-  'Pickup 1.5T': 'Bolero Maxi',
-  'Tata Ace (1T)': 'Tata Ace',
-  'Eicher 14ft (4T)': 'Eicher 6-Wheeler',
-  'Reefer / Cold Truck': 'Reefer Cold Van',
-};
-
-/** Catalog names accepted by POST /transport/loads (preferredVehicleType). */
-const LOAD_VEHICLE_TYPES = ['Tata Ace', 'Bolero Maxi', 'Tractor Trolley', 'Eicher 6-Wheeler', 'Reefer Cold Van', '10-Wheeler Truck'];
-
 type TripTab = 'all' | 'ongoing' | 'upcoming' | 'previous' | 'cancelled';
 
 const TRIP_TABS: { id: TripTab; label: string; statuses: TransportBooking['status'][] }[] = [
@@ -65,7 +53,9 @@ const TRIP_TABS: { id: TripTab; label: string; statuses: TransportBooking['statu
 
 export const TransportBookingView: React.FC = () => {
   const navigate = useNavigate();
-  const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
+  // Vehicle rate card (GET /transport/vehicles) — fleet-and-rates board and the
+  // demand form's vehicle dropdown; empty catalog renders an empty board.
+  const [catalog, setCatalog] = useState<VehicleCatalogEntry[]>([]);
   const [bookings, setBookings] = useState<TransportBooking[]>([]);
   const [templates, setTemplates] = useState<Record<string, unknown>[]>([]);
   const [tripTab, setTripTab] = useState<TripTab>('all');
@@ -87,14 +77,14 @@ export const TransportBookingView: React.FC = () => {
   const [demandModalOpen, setDemandModalOpen] = useState(false);
   const [demandBusy, setDemandBusy] = useState(false);
   const [demandForm, setDemandForm] = useState({
-    pickupLocation: 'Pimpalgaon Baswant Farm Gate, Nashik',
-    dropLocation: 'Vashi APMC Yard, Navi Mumbai',
-    crop: 'Soybean',
-    quantityQuintals: 20,
-    preferredVehicleType: 'Tata Ace',
+    pickupLocation: '',
+    dropLocation: '',
+    crop: '',
+    quantityQuintals: 0,
+    preferredVehicleType: '',
     pickupDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
     pickupTime: '06:00',
-    targetFare: 2500,
+    targetFare: 0,
     notes: '',
     urgent: false,
   });
@@ -115,7 +105,7 @@ export const TransportBookingView: React.FC = () => {
     ])
       .then(([v, b, t, ml]) => {
         if (!active) return;
-        setVehicles(v);
+        setCatalog(v as unknown as VehicleCatalogEntry[]);
         setBookings(b);
         setTemplates(asArr(t).map(asRecord));
         setMyLoads(asArr(ml).map(asRecord));
@@ -296,18 +286,22 @@ export const TransportBookingView: React.FC = () => {
         </div>
       )}
 
-      {/* Available Vehicles Grid */}
+      {/* Available Vehicles Grid — rate card from the vehicle_catalog collection */}
       <div className="space-y-3">
         <h3 className="font-bold text-sm text-slate-900">Standard Vehicle Fleets & Rates</h3>
         {loading ? (
           <div className="py-8 text-center text-xs font-bold text-slate-400 animate-pulse">
             Loading vehicles…
           </div>
+        ) : catalog.length === 0 ? (
+          <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No vehicle types on the rate card yet.
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {vehicles.map((v) => (
+            {catalog.map((v) => (
               <div
-                key={v.id}
+                key={v.type}
                 className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4"
               >
                 <div className="flex items-center gap-3">
@@ -315,10 +309,9 @@ export const TransportBookingView: React.FC = () => {
                     <Truck className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-slate-900">{v.vehicleType}</h4>
-                    <p className="text-xs text-slate-500">{v.transporterName}</p>
+                    <h4 className="font-bold text-sm text-slate-900">{v.type}</h4>
                     <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md mt-1 inline-block">
-                      {v.registrationNumber} • {v.capacityTons}T Payload
+                      {v.capacityTonnes}T Payload
                     </span>
                   </div>
                 </div>
@@ -326,11 +319,11 @@ export const TransportBookingView: React.FC = () => {
                 <div className="text-right">
                   <span className="text-xs text-slate-400 block font-semibold">Standard Rate</span>
                   <span className="text-sm font-extrabold text-slate-900">
-                    ₹{v.baseFare} base + ₹{v.ratePerKm}/km
+                    ₹{v.baseFare} base + ₹{v.perKmRate}/km
                   </span>
                   <button
                     onClick={() => {
-                      setDemandForm((f) => ({ ...f, preferredVehicleType: TEMPLATE_VEHICLE[v.vehicleType] ?? v.vehicleType }));
+                      setDemandForm((f) => ({ ...f, preferredVehicleType: v.type }));
                       setDemandModalOpen(true);
                     }}
                     className="mt-2 block px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-colors"
@@ -785,9 +778,15 @@ export const TransportBookingView: React.FC = () => {
                 value={demandForm.preferredVehicleType}
                 onChange={(e) => setDemandForm({ ...demandForm, preferredVehicleType: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                required
               >
-                {LOAD_VEHICLE_TYPES.map((v) => (
-                  <option key={v}>{v}</option>
+                <option value="" disabled>
+                  {catalog.length === 0 ? 'No vehicle types on the rate card' : 'Select vehicle type'}
+                </option>
+                {catalog.map((v) => (
+                  <option key={v.type} value={v.type}>
+                    {v.type} ({v.capacityTonnes}T)
+                  </option>
                 ))}
               </select>
             </div>
@@ -851,7 +850,15 @@ export const TransportBookingView: React.FC = () => {
 
           <button
             type="submit"
-            disabled={demandBusy}
+            disabled={
+              demandBusy ||
+              !demandForm.pickupLocation.trim() ||
+              !demandForm.dropLocation.trim() ||
+              !demandForm.crop.trim() ||
+              !demandForm.preferredVehicleType ||
+              demandForm.quantityQuintals <= 0 ||
+              demandForm.targetFare <= 0
+            }
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-60"
           >
             {demandBusy ? 'Posting Demand…' : 'Post Demand to Transporters'}

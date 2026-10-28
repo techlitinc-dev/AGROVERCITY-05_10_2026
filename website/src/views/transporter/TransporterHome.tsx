@@ -36,7 +36,7 @@ import { ModalSheet } from '../../components/common/ModalSheet';
 import { MpinPad } from '../../components/common/MpinPad';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
-import type { TransportBooking, TransportVehicle } from '../../types';
+import type { TransportBooking, TransportVehicle, VehicleCatalogEntry } from '../../types';
 import { asArr, asRec, firstNum, firstStr, fmtDate, str, type Rec } from './utils';
 
 type TabId = 'loads' | 'trips' | 'bilty' | 'settlements';
@@ -48,8 +48,8 @@ const TAB_FOR_PATH: Record<string, TabId> = {
   '/transporter/settlements': 'settlements',
 };
 
-/** Vehicle-type catalog names accepted by POST /transport/vehicles. */
-const VEHICLE_TYPES = ['Tata Ace', 'Bolero Maxi', 'Tractor Trolley', 'Eicher 6-Wheeler', 'Reefer Cold Van', '10-Wheeler Truck'];
+/** Vehicle-type catalog names come from GET /transport/vehicles
+ *  (the `vehicle_catalog` rate card) — no hardcoded fleet list. */
 
 const QUICK_LINKS = [
   { to: '/transporter/profile', label: 'Profile', icon: User },
@@ -83,6 +83,8 @@ export const TransporterHome: React.FC = () => {
   const [settlements, setSettlements] = useState<Rec[]>([]);
   const [wallet, setWallet] = useState<Rec>({});
   const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
+  // Rate card from GET /transport/vehicles — drives the fare-estimator dropdown.
+  const [catalog, setCatalog] = useState<VehicleCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,7 +98,7 @@ export const TransporterHome: React.FC = () => {
   const [bidError, setBidError] = useState<string | null>(null);
   const [bidBusy, setBidBusy] = useState(false);
   const [mpinKey, setMpinKey] = useState(0);
-  const [fareForm, setFareForm] = useState({ vehicleType: 'Tractor Trolley', distanceKm: 100 });
+  const [fareForm, setFareForm] = useState({ vehicleType: '', distanceKm: 100 });
   const [fareResult, setFareResult] = useState<Rec | null>(null);
   const [invoice, setInvoice] = useState<Rec | null>(null);
   const [biltyFor, setBiltyFor] = useState<TransportBooking | null>(null);
@@ -121,7 +123,7 @@ export const TransporterHome: React.FC = () => {
       setAnalytics({});
     }
     try {
-      const [l, m, f, b, s, accepted, mine] = await Promise.all([
+      const [l, m, f, b, s, accepted, mine, cat] = await Promise.all([
         transport.loads(),
         transport.matchedLoads().catch(() => [] as unknown[]),
         transport.fareTrends().catch(() => [] as unknown[]),
@@ -129,6 +131,7 @@ export const TransporterHome: React.FC = () => {
         transport.settlements().catch(() => [] as unknown[]),
         transport.bookings({ status: 'accepted' }).catch(() => [] as TransportBooking[]),
         transport.myLoadBids().catch(() => [] as unknown[]),
+        transport.vehicles().catch(() => [] as unknown[]),
       ]);
       setLoads(asArr(l).map(asRec));
       setMatched(asArr(m).map(asRec));
@@ -137,6 +140,9 @@ export const TransporterHome: React.FC = () => {
       setSettlements(asArr(s).map(asRec));
       setAcceptedTrips(accepted);
       setMyBids(asArr(mine).map(asRec));
+      const catalogRows = asArr(cat) as unknown as VehicleCatalogEntry[];
+      setCatalog(catalogRows);
+      setFareForm((ff) => (ff.vehicleType || catalogRows.length === 0 ? ff : { ...ff, vehicleType: catalogRows[0].type }));
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -483,9 +489,15 @@ export const TransporterHome: React.FC = () => {
                   value={fareForm.vehicleType}
                   onChange={(e) => setFareForm({ ...fareForm, vehicleType: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
+                  required
                 >
-                  {VEHICLE_TYPES.map((v) => (
-                    <option key={v}>{v}</option>
+                  <option value="" disabled>
+                    {catalog.length === 0 ? 'No vehicle types on the rate card' : 'Vehicle type'}
+                  </option>
+                  {catalog.map((v) => (
+                    <option key={v.type} value={v.type}>
+                      {v.type}
+                    </option>
                   ))}
                 </select>
                 <input

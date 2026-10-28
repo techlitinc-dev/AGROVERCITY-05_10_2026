@@ -17,7 +17,7 @@ import { chat, transport, apiClient, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
-import type { TransportBooking, TransportVehicle } from '../../types';
+import type { TransportBooking, TransportVehicle, VehicleCatalogEntry } from '../../types';
 import { asArr, asRec, firstNum, firstStr, fmtDate, str, type Rec } from './utils';
 
 /** /transporter/inbox — requested bookings awaiting accept/reject, with fare
@@ -45,14 +45,15 @@ export const JobInboxView: React.FC = () => {
 
   // --- templates state ---
   const [templateModal, setTemplateModal] = useState(false);
+  const [catalog, setCatalog] = useState<VehicleCatalogEntry[]>([]);
   const [templateForm, setTemplateForm] = useState({
     name: '',
     crop: '',
     pickup: '',
     drop: '',
-    weightQuintals: 10,
+    weightQuintals: 0,
     fare: 0,
-    vehicleType: 'Tata Ace',
+    vehicleType: '',
     packaging: 'Gunny Bags',
     notes: '',
   });
@@ -62,14 +63,16 @@ export const JobInboxView: React.FC = () => {
     setError(null);
     try {
       // Backend status for open requests is "requested".
-      const [b, v, t] = await Promise.all([
+      const [b, v, t, cat] = await Promise.all([
         transport.bookings({ status: 'requested' }).catch(() => [] as TransportBooking[]),
         transport.myVehicles().catch(() => [] as TransportVehicle[]),
         transport.loadTemplates().catch(() => [] as unknown[]),
+        transport.vehicles().catch(() => [] as unknown[]),
       ]);
       setBookings(b.filter((x) => ['requested', 'pending'].includes(x.status)));
       setVehicles(v.filter((veh) => (veh.docStatus ?? 'verified') === 'verified'));
       setTemplates(asArr(t).map(asRec));
+      setCatalog(asArr(cat) as unknown as VehicleCatalogEntry[]);
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -235,7 +238,7 @@ export const JobInboxView: React.FC = () => {
         ...(templateForm.notes.trim() ? { notes: templateForm.notes.trim() } : {}),
       });
       setTemplateModal(false);
-      setTemplateForm({ name: '', crop: '', pickup: '', drop: '', weightQuintals: 10, fare: 0, vehicleType: 'Tata Ace', packaging: 'Gunny Bags', notes: '' });
+      setTemplateForm({ name: '', crop: '', pickup: '', drop: '', weightQuintals: 0, fare: 0, vehicleType: '', packaging: 'Gunny Bags', notes: '' });
       flash('Load template saved.');
       const t = await transport.loadTemplates().catch(() => [] as unknown[]);
       setTemplates(asArr(t).map(asRec));
@@ -623,9 +626,14 @@ export const JobInboxView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle type</label>
-              <select value={templateForm.vehicleType} onChange={(e) => setTemplateForm({ ...templateForm, vehicleType: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white">
-                {['Tata Ace', 'Bolero Maxi', 'Tractor Trolley', 'Eicher 6-Wheeler', 'Reefer Cold Van', '10-Wheeler Truck'].map((vt) => (
-                  <option key={vt}>{vt}</option>
+              <select value={templateForm.vehicleType} onChange={(e) => setTemplateForm({ ...templateForm, vehicleType: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white" required>
+                <option value="" disabled>
+                  {catalog.length === 0 ? 'No vehicle types on the rate card' : 'Select vehicle type'}
+                </option>
+                {catalog.map((vt) => (
+                  <option key={vt.type} value={vt.type}>
+                    {vt.type}
+                  </option>
                 ))}
               </select>
             </div>

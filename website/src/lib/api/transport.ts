@@ -1,5 +1,4 @@
 import { del, download, patch, post, put, readList, readOne } from './http';
-import { MOCK_TRANSPORT_BOOKINGS, MOCK_VEHICLES } from './mocks';
 import type { TransportBooking, TransportVehicle } from '../../types';
 
 /** Bounds for the route viewport, as returned by the route endpoint. */
@@ -26,9 +25,11 @@ export interface BookingRoute {
 /** Transport namespace — bookings, vehicles, loads/bids, trips, wallet & payouts. */
 export const transport = {
   // --- discovery ---
-  /** GET /transport/vehicles */
+  /** GET /transport/vehicles — vehicle rate card from the `vehicle_catalog`
+   *  collection (seeded by scripts/seed_vehicle_catalog.py). No mock fallback:
+   *  an empty catalog renders an empty board. */
   vehicles: (params?: Record<string, unknown>): Promise<TransportVehicle[]> =>
-    readList<TransportVehicle>('/transport/vehicles', { params, mock: MOCK_VEHICLES }),
+    readList<TransportVehicle>('/transport/vehicles', { params }),
 
   /** GET /transport/nearby-vehicles */
   nearbyVehicles: (params?: Record<string, unknown>): Promise<TransportVehicle[]> =>
@@ -41,7 +42,7 @@ export const transport = {
   // --- bookings (farmer/shipper side) ---
   /** GET /transport/bookings */
   bookings: (params?: Record<string, unknown>): Promise<TransportBooking[]> =>
-    readList<TransportBooking>('/transport/bookings', { params, mock: MOCK_TRANSPORT_BOOKINGS }),
+    readList<TransportBooking>('/transport/bookings', { params }),
 
   /** POST /transport/bookings */
   createBooking: (payload: Record<string, unknown>): Promise<TransportBooking> =>
@@ -208,7 +209,7 @@ export const transport = {
   // --- vehicles management ---
   /** GET /transport/vehicles/my */
   myVehicles: (): Promise<TransportVehicle[]> =>
-    readList<TransportVehicle>('/transport/vehicles/my', { mock: MOCK_VEHICLES }),
+    readList<TransportVehicle>('/transport/vehicles/my'),
 
   /** POST /transport/vehicles */
   addVehicle: (payload: Partial<TransportVehicle>): Promise<TransportVehicle> =>

@@ -38,10 +38,24 @@ def _discover_db_modules():
 
 _DB_MODULES = _discover_db_modules()
 
+# Vehicle rate card for the fake store — mirrors scripts/seed_vehicle_catalog.py
+# (the catalog lives in Firestore, not code, so tests need it seeded).
+VEHICLE_CATALOG_SEED = [
+    {"id": "vcat_tata_ace", "type": "Tata Ace", "baseFare": 500, "perKmRate": 35, "capacityTonnes": 0.75, "extended": False, "sortOrder": 1, "active": True},
+    {"id": "vcat_bolero_maxi", "type": "Bolero Maxi", "baseFare": 800, "perKmRate": 45, "capacityTonnes": 1.5, "extended": False, "sortOrder": 2, "active": True},
+    {"id": "vcat_tractor_trolley", "type": "Tractor Trolley", "baseFare": 1000, "perKmRate": 30, "capacityTonnes": 3.0, "extended": False, "sortOrder": 3, "active": True},
+    {"id": "vcat_eicher_6_wheeler", "type": "Eicher 6-Wheeler", "baseFare": 1800, "perKmRate": 55, "capacityTonnes": 6.0, "extended": True, "sortOrder": 4, "active": True},
+    {"id": "vcat_reefer_cold_van", "type": "Reefer Cold Van", "baseFare": 2200, "perKmRate": 65, "capacityTonnes": 3.5, "extended": True, "sortOrder": 5, "active": True},
+    {"id": "vcat_10_wheeler_truck", "type": "10-Wheeler Truck", "baseFare": 3500, "perKmRate": 75, "capacityTonnes": 16.0, "extended": True, "sortOrder": 6, "active": True},
+]
+
 
 @pytest.fixture
 def user_store():
-    return {}
+    store = {}
+    for vt in VEHICLE_CATALOG_SEED:
+        store[f"vehicle_catalog/{vt['id']}"] = dict(vt)
+    return store
 
 
 @pytest.fixture

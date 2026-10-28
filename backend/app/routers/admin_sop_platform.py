@@ -574,7 +574,6 @@ async def update_notification_templates(
 # GET /reference keeps working untouched.
 
 from app.data.states import INDIAN_STATES
-from app.routers.transport import ALL_VEHICLE_TYPES
 
 MASTER_COLLECTIONS = ("mandis", "crops", "varieties", "grades", "categories", "states", "units", "vehicle-types")
 
@@ -615,16 +614,9 @@ _STATIC_MASTER: dict[str, list[dict]] = {
         {"code": "bag", "name": "Bag"},
         {"code": "acre", "name": "Acre"},
     ],
-    "vehicle-types": [
-        {
-            "code": vt["type"].lower().replace(" ", "_"),
-            "name": vt["type"],
-            "baseFare": vt.get("baseFare"),
-            "perKmRate": vt.get("perKmRate"),
-            "capacityTonnes": vt.get("capacityTonnes"),
-        }
-        for vt in ALL_VEHICLE_TYPES
-    ],
+    # vehicle-types has no static rows anymore — the rate card lives in the
+    # `vehicle_catalog` collection (see _vehicle_type_rows below).
+    "vehicle-types": [],
 }
 
 MASTER_IMPORT_MAX_ROWS = 500
@@ -644,11 +636,30 @@ def _require_master_collection(collection: str) -> None:
         )
 
 
+async def _static_master_rows(collection: str) -> list[dict]:
+    """Static base layer for a master collection. `vehicle-types` is served
+    from the `vehicle_catalog` rate card instead of hardcoded rows."""
+    if collection == "vehicle-types":
+        from app.routers.transport import _vehicle_catalog
+
+        return [
+            {
+                "code": vt["type"].lower().replace(" ", "_"),
+                "name": vt["type"],
+                "baseFare": vt.get("baseFare"),
+                "perKmRate": vt.get("perKmRate"),
+                "capacityTonnes": vt.get("capacityTonnes"),
+            }
+            for vt in await _vehicle_catalog()
+        ]
+    return _STATIC_MASTER.get(collection, [])
+
+
 async def _merged_master(collection: str) -> list[dict]:
     """Static reference entries overlaid with Firestore `master_data` overrides
     (doc id `{collection}_{code}`). Overrides win per code."""
     merged: dict[str, dict] = {}
-    for entry in _STATIC_MASTER.get(collection, []):
+    for entry in await _static_master_rows(collection):
         merged[entry["code"]] = {**entry, "active": True, "source": "static"}
     for doc in await query("master_data", [], limit=2000):
         doc_id = doc.get("id") or ""
@@ -739,7 +750,7 @@ async def update_master_entry(
     doc_id = _master_doc_id(collection, code)
     doc = await get_doc("master_data", doc_id)
     if doc is None:
-        static_row = next((e for e in _STATIC_MASTER.get(collection, []) if e["code"] == code), None)
+        static_row = next((e for e in await _static_master_rows(collection) if e["code"] == code), None)
         if static_row is None:
             _error(404, "MASTER_ENTRY_NOT_FOUND", "master entry not found")
         doc = _master_entry_doc(collection, code, static_row["name"], None, static_row, ctx["admin"])
@@ -773,7 +784,7 @@ async def soft_delete_master_entry(
     doc_id = _master_doc_id(collection, code)
     doc = await get_doc("master_data", doc_id)
     if doc is None:
-        static_row = next((e for e in _STATIC_MASTER.get(collection, []) if e["code"] == code), None)
+        static_row = next((e for e in await _static_master_rows(collection) if e["code"] == code), None)
         if static_row is None:
             _error(404, "MASTER_ENTRY_NOT_FOUND", "master entry not found")
         doc = _master_entry_doc(collection, code, static_row["name"], False, static_row, ctx["admin"])

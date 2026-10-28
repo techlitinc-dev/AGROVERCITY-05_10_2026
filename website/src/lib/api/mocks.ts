@@ -266,63 +266,6 @@ export const MOCK_SUPPLY_CONTRACTS: SupplyContract[] = [
   },
 ];
 
-export const MOCK_VEHICLES: TransportVehicle[] = [
-  {
-    id: 'veh_1',
-    transporterId: 'tr_rahul',
-    transporterName: 'Rahul Shinde (Gajanan Transport)',
-    transporterPhone: '9822012345',
-    vehicleType: 'Pickup 1.5T',
-    registrationNumber: 'MH 15 GV 3012',
-    capacityTons: 1.5,
-    baseFare: 1200,
-    ratePerKm: 16,
-    currentLocation: 'Nashik Phata',
-    available: true,
-  },
-  {
-    id: 'veh_2',
-    transporterId: 'tr_balaji',
-    transporterName: 'Balaji Agro Logistics',
-    transporterPhone: '9850123987',
-    vehicleType: 'Eicher 14ft (4T)',
-    registrationNumber: 'MH 15 DK 7744',
-    capacityTons: 4.0,
-    baseFare: 2500,
-    ratePerKm: 24,
-    currentLocation: 'Pimpalgaon Mandi Yard',
-    available: true,
-  },
-];
-
-export const MOCK_TRANSPORT_BOOKINGS: TransportBooking[] = [
-  {
-    id: 'tb_502',
-    farmerId: 'usr_farmer_ramesh',
-    farmerName: 'Ramesh Patil',
-    farmerPhone: '9876543210',
-    transporterName: 'Rahul Shinde (Pickup 1.5T)',
-    vehicleType: 'Pickup 1.5T',
-    pickupAddress: 'Pimpalgaon Baswant Farm Gate',
-    dropAddress: 'Vashi APMC Yard, Navi Mumbai',
-    distanceKm: 170,
-    cargoCrop: 'Soybean',
-    cargoWeightQuintal: 20,
-    pickupTime: '2026-10-18T06:00',
-    timeWindowMinutes: 120,
-    insuranceOptIn: true,
-    declaredValuePaisa: 10000000,
-    insurancePremiumPaisa: 80000,
-    estimatedFare: 3920,
-    waitingHours: 0,
-    waitingChargePaisa: 0,
-    status: 'accepted',
-    shareToken: 'tr_live_share_87f9a2',
-    biltyNumber: 'BLT-2026-0941',
-    createdAt: '2026-10-16',
-  },
-];
-
 export const MOCK_FARM_DIARY: FarmDiaryEntry[] = [
   {
     id: 'fd_1',

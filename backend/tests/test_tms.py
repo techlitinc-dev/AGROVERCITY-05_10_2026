@@ -57,12 +57,10 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
     farmer_token = await _token(client, profiles=["farmer"], primary="farmer")
     trans_token = _other_transporter_token(user_store)
 
-    # 1. Fetch pre-seeded open loads
+    # 1. Load board starts empty — no fake loads are seeded anywhere.
     resp = await client.get("/v1/transport/loads", headers=_auth(trans_token))
     assert resp.status_code == 200
-    loads_data = resp.json()
-    assert loads_data["total"] >= 4
-    load_id = loads_data["data"][0]["id"]
+    assert resp.json()["total"] == 0
 
     # 2. Farmer posts a new load
     post_resp = await client.post(

@@ -252,7 +252,7 @@ async def smart_select(body: SmartSelectRequest, user: dict = Depends(_mandi_use
         )
 
     district = (body.district or user.get("district") or "").strip()
-    state = build_smart_select_state(
+    state = await build_smart_select_state(
         {"crop": crop, "quantity_quintals": qty, "district": district},
         {
             "district": district,

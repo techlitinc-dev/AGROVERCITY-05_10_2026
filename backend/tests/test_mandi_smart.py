@@ -35,13 +35,13 @@ def _seed_mandi_prices(user_store):
         user_store[f"mandi_prices/{doc['id']}"] = doc
 
 
-def _deterministic_ranking(crop: str, qty: int) -> list[str]:
+async def _deterministic_ranking(crop: str, qty: int) -> list[str]:
     """Reference ordering built from the same integer-paisa arithmetic the API uses."""
     candidates = []
     for doc in MANDI_PRICES:
         if crop.lower() not in doc["commodity"].lower():
             continue
-        fare = transport_fare_estimate_paisa(doc["distanceKm"], qty)
+        fare = await transport_fare_estimate_paisa(doc["distanceKm"], qty)
         net = net_after_transport_paisa(doc["modalPrice"] * 100, qty, fare, 0)
         candidates.append((net, doc["mandiName"]))
     candidates.sort(key=lambda item: (-item[0], item[1].lower()))
@@ -76,7 +76,7 @@ async def test_smart_select_ranking_matches_net_math(client, user_store):
     assert resp.status_code == 200
     data = resp.json()["data"]
 
-    expected = _deterministic_ranking("Tomato", 10)
+    expected = await _deterministic_ranking("Tomato", 10)
     assert [candidate["mandi"] for candidate in data["candidates"]] == expected
     assert [candidate["rank"] for candidate in data["candidates"]] == [1, 2, 3]
     for candidate in data["candidates"]:
@@ -113,7 +113,7 @@ async def test_smart_select_answers_with_ai_flag_off(client, user_store):
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["source"] == "fallback"
-    assert [candidate["mandi"] for candidate in data["candidates"]] == _deterministic_ranking(
+    assert [candidate["mandi"] for candidate in data["candidates"]] == await _deterministic_ranking(
         "Tomato", 10
     )
     config_store.clear_cache()
@@ -131,8 +131,8 @@ async def test_smart_select_rejects_crop_without_mandi_data(client, user_store):
     assert resp.json()["error"]["code"] == "NO_MANDI_DATA"
 
 
-def test_state_builder_scrubs_pii():
-    state = build_smart_select_state(
+async def test_state_builder_scrubs_pii(client, user_store):
+    state = await build_smart_select_state(
         {"crop": "Tomato", "quantity_quintals": 10, "district": "Nashik"},
         {"district": "Nashik", "name": "Ram", "phone": "+919812345678", "email": "a@b.com"},
         [{"mandi": "Pimpalgaon Baswant APMC", "modalPrice": 1950, "distanceKm": 4.2}],

@@ -203,12 +203,21 @@ export interface SupplyContract {
   createdAt: string;
 }
 
+/** Vehicle rate-card entry from GET /transport/vehicles (`vehicle_catalog`). */
+export interface VehicleCatalogEntry {
+  type: string;
+  baseFare: number;
+  perKmRate: number;
+  capacityTonnes: number;
+}
+
 export interface TransportVehicle {
   id: string;
   transporterId: string;
   transporterName: string;
   transporterPhone: string;
-  vehicleType: 'Tata Ace (1T)' | 'Pickup 1.5T' | 'Eicher 14ft (4T)' | 'Truck 10-Wheeler (16T)' | 'Reefer / Cold Truck';
+  /** Catalog vehicle type (a `vehicle_catalog` entry name). */
+  vehicleType: string;
   registrationNumber: string;
   capacityTons: number;
   baseFare: number;

@@ -45,3 +45,7 @@ backend/.local_uploads/
 backups/
 backup/
 logs/
+
+# Playwright artifacts
+e2e/test-results/
+e2e/playwright-report/

@@ -88,11 +88,8 @@ async def test_rebook_clones_terminal_trip_with_fresh_fare(client, user_store):
 
 async def test_rebook_recomputes_when_rates_changed(client, user_store):
     token, booking = await _delivered(client, user_store)
-    # admin updates the Tata Ace catalog rate mid-season
-    from app.routers.transport import CORE_VEHICLE_TYPES
-    for vt in CORE_VEHICLE_TYPES:
-        if vt["type"] == "Tata Ace":
-            vt["perKmRate"] = 40
+    # admin updates the Tata Ace rate-card doc mid-season (Firestore-backed catalog)
+    user_store["vehicle_catalog/vcat_tata_ace"]["perKmRate"] = 40
     try:
         resp = await client.post(
             f"/v1/transport/bookings/{booking['id']}/rebook",
@@ -102,9 +99,7 @@ async def test_rebook_recomputes_when_rates_changed(client, user_store):
         assert resp.status_code == 201
         assert resp.json()["fare"] == 500 + 40 * 20  # 1300, not the old 1200
     finally:
-        for vt in CORE_VEHICLE_TYPES:
-            if vt["type"] == "Tata Ace":
-                vt["perKmRate"] = 35
+        user_store["vehicle_catalog/vcat_tata_ace"]["perKmRate"] = 35
 
 
 async def test_rebook_guards(client, user_store):

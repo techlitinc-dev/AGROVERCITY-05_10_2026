@@ -52,30 +52,32 @@ def net_after_transport_paisa(
     )
 
 
-def _vehicle_for_qty(qty_quintals: int) -> dict:
-    """Smallest core vehicle whose capacity covers the lot (1 quintal = 0.1 t)."""
-    # Local import keeps services free of a router import cycle at module load.
-    from app.routers.transport import CORE_VEHICLE_TYPES
+async def _vehicle_for_qty(qty_quintals: int) -> dict:
+    """Smallest core vehicle whose capacity covers the lot (1 quintal = 0.1 t).
 
+    Served from the `vehicle_catalog` rate card — no hardcoded fleet list."""
+    from app.routers.transport import _vehicle_catalog
+
+    core = await _vehicle_catalog(extended=False)
+    if not core:
+        return {"type": "", "baseFare": 0, "perKmRate": 0, "capacityTonnes": 0}
     qty = max(0, _as_int(qty_quintals))
-    for vehicle in CORE_VEHICLE_TYPES:
+    for vehicle in core:
         if _as_int(vehicle["capacityTonnes"] * 10) >= qty:
             return vehicle
-    return CORE_VEHICLE_TYPES[-1]
+    return core[-1]
 
 
-def transport_fare_estimate_paisa(distance_km, qty_quintals) -> int:
+async def transport_fare_estimate_paisa(distance_km, qty_quintals) -> int:
     """Transport fare estimate in integer paisa.
 
     Mirrors `POST /v1/transport/fare-estimate` (baseFare + perKmRate × distanceKm
-    from the transport module's core rate card, quoted in rupees) and converts
-    once to paisa. Surge is a transporter-side lever and is deliberately NOT
-    applied here.
+    from the `vehicle_catalog` rate card, quoted in rupees) and converts once to
+    paisa. Surge is a transporter-side lever and is deliberately NOT applied.
     """
-    vehicle = _vehicle_for_qty(qty_quintals)
-    distance = _as_float(distance_km)
-    rupees = vehicle["baseFare"] + vehicle["perKmRate"] * distance
-    return int(round(rupees * 100))
+    vehicle = await _vehicle_for_qty(qty_quintals)
+    fare_rupees = vehicle["baseFare"] + vehicle["perKmRate"] * _as_float(distance_km)
+    return int(round(fare_rupees * 100))
 
 
 def _rupees_to_paisa(value) -> int:
@@ -83,7 +85,7 @@ def _rupees_to_paisa(value) -> int:
     return int(round(_as_float(value) * 100))
 
 
-def build_smart_select_state(
+async def build_smart_select_state(
     lot: dict,
     farmer_location: dict,
     candidate_mandis: list[dict],
@@ -124,7 +126,7 @@ def build_smart_select_state(
         distance = _as_float(candidate.get("distance_km") or candidate.get("distanceKm"))
         fare = candidate.get("transport_fare_paisa")
         if fare is None:
-            fare = transport_fare_estimate_paisa(distance, qty)
+            fare = await transport_fare_estimate_paisa(distance, qty)
         commission = _as_int(
             candidate.get("commission_paisa") or candidate.get("commissionPaisa")
         )
