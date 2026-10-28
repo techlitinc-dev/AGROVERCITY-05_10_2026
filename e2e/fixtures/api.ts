@@ -40,6 +40,7 @@ export const api = {
   get: (p: string, token?: string, params?: Record<string, string>) => call('GET', p, { token, params }),
   post: (p: string, body?: unknown, token?: string) => call('POST', p, { body, token }),
   put: (p: string, body?: unknown, token?: string) => call('PUT', p, { body, token }),
+  patch: (p: string, body?: unknown, token?: string) => call('PATCH', p, { body, token }),
   del: (p: string, token?: string) => call('DELETE', p, { token }),
 };
 

@@ -125,7 +125,7 @@ async def test_priority_load_board_ranks_pro_bids_first(client, user_store):
     free_token = create_access_token("uid-2")
     resp = await client.post(
         f"/v1/transport/loads/{load['id']}/bid",
-        json={"quotedFare": 2800},
+        json={"quotedFare": 2800, "termsAccepted": True},
         headers=_auth(free_token),
     )
     assert resp.status_code == 201
@@ -136,7 +136,7 @@ async def test_priority_load_board_ranks_pro_bids_first(client, user_store):
     await _subscribe(client, pro_token, "transport_pro")
     resp = await client.post(
         f"/v1/transport/loads/{load['id']}/bid",
-        json={"quotedFare": 2800},
+        json={"quotedFare": 2800, "termsAccepted": True},
         headers=_auth(pro_token),
     )
     assert resp.status_code == 201

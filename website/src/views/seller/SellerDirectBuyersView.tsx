@@ -23,7 +23,7 @@ import { formatCurrency } from '../../lib/utils';
 import { cardCls, inputCls, labelCls, primaryBtnCls, ghostBtnCls, rec, str, arr, num, type Rec } from './shared';
 
 const BUYER_TYPES = [
-  { id: 'all', label: 'All Direct Buyers' },
+  { id: 'all', label: 'All Industrial Buyers' },
   { id: 'hotel', label: 'Hotels & Caterers' },
   { id: 'processor', label: 'Food Processors & Mills' },
   { id: 'retailer', label: 'Supermarkets & Retail Chains' },
@@ -108,7 +108,7 @@ export const SellerDirectBuyersView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
             <Building className="w-7 h-7 text-emerald-600" />
-            Direct Buyers Network — Hotel & Bulk Buyer Connect
+            Industrial Buyers Network — Hotel & Bulk Buyer Connect
           </h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
             Connect directly with verified hotel chains, bulk institutional buyers, food processors, and supermarket groups.
@@ -181,9 +181,9 @@ export const SellerDirectBuyersView: React.FC = () => {
       ) : filtered.length === 0 ? (
         <div className={`${cardCls} py-16 text-center space-y-3`}>
           <Building className="w-10 h-10 text-slate-300 mx-auto" />
-          <h3 className="text-sm font-bold text-slate-800">No Direct Buyers Found</h3>
+          <h3 className="text-sm font-bold text-slate-800">No Industrial Buyers Found</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Direct buyers are verified institutional partners. New procurement demands will appear here.
+            Industrial buyers are verified institutional partners. New procurement demands will appear here.
           </p>
         </div>
       ) : (
@@ -203,7 +203,7 @@ export const SellerDirectBuyersView: React.FC = () => {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <h3 className="text-base font-black text-slate-900">{str(b.businessName) || 'Direct Buyer'}</h3>
+                        <h3 className="text-base font-black text-slate-900">{str(b.businessName) || 'Industrial Buyer'}</h3>
                         {Boolean(b.verified) ? (
                           <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                         ) : null}

@@ -62,7 +62,9 @@ cd "$BACKEND_DIR"
 if [ "$MODE" = "prod" ]; then
   setsid uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" >"$BACKEND_LOG" 2>&1 &
 else
-  setsid uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload >"$BACKEND_LOG" 2>&1 &
+  # --timeout-graceful-shutdown: browsers hold keep-alive connections open,
+  # which otherwise stalls uvicorn --reload shutdowns indefinitely.
+  setsid uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --reload --timeout-graceful-shutdown 5 >"$BACKEND_LOG" 2>&1 &
 fi
 PID_BACKEND=$!
 cd "$ROOT_DIR"

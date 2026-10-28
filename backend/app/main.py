@@ -86,6 +86,7 @@ from app.routers import (
     land,
     land_ops,
     land_records,
+    leads,
     livestock,
     livestock_dairy,
     livestock_gaushala,
@@ -245,6 +246,7 @@ app.include_router(search.router, prefix="/v1")
 app.include_router(saved_searches.router, prefix="/v1")
 app.include_router(vault.router, prefix="/v1")
 app.include_router(land_records.router, prefix="/v1")
+app.include_router(leads.router, prefix="/v1")
 app.include_router(agent_rules.router, prefix="/v1")
 app.include_router(partner_api.router, prefix="/v1")
 app.include_router(water.router, prefix="/v1")

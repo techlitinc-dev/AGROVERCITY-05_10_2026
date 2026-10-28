@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
 import { handleApiError } from './errors';
 
@@ -140,6 +141,11 @@ export interface MutateOpts {
   timeout?: number;
   /** Upload progress callback (0–100) for multipart bodies. */
   onUploadProgress?: (percent: number) => void;
+  /**
+   * The persona-activation request must not wait on the persona gate (it IS
+   * the sync) — set by users.activateProfile; the client interceptor reads it.
+   */
+  skipPersonaSync?: boolean;
 }
 
 export async function mutate<T>(
@@ -156,6 +162,7 @@ export async function mutate<T>(
       params: opts.params,
       headers: opts.headers,
       timeout: opts.timeout,
+      ...(opts.skipPersonaSync ? { skipPersonaSync: true } : {}),
       ...(opts.onUploadProgress
         ? {
             onUploadProgress: (e: { loaded: number; total?: number }) => {
@@ -163,7 +170,7 @@ export async function mutate<T>(
             },
           }
         : {}),
-    });
+    } as unknown as AxiosRequestConfig);
     return (res.data?.data ?? res.data) as T;
   } catch (e) {
     handleApiError(e);

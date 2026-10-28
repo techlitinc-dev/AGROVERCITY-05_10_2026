@@ -1,22 +1,27 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Package,
   Plus,
   MapPin,
   CheckCircle2,
-  Building2,
-  Trash2,
   Pencil,
+  Trash2,
+  Phone,
+  MessageSquare,
   Check,
   TrendingUp,
+  Users,
+  Camera,
+  BadgeCheck,
+  Handshake,
 } from 'lucide-react';
-import { lots, offers, apiErrorMessage, readOne, readList } from '../../lib/api';
+import { lots, users, leads as leadsApi, uploads, apiErrorMessage, readOne, readList } from '../../lib/api';
+import type { Lead } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { formatCurrency, formatWeight } from '../../lib/utils';
-import type { ProduceLot, TradeOffer, MandiPrice } from '../../types';
-
-type OfferFilter = 'received' | 'sent';
+import { formatCurrency, formatWeight, formatDateTime } from '../../lib/utils';
+import type { ProduceLot, MandiPrice } from '../../types';
 
 interface CatalogCrop {
   name: string;
@@ -66,40 +71,51 @@ const CROP_VARIETIES: [string, string[]][] = [
   ['cauliflower', ['Pusa Katki', 'Phule Gauri', 'Him Palam']]
 ];
 
+type LeadFilter = 'all' | 'new' | 'contacted' | 'sold';
+
 export const ProduceLotsView: React.FC = () => {
+  const navigate = useNavigate();
   const [lotsList, setLotsList] = useState<ProduceLot[]>([]);
-  const [offersList, setOffersList] = useState<TradeOffer[]>([]);
-  const [offerFilter, setOfferFilter] = useState<OfferFilter>('received');
+  const [leadList, setLeadList] = useState<Lead[]>([]);
+  const [leadFilter, setLeadFilter] = useState<LeadFilter>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<{ village?: string; district?: string; name?: string }>({});
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editingLot, setEditingLot] = useState<ProduceLot | null>(null);
-  const [selectedOffer, setSelectedOffer] = useState<TradeOffer | null>(null);
-  const [counterPrice, setCounterPrice] = useState<number>(0);
+  const [soldLot, setSoldLot] = useState<ProduceLot | null>(null);
+  const [soldRate, setSoldRate] = useState<number>(0);
+  const [soldLead, setSoldLead] = useState<Lead | null>(null);
 
   // Real reference data: crop catalog (vernacular names + MSP) and mandi modal
   // prices, both served live from the backend — never hardcoded sample rows.
   const [cropCatalog, setCropCatalog] = useState<CatalogCrop[]>([]);
   const [mandiRows, setMandiRows] = useState<MandiPrice[]>([]);
 
-  // Lot form state — starts empty (no prefilled sample values).
+  // Lot form state — location defaults come from the farmer's own profile.
   const [newCrop, setNewCrop] = useState('');
   const [newVariety, setNewVariety] = useState('');
   const [newQuantity, setNewQuantity] = useState<number>(20);
   const [newGrade, setNewGrade] = useState<'A' | 'B' | 'C' | 'Ungraded'>('A');
   const [newPrice, setNewPrice] = useState<number>(0);
-  const [newLocation, setNewLocation] = useState('Pimpalgaon Baswant, Nashik');
-  const [newVillage, setNewVillage] = useState('Pimplas');
+  const [newLocation, setNewLocation] = useState('');
+  const [newVillage, setNewVillage] = useState('');
   const [newHarvestDate, setNewHarvestDate] = useState(new Date().toISOString().slice(0, 10));
-  const [newPhotos, setNewPhotos] = useState('');
+  const [newPhotoUrl, setNewPhotoUrl] = useState('');
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const reload = async () => {
-    const [l, o] = await Promise.all([lots.list(), offers.mine()]);
-    setLotsList(l);
-    setOffersList(o);
+    const [l, received] = await Promise.all([
+      lots.list(),
+      leadsApi.getMyLeads('received').catch(() => [] as Lead[]),
+    ]);
+    // Withdrawn lots are the farmer's "delete" — never resurface them here.
+    setLotsList(l.filter((lot) => lot.status !== 'withdrawn'));
+    setLeadList(received);
   };
 
   useEffect(() => {
@@ -111,6 +127,16 @@ export const ProduceLotsView: React.FC = () => {
     // Full crop catalog (vernacular names + MSP) for the crop typeahead.
     readOne<{ items: CatalogCrop[] }>('/reference/crops-suggest', { params: { q: '', limit: 100 } })
       .then((res) => active && setCropCatalog(res?.items ?? []))
+      .catch(() => {});
+    // Profile seeds the form defaults (village/district) — no demo data.
+    users
+      .getMe()
+      .then((me) => {
+        if (!active) return;
+        setProfile({ village: me.village, district: me.district, name: me.name });
+        setNewVillage(me.village || '');
+        setNewLocation([me.village, me.district].filter(Boolean).join(', '));
+      })
       .catch(() => {});
     return () => {
       active = false;
@@ -158,8 +184,11 @@ export const ProduceLotsView: React.FC = () => {
     return fromMandi ?? null;
   }, [cropCatalog, newCrop, mandiRows]);
 
-  const visibleOffers = offersList.filter((o) =>
-    offerFilter === 'received' ? o.senderRole !== 'farmer' : o.senderRole === 'farmer'
+  const leadCountForLot = (lotId: string): number =>
+    leadList.filter((lead) => lead.lotId === lotId && lead.status !== 'dismissed').length;
+
+  const visibleLeads = leadList.filter(
+    (lead) => leadFilter === 'all' || lead.status === leadFilter
   );
 
   const openEditModal = (lot: ProduceLot) => {
@@ -172,7 +201,7 @@ export const ProduceLotsView: React.FC = () => {
     setNewLocation(lot.location);
     setNewVillage(lot.village || '');
     setNewHarvestDate(lot.harvestDate || new Date().toISOString().slice(0, 10));
-    setNewPhotos((lot as ProduceLot & { photos?: string[] }).photos?.[0] || '');
+    setNewPhotoUrl((lot as ProduceLot & { photos?: string[] }).photos?.[0] || '');
     setCreateModalOpen(true);
   };
 
@@ -183,17 +212,36 @@ export const ProduceLotsView: React.FC = () => {
     setNewQuantity(20);
     setNewGrade('A');
     setNewPrice(0);
-    setNewLocation('Pimpalgaon Baswant, Nashik');
-    setNewVillage('Pimplas');
+    setNewLocation([profile.village, profile.district].filter(Boolean).join(', '));
+    setNewVillage(profile.village || '');
     setNewHarvestDate(new Date().toISOString().slice(0, 10));
-    setNewPhotos('');
+    setNewPhotoUrl('');
+  };
+
+  const handlePhotoPicked = async (file: File | undefined) => {
+    if (!file) return;
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      const uploaded = (await uploads.upload(file, { folder: 'lots', purpose: 'lot-photo' })) as
+        | { url?: string; fileUrl?: string }
+        | undefined;
+      const url = uploaded?.url ?? uploaded?.fileUrl ?? '';
+      if (!url) throw new Error('Upload succeeded but no URL was returned.');
+      setNewPhotoUrl(url);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setPhotoBusy(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
   };
 
   const handleSaveLot = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     try {
-      const photosArray = newPhotos.trim() ? [newPhotos.trim()] : [];
+      const photosArray = newPhotoUrl.trim() ? [newPhotoUrl.trim()] : [];
       if (editingLot) {
         const updated = await lots.update(editingLot.id, {
           crop: newCrop,
@@ -223,26 +271,12 @@ export const ProduceLotsView: React.FC = () => {
           submitForReview: false,
         });
         setLotsList((prev) => [created, ...prev]);
-        setNotice('Produce lot posted — live for buyers now.');
+        setNotice('Produce lot posted — buyers can contact you now.');
       }
       setCreateModalOpen(false);
       resetForm();
     } catch (err) {
       setError(apiErrorMessage(err));
-    }
-  };
-
-  const handleSubmitForReview = async (lotId: string) => {
-    setError(null);
-    setBusyId(lotId);
-    try {
-      const updated = await lots.submitForReview(lotId);
-      setLotsList((prev) => prev.map((l) => (l.id === lotId ? updated : l)));
-      setNotice(`Lot #${lotId} submitted for admin verification.`);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setBusyId(null);
     }
   };
 
@@ -260,17 +294,22 @@ export const ProduceLotsView: React.FC = () => {
     }
   };
 
-  const handleAcceptOffer = async (offer: TradeOffer) => {
+  const openMarkSold = (lot: ProduceLot) => {
+    setSoldLot(lot);
+    setSoldRate(lot.expectedPricePerQuintal);
+  };
+
+  const confirmMarkSold = async () => {
+    if (!soldLot) return;
     setError(null);
-    setBusyId(offer.id);
+    setBusyId(soldLot.id);
     try {
-      await offers.accept(offer.id);
-      setOffersList((prev) => prev.map((o) => (o.id === offer.id ? { ...o, status: 'accepted' } : o)));
-      const finalPrice = offer.counterPrice || offer.pricePerUnit;
+      const updated = (await leadsApi.markLotSold(soldLot.id, soldRate || undefined)) as ProduceLot;
+      setLotsList((prev) => prev.map((l) => (l.id === updated.id ? { ...l, ...updated } : l)));
       setNotice(
-        `Purchase order confirmed at ₹${finalPrice}/q with ${offer.receiverName || 'the buyer'}!`
+        `Lot #${soldLot.id} marked sold${soldRate ? ` at ${formatCurrency(soldRate)}/q` : ''} — great trade!`
       );
-      setSelectedOffer(null);
+      setSoldLot(null);
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -278,12 +317,18 @@ export const ProduceLotsView: React.FC = () => {
     }
   };
 
-  const handleRejectOffer = async (offer: TradeOffer) => {
+  const setLeadStatus = async (lead: Lead, status: Lead['status'], finalRate?: number) => {
     setError(null);
-    setBusyId(offer.id);
+    setBusyId(lead.id);
     try {
-      await offers.reject(offer.id);
-      setOffersList((prev) => prev.map((o) => (o.id === offer.id ? { ...o, status: 'rejected' } : o)));
+      const updated = await leadsApi.updateLeadStatus(lead.id, status, finalRate);
+      setLeadList((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      if (status === 'sold') {
+        setNotice(`Deal with ${lead.buyerContact?.name ?? 'buyer'} recorded — lot marked sold.`);
+        await reload();
+      } else if (status === 'dismissed') {
+        setNotice('Lead dismissed.');
+      }
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -291,33 +336,15 @@ export const ProduceLotsView: React.FC = () => {
     }
   };
 
-  const handleWithdrawOffer = async (offer: TradeOffer) => {
-    setError(null);
-    setBusyId(offer.id);
-    try {
-      await offers.withdraw(offer.id);
-      setOffersList((prev) => prev.map((o) => (o.id === offer.id ? { ...o, status: 'withdrawn' } : o)));
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    } finally {
-      setBusyId(null);
-    }
+  const openLeadSold = (lead: Lead) => {
+    setSoldLead(lead);
+    setSoldRate(lead.finalRate ?? lead.expectedRate ?? 0);
   };
 
-  const handleSendCounter = async () => {
-    if (!selectedOffer) return;
-    setError(null);
-    setBusyId(selectedOffer.id);
-    try {
-      const updated = await offers.counter(selectedOffer.id, { pricePerUnit: counterPrice });
-      setOffersList((prev) => prev.map((o) => (o.id === selectedOffer.id ? updated : o)));
-      setSelectedOffer(null);
-      setNotice('Counter quote sent to the buyer.');
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    } finally {
-      setBusyId(null);
-    }
+  const confirmLeadSold = async () => {
+    if (!soldLead) return;
+    await setLeadStatus(soldLead, 'sold', soldRate || undefined);
+    setSoldLead(null);
   };
 
   return (
@@ -327,10 +354,10 @@ export const ProduceLotsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Package className="w-7 h-7 text-emerald-600" />
-            Produce Lots & Direct B2B Selling
+            Sell Produce — Lots & Buyer Leads
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Post produce lots directly to the marketplace, receive quotes from institutional buyers, and negotiate in 1 round
+            Post your produce lot — interested agri/vyapari buyers see it and contact you directly (call / WhatsApp / chat). You negotiate and close the deal yourself.
           </p>
         </div>
 
@@ -371,7 +398,7 @@ export const ProduceLotsView: React.FC = () => {
           </div>
         ) : lotsList.length === 0 ? (
           <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
-            No lots listed yet. Post your first produce lot to start receiving buyer quotes.
+            No lots listed yet. Post your first produce lot to start receiving buyer leads.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -411,22 +438,43 @@ export const ProduceLotsView: React.FC = () => {
                   </div>
                 </div>
 
+                {(lot as ProduceLot & { finalRate?: number }).finalRate ? (
+                  <div className="mt-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 text-[10px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                    <Handshake className="w-3.5 h-3.5" />
+                    Closed at {formatCurrency((lot as ProduceLot & { finalRate?: number }).finalRate!)}/q
+                  </div>
+                ) : null}
+
                 {/* Moderation notes if present */}
-                {(lot as any).moderation && (
+                {(lot as ProduceLot & { moderation?: { action?: string; reason?: string } }).moderation && (
                   <div className="mt-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 text-[10px] text-emerald-800 font-semibold flex items-center justify-between">
-                    <span>Moderation: {(lot as any).moderation.action}</span>
-                    <span className="text-emerald-700">{(lot as any).moderation.reason}</span>
+                    <span>
+                      Moderation: {(lot as ProduceLot & { moderation?: { action?: string } }).moderation?.action}
+                    </span>
+                    <span>{(lot as ProduceLot & { moderation?: { reason?: string } }).moderation?.reason}</span>
                   </div>
                 )}
 
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-600">
-                      {lot.offersCount} Buyer Quotes
+                    <span className="text-xs font-semibold text-slate-600 flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5 text-emerald-600" />
+                      {leadCountForLot(lot.id)} Buyer Leads
                     </span>
+                    {lot.status === 'open' && (
+                      <button
+                        onClick={() => openMarkSold(lot)}
+                        disabled={busyId === lot.id}
+                        className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-sky-600 text-white hover:bg-sky-700 transition-all disabled:opacity-50"
+                      >
+                        Mark Sold
+                      </button>
+                    )}
                     {(lot.status === 'pending_review' || lot.status === 'rejected') && (
                       <button
-                        onClick={() => handleSubmitForReview(lot.id)}
+                        onClick={() => lots.submitForReview(lot.id).then((u) =>
+                          setLotsList((prev) => prev.map((l) => (l.id === u.id ? u : l)))
+                        ).catch((e) => setError(apiErrorMessage(e)))}
                         disabled={busyId === lot.id}
                         className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-all disabled:opacity-50"
                       >
@@ -435,21 +483,25 @@ export const ProduceLotsView: React.FC = () => {
                     )}
                   </div>
                   <div className="flex gap-1">
-                    <button
-                      onClick={() => openEditModal(lot)}
-                      className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                      title="Edit lot"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleWithdrawLot(lot.id)}
-                      disabled={busyId === lot.id}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
-                      title="Withdraw lot"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {lot.status !== 'sold' && (
+                      <button
+                        onClick={() => openEditModal(lot)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                        title="Edit lot"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
+                    {lot.status !== 'sold' && (
+                      <button
+                        onClick={() => handleWithdrawLot(lot.id)}
+                        disabled={busyId === lot.id}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                        title="Withdraw lot"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -458,133 +510,147 @@ export const ProduceLotsView: React.FC = () => {
         )}
       </div>
 
-      {/* Section 2: Offers & 1-Round Negotiation Inbox */}
+      {/* Section 2: Buyer Leads inbox — the direct-connect model */}
       <div className="space-y-3 pt-4 border-t border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h3 className="font-bold text-sm text-slate-900">
-              Buyer Offers & Negotiation Desk
+            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-emerald-600" />
+              Buyer Leads ({leadList.filter((l) => l.status !== 'dismissed').length})
             </h3>
             <p className="text-xs text-slate-400">
-              Per Agrovercity protocol, negotiation allows <strong>maximum 1 counter round</strong> before final acceptance or decline.
+              Buyers who tapped "Contact Farmer" on your lots. Call, WhatsApp or chat with them and close the deal directly — then mark it sold.
             </p>
           </div>
-          <div className="flex bg-slate-100 p-1 rounded-2xl self-start">
-            {(['received', 'sent'] as OfferFilter[]).map((f) => (
+          <div className="flex bg-slate-100 p-1 rounded-2xl self-start overflow-x-auto">
+            {(['all', 'new', 'contacted', 'sold'] as LeadFilter[]).map((f) => (
               <button
                 key={f}
-                onClick={() => setOfferFilter(f)}
-                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all capitalize ${
-                  offerFilter === f ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
+                onClick={() => setLeadFilter(f)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all capitalize whitespace-nowrap ${
+                  leadFilter === f ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
                 }`}
               >
-                {f === 'received' ? 'Received Offers' : 'Sent by Me'}
+                {f === 'all' ? 'All' : f}
               </button>
             ))}
           </div>
         </div>
 
-        {visibleOffers.length === 0 ? (
+        {visibleLeads.length === 0 ? (
           <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
-            {offerFilter === 'received'
-              ? 'No buyer offers yet. They will appear here when buyers quote on your lots.'
-              : 'You have not sent any offers yet. Browse buyer demands to send one.'}
+            {leadFilter === 'all'
+              ? 'No buyer leads yet. They will appear here when buyers contact you about your lots.'
+              : `No ${leadFilter} leads right now.`}
           </div>
         ) : (
           <div className="space-y-3">
-            {visibleOffers.map((offer) => (
+            {visibleLeads.map((lead) => (
               <div
-                key={offer.id}
+                key={lead.id}
                 className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
                 <div className="space-y-1.5 max-w-xl">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-slate-400" />
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-extrabold text-sm text-slate-900">
-                      {offerFilter === 'received' ? offer.senderName : offer.receiverName}
+                      {lead.buyerContact?.fullName || 'Buyer'}
                     </span>
-                    <StatusBadge status={offer.status} />
+                    {lead.buyerContact?.verified && (
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <BadgeCheck className="w-3 h-3" /> Verified Vyapari
+                      </span>
+                    )}
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize ${
+                        lead.status === 'new'
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          : lead.status === 'sold'
+                            ? 'text-slate-600 bg-slate-100 border-slate-200'
+                            : 'text-amber-700 bg-amber-50 border-amber-200'
+                      }`}
+                    >
+                      {lead.status}
+                    </span>
                   </div>
                   <p className="text-xs text-slate-600">
-                    Target: <strong>{offer.lotCrop} ({offer.quantity} Quintals)</strong>
+                    Interested in: <strong>{lead.lotCrop} ({lead.lotVariety})</strong> — {formatWeight(lead.quantityQuintals ?? 0)} · expected {formatCurrency(lead.expectedRate ?? 0)}/q
                   </p>
-                  {offer.message && (
-                    <p className="text-xs italic text-slate-500 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      "{offer.message}"
+                  {lead.finalRate ? (
+                    <p className="text-xs font-bold text-emerald-700">Closed at {formatCurrency(lead.finalRate)}/q</p>
+                  ) : null}
+                  <p className="text-[10px] text-slate-400">{formatDateTime(lead.createdAt)}</p>
+                  {lead.buyerContact?.phoneDigits && (
+                    <p className="text-xs font-bold text-slate-700">
+                      📞 {lead.buyerContact.phone}
+                      {lead.buyerContact.whatsappDigits
+                        ? ` · WhatsApp ${lead.buyerContact.whatsappDigits.slice(-10)}`
+                        : ''}
                     </p>
                   )}
                 </div>
 
-                {/* Price & Action Buttons */}
-                <div className="flex items-center gap-4 self-end md:self-center">
-                  <div className="text-right">
-                    <span className="text-xs text-slate-400 block font-semibold">Offered / Counter</span>
-                    <span className="text-lg font-black text-emerald-700">
-                      {formatCurrency(offer.counterPrice || offer.pricePerUnit)}
-                    </span>
-                    <span className="text-xs text-slate-500">/q</span>
-                  </div>
-
-                  {offerFilter === 'received' && offer.status === 'pending' && (
-                    <div className="flex gap-2">
+                <div className="flex items-center gap-2 self-end md:self-center flex-wrap">
+                  {lead.status !== 'sold' && lead.chatRoomId && (
+                    <>
                       <button
-                        onClick={() => {
-                          setSelectedOffer(offer);
-                          setCounterPrice(offer.pricePerUnit + 30);
-                        }}
-                        className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs"
+                        onClick={() => navigate(`/chat?room=${encodeURIComponent(lead.chatRoomId!)}`)}
+                        className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600"
+                        title="Chat with buyer"
                       >
-                        Counter
+                        <MessageSquare className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => handleAcceptOffer(offer)}
-                        disabled={busyId === offer.id}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
-                      >
-                        Accept
-                      </button>
-                    </div>
+                      {lead.buyerContact?.phoneDigits && (
+                        <a
+                          href={`tel:+${lead.buyerContact.phoneDigits}`}
+                          className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600"
+                          title="Call buyer"
+                        >
+                          <Phone className="w-4 h-4" />
+                        </a>
+                      )}
+                      {lead.buyerContact?.whatsappDigits && (
+                        <a
+                          href={`https://wa.me/${lead.buyerContact.whatsappDigits}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white"
+                          title="WhatsApp buyer"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </a>
+                      )}
+                    </>
                   )}
-
-                  {offerFilter === 'received' && offer.status === 'countered' && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleRejectOffer(offer)}
-                        disabled={busyId === offer.id}
-                        className="px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        onClick={() => handleAcceptOffer(offer)}
-                        disabled={busyId === offer.id}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
-                      >
-                        Accept Counter
-                      </button>
-                    </div>
-                  )}
-
-                  {offerFilter === 'sent' && offer.status === 'pending' && (
+                  {lead.status === 'new' && (
                     <button
-                      onClick={() => handleWithdrawOffer(offer)}
-                      disabled={busyId === offer.id}
-                      className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs disabled:opacity-50"
+                      onClick={() => setLeadStatus(lead, 'contacted')}
+                      disabled={busyId === lead.id}
+                      className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs disabled:opacity-50"
                     >
-                      Withdraw
+                      Mark Contacted
                     </button>
                   )}
-
-                  {(offer.status === 'accepted' || offer.status === 'rejected' || offer.status === 'withdrawn') && (
-                    <span
-                      className={`text-xs font-bold flex items-center gap-1 px-3 py-1.5 rounded-xl border ${
-                        offer.status === 'accepted'
-                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                          : 'text-slate-500 bg-slate-50 border-slate-200'
-                      }`}
+                  {lead.status === 'contacted' && (
+                    <button
+                      onClick={() => openLeadSold(lead)}
+                      disabled={busyId === lead.id}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50"
                     >
-                      {offer.status === 'accepted' && <Check className="w-4 h-4" />}
-                      {offer.status === 'accepted' ? 'Deal Locked' : offer.status === 'withdrawn' ? 'Withdrawn' : 'Closed'}
+                      Mark Sold
+                    </button>
+                  )}
+                  {lead.status !== 'sold' && (
+                    <button
+                      onClick={() => setLeadStatus(lead, 'dismissed')}
+                      disabled={busyId === lead.id}
+                      className="px-2.5 py-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 font-bold text-[10px] disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                  {lead.status === 'sold' && (
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                      <Check className="w-4 h-4" /> Deal Done
                     </span>
                   )}
                 </div>
@@ -602,7 +668,7 @@ export const ProduceLotsView: React.FC = () => {
           resetForm();
         }}
         title={editingLot ? 'Edit Produce Lot' : 'Post New Produce Lot'}
-        description={editingLot ? 'Update quantity, grade or expected price' : 'List harvested crop — the lot goes live for buyers as soon as you post'}
+        description={editingLot ? 'Update quantity, grade or expected price' : 'List your harvested crop — buyers contact you directly as soon as you post'}
         maxWidth="lg"
       >
         <form onSubmit={handleSaveLot} className="space-y-4">
@@ -650,7 +716,6 @@ export const ProduceLotsView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Quantity (q)</label>
               <input
                 type="number"
-                min={0.5}
                 step={0.5}
                 value={newQuantity}
                 onChange={(e) => setNewQuantity(Number(e.target.value))}
@@ -675,7 +740,6 @@ export const ProduceLotsView: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 mb-1">Expected Price (₹/q)</label>
               <input
                 type="number"
-                min={1}
                 value={newPrice}
                 onChange={(e) => setNewPrice(Number(e.target.value))}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold text-emerald-800"
@@ -710,8 +774,8 @@ export const ProduceLotsView: React.FC = () => {
                 return (
                   <div key={r.id} className="flex items-center justify-between text-xs">
                     <span className="text-slate-600">
-                      {(r.mandiName || (r as any).mandi || 'APMC Mandi')}
-                      {r.date || (r as any).priceDate ? ` · ${r.date || (r as any).priceDate}` : ''} (modal)
+                      {(r.mandiName || (r as { mandi?: string }).mandi || 'APMC Mandi')}
+                      {r.date || (r as { priceDate?: string }).priceDate ? ` · ${r.date || (r as { priceDate?: string }).priceDate}` : ''} (modal)
                     </span>
                     <span className="flex items-center gap-2">
                       <strong className="text-slate-900">{formatCurrency(r.modalPrice)}/q</strong>
@@ -763,14 +827,33 @@ export const ProduceLotsView: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Produce Sample Photo URL</label>
-            <input
-              type="text"
-              value={newPhotos}
-              onChange={(e) => setNewPhotos(e.target.value)}
-              placeholder="https://… (optional)"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-            />
+            <label className="block text-xs font-bold text-slate-700 mb-1">Produce Photo</label>
+            <div className="flex items-center gap-3">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => void handlePhotoPicked(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoBusy}
+                className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 disabled:opacity-50"
+              >
+                <Camera className="w-4 h-4" />
+                {photoBusy ? 'Uploading…' : newPhotoUrl ? 'Change Photo' : 'Upload Photo'}
+              </button>
+              {newPhotoUrl && (
+                <div className="relative">
+                  <img src={newPhotoUrl} alt="Produce" className="h-12 w-12 rounded-xl object-cover border border-slate-200" />
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              A real photo of your produce gets the most buyer leads.
+            </p>
           </div>
 
           <button
@@ -781,55 +864,96 @@ export const ProduceLotsView: React.FC = () => {
           </button>
           {!editingLot && (
             <p className="text-[10px] text-slate-400 text-center">
-              Your lot goes live immediately — no admin review step. Buyers see your first name and village only.
+              Your lot goes live immediately — no admin review step. Buyers see your first name and village only; your number is shared only with interested buyers.
             </p>
           )}
         </form>
       </ModalSheet>
 
-      {/* 1-Round Counter Negotiation Sheet */}
+      {/* Mark Sold modal (lot-level) */}
       <ModalSheet
-        isOpen={Boolean(selectedOffer)}
-        onClose={() => setSelectedOffer(null)}
-        title="Submit One-Time Counter Offer"
-        description="Per B2B rules, counter offers are restricted to exactly 1 round."
+        isOpen={Boolean(soldLot)}
+        onClose={() => setSoldLot(null)}
+        title="Mark Lot as Sold"
+        description="Close the loop after you close the deal directly with the buyer"
         maxWidth="sm"
       >
-        <div className="space-y-4">
-          <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
-            <div className="flex justify-between text-slate-600">
-              <span>Buyer:</span>
-              <span className="font-bold text-slate-900">{selectedOffer?.senderName}</span>
+        {soldLot && (
+          <div className="space-y-4">
+            <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
+              <div className="flex justify-between text-slate-600">
+                <span>Lot:</span>
+                <span className="font-bold text-slate-900">{soldLot.crop} ({soldLot.variety})</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Quantity:</span>
+                <span className="font-bold text-slate-900">{formatWeight(soldLot.quantityQuintal)}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Buyer's Offer:</span>
-              <span className="font-bold text-slate-900">₹{selectedOffer?.pricePerUnit}/q</span>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Final rate you closed at (₹/q, optional)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={soldRate}
+                onChange={(e) => setSoldRate(Number(e.target.value))}
+                className="w-full px-3 py-2.5 text-base font-bold rounded-xl border border-slate-300 text-emerald-800"
+              />
             </div>
+            <button
+              onClick={confirmMarkSold}
+              disabled={busyId === soldLot.id}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+            >
+              Confirm — Lot Sold
+            </button>
           </div>
+        )}
+      </ModalSheet>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Your Counter Price (₹ per Quintal)
-            </label>
-            <input
-              type="number"
-              value={counterPrice}
-              onChange={(e) => setCounterPrice(Number(e.target.value))}
-              className="w-full px-3 py-2.5 text-base font-bold rounded-xl border border-slate-300 text-emerald-800"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">
-              If the buyer accepts this counter, a Purchase Order will be created immediately.
-            </p>
+      {/* Mark Sold modal (lead-level) */}
+      <ModalSheet
+        isOpen={Boolean(soldLead)}
+        onClose={() => setSoldLead(null)}
+        title="Record the Deal"
+        description="Mark this lead as sold — the lot leaves the marketplace"
+        maxWidth="sm"
+      >
+        {soldLead && (
+          <div className="space-y-4">
+            <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
+              <div className="flex justify-between text-slate-600">
+                <span>Buyer:</span>
+                <span className="font-bold text-slate-900">{soldLead.buyerContact?.fullName || 'Buyer'}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Lot:</span>
+                <span className="font-bold text-slate-900">{soldLead.lotCrop} ({soldLead.lotVariety})</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Final rate you closed at (₹/q, optional)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={soldRate}
+                onChange={(e) => setSoldRate(Number(e.target.value))}
+                className="w-full px-3 py-2.5 text-base font-bold rounded-xl border border-slate-300 text-emerald-800"
+              />
+            </div>
+            <button
+              onClick={confirmLeadSold}
+              disabled={busyId === soldLead.id}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+            >
+              Confirm — Deal Done
+            </button>
           </div>
-
-          <button
-            onClick={handleSendCounter}
-            disabled={Boolean(selectedOffer) && busyId === selectedOffer?.id}
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
-          >
-            Send Counter Quote to Buyer
-          </button>
-        </div>
+        )}
       </ModalSheet>
     </div>
   );

@@ -207,6 +207,12 @@ class LoadBidRequest(BaseModel):
     vehicleNo: str | None = None
     estimatedPickupTime: str | None = None
     notes: str | None = None
+    # Direct-connect apply (same contract as produce/demand leads): the
+    # transporter accepts the platform terms and verifies their MPIN before the
+    # application is recorded; contact details stay hidden until the load owner
+    # accepts the bid.
+    termsAccepted: bool = False
+    mpin: str | None = None
 
 
 class TripLocationUpdate(BaseModel):

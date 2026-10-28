@@ -255,7 +255,7 @@ export const LandingPage: React.FC = () => {
     },
     {
       id: 'directBuyer',
-      title: 'Institutional Direct Buyer',
+      title: 'Industrial Buyer',
       hindiTitle: 'थोक खरीददार / कॉर्पोरेट',
       category: 'trade',
       desc: 'Post bulk crop demands, contract farming, gate QC inspection with moisture slips, and instant escrow settlement.',

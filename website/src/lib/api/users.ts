@@ -38,9 +38,9 @@ export const users = {
   linkProfile: (profileType: PersonaType, payload: Record<string, unknown> = {}): Promise<UserProfile> =>
     post<UserProfile>('/users/me/profiles', { profileType, ...payload }),
 
-  /** POST /users/me/profiles/{type}/activate */
+  /** POST /users/me/profiles/{type}/activate — must not wait on the persona gate (it IS the sync). */
   activateProfile: (profileType: PersonaType): Promise<UserProfile> =>
-    post<UserProfile>(`/users/me/profiles/${profileType}/activate`),
+    post<UserProfile>(`/users/me/profiles/${profileType}/activate`, undefined, { skipPersonaSync: true }),
 
   /** PUT /users/me/profiles/{type}/primary */
   setPrimaryProfile: (profileType: PersonaType): Promise<UserProfile> =>

@@ -93,7 +93,7 @@ async def test_load_insurance_carries_into_auction_booking(client, user_store):
     bid = (
         await client.post(
             f"/v1/transport/loads/{load['id']}/bid",
-            json={"quotedFare": 8800},
+            json={"quotedFare": 8800, "termsAccepted": True, "mpin": "1234"},
             headers=_auth(token),
         )
     ).json()

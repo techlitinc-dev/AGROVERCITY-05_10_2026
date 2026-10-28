@@ -660,8 +660,8 @@ async def test_notifications_type_filter(client, user_store):
 
 
 async def test_request_accepted_notification_flow(client, user_store):
-    """Farmer posts a lot, buyer bids, farmer accepts → buyer (the offer maker)
-    gets a request_accepted notification and the purchase chat room exists."""
+    """Farmer posts a lot, buyer bids, both confirm the deal → buyer (the offer
+    maker) gets a request_accepted notification and the purchase chat room exists."""
     farmer_token = (await _register(client, profiles=["farmer"], primaryProfile="farmer")).json()["accessToken"]
     _seed(user_store, "uid-b1", "Suresh Traders", active="directBuyer",
           linkedProfiles=["directBuyer"], primaryProfile="directBuyer")
@@ -674,7 +674,14 @@ async def test_request_accepted_notification_flow(client, user_store):
         headers=buyer_headers,
     )
     offer_id = resp.json()["id"]
+    # Farmer agrees first — nothing locks yet.
     resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(farmer_token))
+    assert resp.status_code == 200
+    assert resp.json()["offer"]["status"] == "agreement_pending"
+    assert resp.json()["purchase"] is None
+    assert _notifications_for(user_store, "uid-b1", "request_accepted") == []
+    # Buyer confirms — deal locks, request_accepted fires.
+    resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=buyer_headers)
     assert resp.status_code == 200
     notes = _notifications_for(user_store, "uid-b1", "request_accepted")
     assert len(notes) == 1

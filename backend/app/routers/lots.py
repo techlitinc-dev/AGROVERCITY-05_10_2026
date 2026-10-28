@@ -86,6 +86,11 @@ async def list_lots(
             d["location"] = f"{loc.get('village', '')}, {loc.get('district', '')}".strip(', ')
     if status:
         docs = [d for d in docs if d.get("status") == status]
+    else:
+        # Withdrawn lots are the farmer's "delete" — keep them in the store
+        # (audit trail, relist) but out of the default my-listings view so a
+        # deleted listing does not reappear on reload.
+        docs = [d for d in docs if d.get("status") != "withdrawn"]
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize
@@ -304,6 +309,31 @@ class RelistRequest(BaseModel):
     expectedRate: Optional[int] = None
     quantityQuintals: Optional[float] = None
     note: Optional[str] = None
+
+
+class MarkSoldRequest(BaseModel):
+    finalRate: Optional[int] = None
+
+
+@router.post("/lots/{lot_id}/mark-sold")
+async def mark_lot_sold(lot_id: str, body: MarkSoldRequest = MarkSoldRequest(), uid: str = Depends(_farmer_user)):
+    """Farmer closes the loop after closing the deal directly with the buyer —
+    the lot leaves discovery; the rate actually closed at is kept for records."""
+    doc = await get_doc("market_lots", lot_id)
+    if doc is None or doc.get("farmerId") != uid:
+        _error(404, "LOT_NOT_FOUND", "lot not found")
+    if doc.get("status") == "sold":
+        return doc
+    if doc.get("status") != "open":
+        _error(409, "LOT_NOT_OPEN", f"a lot in status '{doc.get('status')}' cannot be marked sold")
+    if body.finalRate is not None:
+        if body.finalRate < 0:
+            _error(422, "VALIDATION_ERROR", "invalid lot", {"finalRate": "must be 0 or more"})
+        doc["finalRate"] = body.finalRate
+    doc["status"] = "sold"
+    doc["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("market_lots", lot_id, doc)
+    return doc
 
 
 @router.post("/lots/{lot_id}/relist")

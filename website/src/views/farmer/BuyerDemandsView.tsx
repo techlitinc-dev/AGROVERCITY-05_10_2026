@@ -7,34 +7,47 @@ import {
   Send,
   Check,
   ShieldCheck,
+  Phone,
+  Lock,
 } from 'lucide-react';
-import { demands, offers, apiErrorMessage } from '../../lib/api';
+import { demands, apiErrorMessage } from '../../lib/api';
+import { applyToDemand, getMyLeads, isMpinError, type Lead } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
+import { MpinPad } from '../../components/common/MpinPad';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
-import type { BuyerDemand, TradeOffer } from '../../types';
+import type { BuyerDemand } from '../../types';
 
 export const BuyerDemandsView: React.FC = () => {
   const [demandsList, setDemandsList] = useState<BuyerDemand[]>([]);
-  const [myOffers, setMyOffers] = useState<TradeOffer[]>([]);
+  const [myApplications, setMyApplications] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Apply modal state
   const [selectedDemand, setSelectedDemand] = useState<BuyerDemand | null>(null);
   const [offerPrice, setOfferPrice] = useState<number>(4760);
   const [offerQuantity, setOfferQuantity] = useState<number>(20);
-  const [offerMessage, setOfferMessage] = useState<string>('Grade A cleaned soybean, ready in 50kg gunny bags.');
+  const [offerMessage, setOfferMessage] = useState<string>('');
+  const [termsAccepted, setTermsAccepted] = useState<boolean>(false);
+  const [step, setStep] = useState<'form' | 'mpin'>('form');
   const [sending, setSending] = useState<boolean>(false);
-  const [offerSentAlert, setOfferSentAlert] = useState<boolean>(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applySuccess, setApplySuccess] = useState<boolean>(false);
+  const [mpinKey, setMpinKey] = useState<number>(0);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([demands.browse({ status: 'open' }), offers.mine()])
-      .then(([d, o]) => {
+    Promise.all([
+      demands.browse({ status: 'open' }),
+      getMyLeads('sent', undefined, 'demand').catch(() => [] as Lead[]),
+    ])
+      .then(([d, apps]) => {
         if (!active) return;
         setDemandsList(d);
-        setMyOffers(o.filter((x) => x.targetType === 'demand'));
+        setMyApplications(apps);
       })
       .catch((e) => active && setError(apiErrorMessage(e)))
       .finally(() => active && setLoading(false));
@@ -43,30 +56,57 @@ export const BuyerDemandsView: React.FC = () => {
     };
   }, []);
 
-  const myOfferFor = (demandId: string): TradeOffer | undefined =>
-    myOffers.find((o) => o.targetId === demandId);
+  const appFor = (demandId: string): Lead | undefined =>
+    myApplications.find((l) => l.demandId === demandId && l.status !== 'dismissed');
 
-  const handleSendOffer = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openApply = (demand: BuyerDemand) => {
+    const existing = appFor(demand.id);
+    setSelectedDemand(demand);
+    setOfferPrice(existing?.pricePerUnit ?? Math.max(1, demand.maxPricePerQuintal - 140));
+    setOfferQuantity(existing?.quantity ?? Math.min(20, demand.requiredQuantityQuintal));
+    setOfferMessage(existing?.message ?? '');
+    setTermsAccepted(Boolean(existing));
+    setStep(existing ? 'mpin' : 'form');
+    setApplyError(null);
+    setApplySuccess(Boolean(existing));
+    setMpinKey((k) => k + 1);
+  };
+
+  const closeApply = () => {
+    setSelectedDemand(null);
+    setApplyError(null);
+    setApplySuccess(false);
+    setStep('form');
+  };
+
+  const handleMpinSuccess = async (mpin: string) => {
     if (!selectedDemand) return;
     setSending(true);
-    setError(null);
+    setApplyError(null);
     try {
-      const created = await offers.create({
-        targetType: 'demand',
-        targetId: selectedDemand.id,
+      const { lead } = await applyToDemand(selectedDemand.id, {
         pricePerUnit: offerPrice,
         quantity: offerQuantity,
         message: offerMessage,
+        termsAccepted: true,
+        mpin,
       });
-      setMyOffers((prev) => [...prev.filter((o) => o.targetId !== selectedDemand.id), created]);
-      setOfferSentAlert(true);
-      setTimeout(() => {
-        setOfferSentAlert(false);
-        setSelectedDemand(null);
-      }, 900);
+      setMyApplications((prev) => [
+        lead,
+        ...prev.filter((l) => !(l.demandId === selectedDemand.id && l.status !== 'dismissed')),
+      ]);
+      setApplySuccess(true);
+      setNotice(
+        `Application sent to ${selectedDemand.companyName} — your contact was shared with MPIN verification. The buyer can call or WhatsApp you directly.`,
+      );
+      setTimeout(() => closeApply(), 1200);
     } catch (err) {
-      setError(apiErrorMessage(err));
+      if (isMpinError(err)) {
+        setApplyError('Incorrect MPIN — try again.');
+        setMpinKey((k) => k + 1);
+      } else {
+        setApplyError(apiErrorMessage(err));
+      }
     } finally {
       setSending(false);
     }
@@ -78,10 +118,12 @@ export const BuyerDemandsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Layers className="w-7 h-7 text-emerald-600" />
-          Institutional Buyer Demands (Reverse Marketplace)
+          Industry Buyer Demands (Reverse Marketplace)
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Browse procurement demands posted by food processors, exporters, and large traders. Send your offer directly.
+          Browse procurement demands posted by industrial buyers — food processors, exporters, and
+          large traders. Apply with your quote; on accepting the terms and verifying your MPIN,
+          your contact is shared with the buyer to connect directly.
         </p>
       </div>
 
@@ -91,9 +133,9 @@ export const BuyerDemandsView: React.FC = () => {
         </div>
       )}
       {notice && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center justify-between">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-center justify-between gap-4">
           <span>{notice}</span>
-          <button onClick={() => setNotice(null)} className="font-bold hover:underline">Dismiss</button>
+          <button onClick={() => setNotice(null)} className="font-bold hover:underline shrink-0">Dismiss</button>
         </div>
       )}
 
@@ -109,7 +151,7 @@ export const BuyerDemandsView: React.FC = () => {
           </div>
         ) : (
           demandsList.map((demand) => {
-            const existing = myOfferFor(demand.id);
+            const existing = appFor(demand.id);
             return (
               <div
                 key={demand.id}
@@ -127,7 +169,7 @@ export const BuyerDemandsView: React.FC = () => {
                     <StatusBadge status={demand.status} />
                     {existing && (
                       <span className="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3" /> Offer {existing.status}
+                        <ShieldCheck className="w-3 h-3" /> Applied — contact shared
                       </span>
                     )}
                   </div>
@@ -169,15 +211,10 @@ export const BuyerDemandsView: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => {
-                      setSelectedDemand(demand);
-                      setOfferPrice(existing?.pricePerUnit ?? demand.maxPricePerQuintal - 140);
-                      setOfferQuantity(existing?.quantity ?? Math.min(20, demand.requiredQuantityQuintal));
-                      if (existing?.message) setOfferMessage(existing.message);
-                    }}
+                    onClick={() => openApply(demand)}
                     className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2"
                   >
-                    <span>{existing ? 'Update Offer Quote' : 'Send Offer Quote'}</span>
+                    <span>{existing ? 'View Application' : 'Apply & Share Contact'}</span>
                     <Send className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -187,80 +224,161 @@ export const BuyerDemandsView: React.FC = () => {
         )}
       </div>
 
-      {/* Send Offer Quote Modal */}
+      {/* Apply modal: quote → terms → MPIN */}
       <ModalSheet
         isOpen={Boolean(selectedDemand)}
-        onClose={() => setSelectedDemand(null)}
-        title="Send Offer Quote to Buyer"
-        description={`Submit your price and available quantity to ${selectedDemand?.companyName}`}
+        onClose={closeApply}
+        title={applySuccess ? 'Application Submitted' : 'Apply to Buyer Demand'}
+        description={
+          selectedDemand
+            ? `Submit your quote to ${selectedDemand.companyName}. Terms acceptance + MPIN verify your identity and share your contact with the buyer.`
+            : undefined
+        }
         maxWidth="md"
       >
-        <form onSubmit={handleSendOffer} className="space-y-4">
-          <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
-            <div className="flex justify-between text-slate-600">
-              <span>Required Crop:</span>
-              <span className="font-bold text-slate-900">{selectedDemand?.crop}</span>
+        {applySuccess ? (
+          <div className="py-8 flex flex-col items-center gap-3 text-center">
+            <span className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
+              <Check className="w-8 h-8" />
+            </span>
+            <p className="text-sm font-bold text-slate-900">Application sent — contact shared</p>
+            <p className="text-xs text-slate-500 max-w-sm">
+              {selectedDemand?.companyName} can now see your contact number and will reach out
+              directly. A chat thread has also been opened.
+            </p>
+          </div>
+        ) : step === 'form' ? (
+          <div className="space-y-4">
+            <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
+              <div className="flex justify-between text-slate-600">
+                <span>Required Crop:</span>
+                <span className="font-bold text-slate-900">{selectedDemand?.crop}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Buyer Max Cap:</span>
+                <span className="font-bold text-emerald-800">
+                  {selectedDemand && formatCurrency(selectedDemand.maxPricePerQuintal)}/q
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Buyer Max Cap:</span>
-              <span className="font-bold text-emerald-800">
-                {selectedDemand && formatCurrency(selectedDemand.maxPricePerQuintal)}/q
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Your Price (₹/q)</label>
+                <input
+                  type="number"
+                  value={offerPrice}
+                  onChange={(e) => setOfferPrice(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300 text-emerald-800"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Quantity Offered (q)</label>
+                <input
+                  type="number"
+                  value={offerQuantity}
+                  onChange={(e) => setOfferQuantity(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Produce Specs / Message</label>
+              <textarea
+                rows={3}
+                value={offerMessage}
+                onChange={(e) => setOfferMessage(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-emerald-600"
+              />
+              <span className="text-[11px] text-slate-600 leading-relaxed">
+                I accept the platform <strong>terms & conditions</strong> and consent to sharing my
+                contact number with <strong>{selectedDemand?.companyName}</strong> so they can reach
+                me directly. The final deal — price, payment, pickup and quality — is settled
+                directly between us; Agrovercity only connects the two parties.
               </span>
-            </div>
-          </div>
+            </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Your Price (₹/q)</label>
-              <input
-                type="number"
-                value={offerPrice}
-                onChange={(e) => setOfferPrice(Number(e.target.value))}
-                className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300 text-emerald-800"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Quantity Offered (q)</label>
-              <input
-                type="number"
-                value={offerQuantity}
-                onChange={(e) => setOfferQuantity(Number(e.target.value))}
-                className="w-full px-3 py-2 text-sm font-bold rounded-xl border border-slate-300"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Offer Message & Produce Specs</label>
-            <textarea
-              rows={3}
-              value={offerMessage}
-              onChange={(e) => setOfferMessage(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={sending || offerSentAlert}
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
-          >
-            {offerSentAlert ? (
-              <>
-                <Check className="w-4 h-4 text-emerald-200" /> Offer Submitted to Buyer!
-              </>
-            ) : sending ? (
-              'Submitting…'
-            ) : (
-              <>
-                <Send className="w-4 h-4" /> Submit Offer Quote
-              </>
+            {applyError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                {applyError}
+              </div>
             )}
-          </button>
-        </form>
+
+            <button
+              type="button"
+              disabled={!termsAccepted || offerPrice <= 0 || offerQuantity <= 0}
+              onClick={() => {
+                setApplyError(null);
+                setMpinKey((k) => k + 1);
+                setStep('mpin');
+              }}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Lock className="w-4 h-4" /> Continue — Verify MPIN
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 flex items-center justify-between">
+              <span>
+                Quote: <strong className="text-slate-900">{offerQuantity} q</strong> @{' '}
+                <strong className="text-emerald-800">{formatCurrency(offerPrice)}/q</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setStep('form')}
+                className="font-bold text-emerald-700 hover:underline"
+              >
+                Edit
+              </button>
+            </div>
+            <MpinPad
+              key={mpinKey}
+              onSuccess={(mpin) => void handleMpinSuccess(mpin)}
+              title="Verify MPIN to Share Contact"
+              subtitle={`Confirms your identity and shares your number with ${selectedDemand?.companyName}`}
+            />
+            {applyError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                {applyError}
+              </div>
+            )}
+            {sending && (
+              <div className="py-2 text-center text-xs font-bold text-slate-500 animate-pulse">
+                Verifying & submitting application…
+              </div>
+            )}
+          </div>
+        )}
       </ModalSheet>
+
+      {/* How it works strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { icon: Send, text: 'Apply with your price & quantity quote on any open demand' },
+          { icon: Lock, text: 'Accept terms and verify your 4-digit MPIN to confirm identity' },
+          { icon: Phone, text: 'Your contact is shared — the buyer calls or WhatsApps you directly' },
+        ].map((s, i) => (
+          <div key={i} className="flex items-center gap-3 p-3.5 bg-white rounded-2xl border border-slate-200/80 text-xs font-semibold text-slate-700">
+            <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700 shrink-0">
+              <s.icon className="w-4 h-4" />
+            </span>
+            {s.text}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

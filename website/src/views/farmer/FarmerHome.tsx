@@ -261,9 +261,9 @@ export const FarmerHome: React.FC = () => {
               </div>
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl font-bold tracking-tight text-slate-900">Book Gadi</span>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">Book a Vehicle</span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Trips, bilty & live tracking</p>
+            <p className="mt-1 text-xs text-slate-500">Post demand & compare transporter offers</p>
           </div>
         </Link>
 
@@ -321,8 +321,8 @@ export const FarmerHome: React.FC = () => {
             <Truck className="w-5 h-5" />
           </div>
           <div>
-            <h5 className="font-bold text-xs text-slate-900">Book Gadi</h5>
-            <p className="text-[10px] text-slate-400">Pickup & bilty</p>
+            <h5 className="font-bold text-xs text-slate-900">Book a Vehicle</h5>
+            <p className="text-[10px] text-slate-400">Demand & transporter applications</p>
           </div>
         </Link>
 

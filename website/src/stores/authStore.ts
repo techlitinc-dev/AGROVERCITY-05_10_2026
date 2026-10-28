@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import type { UserProfile, PersonaType } from '../types';
 import { auth, users, type AuthTokens } from '../lib/api';
 import { normalizePersona } from '../lib/personas';
+import { setPendingPersonaSync } from '../lib/personaSync';
+
+/** Track the activation so the API gate serializes fetches behind it; errors stay swallowed (legacy behavior). */
+const activatePersona = (persona: PersonaType): void => {
+  setPendingPersonaSync(users.activateProfile(persona).catch(() => undefined));
+};
 
 interface AuthState {
   user: UserProfile | null;
@@ -164,7 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: true,
     });
     if (user.activePersona) {
-      users.activateProfile(user.activePersona).catch(() => undefined);
+      activatePersona(user.activePersona);
     }
   },
 
@@ -188,7 +194,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // hidden personas cannot be activated from any UI surface
     if ((get().user?.disabledPersonas ?? []).includes(norm)) return;
     localStorage.setItem(PERSONA_KEY, norm);
-    users.activateProfile(norm).catch(() => undefined);
+    activatePersona(norm);
     set((state) => {
       const updatedUser = state.user
         ? {
@@ -241,3 +247,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 }));
+
+// Boot-time re-sync: a refresh/direct-URL visit restores the client persona
+// from localStorage but the server may still hold another profile (previous
+// tab, expired switch) — every gated call would 403 until the next manual
+// switch. Re-activate the restored persona so the gate above can serialize
+// the page's first fetches behind it. Skipped for personas the user has not
+// linked (activation would silently link them server-side) or has hidden.
+const hasValidSession =
+  !!savedAccessToken && savedAccessToken !== 'undefined' && savedAccessToken !== 'null';
+if (hasValidSession && savedUser) {
+  const bootPersona = savedUser.activePersona || savedPersona;
+  if (
+    savedUser.availablePersonas.includes(bootPersona) &&
+    !(savedUser.disabledPersonas ?? []).includes(bootPersona)
+  ) {
+    activatePersona(bootPersona);
+  }
+}

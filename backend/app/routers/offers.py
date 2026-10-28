@@ -16,6 +16,9 @@ from app.services.users import get_user
 router = APIRouter(prefix="/offers", tags=["offers"])
 
 NEGOTIABLE_STATUSES = ("pending", "countered")
+# Mutual deal agreement: first accept records one party's agreement; the lot
+# only locks (purchase created) when the second party confirms too.
+AGREEMENT_PENDING = "agreement_pending"
 # Spec P2: alternating counters, capped at three rounds per offer.
 MAX_NEGOTIATION_ROUNDS = 3
 # Spec V5: offer expiry timer (24-48h configurable) — default window.
@@ -245,6 +248,46 @@ async def get_offer(offer_id: str, uid: str = Depends(current_user_id)):
     return await _with_verified_flag(await _expire_if_due(await _participant_offer(offer_id, uid)))
 
 
+def _effective_price(offer: dict):
+    """The price on the table — the latest counter when one exists."""
+    return (offer.get("counter") or {}).get("pricePerUnit") or offer.get("pricePerUnit")
+
+
+async def _record_agreement(offer: dict, uid: str) -> dict:
+    """First party accepts → record their agreement, but the deal does NOT
+    lock yet. The other party must confirm via the same accept endpoint."""
+    is_demand = offer.get("targetType") == "demand"
+    target = await get_doc("demands" if is_demand else "market_lots", offer["targetId"])
+    if target is None:
+        _error(404, "DEMAND_NOT_FOUND" if is_demand else "LOT_NOT_FOUND", "target not found")
+    if target.get("status") != "open":
+        _error(409, "DEMAND_CLOSED" if is_demand else "LOT_NOT_OPEN", "target is no longer open")
+    previous = offer.get("status")
+    agreement = {
+        "confirmedBy": [uid],
+        "at": _now_iso(),
+        "previousStatus": previous,
+    }
+    offer["agreement"] = agreement
+    offer["status"] = AGREEMENT_PENDING
+    offer["updatedAt"] = _now_iso()
+    await set_doc("offers", offer["id"], offer)
+    agreer = await get_user(uid) or {}
+    other = offer.get("fromId") if uid == offer.get("toId") else offer.get("toId")
+    await notify_user(
+        other,
+        type="agreement_requested",
+        title="Deal agreed — confirm to lock / सौदा तय",
+        body=(
+            f"{(agreer.get('name') or 'The other party').split(' ')[0]} agreed to "
+            f"₹{_effective_price(offer)}/{offer.get('unit', 'quintal')} for "
+            f"{offer.get('quantity')} {offer.get('unit', 'quintal')} — confirm to lock the deal"
+        ),
+        deepLink=f"/dashboard/p/myOffers/{offer['id']}",
+    )
+    return {"offer": offer, "purchase": None}
+
+
 @router.post("/{offer_id}/accept")
 async def accept_offer(
     offer_id: str,
@@ -254,14 +297,24 @@ async def accept_offer(
     offer = await _expire_if_due(await _participant_offer(offer_id, uid))
     if offer.get("status") == "expired":
         _error(400, "OFFER_EXPIRED", "offer has expired")
-    if offer.get("status") not in NEGOTIABLE_STATUSES:
+    status = offer.get("status")
+    if status == AGREEMENT_PENDING:
+        # Second confirmation — fall through to the lock path below.
+        confirmed = ((offer.get("agreement") or {}).get("confirmedBy")) or []
+        if uid in confirmed:
+            _error(409, "AGREEMENT_WAITING", "you already agreed — waiting for the other party to confirm")
+    elif status == "pending":
+        if uid != offer.get("toId"):
+            _error(403, "FORBIDDEN", "only the target owner can accept a pending offer")
+        return await _record_agreement(offer, uid)
+    elif status == "countered":
+        if uid == (offer.get("counter") or {}).get("by"):
+            _error(403, "FORBIDDEN", "only the other party can accept the latest counter")
+        return await _record_agreement(offer, uid)
+    else:
         _error(400, "OFFER_NOT_ACCEPTABLE", f"offer is {offer.get('status')}")
-    if offer.get("status") == "pending" and uid != offer.get("toId"):
-        _error(403, "FORBIDDEN", "only the target owner can accept a pending offer")
-    if offer.get("status") == "countered" and uid == (offer.get("counter") or {}).get("by"):
-        _error(403, "FORBIDDEN", "only the other party can accept the latest counter")
-    # Re-validate the target at accept time — a lot can sell (or be withdrawn)
-    # and a demand can close between offer creation and acceptance.
+    # Both parties agreed — lock the deal (idempotent: the record-agreement
+    # call above already saved; re-fetch state via the in-memory doc).
     requested = body.quantity if body else None
     is_demand = offer.get("targetType") == "demand"
     target = await get_doc("demands" if is_demand else "market_lots", offer["targetId"])
@@ -303,6 +356,10 @@ async def accept_offer(
         partial = requested is not None and requested < remaining
     purchase = await create_purchase_from_offer(offer, quantity=requested)
     offer["status"] = "accepted"
+    agreement = offer.get("agreement") or {}
+    agreement["confirmedBy"] = list(dict.fromkeys([*(agreement.get("confirmedBy") or []), uid]))
+    agreement["lockedAt"] = _now_iso()
+    offer["agreement"] = agreement
     offer["updatedAt"] = _now_iso()
     if partial:
         offer["acceptedQuantity"] = requested
@@ -348,10 +405,39 @@ async def accept_offer(
         offer.get("fromId"),
         type="request_accepted",
         title="Request accepted / मांग स्वीकार हुई",
-        body=f"Your offer of ₹{offer.get('pricePerUnit')}/{offer.get('unit', 'quintal')} for {purchase['crop']} was accepted — chat is now open",
+        body=f"Your offer of ₹{_effective_price(offer)}/{offer.get('unit', 'quintal')} for {purchase['crop']} was accepted — chat is now open",
         deepLink=f"/dashboard/p/purchases/{purchase['id']}",
     )
     return {"offer": offer, "purchase": purchase}
+
+
+@router.post("/{offer_id}/agreement/cancel")
+async def cancel_agreement(offer_id: str, uid: str = Depends(current_user_id)):
+    """Withdraw my agreement while the deal waits for the other party."""
+    offer = await _participant_offer(offer_id, uid)
+    if offer.get("status") != AGREEMENT_PENDING:
+        _error(400, "OFFER_NOT_ACCEPTABLE", f"offer is {offer.get('status')}")
+    agreement = offer.get("agreement") or {}
+    previous = agreement.get("previousStatus")
+    if previous not in NEGOTIABLE_STATUSES:
+        previous = "countered" if offer.get("counter") else "pending"
+    offer["status"] = previous
+    offer["agreement"] = None
+    offer["updatedAt"] = _now_iso()
+    await set_doc("offers", offer_id, offer)
+    canceller = await get_user(uid) or {}
+    other = offer.get("fromId") if uid == offer.get("toId") else offer.get("toId")
+    await notify_user(
+        other,
+        type="agreement_cancelled",
+        title="Deal confirmation cancelled",
+        body=(
+            f"{(canceller.get('name') or 'The other party').split(' ')[0]} withdrew from the "
+            f"₹{_effective_price(offer)}/{offer.get('unit', 'quintal')} deal — the offer is open again"
+        ),
+        deepLink=f"/dashboard/p/myOffers/{offer['id']}",
+    )
+    return offer
 
 
 @router.post("/{offer_id}/reject")

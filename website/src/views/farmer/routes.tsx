@@ -5,10 +5,6 @@ const FarmerHome = lazy(() => import('./FarmerHome').then((m) => ({ default: m.F
 const MandiPricesView = lazy(() => import('./MandiPricesView').then((m) => ({ default: m.MandiPricesView })));
 const ProduceLotsView = lazy(() => import('./ProduceLotsView').then((m) => ({ default: m.ProduceLotsView })));
 const BuyerDemandsView = lazy(() => import('./BuyerDemandsView').then((m) => ({ default: m.BuyerDemandsView })));
-const PurchasesView = lazy(() => import('./PurchasesView').then((m) => ({ default: m.PurchasesView })));
-const PurchaseDetailView = lazy(() => import('./PurchaseDetailView').then((m) => ({ default: m.PurchaseDetailView })));
-const BuyerContractsView = lazy(() => import('./BuyerContractsView').then((m) => ({ default: m.BuyerContractsView })));
-const ContractDetailView = lazy(() => import('./ContractDetailView').then((m) => ({ default: m.ContractDetailView })));
 const TransportBookingView = lazy(() => import('./TransportBookingView').then((m) => ({ default: m.TransportBookingView })));
 const TransportBookingDetailView = lazy(() => import('./TransportBookingDetailView').then((m) => ({ default: m.TransportBookingDetailView })));
 const FarmDiaryView = lazy(() => import('./FarmDiaryView').then((m) => ({ default: m.FarmDiaryView })));
@@ -40,10 +36,6 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/mandi" element={<MandiPricesView />} />
     <Route path="/farmer/lots" element={<ProduceLotsView />} />
     <Route path="/farmer/demands" element={<BuyerDemandsView />} />
-    <Route path="/farmer/purchases" element={<PurchasesView />} />
-    <Route path="/farmer/purchases/:id" element={<PurchaseDetailView />} />
-    <Route path="/farmer/contracts" element={<BuyerContractsView />} />
-    <Route path="/farmer/contracts/:id" element={<ContractDetailView />} />
     <Route path="/farmer/transport" element={<TransportBookingView />} />
     <Route path="/farmer/transport/:id" element={<TransportBookingDetailView />} />
     <Route path="/farmer/diary" element={<FarmDiaryView />} />

@@ -87,6 +87,24 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
 
     # 3. Transporter registers vehicle & submits bid on the load
     veh = await _add_vehicle(client, trans_token, registrationNo="MH-12-PQ-4567")
+    # Direct-connect apply gate: owned vehicle must be document-verified and
+    # free on the pickup date (stands in for the admin KYC review).
+    user_store[f"vehicles/{veh['id']}"]["docStatus"] = "verified"
+    user_store["kyc_cases/kyc_uid-2_transport"] = {
+        "caseId": "kyc_uid-2_transport",
+        "userId": "uid-2",
+        "persona": "transport",
+        "docs": [
+            {"docId": "kyc_uid-2_transport:rc", "type": "rc", "status": "verified"},
+            {"docId": "kyc_uid-2_transport:dl", "type": "dl", "status": "verified"},
+        ],
+        "status": "verified",
+    }
+    await client.put(
+        f"/v1/transport/vehicles/{veh['id']}/availability",
+        json={"availableDates": ["2026-09-30"]},
+        headers=_auth(trans_token),
+    )
     bid_resp = await client.post(
         f"/v1/transport/loads/{custom_load_id}/bid",
         json={
@@ -95,6 +113,7 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
             "vehicleNo": "MH-12-PQ-4567",
             "estimatedPickupTime": "06:30 AM",
             "notes": "समय पर पिकअप और सुरक्षित डिलीवरी।",
+            "termsAccepted": True,
         },
         headers=_auth(trans_token),
     )

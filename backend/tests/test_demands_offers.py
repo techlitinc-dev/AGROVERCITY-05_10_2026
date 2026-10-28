@@ -216,7 +216,13 @@ async def test_full_negotiation_counter_accepted_creates_purchase(client, user_s
     assert second.json()["error"]["code"] == "NEGOTIATION_CLOSED"
     resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(token))
     assert resp.status_code == 403
+    # Farmer (non-counter party) agrees first — deal waits for the buyer.
     resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(farmer_token))
+    assert resp.status_code == 200
+    assert resp.json()["offer"]["status"] == "agreement_pending"
+    assert resp.json()["purchase"] is None
+    # Buyer confirms — deal locks.
+    resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(token))
     assert resp.status_code == 200
     body = resp.json()
     assert body["offer"]["status"] == "accepted"
@@ -275,7 +281,11 @@ async def test_offer_on_lot_and_farmer_accepts(client, user_store):
     offer_id = resp.json()["id"]
     resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(token))
     assert resp.status_code == 403
+    # Farmer agrees first, buyer confirms — mutual agreement locks the deal.
     resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(farmer_token))
+    assert resp.status_code == 200
+    assert resp.json()["offer"]["status"] == "agreement_pending"
+    resp = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(token))
     assert resp.status_code == 200
     purchase = resp.json()["purchase"]
     assert purchase["buyerId"] == "uid-1"
@@ -380,7 +390,11 @@ async def test_three_round_counter_cap(client, user_store):
     assert r4.status_code == 400
     assert r4.json()["error"]["code"] == "NEGOTIATION_CLOSED"
 
+    # Farmer agrees, buyer confirms — the mutual agreement locks the deal.
     acc = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(farmer_token))
+    assert acc.status_code == 200
+    assert acc.json()["offer"]["status"] == "agreement_pending"
+    acc = await client.post(f"/v1/offers/{offer_id}/accept", headers=_auth(token))
     assert acc.status_code == 200
     assert acc.json()["purchase"]["agreedPricePerUnit"] == 1925
     assert acc.json()["offer"]["negotiationLog"][-1]["round"] == 3

@@ -94,7 +94,7 @@ export const Navbar: React.FC = () => {
     { id: 'seller', label: 'Agri Vyapari (दुकानदार / इनपुट)', icon: '🏪' },
     { id: 'equipmentOwner', label: 'Equipment Owner (यंत्र मालिक)', icon: '🚜' },
     { id: 'exporter', label: 'International Exporter (अंतर्राष्ट्रीय निर्यातक)', icon: '🚢' },
-    { id: 'directBuyer', label: 'Direct Buyer (थोक खरीदार)', icon: '🏢' },
+    { id: 'directBuyer', label: 'Industrial Buyer (थोक खरीदार)', icon: '🏢' },
     { id: 'broker', label: 'Agri Broker / Dalal (दलाल)', icon: '🤝' },
     { id: 'dairyManager', label: 'Dairy Manager (दुग्ध डेयरी)', icon: '🥛' },
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },

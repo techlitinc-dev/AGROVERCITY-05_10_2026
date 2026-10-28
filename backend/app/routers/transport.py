@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import admin_action, current_user_id
+from app.core.ratelimit import hit
 from app.core.security import verify_mpin
 from app.models.transport import (
     AcceptBookingRequest,
@@ -1860,6 +1861,35 @@ async def _notify_urgent_load_nearby(load: dict):
         )
 
 
+def _contact_of(user: dict) -> dict:
+    """Direct-connect contact block (same shape as produce-lot leads): phone +
+    WhatsApp digits revealed only when the load owner accepts the bid."""
+    phone = user.get("phone") or ""
+    whatsapp = user.get("whatsapp") or phone
+
+    def digits(value: str | None) -> str | None:
+        d = "".join(ch for ch in str(value or "") if ch.isdigit())
+        return d or None
+
+    return {
+        "name": (user.get("name") or "").strip().split(" ")[0],
+        "fullName": user.get("name") or "",
+        "village": user.get("village", ""),
+        "district": user.get("district", ""),
+        "phone": phone,
+        "phoneDigits": digits(phone),
+        "whatsappDigits": digits(whatsapp),
+    }
+
+
+def _bid_public_view(bid: dict) -> dict:
+    """Anonymized bid for every surface except the accepted one — the
+    transporter's phone/WhatsApp stay hidden until the load owner accepts."""
+    if bid.get("status") == "accepted":
+        return bid
+    return {k: v for k, v in bid.items() if k not in ("transporterPhone", "transporterContact")}
+
+
 @router.post("/loads/{load_id}/bid", status_code=201)
 async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends(_transporter)):
     load = await get_doc("transport_loads", load_id)
@@ -1869,27 +1899,60 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         _error(409, "LOAD_NOT_OPEN", "load is no longer open for bidding")
 
     user = await get_user(uid)
-    vehicle_no = body.vehicleNo
-    if body.vehicleId and not vehicle_no:
-        veh = await get_doc("vehicles", body.vehicleId)
-        if veh:
-            vehicle_no = veh.get("registrationNo")
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the terms & conditions to apply on this load")
+    # MPIN step-up (same contract as produce/demand leads): only enforced when
+    # this account has an MPIN on file.
+    if user.get("mpinHash"):
+        if not body.mpin:
+            _error(401, "WRONG_MPIN", "mpin is required to apply on this load")
+        if not verify_mpin(body.mpin, user["mpinHash"]):
+            _error(401, "WRONG_MPIN", "incorrect MPIN")
 
+    # Vehicle-availability gate: a bid must attach a vehicle the transporter
+    # owns that is document-verified and free on the load's pickup date.
+    vehicle_no = body.vehicleNo
+    if body.vehicleId:
+        vehicle = await _own_vehicle(body.vehicleId, uid)
+        if vehicle.get("active", True) is False:
+            _error(409, "VEHICLE_INACTIVE", "this vehicle is inactive", {"vehicleId": "vehicle is inactive"})
+        if not await _vehicle_docs_verified(vehicle):
+            _error(
+                422,
+                "VEHICLE_NOT_VERIFIED",
+                "vehicle documents are not verified or are expired",
+                {"vehicleId": "documents not verified or expired"},
+            )
+        pickup_date = str(load.get("pickupDate") or "")
+        today = datetime.now(timezone.utc).date().isoformat()
+        if not _vehicle_available_on(vehicle, pickup_date, today):
+            _error(
+                409,
+                "VEHICLE_NOT_AVAILABLE",
+                f"this vehicle is not available on {pickup_date or 'the pickup date'}",
+                {"vehicleId": "not available on the pickup date"},
+            )
+        vehicle_no = vehicle_no or vehicle.get("registrationNo")
+
+    await hit("load_bids", uid, 30, 60)
     plan = await effective_plan(uid, "transport")
+    now = datetime.now(timezone.utc).isoformat()
     bid_doc = {
         "id": f"bid_{uuid.uuid4().hex[:10]}",
         "loadId": load_id,
         "transporterId": uid,
         "transporterName": user.get("name", "ट्रांसपोर्ट पार्टनर"),
-        "transporterPhone": user.get("phone", ""),
+        # Phone/WhatsApp intentionally NOT stored here — contact reveal happens
+        # on acceptance (see accept_load_bid).
         "quotedFare": body.quotedFare,
         "vehicleId": body.vehicleId,
         "vehicleNo": vehicle_no,
         "estimatedPickupTime": body.estimatedPickupTime,
         "notes": body.notes,
+        "termsAcceptedAt": now,
         "priority": (plan.get("tier") in ("pro", "enterprise")),
         "status": "pending",
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": now,
     }
     await set_doc(f"transport_loads/{load_id}/bids", bid_doc["id"], bid_doc)
 
@@ -1902,7 +1965,64 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         f"{bid_doc['transporterName']} ने ₹{body.quotedFare} का प्रस्ताव भेजा है",
         {"type": "bid_received", "loadId": load_id, "bidId": bid_doc["id"]},
     )
-    return bid_doc
+    await notify_user(
+        load["userId"],
+        type="load_bid_received",
+        title="New vehicle application / नया वाहन आवेदन",
+        body=(
+            f"{bid_doc['transporterName']} applied for your {load.get('crop', 'load')} load — "
+            f"₹{body.quotedFare} ({vehicle_no or 'vehicle to be assigned'}). Accept to reveal contact."
+        ),
+        deepLink="/farmer/transport",
+    )
+    return _bid_public_view(bid_doc)
+
+
+@router.get("/loads/mine")
+async def list_my_loads(uid: str = Depends(_booker)):
+    """Load owner's demand desk: my posted loads with the applications
+    (bids) attached — contact details only on the accepted application."""
+    loads = await query("transport_loads", [("userId", "==", uid)], limit=500)
+    loads.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+    out = []
+    for load in loads:
+        bids = await query(f"transport_loads/{load['id']}/bids", [], limit=100)
+        bids.sort(key=lambda b: (b.get("quotedFare", 0), not b.get("priority", False)))
+        out.append({**load, "bids": [_bid_public_view(b) for b in bids]})
+    return {"data": out, "total": len(out)}
+
+
+@router.get("/loads/my-bids")
+async def list_my_load_bids(uid: str = Depends(_transporter)):
+    """Transporter's application tracker: my bids across the board, each with
+    the load summary and — once the farmer accepts — the farmer's contact."""
+    loads = await query("transport_loads", [], limit=500)
+    mine = []
+    for load in loads:
+        bids = await query(f"transport_loads/{load['id']}/bids", [("transporterId", "==", uid)], limit=100)
+        for bid in bids:
+            entry = {
+                **_bid_public_view(bid),
+                "load": {
+                    "id": load["id"],
+                    "crop": load.get("crop", ""),
+                    "pickupLocation": load.get("pickupLocation", ""),
+                    "dropLocation": load.get("dropLocation", ""),
+                    "pickupDate": load.get("pickupDate", ""),
+                    "quantityQuintals": load.get("quantityQuintals"),
+                    "status": load.get("status"),
+                },
+            }
+            if bid.get("status") == "accepted":
+                farmer = await get_user(load.get("userId", "")) or {}
+                entry["contactReveal"] = {
+                    "farmer": _contact_of(farmer),
+                    "bookingId": load.get("acceptedBookingId"),
+                    "revealedAt": bid.get("updatedAt"),
+                }
+            mine.append(entry)
+    mine.sort(key=lambda b: b.get("createdAt", ""), reverse=True)
+    return {"data": mine, "total": len(mine)}
 
 
 @router.get("/loads/{load_id}/bids")
@@ -1913,7 +2033,7 @@ async def list_load_bids(load_id: str, uid: str = Depends(_viewer)):
     bids = await query(f"transport_loads/{load_id}/bids", [], limit=100)
     # Priority load board (Pro): at equal fare, priority bids rank first.
     bids.sort(key=lambda b: (b.get("quotedFare", 0), not b.get("priority", False)))
-    return {"loadId": load_id, "data": bids, "total": len(bids)}
+    return {"loadId": load_id, "data": [_bid_public_view(b) for b in bids], "total": len(bids)}
 
 
 class LoadBidCounterRequest(BaseModel):
@@ -1971,13 +2091,30 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
     load = await get_doc("transport_loads", load_id)
     if load is None or load.get("userId") != uid:
         _error(404, "LOAD_NOT_FOUND", "load not found or unauthorized")
+    if load.get("status") != "open":
+        _error(409, "LOAD_NOT_OPEN", "load is no longer open for bidding")
     bid = await get_doc(f"transport_loads/{load_id}/bids", bidId)
     if bid is None:
         _error(404, "BID_NOT_FOUND", "bid not found")
+    if bid.get("status") != "pending":
+        _error(409, "BID_NOT_PENDING", "only a pending application can be accepted")
     await _assert_load_board_access(bid["transporterId"])
+
+    transporter = await get_user(bid["transporterId"]) or {}
+    farmer = await get_user(uid) or {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Direct-connect reveal (produce/vyapari parity): accepting the application
+    # unlocks both sides' phone + WhatsApp; the trip itself is still tracked
+    # in-app as a regular transport booking.
+    contact_reveal = {
+        "farmer": _contact_of(farmer),
+        "transporter": _contact_of(transporter),
+        "revealedAt": now_iso,
+    }
 
     load["status"] = "booked"
     load["acceptedBidId"] = bidId
+    load["contactReveal"] = contact_reveal
     await set_doc("transport_loads", load_id, load)
 
     booking_id = f"trb_{uuid.uuid4().hex[:12]}"
@@ -1999,8 +2136,11 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
         "status": "accepted",
         "vehicleId": bid.get("vehicleId"),
         "vehicleNo": bid.get("vehicleNo"),
-        "driverName": bid.get("transporterName"),
-        "driverPhone": bid.get("transporterPhone"),
+        "driverName": transporter.get("name", ""),
+        "driverPhone": transporter.get("phone", ""),
+        "driverWhatsappDigits": contact_reveal["transporter"]["whatsappDigits"],
+        "farmerPhone": farmer.get("phone", ""),
+        "contactReveal": contact_reveal,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "waypointsLog": [
             {
@@ -2013,13 +2153,44 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
     await set_doc("transport_bookings", booking_id, booking_doc)
 
     bid["status"] = "accepted"
+    bid["updatedAt"] = now_iso
     await set_doc(f"transport_loads/{load_id}/bids", bidId, bid)
+
+    # Sibling pending applications lose the auction (produce-offer parity).
+    siblings = await query(f"transport_loads/{load_id}/bids", [], limit=100)
+    for sib in siblings:
+        if sib["id"] == bidId or sib.get("status") != "pending":
+            continue
+        sib["status"] = "rejected"
+        sib["rejectReason"] = "load_fulfilled"
+        sib["updatedAt"] = now_iso
+        await set_doc(f"transport_loads/{load_id}/bids", sib["id"], sib)
+        await notify_user(
+            sib.get("transporterId"),
+            type="load_bid_rejected",
+            title="Application declined / आवेदन मना",
+            body=(
+                f"Your ₹{sib.get('quotedFare')} application on the {load.get('crop', 'load')} load "
+                "was declined — the farmer accepted another transporter."
+            ),
+            deepLink="/transporter/loads",
+        )
 
     await send_fcm_to_user(
         bid["transporterId"],
         "बोली स्वीकृत! (Bid Accepted)",
         f"आपकी ₹{bid['quotedFare']} की बोली स्वीकृत हुई। ट्रिप तैयार है।",
         {"type": "booking_confirmed", "bookingId": booking_id},
+    )
+    await notify_user(
+        bid["transporterId"],
+        type="booking_confirmed",
+        title="Application accepted / आवेदन स्वीकार",
+        body=(
+            f"{contact_reveal['farmer']['name']} accepted your ₹{bid['quotedFare']} application for the "
+            f"{load.get('crop', 'load')} load — phone & WhatsApp are now unlocked."
+        ),
+        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
     )
     await _emit_pickup_reminder(bid["transporterId"], "transport", booking_doc, "won auction trip")
     room = await ensure_transport_room(booking_doc)
@@ -2032,7 +2203,7 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
                 body=f"{booking_doc.get('commodity') or 'Trip'} — coordinate the pickup in-app",
                 deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
             )
-    return {"booking": booking_doc, "load": load}
+    return {"booking": booking_doc, "load": load, "contactReveal": contact_reveal}
 
 
 # ==========================================

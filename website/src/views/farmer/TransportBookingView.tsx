@@ -4,16 +4,18 @@ import {
   Truck,
   MapPin,
   Clock,
-  ShieldCheck,
   Share2,
   Check,
   Copy,
   DollarSign,
   XCircle,
   ChevronRight,
-  BookmarkPlus,
   Repeat,
   Trash2,
+  Layers,
+  Phone,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import { transport, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
@@ -24,7 +26,6 @@ import type { TransportVehicle, TransportBooking } from '../../types';
 const asRecord = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 const asArr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const asNum = (v: unknown, fallback = 0): number => (typeof v === 'number' && !Number.isNaN(v) ? v : fallback);
 const firstStr = (r: Record<string, unknown>, keys: string[], fb = ''): string => {
   for (const k of keys) {
     const v = r[k];
@@ -40,13 +41,17 @@ const firstNum = (r: Record<string, unknown>, keys: string[], fb = 0): number =>
   return fb;
 };
 
-/** Backend-valid vehicle catalog names (transport.py VEHICLE_TYPES) for templates. */
+/** Fleet-card display names → backend catalog names (transport.py VEHICLE_TYPES),
+ *  used when prefilling the Post Vehicle Demand form from a catalog card. */
 const TEMPLATE_VEHICLE: Record<string, string> = {
   'Pickup 1.5T': 'Bolero Maxi',
   'Tata Ace (1T)': 'Tata Ace',
   'Eicher 14ft (4T)': 'Eicher 6-Wheeler',
   'Reefer / Cold Truck': 'Reefer Cold Van',
 };
+
+/** Catalog names accepted by POST /transport/loads (preferredVehicleType). */
+const LOAD_VEHICLE_TYPES = ['Tata Ace', 'Bolero Maxi', 'Tractor Trolley', 'Eicher 6-Wheeler', 'Reefer Cold Van', '10-Wheeler Truck'];
 
 type TripTab = 'all' | 'ongoing' | 'upcoming' | 'previous' | 'cancelled';
 
@@ -67,32 +72,35 @@ export const TransportBookingView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [bookModalOpen, setBookModalOpen] = useState(false);
   const [shareModalBooking, setShareModalBooking] = useState<TransportBooking | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [bookingBusy, setBookingBusy] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const [busyBookingId, setBusyBookingId] = useState<string | null>(null);
   const [repeatTemplate, setRepeatTemplate] = useState<Record<string, unknown> | null>(null);
   const [repeatDate, setRepeatDate] = useState('');
   const [repeatFare, setRepeatFare] = useState<number>(0);
 
-  // Booking Form State
-  const [selectedVehicle, setSelectedVehicle] = useState('Pickup 1.5T');
-  const [pickupAddr, setPickupAddr] = useState('Pimpalgaon Baswant Farm Gate, Nashik');
-  const [dropAddr, setDropAddr] = useState('Vashi APMC Yard, Navi Mumbai');
-  const [distanceKm, setDistanceKm] = useState(170);
-  const [cargoCrop, setCargoCrop] = useState('Soybean');
-  const [cargoWeight, setCargoWeight] = useState(20);
-  const [pickupTime, setPickupTime] = useState('2026-10-18T06:00');
-  const [timeWindow, setTimeWindow] = useState(120);
-  const [insuranceOptIn, setInsuranceOptIn] = useState(true);
-  const [declaredValue, setDeclaredValue] = useState(100000); // ₹1,00,000
-
-  // Server fare estimate (paise or rupees — rendered defensively)
-  const [fareEstimate, setFareEstimate] = useState<Record<string, unknown> | null>(null);
-
-  const insurancePremium = insuranceOptIn ? Math.ceil(declaredValue * 0.008) : 0;
+  // --- Book-a-Vehicle demand flow (produce/vyapari parity): the farmer posts
+  // a demand to the load board, transporters apply (terms + MPIN), and the
+  // farmer accepts one application to unlock phone + WhatsApp both ways.
+  const [myLoads, setMyLoads] = useState<Record<string, unknown>[]>([]);
+  const [demandModalOpen, setDemandModalOpen] = useState(false);
+  const [demandBusy, setDemandBusy] = useState(false);
+  const [demandForm, setDemandForm] = useState({
+    pickupLocation: 'Pimpalgaon Baswant Farm Gate, Nashik',
+    dropLocation: 'Vashi APMC Yard, Navi Mumbai',
+    crop: 'Soybean',
+    quantityQuintals: 20,
+    preferredVehicleType: 'Tata Ace',
+    pickupDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+    pickupTime: '06:00',
+    targetFare: 2500,
+    notes: '',
+    urgent: false,
+  });
+  const [appsFor, setAppsFor] = useState<Record<string, unknown> | null>(null);
+  const [acceptBusyId, setAcceptBusyId] = useState<string | null>(null);
+  const [revealFor, setRevealFor] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -103,12 +111,14 @@ export const TransportBookingView: React.FC = () => {
       transport.vehicles(),
       transport.bookings(),
       transport.loadTemplates().catch(() => [] as unknown[]),
+      transport.myLoads().catch(() => [] as unknown[]),
     ])
-      .then(([v, b, t]) => {
+      .then(([v, b, t, ml]) => {
         if (!active) return;
         setVehicles(v);
         setBookings(b);
         setTemplates(asArr(t).map(asRecord));
+        setMyLoads(asArr(ml).map(asRecord));
       })
       .catch((e) => active && setError(apiErrorMessage(e)))
       .finally(() => active && setLoading(false));
@@ -116,6 +126,12 @@ export const TransportBookingView: React.FC = () => {
       active = false;
     };
   }, []);
+
+  const refreshMyLoads = () =>
+    transport
+      .myLoads()
+      .then((ml) => setMyLoads(asArr(ml).map(asRecord)))
+      .catch(() => undefined);
 
   const refreshBookings = () =>
     transport
@@ -128,62 +144,6 @@ export const TransportBookingView: React.FC = () => {
       .loadTemplates()
       .then((t) => setTemplates(asArr(t).map(asRecord)))
       .catch(() => undefined);
-
-  const estimateFare = async () => {
-    setError(null);
-    try {
-      const res = await transport.fareEstimate({
-        vehicleType: selectedVehicle,
-        distanceKm,
-        cargoWeightQuintal: cargoWeight,
-        insuranceOptIn,
-        declaredValue,
-      });
-      setFareEstimate(asRecord(res));
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    }
-  };
-
-  const estimatedFareTotal = (() => {
-    const r = fareEstimate;
-    if (!r) return null;
-    const totalPaisa = asNum(r.totalPaisa ?? r.total ?? r.farePaisa, 0);
-    const totalRupees = asNum(r.totalRupees ?? r.estimatedFare ?? r.totalFare, 0);
-    const base = asNum(r.baseFare ?? r.fare, 0);
-    if (totalPaisa > 0) return totalPaisa / 100;
-    if (totalRupees > 0) return totalRupees;
-    if (base > 0) return base + (insuranceOptIn ? insurancePremium : 0);
-    return null;
-  })();
-
-  const handleCreateBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBookingBusy(true);
-    setError(null);
-    try {
-      const created = await transport.createBooking({
-        vehicleType: selectedVehicle,
-        pickupAddress: pickupAddr,
-        dropAddress: dropAddr,
-        distanceKm,
-        cargoCrop,
-        cargoWeightQuintal: cargoWeight,
-        pickupTime,
-        timeWindowMinutes: timeWindow,
-        insuranceOptIn,
-        declaredValue,
-      });
-      setBookings((prev) => [created, ...prev]);
-      setBookModalOpen(false);
-      setFareEstimate(null);
-      setNotice(`Transport booking #${created.id} confirmed and broadcast to transporters.`);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setBookingBusy(false);
-    }
-  };
 
   const handleCancelBooking = async (id: string) => {
     setError(null);
@@ -199,28 +159,49 @@ export const TransportBookingView: React.FC = () => {
     }
   };
 
-  /** Save the current booking-form values as a repeatable load template (FT-5). */
-  const handleSaveTemplate = async () => {
+  /** Post a vehicle demand to the freight load board — transporters apply on it. */
+  const handlePostDemand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDemandBusy(true);
     setError(null);
-    setTemplateBusy(true);
     try {
-      await transport.createLoadTemplate({
-        name: `${cargoCrop} · ${pickupAddr.split(',')[0].trim()} → ${dropAddr.split(',')[0].trim()}`,
-        pickupLocation: pickupAddr,
-        dropLocation: dropAddr,
-        crop: cargoCrop,
-        quantityQuintals: cargoWeight,
-        preferredVehicleType: TEMPLATE_VEHICLE[selectedVehicle] ?? selectedVehicle,
-        targetFare: estimatedFareTotal ?? 0,
-        insuranceOptIn,
-        ...(declaredValue > 0 ? { declaredValuePaisa: declaredValue * 100 } : {}),
+      await transport.createLoad({
+        pickupLocation: demandForm.pickupLocation,
+        dropLocation: demandForm.dropLocation,
+        crop: demandForm.crop,
+        quantityQuintals: demandForm.quantityQuintals,
+        preferredVehicleType: demandForm.preferredVehicleType,
+        pickupDate: demandForm.pickupDate,
+        pickupTime: `${demandForm.pickupDate}T${demandForm.pickupTime}:00`,
+        targetFare: demandForm.targetFare,
+        packaging: 'Gunny Bags',
+        ...(demandForm.notes.trim() ? { notes: demandForm.notes.trim() } : {}),
+        urgent: demandForm.urgent,
       });
-      setNotice('Load template saved — reuse it from the Templates section below.');
-      await refreshTemplates();
+      setDemandModalOpen(false);
+      setNotice('Vehicle demand posted — transporters with a free vehicle on the pickup date will apply.');
+      await refreshMyLoads();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setDemandBusy(false);
+    }
+  };
+
+  /** Accept a transporter's application — unlocks phone + WhatsApp both ways
+   *  and turns the demand into a confirmed transport booking. */
+  const handleAcceptBid = async (load: Record<string, unknown>, bidId: string) => {
+    setAcceptBusyId(bidId);
+    setError(null);
+    try {
+      const res = asRecord(await transport.acceptBid(String(load.id), bidId));
+      setRevealFor(asRecord(res.contactReveal));
+      await Promise.all([refreshMyLoads(), refreshBookings()]);
+      setNotice('Application accepted — phone & WhatsApp unlocked for both sides. Trip created.');
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
-      setTemplateBusy(false);
+      setAcceptBusyId(null);
     }
   };
 
@@ -284,20 +265,23 @@ export const TransportBookingView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Truck className="w-7 h-7 text-emerald-600" />
-            Book Gadi / Transport (FT-1 to FT-8 Protocol)
+            Book a Vehicle / Transport
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Book agricultural transport with verified drivers, guaranteed transit insurance, detention timers, and live trip tracking
+            Post your vehicle demand — verified transporters with a free vehicle apply with their fare,
+            you accept one and both sides get phone &amp; WhatsApp to coordinate the pickup.
           </p>
         </div>
 
-        <button
-          onClick={() => setBookModalOpen(true)}
-          className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md flex items-center gap-2 self-start sm:self-auto transition-all"
-        >
-          <Truck className="w-4 h-4" />
-          <span>Book Gadi Now</span>
-        </button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setDemandModalOpen(true)}
+            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all"
+          >
+            <Layers className="w-4 h-4" />
+            <span>Post Vehicle Demand</span>
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -346,12 +330,12 @@ export const TransportBookingView: React.FC = () => {
                   </span>
                   <button
                     onClick={() => {
-                      setSelectedVehicle(v.vehicleType);
-                      setBookModalOpen(true);
+                      setDemandForm((f) => ({ ...f, preferredVehicleType: TEMPLATE_VEHICLE[v.vehicleType] ?? v.vehicleType }));
+                      setDemandModalOpen(true);
                     }}
                     className="mt-2 block px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-colors"
                   >
-                    Book This
+                    Demand This
                   </button>
                 </div>
               </div>
@@ -385,7 +369,7 @@ export const TransportBookingView: React.FC = () => {
         {visibleBookings.length === 0 ? (
           <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
             {bookings.length === 0
-              ? 'No transport bookings yet. Book a gadi to move your produce safely.'
+              ? 'No trips yet. Post a vehicle demand — a confirmed trip appears here once you accept a transporter.'
               : `No ${tabDef.label.toLowerCase()} trips right now.`}
           </div>
         ) : (
@@ -505,18 +489,123 @@ export const TransportBookingView: React.FC = () => {
         )}
       </div>
 
+      {/* My Posted Demands (Book-a-Vehicle reverse marketplace) */}
+      <div className="space-y-3 pt-4 border-t border-slate-200">
+        <div>
+          <h3 className="font-bold text-sm text-slate-900">My Posted Vehicle Demands ({myLoads.length})</h3>
+          <p className="text-[11px] text-slate-500">
+            Transporters with a free vehicle on your pickup date apply with their fare — you accept one and
+            both sides get phone &amp; WhatsApp.
+          </p>
+        </div>
+
+        {myLoads.length === 0 ? (
+          <div className="py-6 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No demands posted yet — use “Post Vehicle Demand” and let transporters come to you.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {myLoads.map((load) => {
+              const bids = asArr(load.bids).map(asRecord);
+              const pending = bids.filter((b) => firstStr(b, ['status'], '') === 'pending').length;
+              const accepted = bids.find((b) => firstStr(b, ['status'], '') === 'accepted');
+              const reveal = accepted ? asRecord(load.contactReveal) : null;
+              const transporterContact = reveal ? asRecord(reveal.transporter) : null;
+              return (
+                <div
+                  key={firstStr(load, ['id'])}
+                  className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="p-3 rounded-2xl bg-sky-50 text-sky-700">
+                        <Layers className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900">
+                          {firstStr(load, ['crop'], 'Cargo')} ({formatWeight(firstNum(load, ['quantityQuintals'], 0))})
+                          {firstStr(load, ['preferredVehicleType'], '') !== '—'
+                            ? ` • wants ${firstStr(load, ['preferredVehicleType'])}`
+                            : ''}
+                        </h4>
+                        <p className="text-xs text-slate-500 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-emerald-600" />
+                          {firstStr(load, ['pickupLocation'], '—')} → {firstStr(load, ['dropLocation'], '—')}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Pickup {firstStr(load, ['pickupDate'], '—')} • Target {formatCurrency(firstNum(load, ['targetFare'], 0))}
+                          {Boolean(load.urgent) ? ' • Urgent' : ''}
+                        </p>
+                      </div>
+                      <StatusBadge status={firstStr(load, ['status'], 'open')} />
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      {accepted ? (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Transporter finalized
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setAppsFor(load);
+                            setRevealFor(null);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          Applications ({pending > 0 ? pending : bids.length})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {accepted && transporterContact && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-slate-800">
+                        {firstStr(transporterContact, ['name'], 'Transporter')} — accepted at{' '}
+                        {formatCurrency(firstNum(accepted, ['quotedFare'], 0))}:
+                      </span>
+                      {firstStr(transporterContact, ['phoneDigits'], '') && (
+                        <a
+                          href={`tel:+${firstStr(transporterContact, ['phoneDigits'])}`}
+                          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5"
+                        >
+                          <Phone className="w-3.5 h-3.5" /> Call
+                        </a>
+                      )}
+                      {firstStr(transporterContact, ['whatsappDigits'], '') && (
+                        <a
+                          href={`https://wa.me/${firstStr(transporterContact, ['whatsappDigits'])}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-2 rounded-xl bg-[#25D366] hover:bg-[#1fb857] text-white font-bold text-xs flex items-center gap-1.5"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                        </a>
+                      )}
+                      <span className="text-[10px] text-slate-400">Contact unlocked on acceptance</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Load Templates (FT-5) — saved repeatable loads */}
       <div className="space-y-3 pt-4 border-t border-slate-200">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-sm text-slate-900">My Load Templates ({templates.length})</h3>
-            <p className="text-[11px] text-slate-500">Save a route once (from the booking form) and re-book it in one tap all season.</p>
+            <p className="text-[11px] text-slate-500">Saved repeat routes — repost one to the transporter board in a single tap.</p>
           </div>
         </div>
 
         {templates.length === 0 ? (
           <div className="py-6 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
-            No saved templates yet — open “Book Gadi Now” and use “Save as Template” to store a repeat route.
+            No saved templates yet — repeat routes you save will appear here for one-tap reposting.
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -567,170 +656,6 @@ export const TransportBookingView: React.FC = () => {
         )}
       </div>
 
-      {/* Book Gadi Modal */}
-      <ModalSheet
-        isOpen={bookModalOpen}
-        onClose={() => setBookModalOpen(false)}
-        title="Book Transport Vehicle (FT-1 / FT-6)"
-        description="Calculate fare, select vehicle, and attach transit insurance"
-        maxWidth="lg"
-      >
-        <form onSubmit={handleCreateBooking} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle Type</label>
-              <select
-                value={selectedVehicle}
-                onChange={(e) => setSelectedVehicle(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
-              >
-                <option value="Pickup 1.5T">Pickup 1.5T (Max 1.5 Ton)</option>
-                <option value="Tata Ace (1T)">Tata Ace 1T</option>
-                <option value="Eicher 14ft (4T)">Eicher 14ft (4T)</option>
-                <option value="Reefer / Cold Truck">Reefer / Cold Truck</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Cargo Crop</label>
-              <input
-                type="text"
-                value={cargoCrop}
-                onChange={(e) => setCargoCrop(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Pickup Address</label>
-              <input
-                type="text"
-                value={pickupAddr}
-                onChange={(e) => setPickupAddr(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Destination Address</label>
-              <input
-                type="text"
-                value={dropAddr}
-                onChange={(e) => setDropAddr(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Distance (km)</label>
-              <input
-                type="number"
-                value={distanceKm}
-                onChange={(e) => setDistanceKm(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Weight (q)</label>
-              <input
-                type="number"
-                value={cargoWeight}
-                onChange={(e) => setCargoWeight(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Pickup Date & Time</label>
-              <input
-                type="datetime-local"
-                value={pickupTime}
-                onChange={(e) => setPickupTime(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                required
-              />
-            </div>
-          </div>
-
-          {/* Transit Insurance Add-on (FT-6) */}
-          <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-700" />
-                <div>
-                  <h5 className="font-bold text-xs text-slate-900">Transit Cargo Insurance (FT-6)</h5>
-                  <p className="text-[10px] text-slate-500">Covers theft, accident, overturn & weather spoilage</p>
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={insuranceOptIn}
-                onChange={(e) => setInsuranceOptIn(e.target.checked)}
-                className="w-4 h-4 rounded text-emerald-600"
-              />
-            </div>
-
-            {insuranceOptIn && (
-              <div className="pt-2 border-t border-emerald-200/60 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span>Declared Cargo Value:</span>
-                  <input
-                    type="number"
-                    value={declaredValue}
-                    onChange={(e) => setDeclaredValue(Number(e.target.value))}
-                    className="w-32 px-2 py-1 text-xs rounded-lg border border-emerald-300 font-bold"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Estimated Premium (0.8%):</span>
-                  <span className="font-bold text-emerald-800">{formatCurrency(insurancePremium)}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Fare estimate box */}
-          <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between text-xs font-bold text-slate-800">
-            <span>Estimated Total:</span>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={estimateFare}
-                className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-[10px]"
-              >
-                Get Live Fare Estimate
-              </button>
-              <span className="text-base font-black text-emerald-700">
-                {estimatedFareTotal !== null ? formatCurrency(estimatedFareTotal) : '—'}
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={bookingBusy}
-            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-60"
-          >
-            {bookingBusy ? 'Confirming Booking…' : 'Confirm Transport Booking'}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSaveTemplate}
-            disabled={templateBusy}
-            className="w-full py-2.5 rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-60"
-          >
-            <BookmarkPlus className="w-4 h-4" />
-            {templateBusy ? 'Saving Template…' : 'Save as Template (Book Again Later)'}
-          </button>
-        </form>
-      </ModalSheet>
 
       {/* Share Live Trip Modal (FT-7) */}
       <ModalSheet
@@ -797,6 +722,263 @@ export const TransportBookingView: React.FC = () => {
             {templateBusy ? 'Posting Load…' : 'Post Load to Transporters'}
           </button>
         </form>
+      </ModalSheet>
+      {/* Post Vehicle Demand Modal — farmer posts his demand to the load board */}
+      <ModalSheet
+        isOpen={demandModalOpen}
+        onClose={() => setDemandModalOpen(false)}
+        title="Post Vehicle Demand"
+        description="Transporters with a free vehicle on your pickup date will apply with their fare. You accept one — then phone & WhatsApp are shared."
+        maxWidth="lg"
+      >
+        <form onSubmit={handlePostDemand} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Pickup Location</label>
+              <input
+                type="text"
+                value={demandForm.pickupLocation}
+                onChange={(e) => setDemandForm({ ...demandForm, pickupLocation: e.target.value })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Drop Location</label>
+              <input
+                type="text"
+                value={demandForm.dropLocation}
+                onChange={(e) => setDemandForm({ ...demandForm, dropLocation: e.target.value })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Crop / Commodity</label>
+              <input
+                type="text"
+                value={demandForm.crop}
+                onChange={(e) => setDemandForm({ ...demandForm, crop: e.target.value })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Quantity (q)</label>
+              <input
+                type="number"
+                value={demandForm.quantityQuintals}
+                onChange={(e) => setDemandForm({ ...demandForm, quantityQuintals: Number(e.target.value) })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Preferred Vehicle</label>
+              <select
+                value={demandForm.preferredVehicleType}
+                onChange={(e) => setDemandForm({ ...demandForm, preferredVehicleType: e.target.value })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+              >
+                {LOAD_VEHICLE_TYPES.map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Target Fare (₹)</label>
+              <input
+                type="number"
+                value={demandForm.targetFare}
+                onChange={(e) => setDemandForm({ ...demandForm, targetFare: Number(e.target.value) })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold text-emerald-800"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Pickup Date</label>
+              <input
+                type="date"
+                value={demandForm.pickupDate}
+                onChange={(e) => setDemandForm({ ...demandForm, pickupDate: e.target.value })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Pickup Time</label>
+              <input
+                type="time"
+                value={demandForm.pickupTime}
+                onChange={(e) => setDemandForm({ ...demandForm, pickupTime: e.target.value })}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Notes for transporters (optional)</label>
+            <textarea
+              rows={2}
+              value={demandForm.notes}
+              onChange={(e) => setDemandForm({ ...demandForm, notes: e.target.value })}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              placeholder="Loading help needed, tarpaulin required, weighbridge slip…"
+            />
+          </div>
+
+          <label className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+            <span className="text-[11px] text-slate-600">
+              <strong>Urgent load</strong> — pinned on the transporter board and pushed to verified vehicles near the pickup point.
+            </span>
+            <input
+              type="checkbox"
+              checked={demandForm.urgent}
+              onChange={(e) => setDemandForm({ ...demandForm, urgent: e.target.checked })}
+              className="w-4 h-4 accent-emerald-600"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={demandBusy}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-60"
+          >
+            {demandBusy ? 'Posting Demand…' : 'Post Demand to Transporters'}
+          </button>
+        </form>
+      </ModalSheet>
+
+      {/* Applications modal: review transporter applications, accept to reveal contact */}
+      <ModalSheet
+        isOpen={Boolean(appsFor)}
+        onClose={() => {
+          setAppsFor(null);
+          setRevealFor(null);
+        }}
+        title={revealFor ? 'Application Accepted' : 'Transporter Applications'}
+        description={
+          appsFor
+            ? `${firstStr(appsFor, ['crop'], 'Cargo')} — ${firstStr(appsFor, ['pickupLocation'], '—')} → ${firstStr(appsFor, ['dropLocation'], '—')} • pickup ${firstStr(appsFor, ['pickupDate'], '—')}`
+            : undefined
+        }
+        maxWidth="md"
+      >
+        {appsFor && (
+          <div className="space-y-3">
+            {revealFor &&
+              (() => {
+                const contact = asRecord(revealFor.transporter);
+                return (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                        <Check className="w-5 h-5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">
+                          {firstStr(contact, ['fullName'], firstStr(contact, ['name'], 'Transporter'))} finalized
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Phone &amp; WhatsApp unlocked for both sides — coordinate the pickup directly.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {firstStr(contact, ['phoneDigits'], '') && (
+                        <a
+                          href={`tel:+${firstStr(contact, ['phoneDigits'])}`}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5"
+                        >
+                          <Phone className="w-3.5 h-3.5" /> {firstStr(contact, ['phone'], 'Call')}
+                        </a>
+                      )}
+                      {firstStr(contact, ['whatsappDigits'], '') && (
+                        <a
+                          href={`https://wa.me/${firstStr(contact, ['whatsappDigits'])}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3.5 py-2 rounded-xl bg-[#25D366] hover:bg-[#1fb857] text-white font-bold text-xs flex items-center gap-1.5"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                        </a>
+                      )}
+                      <span className="text-[10px] text-slate-400">
+                        {firstStr(contact, ['village'], '')}
+                        {firstStr(contact, ['district'], '') !== '—' ? `, ${firstStr(contact, ['district'])}` : ''}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+            {asArr(appsFor.bids)
+              .map(asRecord)
+              .map((bid) => {
+                const status = firstStr(bid, ['status'], 'pending');
+                const isAccepted = status === 'accepted';
+                const isPending = status === 'pending';
+                return (
+                  <div
+                    key={firstStr(bid, ['id'])}
+                    className={`p-4 rounded-2xl border space-y-2 ${
+                      isAccepted ? 'bg-emerald-50/60 border-emerald-200' : 'bg-white border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{firstStr(bid, ['transporterName'], 'Transporter')}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {firstStr(bid, ['vehicleNo'], 'Vehicle on assignment') !== '—'
+                            ? firstStr(bid, ['vehicleNo'], '')
+                            : 'Vehicle assigned later'}
+                          {firstStr(bid, ['estimatedPickupTime'], '') !== '—'
+                            ? ` • ETA ${firstStr(bid, ['estimatedPickupTime'])}`
+                            : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-black text-emerald-700">
+                          {formatCurrency(firstNum(bid, ['quotedFare'], 0))}
+                        </span>
+                        <StatusBadge status={status} />
+                      </div>
+                    </div>
+                    {firstStr(bid, ['notes'], '') !== '—' && (
+                      <p className="text-[11px] text-slate-500 italic">“{firstStr(bid, ['notes'])}”</p>
+                    )}
+                    {isPending && (
+                      <button
+                        onClick={() => void handleAcceptBid(appsFor, firstStr(bid, ['id']))}
+                        disabled={acceptBusyId !== null}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-60"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {acceptBusyId === firstStr(bid, ['id']) ? 'Accepting…' : 'Accept — reveal phone & WhatsApp'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+            {asArr(appsFor.bids).length === 0 && (
+              <p className="py-6 text-center text-xs font-semibold text-slate-400">
+                No applications yet — transporters with a free vehicle on {firstStr(appsFor, ['pickupDate'], 'the pickup date')}{' '}
+                will apply here.
+              </p>
+            )}
+          </div>
+        )}
       </ModalSheet>
     </div>
   );

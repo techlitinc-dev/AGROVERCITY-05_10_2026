@@ -104,7 +104,7 @@ export const ALL_PERSONAS: { id: PersonaType; label: string; icon: string }[] = 
   { id: 'vet', label: 'Veterinary Doctor', icon: '🩺' },
   { id: 'fpoManager', label: 'FPO / Cooperative Leader', icon: '🌾' },
   { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG', icon: '🪔' },
-  { id: 'directBuyer', label: 'Direct Buyer', icon: '🏢' },
+  { id: 'directBuyer', label: 'Industrial Buyer', icon: '🏢' },
   { id: 'broker', label: 'Agri Broker / Dalal', icon: '🤝' },
   { id: 'dairyManager', label: 'Dudh Dairy Manager', icon: '🥛' },
   { id: 'instructor', label: 'Gurukul Instructor', icon: '🎓' },

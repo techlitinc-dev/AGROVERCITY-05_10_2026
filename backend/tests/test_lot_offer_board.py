@@ -145,32 +145,76 @@ async def _setup_three_offers(client, user_store):
     offer_a = (await _bid(client, t2, lot["id"], 2100, 8)).json()
     offer_b = (await _bid(client, t3, lot["id"], 2200, 10)).json()
     offer_c = (await _bid(client, t4, lot["id"], 2150, 5)).json()
-    return farmer_token, lot, offer_a, offer_b, offer_c
+    sellers = {"uid-2": t2, "uid-3": t3, "uid-4": t4}
+    return farmer_token, lot, offer_a, offer_b, offer_c, sellers
+
+
+def _seller_token(sellers, offer):
+    return sellers[offer["fromId"]]
+
+
+async def _confirm_deal(client, farmer_token, offer, seller_token, body=None):
+    """Mutual agreement: farmer's accept records the first agreement, the
+    buyer's accept locks the deal and creates the purchase."""
+    resp = await client.post(
+        f"/v1/offers/{offer['id']}/accept", json=body, headers=_auth(farmer_token)
+    )
+    assert resp.status_code == 200
+    assert resp.json()["offer"]["status"] == "agreement_pending"
+    assert resp.json()["purchase"] is None
+    resp = await client.post(
+        f"/v1/offers/{offer['id']}/accept", json=body, headers=_auth(seller_token)
+    )
+    assert resp.status_code == 200
+    return resp.json()
 
 
 async def test_partial_accept_keeps_lot_open_and_siblings_pending(client, user_store):
-    farmer_token, lot, offer_a, offer_b, _offer_c = await _setup_three_offers(client, user_store)
+    farmer_token, lot, offer_a, offer_b, _offer_c, sellers = await _setup_three_offers(client, user_store)
 
-    # Out-of-bounds quantities are semantic validation errors.
+    # Out-of-bounds quantities are semantic validation errors — enforced when
+    # the deal locks (second confirmation), the lot stays untouched meanwhile.
+    body = {"quantity": 21}
     resp = await client.post(
-        f"/v1/offers/{offer_b['id']}/accept", json={"quantity": 21}, headers=_auth(farmer_token)
+        f"/v1/offers/{offer_b['id']}/accept", json=body, headers=_auth(farmer_token)
+    )
+    assert resp.status_code == 200  # first agreement recorded
+    assert resp.json()["offer"]["status"] == "agreement_pending"
+    resp = await client.post(
+        f"/v1/offers/{offer_b['id']}/accept", json=body, headers=_auth(_seller_token(sellers, offer_b))
     )
     assert resp.status_code == 422
     assert "quantity" in resp.json()["error"]["fieldErrors"]
+
+    # 9 > offered 8 fails at lock time too; the agreement is then cancelled.
     resp = await client.post(
         f"/v1/offers/{offer_a['id']}/accept", json={"quantity": 9}, headers=_auth(farmer_token)
     )
-    assert resp.status_code == 422  # 9 > offered 8
-
-    # Partial accept: 6 of 10 at ₹2200.
+    assert resp.status_code == 200
     resp = await client.post(
-        f"/v1/offers/{offer_b['id']}/accept", json={"quantity": 6}, headers=_auth(farmer_token)
+        f"/v1/offers/{offer_a['id']}/accept",
+        json={"quantity": 9},
+        headers=_auth(_seller_token(sellers, offer_a)),
+    )
+    assert resp.status_code == 422  # 9 > offered 8
+    resp = await client.post(
+        f"/v1/offers/{offer_a['id']}/agreement/cancel",
+        headers=_auth(_seller_token(sellers, offer_a)),
     )
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["offer"]["status"] == "accepted"
-    assert body["offer"]["acceptedQuantity"] == 6
-    purchase = body["purchase"]
+    assert resp.json()["status"] == "pending"
+
+    # Partial deal on B: farmer already agreed above; buyer confirms with a
+    # valid quantity → the deal locks.
+    body = {"quantity": 6}
+    resp = await client.post(
+        f"/v1/offers/{offer_b['id']}/accept", json=body, headers=_auth(_seller_token(sellers, offer_b))
+    )
+    assert resp.status_code == 200
+    locked = resp.json()
+    assert locked["offer"]["status"] == "accepted"
+    assert locked["offer"]["acceptedQuantity"] == 6
+    purchase = locked["purchase"]
     assert purchase["quantity"] == 6
     assert purchase["agreedPricePerUnit"] == 2200
     assert purchase["totalAmount"] == 13200
@@ -191,16 +235,16 @@ async def test_partial_accept_keeps_lot_open_and_siblings_pending(client, user_s
 
 
 async def test_full_accept_sells_lot_and_auto_rejects_siblings(client, user_store):
-    farmer_token, lot, offer_a, offer_b, offer_c = await _setup_three_offers(client, user_store)
+    farmer_token, lot, offer_a, offer_b, offer_c, sellers = await _setup_three_offers(client, user_store)
 
-    # Partially accept B first so A's full accept closes the lot.
-    await client.post(
-        f"/v1/offers/{offer_b['id']}/accept", json={"quantity": 6}, headers=_auth(farmer_token)
+    # Partially confirm B first so A's full deal closes the lot.
+    await _confirm_deal(
+        client, farmer_token, offer_b, _seller_token(sellers, offer_b), body={"quantity": 6}
     )
-    # Full accept of A (no body): lot closes, remaining live offer C is rejected.
-    resp = await client.post(f"/v1/offers/{offer_a['id']}/accept", headers=_auth(farmer_token))
-    assert resp.status_code == 200
-    purchase = resp.json()["purchase"]
+    # Full deal on A (no body): farmer agrees, buyer confirms → lot closes,
+    # remaining live offer C is rejected.
+    body = await _confirm_deal(client, farmer_token, offer_a, _seller_token(sellers, offer_a))
+    purchase = body["purchase"]
     assert purchase["quantity"] == 8
     assert purchase["agreedPricePerUnit"] == 2100
     assert user_store[f"market_lots/{lot['id']}"]["status"] == "sold"
@@ -243,11 +287,8 @@ async def test_accept_quantity_equal_to_remaining_closes_lot(client, user_store)
     lot = await _post_lot(client, farmer_token)
     t2 = _seed_seller(user_store, "uid-2", "Sham Traders")
     offer = (await _bid(client, t2, lot["id"], 2300, 20)).json()
-    # Accepting exactly the remaining quantity is a full accept: lot closes.
-    resp = await client.post(
-        f"/v1/offers/{offer['id']}/accept", json={"quantity": 20}, headers=_auth(farmer_token)
-    )
-    assert resp.status_code == 200
-    assert resp.json()["purchase"]["quantity"] == 20
+    # Agreeing on exactly the remaining quantity is a full deal: lot closes.
+    body = await _confirm_deal(client, farmer_token, offer, t2, body={"quantity": 20})
+    assert body["purchase"]["quantity"] == 20
     assert user_store[f"market_lots/{lot['id']}"]["status"] == "sold"
     assert user_store[f"offers/{offer['id']}"]["status"] == "accepted"

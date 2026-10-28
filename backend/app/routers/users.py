@@ -107,7 +107,9 @@ async def _with_role_profiles(user: dict) -> dict:
 @router.get("/me")
 async def get_me(uid: str = Depends(current_user_id)):
     user = await _require_user(uid)
-    return await _with_role_profiles({**_ME_DEFAULTS, **user})
+    merged = {**_ME_DEFAULTS, **user}
+    merged["hasMpin"] = bool(user.get("mpinHash"))
+    return await _with_role_profiles(merged)
 
 
 _BOOKING_FIELDS = {

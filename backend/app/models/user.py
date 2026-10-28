@@ -166,6 +166,7 @@ class UserUpdateRequest(BaseModel):
     pincode: str | None = Field(default=None, pattern=r"^\d{6}$")
     addressLine: str | None = None
     alternatePhone: str | None = Field(default=None, pattern=r"^\d{10}$")
+    whatsapp: str | None = Field(default=None, pattern=r"^\d{10}$")
     photoUrl: str | None = Field(default=None, min_length=1, max_length=500)
     dietaryPreference: Literal["veg", "organic", "a2"] | None = None
     familySize: int | None = Field(default=None, ge=1, le=20)

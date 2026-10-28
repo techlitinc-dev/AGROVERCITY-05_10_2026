@@ -30,6 +30,7 @@ export interface UserProfile {
   state: string;
   district: string;
   village?: string;
+  whatsapp?: string;
   pincode?: string;
   activePersona: PersonaType;
   availablePersonas: PersonaType[];
@@ -124,7 +125,15 @@ export interface TradeOffer {
   message?: string;
   counterPrice?: number;
   counterRound: number; // Max 1 round for B2B trade negotiation
-  status: 'pending' | 'countered' | 'accepted' | 'rejected' | 'withdrawn';
+  status: 'pending' | 'countered' | 'agreement_pending' | 'accepted' | 'rejected' | 'withdrawn';
+  /** Mutual deal agreement — present while status is 'agreement_pending' (one
+   *  party agreed, waiting for the other) or after lock ('accepted'). */
+  agreement?: {
+    confirmedBy: string[];
+    at: string;
+    previousStatus?: string;
+    lockedAt?: string;
+  } | null;
   createdAt: string;
 }
 
@@ -223,6 +232,9 @@ export interface TransportVehicle {
   driverName?: string | null;
   driverPhone?: string | null;
   availableNow?: boolean;
+  /** Free days marked on the fleet calendar (YYYY-MM-DD) — the load-board
+   * apply gate checks this (plus availableNow) against the pickup date. */
+  availableDates?: string[];
   active?: boolean;
   ownerId?: string;
   perKmRate?: number | null;

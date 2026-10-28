@@ -1,28 +1,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
-  Filter,
   MapPin,
-  Calendar,
-  Sparkles,
-  ArrowUpDown,
   Bookmark,
-  Bell,
-  Check,
   Package,
-  Layers,
   Map as MapIcon,
   Grid,
-  ChevronRight,
-  TrendingDown,
-  DollarSign,
-  Clock,
-  ShieldCheck,
+  Phone,
+  MessageSquare,
+  ShieldAlert,
+  BadgeCheck,
+  User as UserIcon,
 } from 'lucide-react';
-import { lots, purchases, offers, post, apiErrorMessage } from '../../lib/api';
+import { lots, users, leads as leadsApi, post, apiErrorMessage } from '../../lib/api';
+import type { Lead } from '../../lib/api';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { ModalSheet } from '../../components/common/ModalSheet';
-import { formatCurrency, formatWeight, formatDateTime } from '../../lib/utils';
+import { formatCurrency, formatWeight } from '../../lib/utils';
 import { cardCls, inputCls, labelCls, primaryBtnCls, ghostBtnCls, rec, str, num, type Rec } from './shared';
 import type { ProduceLot } from '../../types';
 
@@ -30,7 +25,10 @@ const COMMON_CROPS = ['All', 'Soybean', 'Onion', 'Wheat', 'Cotton', 'Maize', 'To
 const GRADES = ['All', 'A', 'B', 'C', 'Ungraded'];
 
 export const SellerLotDiscoveryView: React.FC = () => {
+  const navigate = useNavigate();
   const [lotList, setLotList] = useState<ProduceLot[]>([]);
+  const [myLeads, setMyLeads] = useState<Lead[]>([]);
+  const [hasMpin, setHasMpin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -45,20 +43,19 @@ export const SellerLotDiscoveryView: React.FC = () => {
   const [sortBy, setSortBy] = useState<'distance' | 'priceAsc' | 'priceDesc' | 'recency'>('distance');
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
 
-  // Modals
+  // Save search
   const [saveSearchModal, setSaveSearchModal] = useState(false);
   const [searchQueryName, setSearchQueryName] = useState('');
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [saveBusy, setSaveBusy] = useState(false);
 
-  // Booking / Offer Modal
-  const [selectedLot, setSelectedLot] = useState<ProduceLot | null>(null);
-  const [bookingAdvance, setBookingAdvance] = useState(15000);
-  const [bookingBusy, setBookingBusy] = useState(false);
-
-  const [offerModalLot, setOfferModalLot] = useState<ProduceLot | null>(null);
-  const [offerPrice, setOfferPrice] = useState<number>(0);
-  const [offerBusy, setOfferBusy] = useState(false);
+  // Contact flow
+  const [contactLot, setContactLot] = useState<ProduceLot | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [mpin, setMpin] = useState('');
+  const [contactBusy, setContactBusy] = useState(false);
+  const [contactCard, setContactCard] = useState<{ lot: ProduceLot; lead: Lead } | null>(null);
+  const [mpinVisible, setMpinVisible] = useState(false);
 
   const loadLots = useCallback(async () => {
     setLoading(true);
@@ -85,9 +82,22 @@ export const SellerLotDiscoveryView: React.FC = () => {
     }
   }, [crop, grade, state, maxDistanceKm]);
 
+  const loadMyLeads = useCallback(async () => {
+    try {
+      setMyLeads(await leadsApi.getMyLeads('sent'));
+    } catch {
+      setMyLeads([]);
+    }
+  }, []);
+
   useEffect(() => {
     void loadLots();
-  }, [loadLots]);
+    void loadMyLeads();
+    users
+      .getMe()
+      .then((me) => setHasMpin(Boolean((me as { hasMpin?: boolean }).hasMpin)))
+      .catch(() => {});
+  }, [loadLots, loadMyLeads]);
 
   // Client filtering & sorting
   const filtered = lotList.filter((l) => {
@@ -106,86 +116,61 @@ export const SellerLotDiscoveryView: React.FC = () => {
     return distA - distB;
   });
 
-  const handleSaveSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaveBusy(true);
-    setError(null);
-    try {
-      await post('/saved-searches', {
-        queryText: searchQueryName || `${crop === 'All' ? 'All Produce' : crop} in ${state || 'any state'}`,
-        crop: crop === 'All' ? undefined : crop,
-        state: state || undefined,
-        alertsEnabled,
-      });
-      setNotice(`Saved search "${searchQueryName || 'My Produce Alert'}" active! Alerts will ping when new matching lots arrive.`);
-      setSaveSearchModal(false);
-      setSearchQueryName('');
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setSaveBusy(false);
+  const leadForLot = (lotId: string): Lead | undefined =>
+    myLeads.find((l) => l.lotId === lotId && l.status !== 'dismissed');
+
+  const openContact = (lot: ProduceLot) => {
+    const existing = leadForLot(lot.id);
+    if (existing) {
+      setContactCard({ lot, lead: existing });
+      return;
     }
+    setContactLot(lot);
+    setTermsAccepted(false);
+    setMpin('');
+    setMpinVisible(false);
   };
 
-  const handleBookLot = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLot) return;
-    setBookingBusy(true);
+  const handleAcceptTerms = async () => {
+    if (!contactLot) return;
+    setContactBusy(true);
     setError(null);
     try {
-      const order = await purchases.create({
-        lotId: selectedLot.id,
-      });
-      if (bookingAdvance > 0) {
-        await purchases.advance(order.id, {
-          amount: bookingAdvance,
-          method: 'upi',
-          reference: `adv_${Date.now()}`,
-        }).catch(() => null);
+      const { lead } = await leadsApi.createLead(contactLot.id, termsAccepted, mpin.trim() || undefined);
+      setContactLot(null);
+      setContactCard({ lot: contactLot, lead });
+      setNotice(`Contact details unlocked for Lot #${contactLot.id} — call or WhatsApp the farmer directly.`);
+      await loadMyLeads();
+    } catch (err) {
+      if (leadsApi.isMpinError(err)) {
+        setError('Incorrect MPIN — try again.');
+      } else {
+        setError(apiErrorMessage(err));
+        if (contactLot) {
+          setContactLot(null);
+        }
       }
-      setNotice(`Lot #${selectedLot.id} booked successfully! Order #${order.id} confirmed.`);
-      setSelectedLot(null);
-      void loadLots();
-    } catch (err) {
-      setError(apiErrorMessage(err));
     } finally {
-      setBookingBusy(false);
+      setContactBusy(false);
     }
   };
 
-  const handleSendOffer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!offerModalLot) return;
-    setOfferBusy(true);
-    setError(null);
-    try {
-      await offers.create({
-        targetType: 'lot',
-        targetId: offerModalLot.id,
-        pricePerUnit: offerPrice,
-        quantity: offerModalLot.quantityQuintal,
-        message: `Counter offer by Vyapari at ₹${offerPrice}/qtl`,
-      });
-      setNotice(`Offer of ₹${offerPrice}/qtl sent to farmer for Lot #${offerModalLot.id}!`);
-      setOfferModalLot(null);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setOfferBusy(false);
-    }
-  };
+  const waLink = (lead: Lead): string | null =>
+    lead.farmerContact?.whatsappDigits ? `https://wa.me/${lead.farmerContact.whatsappDigits}` : null;
+  const telLink = (lead: Lead): string | null =>
+    lead.farmerContact?.phoneDigits ? `tel:+${lead.farmerContact.phoneDigits}` : null;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2.5">
             <Search className="w-7 h-7 text-emerald-600" />
-            Produce Lots — Mandi & Farmgate Discovery
+            Produce Lots — Farmgate Discovery
           </h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Search, filter by radius/harvest date/grade, compare farmgate prices with mandi rates, and instant-book verified farmer produce.
+            Browse farmer lots, compare with mandi rates, and contact the farmer directly — deal, payment and pickup happen between you two.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -194,7 +179,7 @@ export const SellerLotDiscoveryView: React.FC = () => {
             onClick={() => setSaveSearchModal(true)}
             className={`${ghostBtnCls} flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200`}
           >
-            <Bookmark className="w-4 h-4" /> Save This Search & Set Alerts
+            <Bookmark className="w-4 h-4" /> Save Search & Alerts
           </button>
           <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200">
             <button
@@ -211,7 +196,7 @@ export const SellerLotDiscoveryView: React.FC = () => {
                 viewMode === 'map' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <MapIcon className="w-3.5 h-3.5" /> Map View
+              <MapIcon className="w-3.5 h-3.5" /> Map
             </button>
           </div>
         </div>
@@ -234,7 +219,6 @@ export const SellerLotDiscoveryView: React.FC = () => {
       {/* Filter Bar */}
       <div className={`${cardCls} space-y-4`}>
         <div className="flex flex-wrap items-center gap-3">
-          {/* Crop selector */}
           <div className="flex items-center gap-1 overflow-x-auto py-1">
             {COMMON_CROPS.map((c) => (
               <button
@@ -253,12 +237,10 @@ export const SellerLotDiscoveryView: React.FC = () => {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-              <ArrowUpDown className="w-3.5 h-3.5" /> Sort:
-            </span>
+            <span className="text-xs font-bold text-slate-500 flex items-center gap-1">Sort:</span>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
               className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5"
             >
               <option value="distance">Nearest Distance (km)</option>
@@ -269,7 +251,6 @@ export const SellerLotDiscoveryView: React.FC = () => {
           </div>
         </div>
 
-        {/* Detailed filters row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3 pt-2 border-t border-slate-100 text-xs">
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase">Grade</label>
@@ -362,7 +343,7 @@ export const SellerLotDiscoveryView: React.FC = () => {
           </button>
         </div>
       ) : viewMode === 'map' ? (
-        /* Map Browse Mock View */
+        /* Map Browse View */
         <div className="space-y-4">
           <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 relative overflow-hidden min-h-[420px] flex flex-col justify-between shadow-xl">
             <div className="relative z-10 flex items-center justify-between">
@@ -378,14 +359,13 @@ export const SellerLotDiscoveryView: React.FC = () => {
               </span>
             </div>
 
-            {/* Simulated Interactive Cluster Pins */}
             <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 my-6">
               {filtered.slice(0, 8).map((lot) => {
                 const dist = num((lot as unknown as Rec).distanceKm) || 25;
                 return (
                   <div
                     key={lot.id}
-                    onClick={() => setSelectedLot(lot)}
+                    onClick={() => openContact(lot)}
                     className="p-3 bg-slate-800/90 hover:bg-slate-700/90 transition-all rounded-2xl border border-slate-700 cursor-pointer text-left space-y-1 hover:border-emerald-500 shadow-md"
                   >
                     <div className="flex items-center justify-between text-[10px] font-bold text-emerald-400">
@@ -404,7 +384,7 @@ export const SellerLotDiscoveryView: React.FC = () => {
 
             <div className="relative z-10 text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-800 pt-3">
               <span>Coordinates calibrated against APMC yard centres & Maharashtra farm belts.</span>
-              <span className="text-emerald-400 font-bold">Click any lot cluster pin to initiate procurement.</span>
+              <span className="text-emerald-400 font-bold">Click any lot cluster pin to contact the farmer.</span>
             </div>
           </div>
         </div>
@@ -414,8 +394,8 @@ export const SellerLotDiscoveryView: React.FC = () => {
           {filtered.map((lot) => {
             const lotRec = lot as unknown as Rec;
             const dist = num(lotRec.distanceKm);
-            const totalEst = lot.quantityQuintal * lot.expectedPricePerQuintal;
             const photos = Array.isArray(lotRec.photos) ? (lotRec.photos as string[]) : [];
+            const existingLead = leadForLot(lot.id);
 
             return (
               <div
@@ -423,7 +403,6 @@ export const SellerLotDiscoveryView: React.FC = () => {
                 className={`${cardCls} flex flex-col justify-between hover:border-emerald-400 hover:shadow-lg transition-all space-y-4`}
               >
                 <div className="space-y-3">
-                  {/* Top card bar */}
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
@@ -432,7 +411,7 @@ export const SellerLotDiscoveryView: React.FC = () => {
                           Grade {lot.grade}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 font-semibold">{lot.variety || 'JS 335 / Kalitur'}</p>
+                      <p className="text-xs text-slate-500 font-semibold">{lot.variety || 'Standard'}</p>
                     </div>
 
                     <div className="text-right">
@@ -440,11 +419,12 @@ export const SellerLotDiscoveryView: React.FC = () => {
                         {formatCurrency(lot.expectedPricePerQuintal)}
                         <span className="text-[10px] text-slate-400 font-medium"> /qt</span>
                       </div>
-                      <div className="text-[10px] font-bold text-slate-400">Est: {formatCurrency(totalEst)}</div>
+                      <div className="text-[10px] font-bold text-slate-400">
+                        Est: {formatCurrency(lot.quantityQuintal * lot.expectedPricePerQuintal)}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Photo thumbnail if present */}
                   {photos.length > 0 && (
                     <div className="h-28 w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
                       <img
@@ -458,7 +438,6 @@ export const SellerLotDiscoveryView: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Lot Details */}
                   <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-2xl border border-slate-100">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">Available Lot</span>
@@ -475,34 +454,26 @@ export const SellerLotDiscoveryView: React.FC = () => {
 
                     <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
                       <span className="text-slate-500 truncate">{lot.location || 'Nashik / Pune Belt'}</span>
-                      <span className="text-slate-400 shrink-0 font-medium">{lot.harvestDate ? `Harvest: ${lot.harvestDate}` : 'Ready for Pickup'}</span>
+                      <span className="text-slate-400 shrink-0 font-medium">
+                        {lot.harvestDate ? `Harvest: ${lot.harvestDate}` : 'Ready for Pickup'}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Card CTAs */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                <div className="pt-2 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => {
-                      setOfferModalLot(lot);
-                      setOfferPrice(Math.round(lot.expectedPricePerQuintal * 0.95));
-                    }}
-                    className={`${ghostBtnCls} w-full text-xs font-bold py-2`}
+                    onClick={() => openContact(lot)}
+                    className={`${existingLead ? ghostBtnCls : primaryBtnCls} w-full text-xs font-black py-2.5 shadow-sm`}
                   >
-                    Make Offer
+                    {existingLead ? 'View Contact Again' : 'Contact Farmer'}
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedLot(lot);
-                      setBookingAdvance(Math.round(totalEst * 0.15));
-                    }}
-                    className={`${primaryBtnCls} w-full text-xs font-black py-2 shadow-sm`}
-                  >
-                    Book Lot
-                  </button>
+                  <p className="text-[10px] text-slate-400 text-center mt-1.5">
+                    {existingLead
+                      ? 'Contact already unlocked — call, WhatsApp or chat.'
+                      : 'Unlock farmer contact — accept terms & verify MPIN.'}
+                  </p>
                 </div>
               </div>
             );
@@ -513,7 +484,29 @@ export const SellerLotDiscoveryView: React.FC = () => {
       {/* Save Search Modal */}
       {saveSearchModal && (
         <ModalSheet title="Save Search Alert for Vyapari" isOpen={saveSearchModal} onClose={() => setSaveSearchModal(false)}>
-          <form onSubmit={handleSaveSearch} className="space-y-4">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setSaveBusy(true);
+              setError(null);
+              try {
+                await post('/saved-searches', {
+                  queryText: searchQueryName || `${crop === 'All' ? 'All Produce' : crop} in ${state || 'any state'}`,
+                  crop: crop === 'All' ? undefined : crop,
+                  state: state || undefined,
+                  alertsEnabled,
+                });
+                setNotice(`Saved search "${searchQueryName || 'My Produce Alert'}" active! Alerts will ping when new matching lots arrive.`);
+                setSaveSearchModal(false);
+                setSearchQueryName('');
+              } catch (err) {
+                setError(apiErrorMessage(err));
+              } finally {
+                setSaveBusy(false);
+              }
+            }}
+            className="space-y-4"
+          >
             <p className="text-xs text-slate-500">
               Receive automatic FCM alerts when a farmer lists lots matching: <strong>{crop}</strong> in <strong>{state || 'any state'}</strong>.
             </p>
@@ -544,18 +537,10 @@ export const SellerLotDiscoveryView: React.FC = () => {
             </div>
 
             <div className="flex justify-end gap-2 pt-3">
-              <button
-                type="button"
-                onClick={() => setSaveSearchModal(false)}
-                className={`${ghostBtnCls} text-xs font-bold`}
-              >
+              <button type="button" onClick={() => setSaveSearchModal(false)} className={`${ghostBtnCls} text-xs font-bold`}>
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={saveBusy}
-                className={`${primaryBtnCls} text-xs font-black px-4`}
-              >
+              <button type="submit" disabled={saveBusy} className={`${primaryBtnCls} text-xs font-black px-4`}>
                 {saveBusy ? 'Saving…' : 'Activate Alert'}
               </button>
             </div>
@@ -563,101 +548,142 @@ export const SellerLotDiscoveryView: React.FC = () => {
         </ModalSheet>
       )}
 
-      {/* Instant Book Modal */}
-      {selectedLot && (
-        <ModalSheet title={`Book Lot #${selectedLot.id} — ${selectedLot.crop}`} isOpen={!!selectedLot} onClose={() => setSelectedLot(null)}>
-          <form onSubmit={handleBookLot} className="space-y-4">
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Produce:</span>
-                <span className="font-bold text-slate-800">{selectedLot.crop} (Grade {selectedLot.grade})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Quantity:</span>
-                <span className="font-bold text-slate-800">{selectedLot.quantityQuintal} Quintals</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Agreed Rate:</span>
-                <span className="font-bold text-slate-800">{formatCurrency(selectedLot.expectedPricePerQuintal)} / qtl</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-200 pt-2 text-sm">
-                <span className="font-black text-slate-900">Total Purchase Value:</span>
-                <span className="font-black text-emerald-700">{formatCurrency(selectedLot.quantityQuintal * selectedLot.expectedPricePerQuintal)}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className={labelCls}>Advance Escrow Deposit (₹)</label>
-              <input
-                type="number"
-                min={0}
-                value={bookingAdvance}
-                onChange={(e) => setBookingAdvance(Number(e.target.value))}
-                className={inputCls}
-              />
-              <p className="text-[10px] text-slate-400 mt-1">
-                Advance is safely held in platform escrow until delivery verification and digital QC.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3">
-              <button
-                type="button"
-                onClick={() => setSelectedLot(null)}
-                className={`${ghostBtnCls} text-xs font-bold`}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={bookingBusy}
-                className={`${primaryBtnCls} text-xs font-black px-5`}
-              >
-                {bookingBusy ? 'Confirming Order…' : 'Confirm Purchase Order'}
-              </button>
-            </div>
-          </form>
-        </ModalSheet>
-      )}
-
-      {/* Make Offer Modal */}
-      {offerModalLot && (
-        <ModalSheet title={`Counter Offer for Lot #${offerModalLot.id}`} isOpen={!!offerModalLot} onClose={() => setOfferModalLot(null)}>
-          <form onSubmit={handleSendOffer} className="space-y-4">
-            <p className="text-xs text-slate-500">
-              Farmer expected: <strong>{formatCurrency(offerModalLot.expectedPricePerQuintal)}/qtl</strong> for {offerModalLot.quantityQuintal} Qt of {offerModalLot.crop}. Propose your bid rate.
+      {/* Terms & Conditions + MPIN popup — gates contact reveal */}
+      <ModalSheet
+        isOpen={Boolean(contactLot)}
+        onClose={() => setContactLot(null)}
+        title="Agrovercity Terms — Connect Directly"
+        description={`Lot: ${contactLot?.crop ?? ''} · Grade ${contactLot?.grade ?? ''} · ${contactLot ? formatWeight(contactLot.quantityQuintal) : ''} · expected ${contactLot ? formatCurrency(contactLot.expectedPricePerQuintal) : ''}/q`}
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900 space-y-1">
+            <p className="font-bold flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" /> Deal directly with the farmer
             </p>
+            <p>
+              Agrovercity connects farmers and buyers. The deal — price, payment, pickup, quality — is finalized
+              <strong> directly between you and the farmer</strong>, off the platform.
+            </p>
+            <p>
+              <strong>Agrovercity is not a party to the transaction and is not accountable for any loss, payment
+              default, or quality dispute.</strong> Please verify the produce before paying.
+            </p>
+          </div>
 
+          <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              className="mt-0.5 accent-emerald-600"
+            />
+            I have read and accept the terms & conditions, and I understand the platform is not accountable for the deal.
+          </label>
+
+          {hasMpin && (
             <div>
-              <label className={labelCls}>Your Bid Rate (₹ / Quintal) *</label>
-              <input
-                type="number"
-                required
-                value={offerPrice}
-                onChange={(e) => setOfferPrice(Number(e.target.value))}
-                className={inputCls}
-              />
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Enter your MPIN to confirm it's you
+              </label>
+              <div className="relative">
+                <input
+                  type={mpinVisible ? 'text' : 'password'}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={mpin}
+                  onChange={(e) => setMpin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="4-digit MPIN"
+                  className="w-full px-3 py-2.5 text-base font-bold tracking-[0.5em] rounded-xl border border-slate-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMpinVisible((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-600"
+                >
+                  {mpinVisible ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => void handleAcceptTerms()}
+            disabled={!termsAccepted || contactBusy || (hasMpin && mpin.length !== 4)}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+          >
+            {contactBusy ? 'Verifying…' : 'Accept & Show Contact'}
+          </button>
+        </div>
+      </ModalSheet>
+
+      {/* Contact card — revealed after terms + MPIN */}
+      <ModalSheet
+        isOpen={Boolean(contactCard)}
+        onClose={() => setContactCard(null)}
+        title="Farmer Contact Unlocked"
+        description="Call, WhatsApp or chat — finalize the deal directly"
+        maxWidth="sm"
+      >
+        {contactCard && (
+          <div className="space-y-4">
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center space-y-1.5">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center mx-auto">
+                <UserIcon className="w-6 h-6 text-emerald-700" />
+              </div>
+              <p className="text-base font-black text-slate-900">
+                {contactCard.lead.farmerContact?.name ?? 'Farmer'}
+              </p>
+              <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {contactCard.lead.farmerContact?.village || 'Village'}
+                {contactCard.lead.farmerContact?.district ? `, ${contactCard.lead.farmerContact.district}` : ''}
+              </p>
+              <p className="text-xs font-bold text-emerald-700">
+                {contactCard.lot.crop} · {formatWeight(contactCard.lot.quantityQuintal)} · expected{' '}
+                {formatCurrency(contactCard.lot.expectedPricePerQuintal)}/q
+              </p>
+              {contactCard.lead.farmerContact?.phone && (
+                <p className="text-sm font-black text-slate-800">{contactCard.lead.farmerContact.phone}</p>
+              )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-3">
+            <div className="grid grid-cols-3 gap-2">
+              <a
+                href={telLink(contactCard.lead) ?? '#'}
+                className={`${ghostBtnCls} flex flex-col items-center gap-1 py-3 text-xs font-bold ${!telLink(contactCard.lead) ? 'pointer-events-none opacity-40' : ''}`}
+              >
+                <Phone className="w-4 h-4" /> Call
+              </a>
+              <a
+                href={waLink(contactCard.lead) ?? '#'}
+                target="_blank"
+                rel="noreferrer"
+                className={`flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm ${!waLink(contactCard.lead) ? 'pointer-events-none opacity-40' : ''}`}
+              >
+                <MessageSquare className="w-4 h-4" /> WhatsApp
+              </a>
               <button
                 type="button"
-                onClick={() => setOfferModalLot(null)}
-                className={`${ghostBtnCls} text-xs font-bold`}
+                onClick={() => {
+                  if (contactCard.lead.chatRoomId) {
+                    navigate(`/chat?room=${encodeURIComponent(contactCard.lead.chatRoomId)}`);
+                  }
+                }}
+                className={`${ghostBtnCls} flex flex-col items-center gap-1 py-3 text-xs font-bold ${!contactCard.lead.chatRoomId ? 'pointer-events-none opacity-40' : ''}`}
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={offerBusy}
-                className={`${primaryBtnCls} text-xs font-black px-5`}
-              >
-                {offerBusy ? 'Sending Bid…' : 'Submit Counter Bid'}
+                <MessageSquare className="w-4 h-4" /> Chat
               </button>
             </div>
-          </form>
-        </ModalSheet>
-      )}
+
+            <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1">
+              <BadgeCheck className="w-3 h-3 text-emerald-600" />
+              The farmer has your contact too and may reach out first. Agrovercity does not intermediate the deal.
+            </p>
+          </div>
+        )}
+      </ModalSheet>
     </div>
   );
 };

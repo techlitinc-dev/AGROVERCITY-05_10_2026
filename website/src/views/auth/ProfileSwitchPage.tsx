@@ -44,7 +44,7 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'vet', title: 'Veterinary Doctor', category: 'Livestock Healthcare', icon: '🩺' },
   { id: 'fpoManager', title: 'FPO / Cooperative Leader', category: 'Collective Aggregation', icon: '🌾' },
   { id: 'womenShg', title: 'Mahila Gruh Udyog & SHG', category: 'Cottage Industry', icon: '🪔' },
-  { id: 'directBuyer', title: 'Direct Buyer', category: 'B2B Procurement', icon: '🏢' },
+  { id: 'directBuyer', title: 'Industrial Buyer', category: 'B2B Procurement', icon: '🏢' },
   { id: 'broker', title: 'Agri Broker / Dalal', category: 'Trade Matchmaking', icon: '🤝' },
   { id: 'dairyManager', title: 'Dudh Dairy Manager', category: 'Livestock & Milk', icon: '🥛' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },

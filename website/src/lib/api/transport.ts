@@ -174,13 +174,23 @@ export const transport = {
   loads: (params?: Record<string, unknown>): Promise<unknown[]> =>
     readList<unknown[]>('/transport/loads', { params }),
 
+  /** GET /transport/loads/mine — my posted demands with applications (bids);
+   * contact details are present only on the accepted application. */
+  myLoads: (): Promise<unknown[]> => readList<unknown[]>('/transport/loads/mine'),
+
+  /** GET /transport/loads/my-bids — my applications across the board; an
+   * accepted entry carries `contactReveal.farmer` (phone + WhatsApp). */
+  myLoadBids: (): Promise<unknown[]> => readList<unknown[]>('/transport/loads/my-bids'),
+
   /** GET /transport/loads/matched */
   matchedLoads: (): Promise<unknown[]> => readList<unknown[]>('/transport/loads/matched'),
 
   /** POST /transport/loads */
   createLoad: (payload: Record<string, unknown>): Promise<unknown> => post<unknown>('/transport/loads', payload),
 
-  /** POST /transport/loads/{id}/bid */
+  /** POST /transport/loads/{id}/bid — direct-connect apply: quoted fare +
+   * vehicle + termsAccepted + MPIN. Contact stays hidden until the load
+   * owner accepts the bid. */
   bid: (loadId: string, payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>(`/transport/loads/${loadId}/bid`, payload),
 

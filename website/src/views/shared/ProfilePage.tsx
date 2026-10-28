@@ -40,6 +40,7 @@ interface ProfileForm {
   dateOfBirth: string;
   gender: string;
   alternatePhone: string;
+  whatsapp: string;
   addressLine: string;
   village: string;
   tehsil: string;
@@ -59,6 +60,7 @@ const EMPTY_FORM: ProfileForm = {
   dateOfBirth: '',
   gender: '',
   alternatePhone: '',
+  whatsapp: '',
   addressLine: '',
   village: '',
   tehsil: '',
@@ -78,6 +80,7 @@ const formFromUser = (me: Record<string, unknown>): ProfileForm => ({
   dateOfBirth: pickStr(me, 'dateOfBirth'),
   gender: pickStr(me, 'gender'),
   alternatePhone: pickStr(me, 'alternatePhone'),
+  whatsapp: pickStr(me, 'whatsapp'),
   addressLine: pickStr(me, 'addressLine'),
   village: pickStr(me, 'village'),
   tehsil: pickStr(me, 'tehsil'),
@@ -233,6 +236,7 @@ export const ProfilePage: React.FC = () => {
         dateOfBirth: form.dateOfBirth || undefined,
         gender: form.gender || undefined,
         alternatePhone: form.alternatePhone.trim() || undefined,
+        whatsapp: form.whatsapp.trim() || undefined,
         addressLine: form.addressLine.trim() || undefined,
         village: form.village.trim() || undefined,
         tehsil: form.tehsil.trim() || undefined,
@@ -458,6 +462,15 @@ export const ProfilePage: React.FC = () => {
                   value={form.alternatePhone}
                   onChange={(e) => setForm((f) => ({ ...f, alternatePhone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
                   className={inputCls}
+                />
+              </Field>
+              <Field label="WhatsApp number (10-digit)">
+                <input
+                  type="tel"
+                  value={form.whatsapp}
+                  onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                  className={inputCls}
+                  placeholder="Buyers reach you here"
                 />
               </Field>
               <Field label="Address line">

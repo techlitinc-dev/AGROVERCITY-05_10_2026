@@ -80,7 +80,7 @@ const translations: Record<Language, Record<string, string>> = {
     'farmer.home': 'Farmer Cockpit',
     'farmer.mandi_rates': 'Mandi Live Rates',
     'farmer.produce_lots': 'Sell Crop Lots',
-    'farmer.buyer_demands': 'Buyer Demands',
+    'farmer.buyer_demands': 'Industry Buyer Demands',
     'farmer.purchases': 'My Crop Sales & B2B Orders',
     'farmer.contracts': 'Buyer Supply Contracts',
     'farmer.transport': 'Book Gadi / Transport',

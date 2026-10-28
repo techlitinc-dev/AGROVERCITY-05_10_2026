@@ -470,7 +470,7 @@ export const SellerHome: React.FC = () => {
                 { to: '/seller/profile', label: '1. Vyapari Business Profile', icon: Building2 },
                 { to: '/seller/lots', label: '2. Lot Search & Discovery', icon: Search },
                 { to: '/seller/purchases', label: '3. My Purchases & Bookings', icon: FileCheck },
-                { to: '/seller/direct-buyers', label: '4. Direct Buyers Network', icon: Building2 },
+                { to: '/seller/direct-buyers', label: '4. Industrial Buyers Network', icon: Building2 },
                 { to: '/seller/ai', label: '5. AI Insights & Sourcing', icon: Sparkles },
                 { to: '/seller/rates', label: '6. Mandi Rates & Arbitrage', icon: Landmark },
                 { to: '/seller/ratings', label: '7. Rate Farmers & Reputation', icon: Star },

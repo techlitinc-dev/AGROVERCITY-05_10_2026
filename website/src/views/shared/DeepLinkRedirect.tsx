@@ -33,10 +33,18 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
       return '/fpoManager';
     case 'myContracts':
     case 'contracts':
-      return seg[1] ? `/farmer/contracts/${seg[1]}` : '/farmer/contracts';
+      // Farmer supply-contracts page was removed; buyers keep their contract desk.
+      if (activePersona === 'directBuyer') return '/directbuyer/contracts';
+      return null;
     case 'purchases': {
-      const base = activePersona === 'seller' ? '/seller/purchases' : '/farmer/purchases';
-      return seg[1] ? `${base}/${seg[1]}` : base;
+      // Farmer B2B-orders page was removed; seller/buyer desks stay.
+      if (activePersona === 'seller') {
+        return seg[1] ? `/seller/purchases/${seg[1]}` : '/seller/purchases';
+      }
+      if (activePersona === 'directBuyer') {
+        return seg[1] ? `/directbuyer/purchases/${seg[1]}` : '/directbuyer';
+      }
+      return null;
     }
     case 'transport': {
       const id = seg[1] === 'trips' ? seg[2] : seg[1];

@@ -64,6 +64,8 @@ export { mandi } from './mandi';
 export { lots } from './lots';
 export { demands } from './demands';
 export { offers } from './offers';
+export * as leads from './leads';
+export type { Lead, LeadContact, LeadStatus, LeadCreateResult } from './leads';
 export { purchases } from './purchases';
 export { contracts } from './contracts';
 export { transport } from './transport';

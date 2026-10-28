@@ -10,9 +10,12 @@ import {
   Handshake,
   ShoppingBag,
   Star,
+  Phone,
+  MessageCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { directBuyer, demands, purchases, apiErrorMessage } from '../../lib/api';
+import { getMyLeads, type Lead } from '../../lib/api/leads';
 import { StatCard } from '../../components/common/StatCard';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -39,6 +42,7 @@ export const DirectBuyerHome: React.FC = () => {
   const [dashboard, setDashboard] = useState<Rec>({});
   const [demandList, setDemandList] = useState<BuyerDemand[]>([]);
   const [purchaseList, setPurchaseList] = useState<PurchaseOrder[]>([]);
+  const [farmerLeads, setFarmerLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -48,14 +52,16 @@ export const DirectBuyerHome: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [d, dm, p] = await Promise.all([
+      const [d, dm, p, leads] = await Promise.all([
         directBuyer.dashboard().catch(() => ({})),
         demands.list().catch(() => [] as BuyerDemand[]),
         purchases.mine({ role: 'buyer' }).catch(() => [] as PurchaseOrder[]),
+        getMyLeads('sent', undefined, 'demand').catch(() => [] as Lead[]),
       ]);
       setDashboard(rec(d));
       setDemandList(dm);
       setPurchaseList(p);
+      setFarmerLeads(leads);
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -167,7 +173,7 @@ export const DirectBuyerHome: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Building2 className="w-7 h-7 text-emerald-600" />
-            Direct Buyer B2B Procurement Desk
+            Industrial Buyer B2B Procurement Desk
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Publish institutional crop demands, review farmer quotes, inspect arrivals with QC grading, and disburse balances
@@ -296,6 +302,91 @@ export const DirectBuyerHome: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+
+          {/* Farmer Leads — farmers who applied on my demands */}
+          <div className="space-y-3">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Farmer Leads ({farmerLeads.length})</h3>
+              <p className="text-[11px] text-slate-400">
+                Farmers who applied on your posted demands — they accepted the terms and shared
+                their contact with MPIN verification. Call, WhatsApp or chat to close the deal.
+              </p>
+            </div>
+            {farmerLeads.length === 0 ? (
+              <div className={cardCls}>
+                <EmptyState label="No farmer applications yet — they appear here when farmers apply on your demands" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {farmerLeads.map((lead) => {
+                  const tel = lead.farmerContact?.phoneDigits ? `tel:+${lead.farmerContact.phoneDigits}` : null;
+                  const wa = lead.farmerContact?.whatsappDigits
+                    ? `https://wa.me/${lead.farmerContact.whatsappDigits}`
+                    : null;
+                  return (
+                    <div key={lead.id} className={`${cardCls} p-5 space-y-3`}>
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                        <div>
+                          <h4 className="font-bold text-base text-slate-900">
+                            {lead.farmerContact?.fullName || 'Farmer'}
+                          </h4>
+                          <p className="text-[11px] text-slate-400">
+                            {[lead.farmerContact?.village, lead.farmerContact?.district].filter(Boolean).join(', ') ||
+                              'Location not shared'}
+                            {' · '}Applied {formatDate(lead.createdAt)}
+                          </p>
+                        </div>
+                        <StatusBadge status={lead.status} />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 text-xs">
+                        <div className="p-2.5 bg-slate-50 rounded-xl">
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Crop</span>
+                          <span className="font-bold text-slate-800">
+                            {lead.demandCrop || '—'} {lead.demandVariety ? `(${lead.demandVariety})` : ''}
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 rounded-xl">
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Offered</span>
+                          <span className="font-bold text-slate-800">{formatWeight(lead.quantity ?? 0)}</span>
+                        </div>
+                        <div className="p-2.5 bg-slate-50 rounded-xl">
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">Quote</span>
+                          <span className="font-black text-emerald-800">{formatCurrency(lead.pricePerUnit ?? 0)}/q</span>
+                        </div>
+                      </div>
+
+                      {lead.message ? (
+                        <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+                          “{lead.message}”
+                        </p>
+                      ) : null}
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {tel ? (
+                          <a href={tel} className={ghostBtnCls}>
+                            <Phone className="w-3.5 h-3.5 inline mr-1" /> {lead.farmerContact?.phone}
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Phone not shared</span>
+                        )}
+                        {wa && (
+                          <a href={wa} target="_blank" rel="noreferrer" className={ghostBtnCls}>
+                            WhatsApp
+                          </a>
+                        )}
+                        {lead.chatRoomId && (
+                          <Link to={`/chat?room=${lead.chatRoomId}`} className={ghostBtnCls}>
+                            <MessageCircle className="w-3.5 h-3.5 inline mr-1" /> Chat
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
