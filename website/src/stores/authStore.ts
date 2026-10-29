@@ -175,7 +175,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    auth.logout().catch(() => undefined);
+    const refreshToken = get().refreshToken ?? localStorage.getItem(REFRESH_KEY);
+    if (refreshToken) {
+      auth.logout(refreshToken).catch(() => undefined);
+    }
     localStorage.removeItem(ACCESS_KEY);
     localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(PERSONA_KEY);

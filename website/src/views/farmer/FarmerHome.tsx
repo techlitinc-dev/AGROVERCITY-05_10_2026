@@ -238,7 +238,7 @@ export const FarmerHome: React.FC = () => {
         <Link to="/farmer/mandi">
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-slate-300 h-full">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Live Mandi Rates</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Mandi Rates</span>
               <div className="p-2.5 rounded-xl border bg-harvest-50 text-harvest-700 border-harvest-100">
                 <TrendingUp className="w-5 h-5" />
               </div>
@@ -248,7 +248,7 @@ export const FarmerHome: React.FC = () => {
                 {rates.length > 0 ? `${rates.length} Commodities` : 'Mandi'}
               </span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Modal prices & forecasts</p>
+            <p className="mt-1 text-xs text-slate-500">Vyapari buying rates · tap for government prices</p>
           </div>
         </Link>
 

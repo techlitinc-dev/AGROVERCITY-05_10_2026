@@ -735,7 +735,7 @@ export const SellerHome: React.FC = () => {
         isOpen={addProductModal}
         onClose={() => setAddProductModal(false)}
         title="Add New Agri Input SKU"
-        description="Publish product on Krishi Shopping Mall"
+        description="Publish product on Shopping Mall"
         maxWidth="md"
       >
         <form onSubmit={(e) => void handleAddProduct(e)} className="space-y-4">

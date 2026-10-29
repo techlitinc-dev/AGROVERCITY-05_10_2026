@@ -131,7 +131,7 @@ export const PnlDashboardView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <PiggyBank className="w-7 h-7 text-emerald-600" />
-            Farm P&L Dashboard
+            Farm Profit & Loss
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Season profit & loss, crop-wise economics, break-even price and expense tracking

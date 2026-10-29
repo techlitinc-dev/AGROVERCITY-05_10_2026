@@ -8,22 +8,20 @@ from app.core.cache import cache_delete, cache_get, cache_set
 from app.core.db import get_doc, query
 from app.core.deps import current_user_id
 from app.routers.users import require_role
-from app.services import agmarknet, agmarknet_sync
+from app.services import mandi_gov_data
 from app.services.mandi_forecast import CACHE_COLLECTION as FORECAST_COLLECTION
 from app.services.mandi_forecast import forecast_doc_id
 from app.services.mandi_smart import build_smart_select_state, decide_smart_select
+from app.services.mandi_gov_data import GovFeedError
 from app.services.users import get_user
 
 router = APIRouter(prefix="/mandi", tags=["mandi"])
 
 MANDI_ROLES = ("farmer", "seller", "broker", "directBuyer")
 
-# Agmarknet live feed caches: dashboard rows 15 min, filter catalog 24 h,
-# manual refresh lock 10 min (the upstream scrape itself takes ~30 s).
-LIVE_CACHE_TTL_SECONDS = 900
-FILTERS_CACHE_TTL_SECONDS = 24 * 3600
-REFRESH_LOCK_TTL_SECONDS = 600
-REFRESH_RUNNING_TTL_SECONDS = 300
+# Government open-data feed (services/mandi_gov_data.py owns the live price
+# cache keys): the filter catalog built from stored snapshots is cached 15 min.
+FILTERS_CACHE_TTL_SECONDS = 15 * 60
 
 # Smart mandi selection (brief M12, SDR) — question set / AI-feature tag / cache
 # live in services/mandi_smart.py (rule 10); the AI call is never triggered by a
@@ -331,141 +329,131 @@ async def smart_select(body: SmartSelectRequest, user: dict = Depends(_mandi_use
     }
 
 
-# ---------- Agmarknet live feed (captcha-free dashboard endpoint) ----------
+# ---------- Government open-data live feed (data.gov.in via techlitinc.in) ----------
 
 
-def _live_error(exc: agmarknet.AgmarknetError):
-    _error(502, "AGMARKNET_UNAVAILABLE", str(exc))
+def _gov_error(exc: GovFeedError):
+    """Map upstream failures onto the standard error envelope — never leak raw
+    upstream bodies, stack traces or credentials."""
+    if exc.kind == "validation":
+        _error(422, "VALIDATION_ERROR", str(exc))
+    if exc.kind == "malformed":
+        _error(502, "UPSTREAM_MALFORMED", "government price feed returned an unusable response")
+    if exc.kind == "http" and exc.status is not None and exc.status < 500:
+        _error(502, "UPSTREAM_REJECTED", "government price feed rejected the request")
+    _error(503, "UPSTREAM_UNAVAILABLE", "government price feed is unavailable right now — please try again shortly")
+
+
+def _resolve_live_params(district: str | None, commodity: str | None, user: dict) -> tuple[str, str | None]:
+    """District defaults to the caller's profile district; both names are
+    validated as non-empty bounded strings before they reach the upstream."""
+    try:
+        resolved = (
+            mandi_gov_data.clean_name(district, "district")
+            if district
+            else (user.get("district") or "").strip()
+        )
+        if not resolved:
+            _error(422, "VALIDATION_ERROR", "district is required — pick one", {"district": "required"})
+        cleaned_commodity = mandi_gov_data.clean_name(commodity, "commodity") if commodity else None
+    except GovFeedError as exc:
+        _error(422, "VALIDATION_ERROR", str(exc))
+    return resolved, cleaned_commodity
 
 
 @router.get("/live/filters")
 async def live_filters(user: dict = Depends(_mandi_user)):
-    """Commodity groups / commodities / states + allowed date range."""
-    cached = await cache_get("agmarknet:filters")
+    """Distinct districts / commodities / mandis from the stored genuine snapshots.
+
+    The government feed exposes no upstream filter catalog, so filters are
+    derived from accumulated `mandi_price_history` snapshot docs (source
+    "gov-data") — never scraped.
+    """
+    cached = await cache_get("mandi-gov:filters")
     if cached is not None:
         return json.loads(cached)
-    try:
-        data = await agmarknet.fetch_filters()
-    except agmarknet.AgmarknetError as exc:
-        _live_error(exc)
-    price_range = (data.get("range_data") or [{}])[0].get("price") or {}
+    docs = await query("mandi_price_history", [("source", "==", "gov-data")], limit=10000)
+    districts = sorted({d["district"] for d in docs if d.get("district")})
+    commodities = sorted({d["commodity"] for d in docs if d.get("commodity")})
+    mandis = [
+        {"name": name, "district": district}
+        for name, district in sorted(
+            {(d.get("mandiName"), d.get("district")) for d in docs if d.get("mandiName")}
+        )
+    ]
     payload = {
-        "groups": [
-            {"id": g["id"], "name": g["cmdt_grp_name"]}
-            for g in data.get("cmdt_group_data", [])
-            if isinstance(g.get("id"), int)
-        ],
-        "commodities": [
-            {"id": c["cmdt_id"], "name": c["cmdt_name"], "groupId": c.get("cmdt_group_id")}
-            for c in data.get("cmdt_data", [])
-        ],
-        "states": [
-            {"id": s["state_id"], "name": s["state_name"]}
-            for s in data.get("state_data", [])
-        ],
-        "marketsCount": len(data.get("market_data") or []),
-        "fromDate": price_range.get("from_date"),
-        "toDate": price_range.get("to_date"),
-        "source": "agmarknet.gov.in",
+        "districts": districts,
+        "commodities": commodities,
+        "mandis": mandis,
+        "records": len(docs),
+        "source": mandi_gov_data.SOURCE,
     }
-    await cache_set("agmarknet:filters", json.dumps(payload), ttl_seconds=FILTERS_CACHE_TTL_SECONDS)
+    await cache_set("mandi-gov:filters", json.dumps(payload), ttl_seconds=FILTERS_CACHE_TTL_SECONDS)
     return payload
 
 
 @router.get("/live")
 async def live_prices(
-    groupId: int | None = None,
-    commodityId: int | None = None,
+    district: str | None = None,
     commodity: str | None = None,
-    date: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
     user: dict = Depends(_mandi_user),
 ):
-    """Daily modal price / arrival / MSP rows straight from Agmarknet."""
-    key = f"agmarknet:live:{groupId}-{commodityId}-{commodity}-{date}"
-    cached = await cache_get(key)
-    if cached is not None:
-        return json.loads(cached)
+    """Latest reported mandi prices from government open data.
 
-    commodity_ids = [commodityId] if commodityId else None
-    if commodity and not commodity_ids:
-        filters = await agmarknet.fetch_filters()
-        wanted = commodity.strip().lower()
-        commodity_ids = [
-            c["cmdt_id"]
-            for c in filters.get("cmdt_data", [])
-            if wanted in c["cmdt_name"].lower()
-        ][:20]
-        if not commodity_ids:
-            _error(404, "NO_DATA", f"no Agmarknet commodity matches '{commodity}'")
-
+    Daily reported figures — NOT a real-time stream. District defaults to the
+    caller's profile district.
+    """
+    if offset < 0:
+        _error(422, "VALIDATION_ERROR", "offset must be >= 0", {"offset": "must be >= 0"})
+    resolved, cleaned_commodity = _resolve_live_params(district, commodity, user)
     try:
-        records = await agmarknet.fetch_dashboard(
-            group_ids=[groupId] if groupId else None,
-            commodity_ids=commodity_ids,
-            on_date=date,
+        return await mandi_gov_data.get_live_prices(
+            resolved, commodity=cleaned_commodity, limit=limit, offset=offset
         )
-    except agmarknet.AgmarknetError as exc:
-        _live_error(exc)
-
-    data = [n for n in (agmarknet_sync.normalize_record(r) for r in records) if n]
-    data.sort(key=lambda r: r["modalPrice"], reverse=True)
-    payload = {
-        "data": data,
-        "count": len(data),
-        "reportedDate": max((r["reportedDate"] for r in data), default=None),
-        "source": "agmarknet.gov.in",
-        "fetchedAt": datetime.now(timezone.utc).isoformat(),
-    }
-    await cache_set(key, json.dumps(payload), ttl_seconds=LIVE_CACHE_TTL_SECONDS)
-    return payload
+    except GovFeedError as exc:
+        _gov_error(exc)
 
 
 @router.post("/live/refresh")
-async def live_refresh(user: dict = Depends(_mandi_user)):
-    """Scrape Agmarknet now and upsert into mandi_prices / mandi_price_history.
+async def live_refresh(
+    district: str | None = None,
+    commodity: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    user: dict = Depends(_mandi_user),
+):
+    """Invalidate the gov-feed cache for these params and fetch fresh data.
 
-    Throttled: while a refresh runs (or ran < 10 min ago) the last result is
-    returned instead of hitting the upstream again.
+    One cheap upstream GET — never runs the retired Agmarknet scraper. When the
+    upstream fails, the last-good snapshot is returned flagged stale.
     """
-    running = await cache_get("agmarknet:refresh:lock")
-    if running is not None:
-        return {**json.loads(running), "throttled": True}
-    await cache_set("agmarknet:refresh:lock", json.dumps({"status": "running"}), ttl_seconds=REFRESH_LOCK_TTL_SECONDS)
+    if offset < 0:
+        _error(422, "VALIDATION_ERROR", "offset must be >= 0", {"offset": "must be >= 0"})
+    resolved, cleaned_commodity = _resolve_live_params(district, commodity, user)
+    await cache_delete(
+        mandi_gov_data.live_cache_key(
+            resolved, cleaned_commodity, mandi_gov_data.clamp_limit(limit), offset
+        )
+    )
     try:
-        result = await agmarknet_sync.refresh_from_agmarknet()
-    except Exception:  # noqa: BLE001 — clear the lock so the next call can retry
-        await cache_delete("agmarknet:refresh:lock")
-        raise
-    result["throttled"] = False
-    await cache_set("agmarknet:refresh:lock", json.dumps(result), ttl_seconds=REFRESH_LOCK_TTL_SECONDS)
-    return result
+        payload = await mandi_gov_data.get_live_prices(
+            resolved, commodity=cleaned_commodity, limit=limit, offset=offset, refresh=True
+        )
+    except GovFeedError as exc:
+        _gov_error(exc)
+    return {**payload, "refreshed": True}
 
 
 @router.get("/analytics/movers")
-async def analytics_movers(
-    groupId: int | None = None,
-    commodity: str | None = None,
-    user: dict = Depends(_mandi_user),
-):
-    """Top gainers / losers by 1-day change + MSP spread (Agmarknet data)."""
-    try:
-        records = await agmarknet.fetch_dashboard(
-            group_ids=[groupId] if groupId else None
-        )
-        rows = [n for n in (agmarknet_sync.normalize_record(r) for r in records) if n]
-        source = "live"
-    except agmarknet.AgmarknetError:
-        rows = await agmarknet_sync.stored_snapshot()
-        source = "stored"
-    if commodity:
-        wanted = commodity.strip().lower()
-        rows = [r for r in rows if wanted in r["commodity"].lower()]
-    if not rows:
-        _error(404, "NO_DATA", "no Agmarknet data available yet — run POST /mandi/live/refresh")
-    payload = {
-        **agmarknet_sync.movers(rows),
-        "count": len(rows),
-        "reportedDate": max((r["reportedDate"] for r in rows), default=None),
-        "source": source,
-    }
-    return payload
+async def analytics_movers(user: dict = Depends(_mandi_user)):
+    """Gainers/losers are not computable from the government feed: it reports
+    one day of prices (no previous-day figures). Explicitly unsupported rather
+    than silently scraping the retired source — genuine movers need accumulated
+    `mandi_price_history` snapshots, which the daily snapshot job is building."""
+    _error(
+        501,
+        "UNSUPPORTED_ANALYTICS",
+        "gainers/losers need stored day-over-day history — not available for the government data feed yet",
+    )

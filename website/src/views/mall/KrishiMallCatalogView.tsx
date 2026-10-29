@@ -133,7 +133,7 @@ export const KrishiMallCatalogView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <ShoppingBag className="w-7 h-7 text-emerald-600" />
-            Krishi Shopping Mall (Direct Agri Inputs)
+            Shopping Mall (Direct Agri Inputs)
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Certified seeds, fertilizers, biologicals, and farm tools with doorstep delivery and transparent pricing

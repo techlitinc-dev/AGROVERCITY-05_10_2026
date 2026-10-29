@@ -1,8 +1,10 @@
+import { apiClient } from './client';
+import { handleApiError } from './errors';
 import { del, post, readItems, readList, readOne } from './http';
 import { MOCK_MANDI_PRICES } from './mocks';
-import type { MandiPrice } from '../../types';
+import type { MandiLiveFilters, MandiLiveResponse, MandiPrice } from '../../types';
 
-/** Mandi namespace — prices, compare, forecast, smart-select, price alerts live in priceAlerts.ts. */
+/** Mandi namespace — government live prices, compare, forecast, smart-select, price alerts live in priceAlerts.ts. */
 export const mandi = {
   /** GET /mandi/prices */
   prices: (params?: Record<string, unknown>): Promise<MandiPrice[]> =>
@@ -21,12 +23,59 @@ export const mandi = {
     readOne<unknown>('/mandi/compare', { params }),
 
   /** GET /mandi/prices/history */
-  history: (params: Record<string, unknown>): Promise<unknown[]> =>
+  history: (params?: Record<string, unknown>): Promise<unknown[]> =>
     readList<unknown[]>('/mandi/prices/history', { params }),
 
   /** GET /mandi/forecast */
   forecast: (params?: Record<string, unknown>): Promise<unknown> =>
     readOne<unknown>('/mandi/forecast', { params }),
+
+  /**
+   * GET /mandi/live — latest reported government open-data mandi prices.
+   * Daily figures (not a real-time stream). District defaults to the caller's
+   * profile district. No mock fallback: a failed request throws.
+   *
+   * Uses the raw axios client because the response IS an envelope with a
+   * `data` array (readOne would unwrap to the array).
+   */
+  live: async (params?: {
+    district?: string;
+    commodity?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<MandiLiveResponse> => {
+    try {
+      const res = await apiClient.get<MandiLiveResponse>('/mandi/live', { params });
+      return res.data;
+    } catch (e) {
+      handleApiError(e);
+    }
+  },
+
+  /**
+   * POST /mandi/live/refresh — invalidate the gov-feed cache for these params
+   * and fetch fresh data. Never runs the retired Agmarknet scraper; on upstream
+   * failure the last-good snapshot is returned flagged `stale`.
+   */
+  liveRefresh: async (params?: {
+    district?: string;
+    commodity?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<MandiLiveResponse & { refreshed: boolean }> => {
+    try {
+      const res = await apiClient.post<MandiLiveResponse & { refreshed: boolean }>(
+        '/mandi/live/refresh',
+        params ?? {},
+      );
+      return res.data;
+    } catch (e) {
+      handleApiError(e);
+    }
+  },
+
+  /** GET /mandi/live/filters — districts/commodities/mandis from stored genuine snapshots. */
+  liveFilters: (): Promise<MandiLiveFilters> => readOne<MandiLiveFilters>('/mandi/live/filters'),
 
   /** POST /mandi/smart-select */
   smartSelect: (payload: Record<string, unknown>): Promise<unknown> =>
@@ -34,19 +83,6 @@ export const mandi = {
 
   /** GET /mandi/favorites — saved markets ({items: [...]} envelope; typed shape in follows.ts). */
   favoritesList: (): Promise<unknown[]> => readItems<unknown>('/mandi/favorites'),
-
-  /** GET /mandi/live/filters — Agmarknet commodity groups / commodities / states. */
-  liveFilters: (): Promise<unknown> => readOne<unknown>('/mandi/live/filters'),
-
-  /** GET /mandi/live — daily modal price / arrival / MSP rows from Agmarknet. */
-  live: (params?: Record<string, unknown>): Promise<any> => readOne<any>('/mandi/live', { params }),
-
-  /** POST /mandi/live/refresh — scrape Agmarknet into mandi_prices/history (throttled). */
-  liveRefresh: (): Promise<any> => post<any>('/mandi/live/refresh'),
-
-  /** GET /mandi/analytics/movers — top gainers/losers + MSP spread. */
-  movers: (params?: Record<string, unknown>): Promise<any> =>
-    readOne<any>('/mandi/analytics/movers', { params }),
 
   /** POST /mandi/favorites — body {mandiId}; 404 for unknown mandi. */
   addFavorite: (mandiId: string): Promise<unknown> =>

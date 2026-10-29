@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Truck,
   MapPin,
@@ -18,6 +18,7 @@ import {
   Send,
 } from 'lucide-react';
 import { transport, apiErrorMessage } from '../../lib/api';
+import { DIRECT_CONNECT_TERMS_TEXT } from '../../lib/api/transport';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
@@ -53,13 +54,12 @@ const TRIP_TABS: { id: TripTab; label: string; statuses: TransportBooking['statu
 
 export const TransportBookingView: React.FC = () => {
   const navigate = useNavigate();
-  // Vehicle rate card (GET /transport/vehicles) — fleet-and-rates board and the
-  // demand form's vehicle dropdown; empty catalog renders an empty board.
+  // Vehicle rate card (GET /transport/vehicles) — feeds the demand form's
+  // vehicle type dropdown.
   const [catalog, setCatalog] = useState<VehicleCatalogEntry[]>([]);
   const [bookings, setBookings] = useState<TransportBooking[]>([]);
   const [templates, setTemplates] = useState<Record<string, unknown>[]>([]);
   const [tripTab, setTripTab] = useState<TripTab>('all');
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [shareModalBooking, setShareModalBooking] = useState<TransportBooking | null>(null);
@@ -87,14 +87,16 @@ export const TransportBookingView: React.FC = () => {
     targetFare: 0,
     notes: '',
     urgent: false,
+    termsAccepted: false,
   });
   const [appsFor, setAppsFor] = useState<Record<string, unknown> | null>(null);
   const [acceptBusyId, setAcceptBusyId] = useState<string | null>(null);
   const [revealFor, setRevealFor] = useState<Record<string, unknown> | null>(null);
+  /** Farmer's pre-reveal direct-connect confirmation (per application). */
+  const [acceptTermsFor, setAcceptTermsFor] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     // One unfiltered fetch — the farmer sees their own bookings; tab filters
     // are applied client-side (backend ?status= accepts a single status).
     Promise.all([
@@ -110,11 +112,26 @@ export const TransportBookingView: React.FC = () => {
         setTemplates(asArr(t).map(asRecord));
         setMyLoads(asArr(ml).map(asRecord));
       })
-      .catch((e) => active && setError(apiErrorMessage(e)))
-      .finally(() => active && setLoading(false));
+      .catch((e) => active && setError(apiErrorMessage(e)));
     return () => {
       active = false;
     };
+  }, []);
+
+  // Deep-link prefill from the mandi price board:
+  // /farmer/transport?open=demand&crop=&destination=<mandi>
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('open') !== 'demand') return;
+    const crop = searchParams.get('crop');
+    const destination = searchParams.get('destination');
+    setDemandForm((f) => ({
+      ...f,
+      ...(crop ? { crop } : {}),
+      ...(destination ? { dropLocation: destination } : {}),
+    }));
+    setDemandModalOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshMyLoads = () =>
@@ -167,6 +184,7 @@ export const TransportBookingView: React.FC = () => {
         packaging: 'Gunny Bags',
         ...(demandForm.notes.trim() ? { notes: demandForm.notes.trim() } : {}),
         urgent: demandForm.urgent,
+        termsAccepted: demandForm.termsAccepted,
       });
       setDemandModalOpen(false);
       setNotice('Vehicle demand posted — transporters with a free vehicle on the pickup date will apply.');
@@ -178,16 +196,20 @@ export const TransportBookingView: React.FC = () => {
     }
   };
 
-  /** Accept a transporter's application — unlocks phone + WhatsApp both ways
-   *  and turns the demand into a confirmed transport booking. */
+  /** Accept a transporter's application — the farmer's direct-connect
+   *  confirmation unlocks phone + WhatsApp both ways and turns the demand
+   *  into a confirmed transport booking. */
   const handleAcceptBid = async (load: Record<string, unknown>, bidId: string) => {
     setAcceptBusyId(bidId);
     setError(null);
     try {
-      const res = asRecord(await transport.acceptBid(String(load.id), bidId));
+      const res = asRecord(
+        await transport.acceptBid(String(load.id), bidId, acceptTermsFor === bidId)
+      );
       setRevealFor(asRecord(res.contactReveal));
+      setAcceptTermsFor(null);
       await Promise.all([refreshMyLoads(), refreshBookings()]);
-      setNotice('Application accepted — phone & WhatsApp unlocked for both sides. Trip created.');
+      setNotice('Application accepted — phone & WhatsApp unlocked for both sides. Trip created. Agree fare, advance and delivery terms directly with the transporter.');
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -286,57 +308,6 @@ export const TransportBookingView: React.FC = () => {
         </div>
       )}
 
-      {/* Available Vehicles Grid — rate card from the vehicle_catalog collection */}
-      <div className="space-y-3">
-        <h3 className="font-bold text-sm text-slate-900">Standard Vehicle Fleets & Rates</h3>
-        {loading ? (
-          <div className="py-8 text-center text-xs font-bold text-slate-400 animate-pulse">
-            Loading vehicles…
-          </div>
-        ) : catalog.length === 0 ? (
-          <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
-            No vehicle types on the rate card yet.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {catalog.map((v) => (
-              <div
-                key={v.type}
-                className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between gap-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-2xl bg-sky-50 text-sky-700">
-                    <Truck className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">{v.type}</h4>
-                    <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md mt-1 inline-block">
-                      {v.capacityTonnes}T Payload
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-xs text-slate-400 block font-semibold">Standard Rate</span>
-                  <span className="text-sm font-extrabold text-slate-900">
-                    ₹{v.baseFare} base + ₹{v.perKmRate}/km
-                  </span>
-                  <button
-                    onClick={() => {
-                      setDemandForm((f) => ({ ...f, preferredVehicleType: v.type }));
-                      setDemandModalOpen(true);
-                    }}
-                    className="mt-2 block px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-colors"
-                  >
-                    Demand This
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Active & Scheduled Bookings */}
       <div className="space-y-3 pt-4 border-t border-slate-200">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -385,7 +356,7 @@ export const TransportBookingView: React.FC = () => {
                     </div>
                     <div>
                       <h4 className="font-bold text-sm text-slate-900">
-                        {booking.cargoCrop} ({formatWeight(booking.cargoWeightQuintal)}) • {booking.vehicleType}
+                        {booking.cargoCrop || booking.commodity || 'Cargo'} ({formatWeight(booking.cargoWeightQuintal ?? booking.weightQuintals ?? 0)}) • {booking.vehicleType}
                       </h4>
                       <p className="text-xs text-slate-500">
                         Transporter: <strong>{booking.transporterName || 'Awaiting assignment'}</strong>
@@ -406,7 +377,7 @@ export const TransportBookingView: React.FC = () => {
                     <span className="text-slate-400 text-[10px] uppercase font-bold flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Route & Distance
                     </span>
-                    <p className="font-bold text-slate-900">{booking.pickupAddress.split(',')[0]} → {booking.dropAddress.split(',')[0]}</p>
+                    <p className="font-bold text-slate-900">{(booking.pickupAddress || booking.pickup || '—').split(',')[0]} → {(booking.dropAddress || booking.drop || '—').split(',')[0]}</p>
                     <p className="text-slate-500">{booking.distanceKm} km</p>
                   </div>
 
@@ -415,9 +386,13 @@ export const TransportBookingView: React.FC = () => {
                       <Clock className="w-3.5 h-3.5 text-sky-600" /> Pickup Window (FT-1)
                     </span>
                     <p className="font-bold text-slate-900">
-                      {new Date(booking.pickupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {booking.pickupTime
+                        ? new Date(booking.pickupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : booking.date || '—'}
                     </p>
-                    <p className="text-slate-500">±{booking.timeWindowMinutes} mins window</p>
+                    <p className="text-slate-500">
+                      {booking.timeWindowMinutes ? `±${booking.timeWindowMinutes} mins window` : 'Loading window set with transporter'}
+                    </p>
                   </div>
 
                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
@@ -425,7 +400,7 @@ export const TransportBookingView: React.FC = () => {
                       <DollarSign className="w-3.5 h-3.5 text-amber-600" /> Fare & Insurance (FT-6)
                     </span>
                     <p className="font-bold text-slate-900">
-                      {formatCurrency(booking.estimatedFare)}
+                      {formatCurrency(booking.estimatedFare ?? booking.fare ?? 0)}
                       {booking.insuranceOptIn && (
                         <span className="text-[10px] text-emerald-700 ml-1 font-semibold">
                           (+{formatCurrency(booking.insurancePremiumPaisa ? booking.insurancePremiumPaisa / 100 : 800)} Ins.)
@@ -848,6 +823,18 @@ export const TransportBookingView: React.FC = () => {
             />
           </label>
 
+          <label className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={demandForm.termsAccepted}
+              onChange={(e) => setDemandForm({ ...demandForm, termsAccepted: e.target.checked })}
+              className="w-4 h-4 mt-0.5 accent-emerald-600 flex-shrink-0"
+            />
+            <span className="text-[11px] text-amber-800 leading-relaxed">
+              <strong>Direct-connect terms (required).</strong> {DIRECT_CONNECT_TERMS_TEXT}
+            </span>
+          </label>
+
           <button
             type="submit"
             disabled={
@@ -857,7 +844,8 @@ export const TransportBookingView: React.FC = () => {
               !demandForm.crop.trim() ||
               !demandForm.preferredVehicleType ||
               demandForm.quantityQuintals <= 0 ||
-              demandForm.targetFare <= 0
+              demandForm.targetFare <= 0 ||
+              !demandForm.termsAccepted
             }
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-60"
           >
@@ -965,14 +953,29 @@ export const TransportBookingView: React.FC = () => {
                       <p className="text-[11px] text-slate-500 italic">“{firstStr(bid, ['notes'])}”</p>
                     )}
                     {isPending && (
-                      <button
-                        onClick={() => void handleAcceptBid(appsFor, firstStr(bid, ['id']))}
-                        disabled={acceptBusyId !== null}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-60"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        {acceptBusyId === firstStr(bid, ['id']) ? 'Accepting…' : 'Accept — reveal phone & WhatsApp'}
-                      </button>
+                      <div className="space-y-2">
+                        <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={acceptTermsFor === firstStr(bid, ['id'])}
+                            onChange={(e) =>
+                              setAcceptTermsFor(e.target.checked ? firstStr(bid, ['id']) : null)
+                            }
+                            className="w-3.5 h-3.5 mt-0.5 accent-emerald-600 flex-shrink-0"
+                          />
+                          <span className="text-[10px] text-amber-800 leading-relaxed">
+                            I confirm: {DIRECT_CONNECT_TERMS_TEXT}
+                          </span>
+                        </label>
+                        <button
+                          onClick={() => void handleAcceptBid(appsFor, firstStr(bid, ['id']))}
+                          disabled={acceptBusyId !== null || acceptTermsFor !== firstStr(bid, ['id'])}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-60"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {acceptBusyId === firstStr(bid, ['id']) ? 'Accepting…' : 'Accept — reveal phone & WhatsApp'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 );

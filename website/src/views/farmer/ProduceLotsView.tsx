@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Package,
   Plus,
@@ -144,7 +144,21 @@ export const ProduceLotsView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Live mandi benchmark rows for the typed crop — real APMC/Agmarknet prices.
+  // Deep-link prefill from the mandi price board: /farmer/lots?create=1&crop=&variety=&price=
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('create') !== '1') return;
+    const crop = searchParams.get('crop');
+    const variety = searchParams.get('variety');
+    const price = Number(searchParams.get('price'));
+    if (crop) setNewCrop(crop);
+    if (variety) setNewVariety(variety);
+    if (price > 0) setNewPrice(price);
+    setCreateModalOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reported mandi benchmark rows for the typed crop (stored APMC reference prices).
   useEffect(() => {
     const crop = newCrop.trim();
     if (!crop) {
@@ -752,7 +766,7 @@ export const ProduceLotsView: React.FC = () => {
             <div className="p-3 bg-sky-50 rounded-2xl border border-sky-200 space-y-1.5">
               <p className="text-[10px] font-black uppercase tracking-wider text-sky-700 flex items-center gap-1.5">
                 <TrendingUp className="w-3.5 h-3.5" />
-                Live market guidance{newCrop.trim() ? ` for ${newCrop.trim()}` : ''} (real APMC / Agmarknet data)
+                Live market guidance{newCrop.trim() ? ` for ${newCrop.trim()}` : ''} (reported APMC prices)
               </p>
               {mspPerQuintal !== null && (
                 <div className="flex items-center justify-between text-xs">

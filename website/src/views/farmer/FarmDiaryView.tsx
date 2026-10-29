@@ -249,7 +249,7 @@ export const FarmDiaryView: React.FC = () => {
             className="px-4 py-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 transition-all"
           >
             <TrendingUp className="w-4 h-4" />
-            <span>P&L Dashboard</span>
+            <span>Profit & Loss</span>
           </Link>
           <button
             onClick={() => {
@@ -309,7 +309,7 @@ export const FarmDiaryView: React.FC = () => {
           </div>
           <div className="mt-3 text-2xl font-black text-slate-900">{formatCurrency(netProfit)}</div>
           <p className="text-[11px] text-slate-400 mt-1">
-            {typeof breakEven === 'number' ? `Break-even: ${formatCurrency(breakEven)} / quintal` : 'Break-even available in the P&L dashboard'}
+            {typeof breakEven === 'number' ? `Break-even: ${formatCurrency(breakEven)} / quintal` : 'Break-even available in the Profit & Loss dashboard'}
           </p>
         </div>
       </div>

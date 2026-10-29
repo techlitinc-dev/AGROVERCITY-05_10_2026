@@ -24,7 +24,7 @@ const AgriNewsChannelsView = lazy(() => import('../community/AgriNewsChannelsVie
 const TreePlantationView = lazy(() => import('../community/TreePlantationView').then((m) => ({ default: m.TreePlantationView })));
 const LandRecordsView = lazy(() => import('../farmer/LandRecordsView').then((m) => ({ default: m.LandRecordsView })));
 
-/** 11. Krishi Shopping Mall & Customer */
+/** 11. Shopping Mall & Customer */
 export const MallRouteElements = () => (
   <>
     {/* Customer hub */}

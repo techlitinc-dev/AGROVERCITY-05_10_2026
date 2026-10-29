@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     cron_secret: str = ""
     gemini_api_key: str = ""
+    # Government open-data mandi price feed (data.gov.in records proxied via
+    # techlitinc.in). Base URL only — the service appends /mandi_prices.php.
+    mandi_gov_data_base_url: str = "https://techlitinc.in/mandi_api"
     gemini_model: str = "gemini-3.8-flash"
     ai_provider: str = "shim"
     ai_jev_model: str = "typesafe/jev-1.13"

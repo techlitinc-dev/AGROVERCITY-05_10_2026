@@ -774,7 +774,7 @@ export const LandingPage: React.FC = () => {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Real-Time Agmarknet & APMC Feed</span>
+              <span>Government & APMC Price Feed</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
               Live Mandi Price Radar & Arrivals
@@ -1858,7 +1858,7 @@ export const LandingPage: React.FC = () => {
                 <span>Direct Verified Inputs</span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-                Krishi Shopping Mall & Equipment Store
+                Shopping Mall & Equipment Store
               </h2>
               <p className="text-xs sm:text-sm text-slate-500">
                 100% genuine hybrid seeds, bio-fertilizers, solar irrigation, and machinery delivered directly to your farm.
@@ -1950,11 +1950,11 @@ export const LandingPage: React.FC = () => {
             </div>
             <h4 className="font-extrabold text-base text-slate-900">e-NAM & APMC Interoperability</h4>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Real-time synchronization with Agmarknet arrival feeds and National Agriculture Market standards
+              Daily price reporting synced with APMC yards and National Agriculture Market standards
               for unified price discovery and J-Form compliance.
             </p>
             <span className="inline-block text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md">
-              Agmarknet Standard Feed
+              Government Open-Data Feed
             </span>
           </div>
 

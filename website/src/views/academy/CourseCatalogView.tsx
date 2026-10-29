@@ -127,11 +127,17 @@ export const CourseCatalogView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <GraduationCap className="w-7 h-7 text-emerald-600" />
-            Krishi Gurukul Academy
+            Courses
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Practical farming masterclasses led by university agronomists and progressive farmers
           </p>
+          <Link
+            to="/academy/instructors"
+            className="inline-flex items-center gap-1 mt-2 text-[11px] font-bold text-violet-600 hover:text-violet-700"
+          >
+            Browse Instructors →
+          </Link>
         </div>
         {instructorAvailable && (
           <div className="flex items-center gap-2 self-start sm:self-auto">

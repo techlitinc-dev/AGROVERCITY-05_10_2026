@@ -101,7 +101,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     // AI & Chat
     'ai.agronomist': 'AI Agronomist (Kisan Mitra)',
-    'ai.disease_scan': 'Leaf Disease Scanner',
+    'ai.disease_scan': 'AI Scanner',
     'ai.chat_placeholder': 'Ask any crop, soil, pest, or mandi question in your language...',
   },
 

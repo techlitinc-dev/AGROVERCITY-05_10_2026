@@ -75,7 +75,7 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/demands', label: 'Industry Buyer Demands', icon: Layers },
               { to: '/farmer/transport', label: 'Book Gadi / Transport', icon: Truck },
               { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
-              { to: '/farmer/pnl', label: 'P&L Dashboard', icon: DollarSign },
+              { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
               { to: '/farmer/livestock', label: 'Pashu Dhan / पशुधन', icon: PawPrint },
               { to: '/women/directory', label: 'Mahila Bachat Gat', icon: HandCoins },
@@ -128,7 +128,7 @@ export const Sidebar: React.FC = () => {
               { to: '/transporter/loads', label: 'Freight Load Board', icon: Layers },
               { to: '/transporter/trips', label: 'Live Trips & Tracking', icon: Truck },
               { to: '/transporter/bilty', label: 'Bilty Generator', icon: FileText },
-              { to: '/transporter/settlements', label: 'Trip P&L & Commission', icon: DollarSign },
+              { to: '/transporter/settlements', label: 'Trip P&L', icon: DollarSign },
               { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
               { to: '/transporter/bookings', label: 'My Bookings', icon: FileCheck },
               { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
@@ -258,7 +258,7 @@ export const Sidebar: React.FC = () => {
       case 'customer':
         return [
           {
-            title: 'Krishi Shopping Mall',
+            title: 'Shopping Mall',
             items: [
               { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
               { to: '/mall', label: 'Shop Fresh & Inputs', icon: ShoppingBag },
@@ -513,7 +513,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <ShoppingBag className="w-4 h-4 text-emerald-600" />
-            <span>Krishi Shopping Mall</span>
+            <span>Shopping Mall</span>
           </NavLink>
 
           <NavLink
@@ -528,7 +528,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <GraduationCap className="w-4 h-4 text-sky-600" />
-            <span>Krishi Gurukul Academy</span>
+            <span>Courses</span>
           </NavLink>
 
           <NavLink
@@ -558,7 +558,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <ScanLine className="w-4 h-4 text-rose-500" />
-            <span>Leaf Disease Scanner</span>
+            <span>AI Scanner</span>
           </NavLink>
 
           <NavLink
@@ -573,7 +573,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <Radio className="w-4 h-4 text-indigo-500" />
-            <span>Live Mandi News & Audio</span>
+            <span>News & Audio</span>
           </NavLink>
 
           <NavLink
@@ -589,21 +589,6 @@ export const Sidebar: React.FC = () => {
           >
             <BookOpen className="w-4 h-4 text-sky-600" />
             <span>My Learning</span>
-          </NavLink>
-
-          <NavLink
-            to="/academy/instructors"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
-                isActive
-                  ? 'bg-emerald-50 text-emerald-900 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              )
-            }
-          >
-            <Users className="w-4 h-4 text-violet-600" />
-            <span>Instructors</span>
           </NavLink>
 
           <NavLink

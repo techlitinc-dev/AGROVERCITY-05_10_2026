@@ -59,6 +59,48 @@ export interface MandiPrice {
   msp?: number;
 }
 
+/** One normalized government-data mandi price row (INR per quintal). */
+export interface MandiLivePrice {
+  id: string;
+  state: string;
+  district: string;
+  mandiName: string;
+  commodity: string;
+  variety: string;
+  grade: string;
+  minPrice: number;
+  maxPrice: number;
+  modalPrice: number;
+  priceDate: string;
+  unit: 'INR_PER_QUINTAL';
+}
+
+/** GET /mandi/live — latest reported government open-data prices (daily, not real-time). */
+export interface MandiLiveResponse {
+  data: MandiLivePrice[];
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  district: string;
+  commodity: string;
+  /** Latest priceDate across the returned records; null when nothing valid. */
+  reportedDate: string | null;
+  fetchedAt: string;
+  source: string;
+  /** True when the upstream refresh failed and this is the last-good cached snapshot. */
+  stale: boolean;
+}
+
+/** GET /mandi/live/filters — derived from stored genuine snapshots. */
+export interface MandiLiveFilters {
+  districts: string[];
+  commodities: string[];
+  mandis: { name: string; district: string }[];
+  records: number;
+  source: string;
+}
+
 export interface ProduceLot {
   id: string;
   farmerId: string;

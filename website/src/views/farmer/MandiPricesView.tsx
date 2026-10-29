@@ -1,25 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  TrendingUp,
-  TrendingDown,
-  Search,
+  AlertTriangle,
   Bell,
-  ArrowUpRight,
-  ArrowDownRight,
-  MapPin,
-  Check,
-  Trash2,
-  Sparkles,
-  LineChart as LineChartIcon,
-  Truck,
-  Calculator,
-  Star,
-  RefreshCw,
-  X,
   CalendarDays,
-  Activity,
-  Store,
-  IndianRupee,
+  Check,
+  Landmark,
+  LineChart as LineChartIcon,
+  MapPin,
+  PackagePlus,
+  RefreshCw,
+  Search,
+  Star,
+  Trash2,
+  Truck,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,196 +23,151 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { useSearchParams, Link } from 'react-router-dom';
-import { mandi, advisory, priceAlerts, apiErrorMessage } from '../../lib/api';
+import { Link, useSearchParams } from 'react-router-dom';
+import { apiErrorMessage, mandi, priceAlerts } from '../../lib/api';
 import {
-  addMandiFavorite,
-  getMandiFavorites,
-  removeMandiFavorite,
   addCommodityWatchlist,
   getCommodityWatchlist,
   removeCommodityWatchlist,
-  type MandiFavorite,
   type CommodityWatchItem,
 } from '../../lib/api/follows';
+import { useAuthStore } from '../../stores/authStore';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency } from '../../lib/utils';
-import type { MandiPrice } from '../../types';
+import type { MandiLivePrice } from '../../types';
 
-const asRecord = (v: unknown): Record<string, unknown> =>
-  v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const asNum = (v: unknown, fallback = 0): number => (typeof v === 'number' && !Number.isNaN(v) ? v : fallback);
-const asStr = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback);
-
-interface ChartPoint {
-  day: string;
-  price: number;
-}
-
-interface LiveRow {
-  commodity: string;
-  group: string;
-  modalPrice: number;
-  oneDayAgoPrice: number | null;
-  twoDayAgoPrice: number | null;
-  arrivalMt: number | null;
-  msp: number | null;
-  reportedDate: string;
-  trend: string;
-  changePercent: number | null;
-  aboveMsp: boolean | null;
-}
-
+const num = (n: number) => n.toLocaleString('en-IN');
 const slugOf = (name: string) =>
   name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unknown';
 
-const num = (n: number) => n.toLocaleString('en-IN');
-const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}`;
-/** Local rows sometimes carry the change as a string ("-4.4%") or omit it — normalize. */
-const trendPct = (v: unknown): number | null =>
-  typeof v === 'number' && !Number.isNaN(v) ? v : null;
+const SORTS = [
+  { id: 'modal-desc', label: 'Highest modal price' },
+  { id: 'modal-asc', label: 'Lowest modal price' },
+  { id: 'commodity', label: 'Commodity A–Z' },
+  { id: 'mandi', label: 'Mandi A–Z' },
+] as const;
+type SortId = (typeof SORTS)[number]['id'];
 
-/* ============================== ticker ============================== */
+interface BoardMeta {
+  district: string;
+  reportedDate: string | null;
+  fetchedAt: string;
+  source: string;
+  stale: boolean;
+  total: number;
+}
 
-const TickerTape: React.FC<{ rows: LiveRow[] }> = ({ rows }) => {
-  if (rows.length === 0) return null;
-  const strip = rows.map((r, i) => {
-    const pct = r.changePercent;
-    const up = (pct ?? 0) > 0.05;
-    const down = (pct ?? 0) < -0.05;
-    return (
-      <span key={i} className="inline-flex items-center gap-1.5 px-4 border-r border-slate-700/60 whitespace-nowrap">
-        <span className="font-bold text-slate-200 uppercase tracking-wide text-[11px]">{r.commodity}</span>
-        <span className="text-slate-400 tabular-nums text-[11px]">₹{num(r.modalPrice)}</span>
-        <span
-          className={`inline-flex items-center gap-0.5 font-bold tabular-nums text-[11px] ${
-            up ? 'text-emerald-400' : down ? 'text-rose-400' : 'text-slate-500'
-          }`}
-        >
-          {up ? <ArrowUpRight className="w-3 h-3" /> : down ? <ArrowDownRight className="w-3 h-3" /> : null}
-          {pct === null ? '—' : `${up ? '+' : ''}${pct.toFixed(2)}%`}
-        </span>
-      </span>
-    );
-  });
-  return (
-    <div className="relative overflow-hidden rounded-2xl bg-slate-900 border border-slate-700/60 py-2 select-none">
-      <div className="agv-ticker inline-flex items-center">
-        <div className="flex items-center">{strip}</div>
-        <div className="flex items-center" aria-hidden="true">{strip}</div>
-      </div>
-      <span className="absolute left-0 top-0 bottom-0 px-2 flex items-center bg-slate-900 border-r border-slate-700/60 z-10">
-        <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-      </span>
-    </div>
-  );
-};
+type Tab = 'prices' | 'alerts';
 
-/* ============================== small pieces ============================== */
-
-const Delta: React.FC<{ pct: number | null; className?: string }> = ({ pct, className = '' }) => {
-  if (pct === null) return <span className={`text-slate-300 font-bold ${className}`}>—</span>;
-  const up = pct > 0.05;
-  const down = pct < -0.05;
-  return (
-    <span
-      className={`inline-flex items-center gap-0.5 font-bold tabular-nums ${className} ${
-        up ? 'text-emerald-600' : down ? 'text-rose-600' : 'text-slate-400'
-      }`}
-    >
-      {up ? <ArrowUpRight className="w-3 h-3" /> : down ? <ArrowDownRight className="w-3 h-3" /> : null}
-      {signed(pct)}%
-    </span>
-  );
-};
-
-const MspBadge: React.FC<{ row: Pick<LiveRow, 'msp' | 'aboveMsp'> }> = ({ row }) => {
-  if (row.msp === null)
-    return <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-slate-100 text-slate-400">MSP —</span>;
-  return row.aboveMsp === false ? (
-    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
-      BELOW MSP
-    </span>
-  ) : (
-    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-      ABOVE MSP
-    </span>
-  );
-};
-
-const SectionCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <div className={`bg-white rounded-3xl border border-slate-200/80 shadow-xs ${className}`}>{children}</div>
-);
-
-/* ============================== main view ============================== */
-
-type Tab = 'board' | 'yards' | 'alerts';
-
+/**
+ * Latest Mandi Prices — one consolidated government-data board.
+ *
+ * Data: government open data (data.gov.in records via the platform backend) —
+ * latest REPORTED daily prices, not a real-time stream. The feed carries no
+ * MSP, arrivals, previous-day change or forecasts, so none are shown here.
+ */
 export const MandiPricesView: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const { user } = useAuthStore();
+  const profileDistrict = (user?.district || '').trim();
 
-  // ---- live board data ----
-  const [liveRows, setLiveRows] = useState<LiveRow[]>([]);
-  const [reportedDate, setReportedDate] = useState<string | null>(null);
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-  const [liveLoading, setLiveLoading] = useState(true);
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [boardSearch, setBoardSearch] = useState('');
-  const [group, setGroup] = useState<string>('all');
+  // ---- board data ----
+  const [rows, setRows] = useState<MandiLivePrice[]>([]);
+  const [meta, setMeta] = useState<BoardMeta | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // ---- controls ----
+  const [districtInput, setDistrictInput] = useState(profileDistrict);
+  const [districtApplied, setDistrictApplied] = useState(profileDistrict);
+  const [knownDistricts, setKnownDistricts] = useState<string[]>([]);
+  const [commodityQuery, setCommodityQuery] = useState('');
+  const [mandiFilter, setMandiFilter] = useState('');
+  const [varietyFilter, setVarietyFilter] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('');
   const [watchOnly, setWatchOnly] = useState(false);
-  const [moversOnly, setMoversOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<'modal' | 'change'>('modal');
-  const [flash, setFlash] = useState<Record<string, 'up' | 'down'>>({});
-  const prevPrices = useRef<Map<string, number>>(new Map());
+  const [sortBy, setSortBy] = useState<SortId>('modal-desc');
+  const [tab, setTab] = useState<Tab>('prices');
 
   // ---- watchlist ----
   const [watchlist, setWatchlist] = useState<CommodityWatchItem[]>([]);
   const watchedSlugs = useMemo(() => new Set(watchlist.map((w) => w.slug)), [watchlist]);
 
-  // ---- selection / detail ----
-  const [chartCommodity, setChartCommodity] = useState('Soybean');
-  const [chartMandi, setChartMandi] = useState('');
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>('board');
-
-  // ---- chart / forecast / arbitrage ----
-  const [chartData, setChartData] = useState<ChartPoint[]>([]);
-  const [forecast, setForecast] = useState<Record<string, unknown> | null>(null);
-  const [compareRows, setCompareRows] = useState<unknown[]>([]);
-  const [arbitrageQty, setArbitrageQty] = useState<number>(30);
-  const [saturation, setSaturation] = useState<Record<string, unknown> | null>(null);
-  const [chartLoading, setChartLoading] = useState(false);
-
-  // ---- local yards ----
-  const [prices, setPrices] = useState<MandiPrice[]>([]);
-  const [mandis, setMandis] = useState<unknown[]>([]);
-  const [yardsLoading, setYardsLoading] = useState(true);
-  const [yardSearch, setYardSearch] = useState('');
-  const [yardCrop, setYardCrop] = useState<string>('All');
-  const [favorites, setFavorites] = useState<MandiFavorite[]>([]);
-  const [myMarketsOnly, setMyMarketsOnly] = useState(false);
-  const [pickMandi, setPickMandi] = useState('');
+  // ---- commodity detail ----
+  const [detailCommodity, setDetailCommodity] = useState<string | null>(null);
+  const [calcRecordId, setCalcRecordId] = useState('');
+  const [qty, setQty] = useState(30);
+  const [transportCost, setTransportCost] = useState<string>('');
+  const [otherCost, setOtherCost] = useState<string>('');
+  const [historyPoints, setHistoryPoints] = useState<{ day: string; price: number }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // ---- alerts ----
-  const [alerts, setAlerts] = useState<unknown[]>([]);
+  const [alerts, setAlerts] = useState<Record<string, unknown>[]>([]);
   const [alertModalOpen, setAlertModalOpen] = useState(false);
-  const [alertCrop, setAlertCrop] = useState('Soybean');
-  const [targetPrice, setTargetPrice] = useState(4850);
+  const [alertCrop, setAlertCrop] = useState('');
+  const [alertTarget, setAlertTarget] = useState('');
+  const [alertMandi, setAlertMandi] = useState('');
   const [savingAlert, setSavingAlert] = useState(false);
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /* ---------- initial wiring ---------- */
-  useEffect(() => {
-    const fromQuery = searchParams.get('commodity');
-    if (fromQuery) {
-      setChartCommodity(fromQuery);
-      setAlertCrop(fromQuery);
-    }
-  }, [searchParams]);
+  const liveParams = useCallback(
+    () => ({
+      ...(districtApplied.trim() ? { district: districtApplied.trim() } : {}),
+      limit: 200,
+    }),
+    [districtApplied],
+  );
 
+  /* ---------- board load (keeps previously displayed valid data) ---------- */
+  const load = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      if (rows.length === 0) setInitialLoading(true);
+      else if (!opts.silent) setRefreshing(true);
+      try {
+        const res = await mandi.live(liveParams());
+        setRows(res.data);
+        setMeta({
+          district: res.district,
+          reportedDate: res.reportedDate,
+          fetchedAt: res.fetchedAt,
+          source: res.source,
+          stale: res.stale,
+          total: res.total,
+        });
+        setLoadError(null);
+      } catch (e) {
+        setLoadError(apiErrorMessage(e) || 'Mandi prices are unavailable right now.');
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [liveParams, rows.length],
+  );
+
+  useEffect(() => {
+    load();
+    const t = window.setInterval(() => load({ silent: true }), 5 * 60_000);
+    return () => window.clearInterval(t);
+  }, [load]);
+
+  /* ---------- known districts for the selector datalist ---------- */
+  useEffect(() => {
+    let active = true;
+    mandi
+      .liveFilters()
+      .then((f) => active && setKnownDistricts(f.districts ?? []))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /* ---------- watchlist ---------- */
   useEffect(() => {
     let active = true;
     getCommodityWatchlist()
@@ -230,167 +178,62 @@ export const MandiPricesView: React.FC = () => {
     };
   }, []);
 
-  /* ---------- live board load + 60 s polling ---------- */
-  const loadLive = useCallback(async (silent = false) => {
-    if (!silent) setLiveLoading(true);
-    setLiveError(null);
-    try {
-      const res: any = await mandi.live();
-      const list = (Array.isArray(res) ? res : asArray(res?.data)) as unknown as LiveRow[];
-      const prev = prevPrices.current;
-      const changes: Record<string, 'up' | 'down'> = {};
-      const next = new Map<string, number>();
-      for (const r of list) {
-        next.set(r.commodity, r.modalPrice);
-        const p = prev.get(r.commodity);
-        if (p !== undefined && p !== r.modalPrice) {
-          changes[r.commodity] = r.modalPrice > p ? 'up' : 'down';
-        }
-      }
-      prevPrices.current = next;
-      setLiveRows(list);
-      setReportedDate(res?.reportedDate ?? null);
-      setFetchedAt(res?.fetchedAt ?? new Date().toISOString());
-      if (Object.keys(changes).length > 0) {
-        setFlash(changes);
-        window.setTimeout(() => setFlash({}), 1700);
-      }
-    } catch (e) {
-      if (!silent) {
-        setLiveError(apiErrorMessage(e) || 'Live prices are unavailable right now.');
-        setLiveRows([]);
-      }
-    } finally {
-      if (!silent) setLiveLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadLive();
-    const t = window.setInterval(() => loadLive(true), 60_000);
-    return () => window.clearInterval(t);
-  }, [loadLive]);
-
-  const handleSync = async () => {
-    setLiveError(null);
-    try {
-      const res: any = await mandi.liveRefresh();
-      if (res?.throttled) {
-        setNotice(`Agmarknet data already refreshed at ${res?.refreshedAt?.slice(11, 16) || '—'} — showing cached snapshot.`);
-      } else {
-        setNotice(
-          `Agmarknet synced: ${res?.commodities ?? 0} commodities · ${res?.historyPoints ?? 0} history points · reported ${res?.reportedDate ?? '—'}.`,
-        );
-      }
-      await loadLive(true);
-    } catch (e) {
-      setLiveError(apiErrorMessage(e) || 'Refresh failed. Please try again shortly.');
-    }
-  };
-
-  /* ---------- local yards ---------- */
-  useEffect(() => {
-    let active = true;
-    setYardsLoading(true);
-    Promise.all([mandi.prices(), mandi.list(), priceAlerts.list()])
-      .then(([p, m, a]) => {
-        if (!active) return;
-        setPrices(p);
-        setMandis(m);
-        setAlerts(a);
-        if (p.length > 0 && !searchParams.get('commodity')) {
-          setChartCommodity(p[0].commodity);
-          setAlertCrop(p[0].commodity);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => active && setYardsLoading(false));
-    getMandiFavorites()
-      .then((f) => active && setFavorites(f))
+  /* ---------- alerts list ---------- */
+  const refreshAlerts = useCallback(() => {
+    priceAlerts
+      .list()
+      .then((list) => setAlerts((Array.isArray(list) ? list : []) as Record<string, unknown>[]))
       .catch(() => undefined);
-    return () => {
-      active = false;
-    };
   }, []);
 
-  /* ---------- chart / forecast / compare for the selection ---------- */
-  useEffect(() => {
-    if (!chartCommodity) return;
-    let active = true;
-    setChartLoading(true);
-    const historyParams: Record<string, unknown> = { crop: chartCommodity };
-    const forecastParams: Record<string, unknown> = { crop: chartCommodity };
-    if (chartMandi) {
-      historyParams.mandi = chartMandi;
-      forecastParams.mandi = chartMandi;
-    }
-    Promise.all([
-      mandi.history(historyParams),
-      mandi.forecast(forecastParams),
-      mandi.compare({ crop: chartCommodity, commodity: chartCommodity, quantityQuintals: arbitrageQty }),
-    ])
-      .then(([history, fc, cmp]) => {
-        if (!active) return;
-        const points: ChartPoint[] = asArray(history)
-          .map((h) => {
-            const r = asRecord(h);
-            return {
-              day: asStr(r.date ?? r.priceDate ?? r.day, ''),
-              price: asNum(r.modalPrice ?? r.price ?? r.modal, 0),
-            };
-          })
-          .filter((p) => p.price > 0);
-        setChartData(points);
-        setForecast(asRecord(fc));
-        const cmpRec = asRecord(cmp);
-        const rawList = asArray((cmp as any)?.data ?? cmpRec.data ?? cmpRec.mandis ?? cmpRec.rows ?? cmpRec.comparison ?? cmp);
-        const needle = chartCommodity.toLowerCase();
-        const list = rawList.filter((row) => {
-          const rc = asStr(asRecord(row).commodity, '');
-          return !rc || rc.toLowerCase().includes(needle) || needle.includes(rc.toLowerCase());
-        });
-        setCompareRows(list);
-      })
-      .catch(() => {
-        if (!active) return;
-        setChartData([]);
-        setForecast(null);
-        setCompareRows([]);
-      })
-      .finally(() => active && setChartLoading(false));
-    return () => {
-      active = false;
-    };
-  }, [chartCommodity, chartMandi, arbitrageQty]);
+  useEffect(() => refreshAlerts(), [refreshAlerts]);
 
-  /* ---------- selection helper ---------- */
-  const selectCommodity = (name: string, fromLocalTable: boolean) => {
-    setChartCommodity(name);
-    setAlertCrop(name);
-    setSaturation(null);
-    const local = prices.some((p) => p.commodity.toLowerCase() === name.toLowerCase());
-    setChartMandi(local || fromLocalTable ? '' : 'National (Agmarknet)');
-    setDetailOpen(true);
+  /* ---------- deep link: /farmer/mandi?commodity=Onion ---------- */
+  const pendingCommodity = searchParams.get('commodity');
+  useEffect(() => {
+    if (pendingCommodity && rows.length > 0 && !detailCommodity) {
+      setDetailCommodity(pendingCommodity);
+    }
+  }, [pendingCommodity, rows.length, detailCommodity]);
+
+  /* ---------- manual refresh (invalidates the gov-feed cache, no scraping) ---------- */
+  const handleRefresh = async () => {
+    setError(null);
+    try {
+      const res = await mandi.liveRefresh(liveParams());
+      setRows(res.data);
+      setMeta({
+        district: res.district,
+        reportedDate: res.reportedDate,
+        fetchedAt: res.fetchedAt,
+        source: res.source,
+        stale: res.stale,
+        total: res.total,
+      });
+      setLoadError(null);
+      setNotice(
+        res.stale
+          ? 'Upstream refresh failed — showing the last available prices.'
+          : 'Prices refreshed from the government feed.',
+      );
+    } catch (e) {
+      setError(apiErrorMessage(e) || 'Refresh failed. Please try again shortly.');
+    }
   };
 
   /* ---------- watchlist ops ---------- */
-  const toggleWatch = async (row: LiveRow) => {
-    const slug = slugOf(row.commodity);
+  const toggleWatch = async (commodity: string) => {
+    const slug = slugOf(commodity);
     const watching = watchedSlugs.has(slug);
-    const item: CommodityWatchItem = {
-      commodity: row.commodity,
-      slug,
-      group: row.group,
-      since: new Date().toISOString(),
-    };
+    const item: CommodityWatchItem = { commodity, slug, since: new Date().toISOString() };
     setWatchlist((prev) => (watching ? prev.filter((w) => w.slug !== slug) : [...prev, item]));
     try {
       if (watching) {
         await removeCommodityWatchlist(slug);
-        setNotice(`${row.commodity} removed from watchlist.`);
+        setNotice(`${commodity} removed from watchlist.`);
       } else {
-        await addCommodityWatchlist(row.commodity, row.group);
-        setNotice(`${row.commodity} pinned to your watchlist.`);
+        await addCommodityWatchlist(commodity);
+        setNotice(`${commodity} pinned to your watchlist.`);
       }
     } catch (e) {
       setWatchlist((prev) => (watching ? [...prev, item] : prev.filter((w) => w.slug !== slug)));
@@ -398,62 +241,136 @@ export const MandiPricesView: React.FC = () => {
     }
   };
 
-  /* ---------- favorites ops ---------- */
-  const favoriteNames = useMemo(
-    () => new Set(favorites.map((f) => f.name.trim().toLowerCase())),
-    [favorites],
+  /* ---------- derived filter options ---------- */
+  const distinct = (pick: (r: MandiLivePrice) => string) =>
+    Array.from(new Set(rows.map(pick).filter(Boolean))).sort();
+
+  const mandis = useMemo(() => distinct((r) => r.mandiName), [rows]);
+  const varieties = useMemo(() => distinct((r) => r.variety), [rows]);
+  const grades = useMemo(() => distinct((r) => r.grade), [rows]);
+  const boardCommodities = useMemo(() => distinct((r) => r.commodity), [rows]);
+
+  const hasActiveFilters = Boolean(
+    commodityQuery.trim() || mandiFilter || varietyFilter || gradeFilter || watchOnly,
   );
-  const favoriteIds = useMemo(() => new Set(favorites.map((f) => f.mandiId)), [favorites]);
+  const clearFilters = () => {
+    setCommodityQuery('');
+    setMandiFilter('');
+    setVarietyFilter('');
+    setGradeFilter('');
+    setWatchOnly(false);
+  };
 
-  const handleAddFavorite = async () => {
-    if (!pickMandi) return;
-    const rec = asRecord(mandis.find((m) => asStr(asRecord(m).id) === pickMandi));
-    const name = asStr(rec.name, 'Mandi');
-    const optimistic: MandiFavorite = {
-      mandiId: pickMandi,
-      name,
-      district: asStr(rec.district),
-      state: asStr(rec.state),
-      since: new Date().toISOString(),
+  const boardRows = useMemo(() => {
+    const needle = commodityQuery.trim().toLowerCase();
+    const list = rows.filter((r) => {
+      if (needle && !r.commodity.toLowerCase().includes(needle)) return false;
+      if (mandiFilter && r.mandiName !== mandiFilter) return false;
+      if (varietyFilter && r.variety !== varietyFilter) return false;
+      if (gradeFilter && r.grade !== gradeFilter) return false;
+      if (watchOnly && !watchedSlugs.has(slugOf(r.commodity))) return false;
+      return true;
+    });
+    const sorted = [...list];
+    switch (sortBy) {
+      case 'modal-desc':
+        sorted.sort((a, b) => b.modalPrice - a.modalPrice);
+        break;
+      case 'modal-asc':
+        sorted.sort((a, b) => a.modalPrice - b.modalPrice);
+        break;
+      case 'commodity':
+        sorted.sort((a, b) => a.commodity.localeCompare(b.commodity));
+        break;
+      case 'mandi':
+        sorted.sort((a, b) => a.mandiName.localeCompare(b.mandiName));
+        break;
+    }
+    return sorted;
+  }, [rows, commodityQuery, mandiFilter, varietyFilter, gradeFilter, watchOnly, watchedSlugs, sortBy]);
+
+  /* ---------- commodity detail ---------- */
+  const detailRows = useMemo(() => {
+    if (!detailCommodity) return [];
+    return rows
+      .filter((r) => r.commodity.toLowerCase() === detailCommodity.toLowerCase())
+      .sort((a, b) => b.modalPrice - a.modalPrice);
+  }, [rows, detailCommodity]);
+
+  useEffect(() => {
+    if (detailRows.length === 0) {
+      setCalcRecordId('');
+      return;
+    }
+    setCalcRecordId((prev) => (detailRows.some((r) => r.id === prev) ? prev : detailRows[0].id));
+  }, [detailRows]);
+
+  const calcRecord = detailRows.find((r) => r.id === calcRecordId) ?? detailRows[0] ?? null;
+
+  /* Genuine stored history only — the chart appears solely when real records
+     exist for this commodity + mandi; nothing is fabricated. */
+  useEffect(() => {
+    if (!detailCommodity || !calcRecord) {
+      setHistoryPoints([]);
+      return;
+    }
+    const mandiName = calcRecord.mandiName;
+    let active = true;
+    setHistoryLoading(true);
+    mandi
+      .history({ crop: detailCommodity, mandi: mandiName })
+      .then((list) => {
+        if (!active) return;
+        const pts = (Array.isArray(list) ? list : [])
+          .map((h) => {
+            const r = h as Record<string, unknown>;
+            return { day: String(r.date ?? r.priceDate ?? ''), price: Number(r.modalPrice ?? 0) };
+          })
+          .filter((p) => p.day && p.price > 0)
+          .sort((a, b) => a.day.localeCompare(b.day));
+        setHistoryPoints(pts);
+      })
+      .catch(() => {
+        if (active) setHistoryPoints([]);
+      })
+      .finally(() => active && setHistoryLoading(false));
+    return () => {
+      active = false;
     };
-    setFavorites((prev) => [...prev, optimistic]);
-    try {
-      await addMandiFavorite(pickMandi);
-      setNotice(`${name} pinned to your saved markets.`);
-      setPickMandi('');
-    } catch (e) {
-      setFavorites((prev) => prev.filter((f) => f.mandiId !== pickMandi));
-      setError(apiErrorMessage(e));
-    }
-  };
+  }, [detailCommodity, calcRecord]);
 
-  const handleRemoveFavorite = async (fav: MandiFavorite) => {
-    setFavorites((prev) => prev.filter((f) => f.mandiId !== fav.mandiId));
-    try {
-      await removeMandiFavorite(fav.mandiId);
-      setNotice(`${fav.name} removed from saved markets.`);
-    } catch (e) {
-      setFavorites((prev) => [...prev, fav]);
-      setError(apiErrorMessage(e));
-    }
-  };
+  /* ---------- sale-value calculator (estimates only) ---------- */
+  const grossEstimate = calcRecord ? calcRecord.modalPrice * (Number(qty) || 0) : 0;
+  const totalCosts = (Number(transportCost) || 0) + (Number(otherCost) || 0);
+  const netEstimate = grossEstimate - totalCosts;
 
   /* ---------- alerts ---------- */
-  const refreshAlerts = async () => {
-    try {
-      setAlerts(await priceAlerts.list());
-    } catch {
-      /* keep previous */
-    }
+  const openAlertFor = (commodity: string, mandiName = '', currentModal?: number) => {
+    setAlertCrop(commodity);
+    setAlertMandi(mandiName);
+    setAlertTarget(currentModal ? String(Math.round(currentModal)) : '');
+    setAlertModalOpen(true);
   };
 
   const handleSaveAlert = async () => {
+    const crop = alertCrop.trim();
+    const target = Number(alertTarget);
+    if (!crop || !target || target <= 0) {
+      setError('Enter a crop and a target price above zero.');
+      return;
+    }
     setSavingAlert(true);
     setError(null);
     try {
-      await priceAlerts.create({ commodity: alertCrop, targetPrice });
-      await refreshAlerts();
-      setNotice(`Price alert active for ${alertCrop} at ${formatCurrency(targetPrice)}/q.`);
+      await priceAlerts.create({
+        crop,
+        targetPrice: target,
+        above: true,
+        district: meta?.district || profileDistrict || undefined,
+        mandi: alertMandi || undefined,
+      });
+      refreshAlerts();
+      setNotice(`Price alert active for ${crop} at ${formatCurrency(target)}/quintal.`);
       setAlertModalOpen(false);
     } catch (e) {
       setError(apiErrorMessage(e));
@@ -466,130 +383,35 @@ export const MandiPricesView: React.FC = () => {
     if (typeof id !== 'string') return;
     try {
       await priceAlerts.remove(id);
-      setAlerts((prev) => prev.filter((a) => asStr(asRecord(a).id) !== id));
+      setAlerts((prev) => prev.filter((a) => a.id !== id));
     } catch (e) {
       setError(apiErrorMessage(e));
     }
   };
 
-  /* ---------- saturation ---------- */
-  const handleSaturation = async () => {
-    setSaturation(null);
-    try {
-      const res = await advisory.saturation({ crop: chartCommodity });
-      setSaturation(asRecord(res));
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    }
+  const applyDistrict = (e: React.FormEvent) => {
+    e.preventDefault();
+    setDistrictApplied(districtInput.trim());
   };
 
-  /* ---------- derived board data ---------- */
-  const groups = useMemo(() => {
-    const set = new Set<string>();
-    liveRows.forEach((r) => r.group && set.add(r.group));
-    return Array.from(set).sort();
-  }, [liveRows]);
-
-  const byName = useMemo(() => new Map(liveRows.map((r) => [r.commodity, r])), [liveRows]);
-
-  const boardRows = useMemo(() => {
-    const needle = boardSearch.trim().toLowerCase();
-    let list = liveRows.filter((r) => {
-      if (watchOnly && !watchedSlugs.has(slugOf(r.commodity))) return false;
-      if (group !== 'all' && r.group !== group) return false;
-      if (moversOnly && !(r.changePercent !== null && Math.abs(r.changePercent) > 0.05)) return false;
-      if (needle && !r.commodity.toLowerCase().includes(needle) && !r.group.toLowerCase().includes(needle))
-        return false;
-      return true;
-    });
-    list = [...list].sort((a, b) =>
-      sortBy === 'change'
-        ? (b.changePercent ?? -Infinity) - (a.changePercent ?? -Infinity)
-        : b.modalPrice - a.modalPrice,
-    );
-    return list;
-  }, [liveRows, boardSearch, group, moversOnly, sortBy, watchOnly, watchedSlugs]);
-
-  const gainers = useMemo(
-    () =>
-      liveRows
-        .filter((r) => (r.changePercent ?? 0) > 0.05)
-        .sort((a, b) => (b.changePercent ?? 0) - (a.changePercent ?? 0))
-        .slice(0, 3),
-    [liveRows],
-  );
-  const losers = useMemo(
-    () =>
-      liveRows
-        .filter((r) => (r.changePercent ?? 0) < -0.05)
-        .sort((a, b) => (a.changePercent ?? 0) - (b.changePercent ?? 0))
-        .slice(0, 3),
-    [liveRows],
-  );
-  const belowMspCount = useMemo(
-    () => liveRows.filter((r) => r.msp !== null && r.aboveMsp === false).length,
-    [liveRows],
-  );
-  const mspTracked = useMemo(() => liveRows.filter((r) => r.msp !== null).length, [liveRows]);
-
-  const watchRows = watchlist.map((w) => ({ watch: w, row: byName.get(w.commodity) }));
-
-  const yardCrops = useMemo(() => {
-    const set = new Set<string>();
-    prices.forEach((p) => p.commodity && set.add(p.commodity));
-    const list = Array.from(set).slice(0, 8);
-    if (chartCommodity && !list.includes(chartCommodity)) list.push(chartCommodity);
-    return ['All', ...list];
-  }, [prices, chartCommodity]);
-
-  const filteredYardPrices = prices.filter((p) => {
-    const matchesCrop = yardCrop === 'All' || p.commodity.toLowerCase().includes(yardCrop.toLowerCase());
-    const matchesMarket = !myMarketsOnly || favoriteNames.has(p.mandi.trim().toLowerCase());
-    const q = yardSearch.toLowerCase();
-    const matchesSearch =
-      !q ||
-      p.commodity.toLowerCase().includes(q) ||
-      p.mandi.toLowerCase().includes(q) ||
-      p.district.toLowerCase().includes(q);
-    return matchesCrop && matchesMarket && matchesSearch;
-  });
-
-  const chartPrice = chartData.length > 0 ? chartData[chartData.length - 1].price : 0;
-  const liveSelected = byName.get(chartCommodity);
-  const headlinePrice = liveSelected ? liveSelected.modalPrice : chartPrice;
-  const forecastAdvice = asStr(forecast?.advice ?? forecast?.recommendation);
-  const forecastPrice = asNum(forecast?.forecastPrice ?? forecast?.expectedPrice ?? forecast?.price, 0);
-
-  const TABS: { id: Tab; label: string; vernacular: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'board', label: 'Live Board', vernacular: 'लाइव्ह भाव', icon: <Activity className="w-3.5 h-3.5" />, badge: liveRows.length },
-    { id: 'yards', label: 'Local Yards', vernacular: 'जवळच्या मंड्या', icon: <Store className="w-3.5 h-3.5" />, badge: prices.length },
-    { id: 'alerts', label: 'My Alerts', vernacular: 'माझे अलर्ट', icon: <Bell className="w-3.5 h-3.5" />, badge: alerts.length },
-  ];
+  const fetchedTime = meta ? meta.fetchedAt.slice(11, 16) : null;
 
   return (
     <div className="space-y-4">
-      <style>{`
-        @keyframes agvTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        .agv-ticker { animation: agvTicker 90s linear infinite; }
-        @keyframes agvFlashUp { 0% { background-color: rgba(16,185,129,.20); } 100% { background-color: transparent; } }
-        @keyframes agvFlashDown { 0% { background-color: rgba(244,63,94,.16); } 100% { background-color: transparent; } }
-        .agv-flash-up { animation: agvFlashUp 1.6s ease-out; }
-        .agv-flash-down { animation: agvFlashDown 1.6s ease-out; }
-      `}</style>
-
       {/* ---------- header ---------- */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-            <TrendingUp className="w-7 h-7 text-emerald-600" />
-            Mandi Rates <span className="text-slate-400 font-bold text-lg">/ मंडी भाव</span>
+            <Landmark className="w-7 h-7 text-emerald-600" />
+            Latest Mandi Prices <span className="text-slate-400 font-bold text-lg">/ मंडी भाव</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Live commodity board, your watchlist and MSP tracking — data: Agmarknet
+            Latest reported mandi prices from government open data — daily figures, not a
+            real-time stream.
           </p>
         </div>
         <button
-          onClick={() => setAlertModalOpen(true)}
+          onClick={() => openAlertFor(detailCommodity || commodityQuery.trim())}
           className="px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-xs shadow-sm flex items-center gap-2 self-start sm:self-auto transition-all"
         >
           <Bell className="w-4 h-4" />
@@ -609,58 +431,80 @@ export const MandiPricesView: React.FC = () => {
         </div>
       )}
 
-      {/* ---------- ticker ---------- */}
-      <TickerTape rows={liveRows} />
+      {/* ---------- stale banner ---------- */}
+      {meta?.stale && (
+        <div
+          role="status"
+          className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-xs font-semibold text-amber-900 flex items-start gap-2"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Showing last available prices. Upstream refresh failed. Price date{' '}
+            {meta.reportedDate || '—'}, fetched {fetchedTime || '—'}.
+          </span>
+        </div>
+      )}
 
-      {/* ---------- market stats ---------- */}
+      {/* ---------- meta strip ---------- */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <SectionCard className="p-3 flex items-center gap-2.5">
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-3 flex items-center gap-2.5">
           <span className="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
             <CalendarDays className="w-4 h-4" />
           </span>
           <div className="min-w-0">
             <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Reported</div>
-            <div className="text-xs font-extrabold text-slate-800 truncate">{reportedDate || '—'}</div>
+            <div className="text-xs font-extrabold text-slate-800 truncate">{meta?.reportedDate || '—'}</div>
           </div>
-        </SectionCard>
-        <SectionCard className="p-3 flex items-center gap-2.5">
+        </div>
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-3 flex items-center gap-2.5">
           <span className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <TrendingUp className="w-4 h-4" />
+            <MapPin className="w-4 h-4" />
           </span>
           <div className="min-w-0">
-            <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Gainers</div>
-            <div className="text-xs font-extrabold text-slate-800 truncate">
-              {liveRows.filter((r) => (r.changePercent ?? 0) > 0.05).length} commodities
-            </div>
+            <div className="text-[9px] font-black uppercase tracking-wider text-emerald-600">District</div>
+            <div className="text-xs font-extrabold text-slate-800 truncate">{meta?.district || districtApplied || '—'}</div>
           </div>
-        </SectionCard>
-        <SectionCard className="p-3 flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-            <TrendingDown className="w-4 h-4" />
+        </div>
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-3 flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+            <Landmark className="w-4 h-4" />
           </span>
           <div className="min-w-0">
-            <div className="text-[9px] font-black uppercase tracking-wider text-rose-600">Losers</div>
-            <div className="text-xs font-extrabold text-slate-800 truncate">
-              {liveRows.filter((r) => (r.changePercent ?? 0) < -0.05).length} commodities
+            <div className="text-[9px] font-black uppercase tracking-wider text-sky-600">Source</div>
+            <div className="text-xs font-extrabold text-slate-800 truncate">Government open data</div>
+          </div>
+        </div>
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-8 h-8 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">Records</div>
+              <div className="text-xs font-extrabold text-slate-800 truncate">
+                {rows.length}
+                {fetchedTime ? ` · ${fetchedTime}` : ''}
+              </div>
             </div>
           </div>
-        </SectionCard>
-        <SectionCard className="p-3 flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <IndianRupee className="w-4 h-4" />
-          </span>
-          <div className="min-w-0">
-            <div className="text-[9px] font-black uppercase tracking-wider text-amber-600">Below MSP</div>
-            <div className="text-xs font-extrabold text-slate-800 truncate">
-              {belowMspCount} of {mspTracked}
-            </div>
-          </div>
-        </SectionCard>
+          <button
+            onClick={() => void handleRefresh()}
+            disabled={refreshing}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-[10px] transition-colors shrink-0"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ---------- tabs ---------- */}
       <div className="flex gap-1.5 bg-slate-100 p-1 rounded-2xl w-full sm:w-fit">
-        {TABS.map((t) => (
+        {(
+          [
+            { id: 'prices', label: 'Prices', vernacular: 'भाव', count: rows.length },
+            { id: 'alerts', label: 'My Alerts', vernacular: 'अलर्ट', count: alerts.length },
+          ] as { id: Tab; label: string; vernacular: string; count: number }[]
+        ).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
@@ -668,78 +512,125 @@ export const MandiPricesView: React.FC = () => {
               tab === t.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            {t.icon}
             <span className="hidden sm:inline">{t.label}</span>
             <span className="sm:hidden">{t.vernacular}</span>
-            {t.badge !== undefined && t.badge > 0 && (
+            {t.count > 0 && (
               <span
                 className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-black tabular-nums ${
                   tab === t.id ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'
                 }`}
               >
-                {t.badge > 99 ? '99+' : t.badge}
+                {t.count > 99 ? '99+' : t.count}
               </span>
             )}
           </button>
         ))}
       </div>
 
-      {/* ================= TAB: live board ================= */}
-      {tab === 'board' && (
-        <SectionCard className="overflow-hidden">
-          {/* toolbar */}
-          <div className="px-3.5 py-2.5 border-b border-slate-100 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
-                </span>
-                Live
-              </span>
-              <span className="text-[11px] text-slate-400 font-semibold">
-                Agmarknet modal prices
-                {fetchedAt ? ` · fetched ${fetchedAt.slice(11, 16)}` : ''} · auto-refresh 60s
-              </span>
-              <div className="ml-auto flex items-center gap-1.5">
+      {tab === 'prices' && (
+        <>
+          {/* ---------- controls ---------- */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs px-3.5 py-3 space-y-2.5">
+            <form onSubmit={applyDistrict} className="flex flex-wrap items-center gap-2">
+              <label htmlFor="mandi-district" className="text-[11px] font-bold text-slate-500">
+                District
+              </label>
+              <input
+                id="mandi-district"
+                list="mandi-district-options"
+                value={districtInput}
+                onChange={(e) => setDistrictInput(e.target.value)}
+                placeholder="Your district"
+                className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50/60 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/30 w-44"
+              />
+              <datalist id="mandi-district-options">
+                {knownDistricts.map((d) => (
+                  <option key={d} value={d} />
+                ))}
+              </datalist>
+              <button
+                type="submit"
+                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-700 text-white text-[11px] font-bold transition-colors"
+              >
+                Apply
+              </button>
+              {districtApplied !== profileDistrict && profileDistrict && (
                 <button
-                  onClick={() => setSortBy((s) => (s === 'modal' ? 'change' : 'modal'))}
-                  className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-600 transition-colors"
+                  type="button"
+                  onClick={() => {
+                    setDistrictInput(profileDistrict);
+                    setDistrictApplied(profileDistrict);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-600 transition-colors"
                 >
-                  Sort: {sortBy === 'modal' ? 'Price' : 'Δ%'}
+                  My district ({profileDistrict})
                 </button>
-                <button
-                  onClick={() => setMoversOnly((v) => !v)}
-                  className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-colors ${
-                    moversOnly
-                      ? 'bg-slate-900 border-slate-900 text-white'
-                      : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
-                  }`}
-                >
-                  Movers
-                </button>
-                <button
-                  onClick={handleSync}
-                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 transition-colors"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  Sync
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <div className="relative">
+              )}
+              <div className="relative ml-auto">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
-                  value={boardSearch}
-                  onChange={(e) => setBoardSearch(e.target.value)}
-                  placeholder="Search commodity or group… / पीक शोधा"
-                  className="pl-7 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50/60 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/30 w-60"
+                  id="mandi-commodity-search"
+                  value={commodityQuery}
+                  onChange={(e) => setCommodityQuery(e.target.value)}
+                  placeholder="Search commodity… / पीक शोधा"
+                  className="pl-7 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50/60 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/30 w-56"
                 />
               </div>
+            </form>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <label htmlFor="mandi-filter" className="text-[11px] font-bold text-slate-500">
+                Filters
+              </label>
+              <select
+                id="mandi-filter"
+                value={mandiFilter}
+                onChange={(e) => setMandiFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-48"
+              >
+                <option value="">All mandis</option>
+                {mandis.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <label htmlFor="mandi-variety" className="sr-only">Variety</label>
+              <select
+                id="mandi-variety"
+                value={varietyFilter}
+                onChange={(e) => setVarietyFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-40"
+              >
+                <option value="">All varieties</option>
+                {varieties.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+              <label htmlFor="mandi-grade" className="sr-only">Grade</label>
+              <select
+                id="mandi-grade"
+                value={gradeFilter}
+                onChange={(e) => setGradeFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-36"
+              >
+                <option value="">All grades</option>
+                {grades.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+              <label htmlFor="mandi-sort" className="sr-only">Sort by</label>
+              <select
+                id="mandi-sort"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortId)}
+                className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600"
+              >
+                {SORTS.map((s) => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
+              </select>
               <button
                 onClick={() => setWatchOnly((v) => !v)}
-                className={`px-2 py-1 rounded-md border text-[10px] font-bold transition-colors flex items-center gap-1 ${
+                className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-colors flex items-center gap-1 ${
                   watchOnly
                     ? 'bg-amber-400 border-amber-400 text-white'
                     : 'border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600'
@@ -749,486 +640,183 @@ export const MandiPricesView: React.FC = () => {
                 <Star className={`w-3 h-3 ${watchOnly ? 'fill-white' : ''}`} />
                 Watchlist ({watchlist.length})
               </button>
-              <button
-                onClick={() => setGroup('all')}
-                className={`px-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
-                  group === 'all'
-                    ? 'bg-slate-900 border-slate-900 text-white'
-                    : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
-                }`}
-              >
-                All
-              </button>
-              {groups.map((g) => (
+              {hasActiveFilters && (
                 <button
-                  key={g}
-                  onClick={() => setGroup(g)}
-                  className={`px-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
-                    group === g
-                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                      : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
-                  }`}
+                  onClick={clearFilters}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-500 hover:border-rose-300 hover:text-rose-600 transition-colors"
                 >
-                  {g}
+                  Clear filters
                 </button>
-              ))}
+              )}
             </div>
           </div>
 
-          {liveError && (
-            <div className="m-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] font-semibold text-rose-800">
-              {liveError}
+          {/* ---------- error without cache ---------- */}
+          {!initialLoading && rows.length === 0 && loadError && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-8 text-center space-y-3">
+              <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
+              <p className="text-xs font-semibold text-slate-600">{loadError}</p>
+              <button
+                onClick={() => void load()}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
+              >
+                Retry
+              </button>
             </div>
           )}
 
-          {/* card grid on small screens, table on lg+ */}
-          <div className="lg:hidden divide-y divide-slate-100">
-            {liveLoading ? (
-              <div className="px-4 py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
-                Fetching live prices…
+          {/* ---------- board ---------- */}
+          {!(rows.length === 0 && loadError) && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="px-3.5 py-2 border-b border-slate-100 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-400 font-semibold">
+                  {refreshing && rows.length > 0 ? 'Refreshing…' : 'Latest reported prices'} ·{' '}
+                  {boardRows.length} record{boardRows.length === 1 ? '' : 's'}
+                </span>
+                <span className="text-[10px] text-slate-400 font-semibold truncate">
+                  ₹ per quintal · {meta?.source || 'Government open data'}
+                </span>
               </div>
-            ) : boardRows.length === 0 ? (
-              <div className="px-4 py-10 text-center text-xs font-semibold text-slate-400">
-                {watchOnly && watchlist.length === 0
-                  ? 'Your watchlist is empty — tap the ★ on any commodity to pin it.'
-                  : 'No prices match this filter.'}
-              </div>
-            ) : (
-              boardRows.map((r) => {
-                const active = chartCommodity === r.commodity;
-                const fl = flash[r.commodity];
-                const watched = watchedSlugs.has(slugOf(r.commodity));
-                return (
-                  <div
-                    key={r.commodity}
-                    onClick={() => selectCommodity(r.commodity, false)}
-                    className={`px-4 py-3 cursor-pointer transition-colors ${
-                      active ? 'bg-emerald-50/70' : ''
-                    } ${fl === 'up' ? 'agv-flash-up' : fl === 'down' ? 'agv-flash-down' : ''}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className={`font-bold text-sm ${active ? 'text-emerald-800' : 'text-slate-800'}`}>
-                          {r.commodity}
-                        </div>
-                        <div className="text-[10px] text-slate-400">{r.group}</div>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void toggleWatch(r);
-                        }}
-                        className={`p-1.5 rounded-lg transition-colors shrink-0 ${
-                          watched ? 'text-amber-500' : 'text-slate-300'
-                        }`}
-                        title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
-                      >
-                        <Star className={`w-4 h-4 ${watched ? 'fill-amber-500' : ''}`} />
-                      </button>
-                    </div>
-                    <div className="flex items-end justify-between mt-1.5">
-                      <div className="text-lg font-black text-slate-900 tabular-nums">₹{num(r.modalPrice)}</div>
-                      <Delta pct={r.changePercent} className="text-xs" />
-                    </div>
-                    <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-400">
-                      <span>Arrival {r.arrivalMt !== null ? `${num(r.arrivalMt)} MT` : '—'}</span>
-                      <span>{r.msp !== null ? `MSP ₹${num(r.msp)}` : 'MSP —'}</span>
-                      <MspBadge row={r} />
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
 
-          <div className="hidden lg:block max-h-[560px] overflow-y-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  <th className="px-3 py-2 font-extrabold">Commodity</th>
-                  <th className="px-3 py-2 font-extrabold text-right">Modal ₹/qtl</th>
-                  <th className="px-3 py-2 font-extrabold text-right">1-Day Δ</th>
-                  <th className="px-3 py-2 font-extrabold text-right">Arrival (MT)</th>
-                  <th className="px-3 py-2 font-extrabold text-right">MSP ₹/qtl</th>
-                  <th className="px-3 py-2 font-extrabold text-right">vs MSP</th>
-                  <th className="px-3 py-2 font-extrabold text-center">★</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {liveLoading ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-10 text-center text-slate-400 font-bold animate-pulse">
-                      Fetching live prices…
-                    </td>
-                  </tr>
+              {/* mobile cards */}
+              <div className="lg:hidden divide-y divide-slate-100">
+                {initialLoading ? (
+                  <SkeletonRows />
                 ) : boardRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-10 text-center text-slate-400 font-bold">
-                      {watchOnly && watchlist.length === 0
-                        ? 'Your watchlist is empty — tap the ★ on any row to pin it.'
-                        : 'No prices match this filter.'}
-                    </td>
-                  </tr>
+                  <EmptyBoard hasFilters={hasActiveFilters} onClear={clearFilters} />
                 ) : (
                   boardRows.map((r) => {
-                    const active = chartCommodity === r.commodity;
-                    const fl = flash[r.commodity];
                     const watched = watchedSlugs.has(slugOf(r.commodity));
                     return (
-                      <tr
-                        key={r.commodity}
-                        onClick={() => selectCommodity(r.commodity, false)}
-                        className={`cursor-pointer transition-colors ${
-                          active ? 'bg-emerald-50/70' : 'hover:bg-slate-50/70'
-                        } ${fl === 'up' ? 'agv-flash-up' : fl === 'down' ? 'agv-flash-down' : ''}`}
+                      <div
+                        key={r.id}
+                        onClick={() => setDetailCommodity(r.commodity)}
+                        className="px-4 py-3 cursor-pointer transition-colors hover:bg-slate-50"
                       >
-                        <td className="px-3 py-2">
-                          <div className={`font-bold ${active ? 'text-emerald-800' : 'text-slate-800'}`}>{r.commodity}</div>
-                          <div className="text-[10px] text-slate-400">{r.group}</div>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="flex flex-col items-end leading-tight">
-                            <span className="font-black text-slate-900 tabular-nums text-sm">₹{num(r.modalPrice)}</span>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-slate-800">{r.commodity}</div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-emerald-600" />
+                              <span className="truncate">{r.mandiName}</span>
+                            </div>
                           </div>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <Delta pct={r.changePercent} />
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">
-                          {r.arrivalMt !== null ? num(r.arrivalMt) : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">
-                          {r.msp !== null ? `₹${num(r.msp)}` : '—'}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <MspBadge row={r} />
-                        </td>
-                        <td className="px-3 py-2 text-center">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              void toggleWatch(r);
+                              void toggleWatch(r.commodity);
                             }}
-                            className={`p-1 rounded-lg transition-colors ${
-                              watched ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                            className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                              watched ? 'text-amber-500' : 'text-slate-300'
                             }`}
                             title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
                           >
-                            <Star className={`w-3.5 h-3.5 ${watched ? 'fill-amber-500' : ''}`} />
+                            <Star className={`w-4 h-4 ${watched ? 'fill-amber-500' : ''}`} />
                           </button>
-                        </td>
-                      </tr>
+                        </div>
+                        <div className="flex items-end justify-between mt-1.5 gap-2">
+                          <div>
+                            <div className="text-lg font-black text-slate-900 tabular-nums">
+                              ₹{num(r.modalPrice)}
+                              <span className="text-[10px] font-semibold text-slate-400"> /qtl</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              Range ₹{num(r.minPrice)}–₹{num(r.maxPrice)}
+                            </div>
+                          </div>
+                          <div className="text-right text-[10px] text-slate-400 shrink-0">
+                            {r.variety || r.grade ? (
+                              <div>{[r.variety, r.grade].filter(Boolean).join(' · ')}</div>
+                            ) : null}
+                            <div>{r.priceDate}</div>
+                          </div>
+                        </div>
+                      </div>
                     );
                   })
                 )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* gainers/losers strip (desktop footer of board) */}
-          {(gainers.length > 0 || losers.length > 0) && (
-            <div className="border-t border-slate-100 px-3.5 py-2.5 hidden lg:flex items-center gap-4 flex-wrap">
-              {gainers.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[9px] font-black uppercase text-emerald-600">Top Gainers</span>
-                  {gainers.map((g) => (
-                    <button
-                      key={g.commodity}
-                      onClick={() => selectCommodity(g.commodity, false)}
-                      className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold hover:bg-emerald-100 transition-colors"
-                    >
-                      {g.commodity} +{g.changePercent?.toFixed(1)}%
-                    </button>
-                  ))}
-                </div>
-              )}
-              {losers.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[9px] font-black uppercase text-rose-600">Top Losers</span>
-                  {losers.map((l) => (
-                    <button
-                      key={l.commodity}
-                      onClick={() => selectCommodity(l.commodity, false)}
-                      className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-bold hover:bg-rose-100 transition-colors"
-                    >
-                      {l.commodity} {l.changePercent?.toFixed(1)}%
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </SectionCard>
-      )}
-
-      {/* ================= TAB: local yards ================= */}
-      {tab === 'yards' && (
-        <div className="space-y-3">
-          {/* saved markets */}
-          <SectionCard className="p-4 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                  Saved Markets <span className="text-slate-400 font-semibold">/ जतन केलेल्या मंड्या</span> ({favorites.length})
-                </h3>
-                <p className="text-[11px] text-slate-400">
-                  Pin the APMC yards you trade at most, then filter with the “My Markets” chip.
-                </p>
               </div>
-              <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                <select
-                  value={pickMandi}
-                  onChange={(e) => setPickMandi(e.target.value)}
-                  className="px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-56"
-                >
-                  <option value="">Add a market…</option>
-                  {mandis
-                    .map((m) => asRecord(m))
-                    .filter((m) => asStr(m.id) && !favoriteIds.has(asStr(m.id)))
-                    .map((m) => (
-                      <option key={asStr(m.id)} value={asStr(m.id)}>
-                        {asStr(m.name, 'Mandi')}{asStr(m.district) ? ` — ${asStr(m.district)}` : ''}
-                      </option>
-                    ))}
-                </select>
-                <button
-                  onClick={handleAddFavorite}
-                  disabled={!pickMandi}
-                  className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1 transition-colors"
-                >
-                  <Star className="w-3.5 h-3.5" /> Save
-                </button>
-              </div>
-            </div>
-            {favorites.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-2">
-                No saved markets yet — pick a market above to pin it here.
-              </p>
-            ) : (
-              <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-                {favorites.map((f) => (
-                  <span
-                    key={f.mandiId}
-                    className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold whitespace-nowrap"
-                  >
-                    <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                    {f.name}
-                    {f.district ? <span className="text-amber-600/70 font-normal">• {f.district}</span> : null}
-                    <button
-                      onClick={() => handleRemoveFavorite(f)}
-                      className="p-1 rounded-lg text-amber-700 hover:bg-amber-100 transition-colors"
-                      title={`Remove ${f.name} from saved markets`}
-                    >
-                      <Star className="w-3.5 h-3.5 fill-amber-500" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </SectionCard>
 
-          {/* yards board */}
-          <SectionCard className="overflow-hidden">
-            <div className="px-3.5 py-2.5 border-b border-slate-100 space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    value={yardSearch}
-                    onChange={(e) => setYardSearch(e.target.value)}
-                    placeholder="Search yard or district… / मंडी शोधा"
-                    className="pl-7 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50/60 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/30 w-56"
-                  />
-                </div>
-                <button
-                  onClick={() => setMyMarketsOnly((v) => !v)}
-                  className={`px-2 py-1 rounded-md border text-[10px] font-bold transition-colors flex items-center gap-1 ${
-                    myMarketsOnly
-                      ? 'bg-amber-400 border-amber-400 text-white'
-                      : 'border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600'
-                  }`}
-                >
-                  <Star className={`w-3 h-3 ${myMarketsOnly ? 'fill-white' : ''}`} />
-                  My Markets{favorites.length > 0 ? ` (${favorites.length})` : ''}
-                </button>
-                {yardCrops.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setYardCrop(c)}
-                    className={`px-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
-                      yardCrop === c
-                        ? 'bg-emerald-600 border-emerald-600 text-white'
-                        : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-600'
-                    }`}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="divide-y divide-slate-100 lg:hidden">
-              {yardsLoading ? (
-                <div className="px-4 py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
-                  Loading yard rates…
-                </div>
-              ) : filteredYardPrices.length === 0 ? (
-                <div className="px-4 py-10 text-center text-xs font-semibold text-slate-400">
-                  No yard rates found for this filter.
-                </div>
-              ) : (
-                filteredYardPrices.map((row) => {
-                  const tp = trendPct(row.trendPercentage);
-                  return (
-                  <div
-                    key={row.id}
-                    onClick={() => selectCommodity(row.commodity, true)}
-                    className={`px-4 py-3 cursor-pointer transition-colors ${
-                      chartCommodity === row.commodity ? 'bg-emerald-50/70' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="font-bold text-sm text-slate-800">{row.commodity}</div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-emerald-600" />
-                          {row.mandi} · {row.district}
-                        </div>
-                      </div>
-                      {tp !== null ? (
-                        <span
-                          className={`inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                            tp >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                          }`}
-                        >
-                          {tp >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {Math.abs(tp)}%
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-300 font-bold shrink-0">—</span>
-                      )}
-                    </div>
-                    <div className="flex items-end justify-between mt-1.5">
-                      <div>
-                        <div className="text-lg font-black text-slate-900 tabular-nums">
-                          {formatCurrency(row.modalPrice)}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {formatCurrency(row.minPrice)} – {formatCurrency(row.maxPrice)}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {row.msp && row.msp > 0 ? (
-                          <div className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                            MSP {formatCurrency(row.msp)}
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-slate-300">MSP —</div>
-                        )}
-                        <div className="text-[9px] text-slate-400 mt-0.5">per quintal</div>
-                      </div>
-                    </div>
-                  </div>
-                  );
-                })
-              )}            </div>
-
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4">Commodity & Variety</th>
-                    <th className="py-3 px-4">Mandi Yard</th>
-                    <th className="py-3 px-4">Min / Max Rate</th>
-                    <th className="py-3 px-4 text-right">Modal Price</th>
-                    <th className="py-3 px-4 text-right">Govt MSP</th>
-                    <th className="py-3 px-4 text-right">Trend</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {yardsLoading ? (
-                    <tr>
-                      <td colSpan={6} className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
-                        Loading yard rates…
-                      </td>
+              {/* desktop table */}
+              <div className="hidden lg:block max-h-[560px] overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                      <th className="px-3 py-2 font-extrabold">Commodity</th>
+                      <th className="px-3 py-2 font-extrabold">Variety · Grade</th>
+                      <th className="px-3 py-2 font-extrabold">Mandi</th>
+                      <th className="px-3 py-2 font-extrabold text-right">Modal ₹/qtl</th>
+                      <th className="px-3 py-2 font-extrabold text-right">Min–Max ₹/qtl</th>
+                      <th className="px-3 py-2 font-extrabold text-right">Date</th>
+                      <th className="px-3 py-2 font-extrabold text-center">★</th>
                     </tr>
-                  ) : filteredYardPrices.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-10 text-center text-xs font-semibold text-slate-400">
-                        No yard rates found for this filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredYardPrices.map((row) => (
-                      <tr
-                        key={row.id}
-                        onClick={() => selectCommodity(row.commodity, true)}
-                        className={`cursor-pointer transition-colors ${
-                          chartCommodity === row.commodity ? 'bg-emerald-50/40' : 'hover:bg-slate-50/60'
-                        }`}
-                      >
-                        <td className="py-3.5 px-4">
-                          <span className="font-bold text-slate-900 block">{row.commodity}</span>
-                          <span className="text-[11px] text-slate-400">{row.variety}</span>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="font-semibold text-slate-800 flex items-center gap-1">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-600" /> {row.mandi}
-                          </span>
-                          <span className="text-[10px] text-slate-400">{row.district}, {row.state}</span>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-slate-600">
-                          {formatCurrency(row.minPrice)} – {formatCurrency(row.maxPrice)}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <span className="font-extrabold text-sm text-slate-900 block">
-                            {formatCurrency(row.modalPrice)}
-                          </span>
-                          <span className="text-[10px] text-slate-400">per quintal</span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          {row.msp && row.msp > 0 ? (
-                            <span className="font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                              {formatCurrency(row.msp)}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          {(() => {
-                            const tp = trendPct(row.trendPercentage);
-                            if (tp === null) return <span className="text-slate-300">—</span>;
-                            return (
-                              <span
-                                className={`inline-flex items-center text-xs font-bold px-2 py-0.5 rounded-full ${
-                                  tp >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-                                }`}
-                              >
-                                {tp >= 0 ? (
-                                  <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-                                ) : (
-                                  <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />
-                                )}
-                                {Math.abs(tp)}%
-                              </span>
-                            );
-                          })()}
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {initialLoading ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-10 text-center text-slate-400 font-bold">
+                          <SkeletonRows />
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : boardRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-3 py-10">
+                          <EmptyBoard hasFilters={hasActiveFilters} onClear={clearFilters} />
+                        </td>
+                      </tr>
+                    ) : (
+                      boardRows.map((r) => {
+                        const watched = watchedSlugs.has(slugOf(r.commodity));
+                        return (
+                          <tr
+                            key={r.id}
+                            onClick={() => setDetailCommodity(r.commodity)}
+                            className={`cursor-pointer transition-colors hover:bg-slate-50/70 ${
+                              detailCommodity === r.commodity ? 'bg-emerald-50/70' : ''
+                            }`}
+                          >
+                            <td className="px-3 py-2 font-bold text-slate-800">{r.commodity}</td>
+                            <td className="px-3 py-2 text-slate-500">
+                              {[r.variety, r.grade].filter(Boolean).join(' · ') || '—'}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">{r.mandiName}</td>
+                            <td className="px-3 py-2 text-right">
+                              <span className="font-black text-slate-900 tabular-nums text-sm">
+                                ₹{num(r.modalPrice)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-500 tabular-nums">
+                              ₹{num(r.minPrice)}–₹{num(r.maxPrice)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-500">{r.priceDate}</td>
+                            <td className="px-3 py-2 text-center">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void toggleWatch(r.commodity);
+                                }}
+                                className={`p-1 rounded-lg transition-colors ${
+                                  watched ? 'text-amber-500 hover:bg-amber-50' : 'text-slate-300 hover:text-amber-500 hover:bg-amber-50'
+                                }`}
+                                title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+                              >
+                                <Star className={`w-3.5 h-3.5 ${watched ? 'fill-amber-500' : ''}`} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </SectionCard>
-        </div>
+          )}
+        </>
       )}
 
-      {/* ================= TAB: alerts ================= */}
       {tab === 'alerts' && (
-        <SectionCard className="p-4 space-y-3">
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
@@ -1236,11 +824,11 @@ export const MandiPricesView: React.FC = () => {
                 My Price Alerts <span className="text-slate-400 font-semibold">/ माझे अलर्ट</span> ({alerts.length})
               </h3>
               <p className="text-[11px] text-slate-400">
-                Get notified the moment a mandi rate crosses your target.
+                Get notified when a reported mandi rate crosses your target.
               </p>
             </div>
             <button
-              onClick={() => setAlertModalOpen(true)}
+              onClick={() => openAlertFor('')}
               className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
             >
               <Bell className="w-3.5 h-3.5" /> New Alert
@@ -1248,17 +836,16 @@ export const MandiPricesView: React.FC = () => {
           </div>
           {alerts.length === 0 ? (
             <p className="text-xs text-slate-400 text-center py-6">
-              No alerts yet — create one and we'll watch the market for you.
+              No alerts yet — create one and we will watch the market for you.
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {alerts.map((a, i) => {
-                const r = asRecord(a);
-                const id = r.id;
-                const crop = asStr(r.commodity ?? r.crop, 'Crop');
-                const target = asNum(r.targetPrice ?? r.price, 0);
-                const live = byName.get(crop);
-                const current = live?.modalPrice;
+                const id = a.id;
+                const crop = String(a.crop ?? 'Crop');
+                const target = Number(a.targetPrice ?? 0);
+                const current = typeof a.currentModal === 'number' ? a.currentModal : null;
+                const hit = current !== null && target > 0 && current >= target;
                 return (
                   <div
                     key={typeof id === 'string' ? id : i}
@@ -1267,23 +854,25 @@ export const MandiPricesView: React.FC = () => {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-bold text-slate-900">{crop}</p>
-                        {current !== undefined && target > 0 && (
-                          <span
-                            className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                              current >= target ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                            }`}
-                          >
-                            {current >= target ? 'HIT' : `${(((current - target) / target) * 100).toFixed(1)}% away`}
+                        {a.district ? (
+                          <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">
+                            {String(a.district)}
+                          </span>
+                        ) : null}
+                        {hit && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                            HIT
                           </span>
                         )}
                       </div>
                       <p className="text-[10px] text-amber-800 font-semibold mt-0.5">
                         Target {formatCurrency(target)}/q
-                        {current !== undefined ? ` · now ${formatCurrency(current)}` : ''}
+                        {current !== null ? ` · reported ${formatCurrency(current)}/q` : ''}
+                        {a.mandi ? ` · ${String(a.mandi)}` : ''}
                       </p>
                     </div>
                     <button
-                      onClick={() => handleDeleteAlert(id)}
+                      onClick={() => void handleDeleteAlert(id)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
                       title="Delete alert"
                     >
@@ -1294,71 +883,166 @@ export const MandiPricesView: React.FC = () => {
               })}
             </div>
           )}
-        </SectionCard>
+        </div>
       )}
 
-      {/* ================= commodity detail sheet ================= */}
+      {/* ================= commodity detail ================= */}
       <ModalSheet
-        isOpen={detailOpen}
-        onClose={() => setDetailOpen(false)}
-        title={chartCommodity}
+        isOpen={!!detailCommodity}
+        onClose={() => setDetailCommodity(null)}
+        title={detailCommodity ?? ''}
         description={
-          liveSelected
-            ? `${liveSelected.group} · ₹${num(liveSelected.modalPrice)}/qtl · reported ${reportedDate || '—'}`
-            : 'Price history, forecast and the best yards to sell at'
+          meta
+            ? `${meta.district} · reported ${meta.reportedDate || '—'} · ₹ per quintal`
+            : 'Latest reported mandi prices'
         }
         maxWidth="2xl"
       >
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto">
-          {/* headline + mandi picker */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-end gap-2">
-              <span className="text-3xl font-black text-slate-900 tabular-nums">
-                {headlinePrice > 0 ? `₹${num(headlinePrice)}` : '—'}
-              </span>
-              <span className="text-xs text-slate-400 pb-1">/ quintal</span>
-              {liveSelected && <Delta pct={liveSelected.changePercent} className="pb-1" />}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <select
-                value={chartMandi}
-                onChange={(e) => setChartMandi(e.target.value)}
-                title="Mandi (defaults to your district)"
-                className="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-600 max-w-52"
-              >
-                <option value="">Mandi: my district</option>
-                {chartMandi &&
-                  !mandis.some((m) => asStr(asRecord(m).name) === chartMandi) && (
-                    <option value={chartMandi}>{chartMandi}</option>
-                  )}
-                {mandis.map((m) => {
-                  const rec = asRecord(m);
-                  const id = asStr(rec.id);
-                  const label = `${asStr(rec.name, 'Mandi')}${asStr(rec.district) ? ` — ${asStr(rec.district)}` : ''}`;
-                  return id ? <option key={id} value={asStr(rec.name, id)}>{label}</option> : null;
-                })}
-              </select>
-              <button
-                onClick={() => {
-                  setAlertCrop(chartCommodity);
-                  setAlertModalOpen(true);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
-              >
-                <Bell className="w-3.5 h-3.5" /> Alert
-              </button>
-            </div>
+          {/* comparison by modal price */}
+          <div className="space-y-1.5">
+            <h3 className="font-extrabold text-xs text-slate-900 uppercase tracking-wide">
+              Compare mandis by reported modal price
+            </h3>
+            {detailRows.length === 0 ? (
+              <p className="text-[11px] text-slate-400 font-semibold">
+                No records for this commodity in the current board.
+              </p>
+            ) : (
+              detailRows.map((r, i) => {
+                const active = calcRecord?.id === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setCalcRecordId(r.id)}
+                    className={`w-full text-left flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-xs transition-colors ${
+                      active ? 'bg-emerald-50/70 border-emerald-300' : 'bg-white border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`font-black ${i === 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                        #{i + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-800 truncate">
+                          {r.mandiName}
+                          {i === 0 && (
+                            <span className="ml-1.5 text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                              Highest reported modal price
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {[r.variety, r.grade].filter(Boolean).join(' · ') || 'Standard'} · reported{' '}
+                          {r.priceDate}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className={`font-black tabular-nums ${active ? 'text-emerald-700' : 'text-slate-900'}`}>
+                        ₹{num(r.modalPrice)}
+                        <span className="text-[9px] font-semibold text-slate-400"> /qtl</span>
+                      </div>
+                      <div className="text-[9px] text-slate-400 tabular-nums">
+                        ₹{num(r.minPrice)}–₹{num(r.maxPrice)}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+            <p className="text-[10px] text-slate-400">
+              The highest modal price is not automatically the best mandi — travel time, commission and
+              arrival quality also matter.
+            </p>
           </div>
 
-          {/* chart */}
-          <div className="h-52 w-full">
-            {chartLoading ? (
+          {/* sale-value calculator (estimates only) */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+            <h3 className="font-extrabold text-xs text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Truck className="w-3.5 h-3.5 text-emerald-600" />
+              Sale-value calculator — estimates only
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label htmlFor="calc-qty" className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                  Quantity (quintals)
+                </label>
+                <input
+                  id="calc-qty"
+                  type="number"
+                  min="0"
+                  value={qty}
+                  onChange={(e) => setQty(Number(e.target.value))}
+                  className="w-full px-2.5 py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+              <div>
+                <label htmlFor="calc-transport" className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                  Transport cost (₹, optional)
+                </label>
+                <input
+                  id="calc-transport"
+                  type="number"
+                  min="0"
+                  value={transportCost}
+                  onChange={(e) => setTransportCost(e.target.value)}
+                  placeholder="e.g. 1200"
+                  className="w-full px-2.5 py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+              <div>
+                <label htmlFor="calc-other" className="block text-[10px] font-bold text-slate-500 mb-0.5">
+                  Other selling costs (₹, optional)
+                </label>
+                <input
+                  id="calc-other"
+                  type="number"
+                  min="0"
+                  value={otherCost}
+                  onChange={(e) => setOtherCost(e.target.value)}
+                  placeholder="e.g. 400"
+                  className="w-full px-2.5 py-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                  Estimated gross value
+                </div>
+                <div className="text-base font-black text-slate-900 tabular-nums">
+                  {calcRecord ? formatCurrency(grossEstimate) : '—'}
+                </div>
+                <div className="text-[9px] text-slate-400">
+                  {calcRecord ? `₹${num(calcRecord.modalPrice)}/qtl × ${qty || 0} qtl` : 'Pick a record above'}
+                </div>
+              </div>
+              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                  Estimated amount after entered costs
+                </div>
+                <div className="text-base font-black text-slate-900 tabular-nums">
+                  {calcRecord ? formatCurrency(netEstimate) : '—'}
+                </div>
+                <div className="text-[9px] text-slate-400">minus the costs you entered</div>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              These are estimates based on the reported modal price — not a guaranteed selling price or
+              final payment.
+            </p>
+          </div>
+
+          {/* genuine history only */}
+          <div className="h-44 w-full">
+            {historyLoading ? (
               <div className="h-full flex items-center justify-center text-xs font-bold text-slate-400 animate-pulse">
                 Loading price history…
               </div>
-            ) : chartData.length > 0 ? (
+            ) : historyPoints.length >= 2 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={historyPoints} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="mandiGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
@@ -1366,16 +1050,16 @@ export const MandiPricesView: React.FC = () => {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
                   <YAxis
                     domain={['auto', 'auto']}
-                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tick={{ fontSize: 10, fill: '#64748b' }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => `₹${v}`}
+                    tickFormatter={(v: number) => `₹${v}`}
                   />
                   <Tooltip
-                    formatter={(val: number) => [`₹${val}/quintal`, 'Modal Rate']}
+                    formatter={(val: number) => [`₹${val}/quintal`, 'Reported modal']}
                     contentStyle={{ borderRadius: '1rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
                   />
                   <Area type="monotone" dataKey="price" stroke="#059669" strokeWidth={3} fillOpacity={1} fill="url(#mandiGradient)" />
@@ -1384,157 +1068,31 @@ export const MandiPricesView: React.FC = () => {
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
                 <LineChartIcon className="w-8 h-8" />
-                <span className="text-xs font-semibold">No history available for {chartCommodity} yet.</span>
+                <span className="text-xs font-semibold">Not enough price history yet.</span>
               </div>
             )}
           </div>
 
-          {/* forecast + saturation */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs text-sky-950 space-y-1">
-              <div className="flex items-center gap-2 font-bold">
-                <Sparkles className="w-4 h-4 text-sky-600" />
-                <span>7-Day Forecast</span>
-              </div>
-              <p className="leading-relaxed">
-                {forecastAdvice ||
-                  (forecastPrice > 0
-                    ? `Expected modal price ${formatCurrency(forecastPrice)}/q.`
-                    : 'Forecast appears once enough arrivals are recorded.')}
-              </p>
-            </div>
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-950 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-bold">
-                  <TrendingUp className="w-4 h-4 text-emerald-600" />
-                  <span>Sell Now or Wait?</span>
-                </div>
-                <button
-                  onClick={handleSaturation}
-                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg shadow-xs"
-                >
-                  Analyze
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {saturation && asStr(saturation.riskLevel) && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
-                        saturation.riskLevel === 'red'
-                          ? 'bg-rose-100 text-rose-800'
-                          : saturation.riskLevel === 'yellow'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-emerald-100 text-emerald-800'
-                      }`}
-                    >
-                      {asStr(saturation.riskLevel)} risk
-                    </span>
-                    {asNum(saturation.predictedPrice, 0) > 0 && (
-                      <span className="text-[11px] font-bold text-emerald-900">
-                        Expected {formatCurrency(asNum(saturation.predictedPrice, 0))}/q
-                        {asStr(saturation.predictedDate) ? ` by ${asStr(saturation.predictedDate)}` : ''}
-                      </span>
-                    )}
-                  </div>
-                )}
-                <p className="leading-relaxed">
-                  {saturation
-                    ? asStr(
-                        saturation.advice ?? saturation.recommendation ?? saturation.message,
-                        asNum(saturation.sowingCount, -1) >= 0
-                          ? `${asNum(saturation.sowingCount)} farmers in your district sowed ${chartCommodity}.` +
-                            (asArray(saturation.alternativeCrops).length > 0
-                              ? ` Alternatives: ${asArray(saturation.alternativeCrops)
-                                  .map((a) => asStr(asRecord(a).crop, ''))
-                                  .filter(Boolean)
-                                  .join(', ')}.`
-                              : '')
-                          : JSON.stringify(saturation)
-                      )
-                    : 'Run the AI saturation check to decide whether to sell at the gate or hold.'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* arbitrage */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 font-extrabold text-xs text-slate-900 uppercase tracking-wide">
-                <Calculator className="w-4 h-4 text-emerald-600" />
-                Best Yards to Sell — net in-hand after transport
-              </div>
-              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
-                {[15, 30, 50, 100].map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => setArbitrageQty(q)}
-                    className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
-                      arbitrageQty === q ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200/50'
-                    }`}
-                  >
-                    {q} Q
-                  </button>
-                ))}
-              </div>
-            </div>
-            {compareRows.length > 0 ? (
-              <div className="space-y-1.5">
-                {compareRows.slice(0, 3).map((row, i) => {
-                  const r = asRecord(row);
-                  const modal = asNum(r.modalPrice ?? r.price ?? r.modal, 0);
-                  const transport = asNum(r.transportCost ?? r.transportFare ?? r.transport_fare_paisa, 0);
-                  const grossSale = modal * arbitrageQty;
-                  const netProfit = asNum(r.netProfit ?? (grossSale - transport), grossSale - transport);
-                  const isBest = i === 0;
-                  return (
-                    <div
-                      key={i}
-                      className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-xs ${
-                        isBest ? 'bg-emerald-50/70 border-emerald-300' : 'bg-white border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`font-black ${isBest ? 'text-emerald-700' : 'text-slate-400'}`}>#{i + 1}</span>
-                        <div className="min-w-0">
-                          <div className="font-bold text-slate-800 truncate">
-                            {asStr(r.mandiName ?? r.mandi ?? r.name, 'Mandi APMC')}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            ₹{num(modal)}/q · transport -₹{num(transport)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className={`font-black tabular-nums ${isBest ? 'text-emerald-700' : 'text-slate-700'}`}>
-                          {formatCurrency(netProfit)}
-                        </div>
-                        <div className="text-[9px] text-slate-400">net / {arbitrageQty} q</div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="flex gap-1.5 pt-1">
-                  <Link
-                    to="/farmer/transport"
-                    className="flex-1 py-2 px-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] text-center transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Truck className="w-3 h-3" /> Book Transport
-                  </Link>
-                  <Link
-                    to="/farmer/lots"
-                    className="flex-1 py-2 px-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-[10px] text-center transition-colors"
-                  >
-                    Sell a Lot
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 bg-slate-50 rounded-2xl text-center text-[11px] text-slate-400 font-semibold">
-                No arbitrage candidates for {chartCommodity} yet — sync the live feed or pick another commodity.
-              </div>
-            )}
+          {/* actions */}
+          <div className="flex flex-col sm:flex-row gap-1.5">
+            <Link
+              to={`/farmer/lots?create=1&crop=${encodeURIComponent(detailCommodity ?? '')}&variety=${encodeURIComponent(calcRecord?.variety ?? '')}&price=${calcRecord?.modalPrice ?? ''}`}
+              className="flex-1 py-2.5 px-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] text-center transition-colors flex items-center justify-center gap-1.5"
+            >
+              <PackagePlus className="w-3.5 h-3.5" /> Create Produce Lot
+            </Link>
+            <Link
+              to={`/farmer/transport?open=demand&crop=${encodeURIComponent(detailCommodity ?? '')}&destination=${encodeURIComponent(calcRecord?.mandiName ?? '')}`}
+              className="flex-1 py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] text-center transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Truck className="w-3.5 h-3.5" /> Find Transport
+            </Link>
+            <button
+              onClick={() => openAlertFor(detailCommodity ?? '', calcRecord?.mandiName ?? '', calcRecord?.modalPrice)}
+              className="flex-1 py-2.5 px-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-[11px] text-center transition-colors flex items-center justify-center gap-1.5"
+            >
+              <Bell className="w-3.5 h-3.5" /> Set Price Alert
+            </button>
           </div>
         </div>
       </ModalSheet>
@@ -1544,48 +1102,58 @@ export const MandiPricesView: React.FC = () => {
         isOpen={alertModalOpen}
         onClose={() => setAlertModalOpen(false)}
         title="Create Mandi Price Alert"
-        description="Receive instant WhatsApp & SMS notifications when mandi rates cross your target"
+        description="Get notified when the reported mandi rate crosses your target"
         maxWidth="md"
       >
         <div className="p-4 sm:p-5 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Select Crop</label>
-            <select
+            <label htmlFor="alert-crop" className="block text-xs font-bold text-slate-700 mb-1">
+              Crop / commodity
+            </label>
+            <input
+              id="alert-crop"
+              list="alert-crop-options"
               value={alertCrop}
               onChange={(e) => setAlertCrop(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
-            >
-              {yardCrops.filter((c) => c !== 'All').map((c) => (
-                <option key={c} value={c}>{c}</option>
+              placeholder="e.g. Onion"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:border-emerald-600"
+            />
+            <datalist id="alert-crop-options">
+              {boardCommodities.map((c) => (
+                <option key={c} value={c} />
               ))}
-              {liveSelected && !yardCrops.includes(liveSelected.commodity) && (
-                <option value={liveSelected.commodity}>{liveSelected.commodity}</option>
-              )}
-            </select>
+            </datalist>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Target Price (₹ per Quintal)</label>
+            <label htmlFor="alert-target" className="block text-xs font-bold text-slate-700 mb-1">
+              Target price (₹ per quintal)
+            </label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">₹</span>
               <input
+                id="alert-target"
                 type="number"
-                value={targetPrice}
-                onChange={(e) => setTargetPrice(Number(e.target.value))}
+                min="0"
+                value={alertTarget}
+                onChange={(e) => setAlertTarget(e.target.value)}
                 className="w-full pl-7 pr-4 py-2 text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
               />
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              {liveSelected
-                ? `${liveSelected.commodity} is at ₹${num(liveSelected.modalPrice)}/q now.`
-                : headlinePrice > 0
-                  ? `Current modal rate is ${formatCurrency(headlinePrice)}/q.`
-                  : 'Current modal rate unavailable.'}
-            </p>
+            {alertMandi ? (
+              <p className="text-[11px] text-slate-400 mt-1">
+                District {meta?.district || districtApplied || profileDistrict || '—'} · mandi {alertMandi} are
+                saved with this alert.
+              </p>
+            ) : (
+              <p className="text-[11px] text-slate-400 mt-1">
+                District {meta?.district || districtApplied || profileDistrict || '—'} is saved with this alert.
+              </p>
+            )}
           </div>
 
           <button
-            onClick={handleSaveAlert}
+            onClick={() => void handleSaveAlert()}
             disabled={savingAlert}
             className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5"
           >
@@ -1602,3 +1170,33 @@ export const MandiPricesView: React.FC = () => {
     </div>
   );
 };
+
+const SkeletonRows: React.FC = () => (
+  <div className="space-y-2 px-4 py-4" aria-hidden="true">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <div key={i} className="animate-pulse flex items-center justify-between gap-3">
+        <div className="h-3.5 bg-slate-200 rounded w-1/3" />
+        <div className="h-3.5 bg-slate-100 rounded w-1/4" />
+        <div className="h-3.5 bg-slate-100 rounded w-16" />
+      </div>
+    ))}
+  </div>
+);
+
+const EmptyBoard: React.FC<{ hasFilters: boolean; onClear: () => void }> = ({ hasFilters, onClear }) => (
+  <div className="px-4 py-10 text-center space-y-2">
+    <p className="text-xs font-semibold text-slate-400">
+      No reported prices found for this district/filter.
+    </p>
+    {hasFilters && (
+      <button
+        onClick={onClear}
+        className="px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-600 transition-colors"
+      >
+        Clear filters or change district
+      </button>
+    )}
+  </div>
+);
+
+export default MandiPricesView;

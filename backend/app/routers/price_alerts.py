@@ -20,6 +20,10 @@ class PriceAlertCreate(BaseModel):
     crop: str
     targetPrice: float = Field(gt=0)
     above: bool = True
+    # Optional criteria preserved on the alert record. The check worker matches
+    # on crop today; district/mandi narrowing is a roadmap item.
+    district: str | None = None
+    mandi: str | None = None
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -36,12 +40,28 @@ def _mandi_modal(crop: str, mandi_docs: list[dict]) -> float | None:
     return round(sum(d.get("modalPrice", 0) for d in matches) / len(matches))
 
 
+def _gov_modal(crop: str, snapshots: list[dict]) -> float | None:
+    """Latest-day average modal from genuine government-feed snapshots.
+
+    With the Agmarknet scraper retired, `mandi_prices` no longer receives new
+    national rows — crops reported only by the government feed are matched here.
+    """
+    matches = [d for d in snapshots if crop.lower() in (d.get("commodity") or "").lower()]
+    if not matches:
+        return None
+    latest = max((d.get("priceDate") or d.get("date") or "") for d in matches)
+    recent = [d for d in matches if (d.get("priceDate") or d.get("date") or "") == latest]
+    return round(sum(float(d.get("modalPrice", 0)) for d in recent) / len(recent))
+
+
 def _alert_out(doc: dict, modal: float | None) -> dict:
     return {
         "id": doc["id"],
         "crop": doc["crop"],
         "targetPrice": doc["targetPrice"],
         "above": doc.get("above", True),
+        "district": doc.get("district"),
+        "mandi": doc.get("mandi"),
         "currentModal": modal,
         "fired": bool(doc.get("firedAt")),
         "createdAt": doc.get("createdAt", ""),
@@ -59,10 +79,13 @@ async def _alert_user(uid: str = Depends(current_user_id)) -> str:
 async def list_alerts(uid: str = Depends(_alert_user)):
     docs = await query("price_alerts", [("userId", "==", uid)], limit=500)
     mandi_docs = await query("mandi_prices", [], limit=1000)
+    gov_snapshots = await query("mandi_price_history", [("source", "==", "gov-data")], limit=10000)
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     data = []
     for doc in docs:
         modal = _mandi_modal(doc["crop"], mandi_docs)
+        if modal is None:
+            modal = _gov_modal(doc["crop"], gov_snapshots)
         if modal is not None and not doc.get("firedAt"):
             crossed = modal >= doc["targetPrice"] if doc.get("above", True) else modal <= doc["targetPrice"]
             if crossed:
@@ -109,6 +132,9 @@ async def create_alert(body: PriceAlertCreate, uid: str = Depends(_alert_user)):
     mandi_docs = await query("mandi_prices", [], limit=1000)
     modal = _mandi_modal(body.crop, mandi_docs)
     if modal is None:
+        gov_snapshots = await query("mandi_price_history", [("source", "==", "gov-data")], limit=10000)
+        modal = _gov_modal(body.crop, gov_snapshots)
+    if modal is None:
         _error(422, "VALIDATION_ERROR", "crop has no mandi data", {"crop": "no mandi data for this crop"})
     alert_id = f"pal_{uuid.uuid4().hex[:12]}"
     doc = {
@@ -117,6 +143,8 @@ async def create_alert(body: PriceAlertCreate, uid: str = Depends(_alert_user)):
         "crop": body.crop,
         "targetPrice": body.targetPrice,
         "above": body.above,
+        "district": body.district,
+        "mandi": body.mandi,
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
     await set_doc("price_alerts", alert_id, doc)

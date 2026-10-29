@@ -97,8 +97,9 @@ export const auth = {
   refreshToken: (refreshToken: string): Promise<AuthTokens> =>
     post<AuthTokens>('/auth/refresh', { refreshToken }),
 
-  /** POST /auth/logout */
-  logout: (): Promise<{ success: boolean }> => post<{ success: boolean }>('/auth/logout'),
+  /** POST /auth/logout — revokes the refresh token (jti) server-side. */
+  logout: (refreshToken: string): Promise<{ ok: boolean }> =>
+    post<{ ok: boolean }>('/auth/logout', { refreshToken }),
 
   /** POST /auth/mpin/reset */
   resetMpin: (payload: Record<string, unknown>): Promise<{ success: boolean }> =>
