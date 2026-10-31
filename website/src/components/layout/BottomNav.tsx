@@ -2,19 +2,25 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, TrendingUp, Package, ShoppingBag, Bot } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { normalizePersona } from '../../lib/personas';
 import { cn } from '../../lib/utils';
 
 export const BottomNav: React.FC = () => {
   const { activePersona } = useAuthStore();
-
-  const getPersonaHomePath = () => {
-    return `/${activePersona}`;
-  };
+  const persona = normalizePersona(activePersona);
 
   const tabs = [
-    { to: getPersonaHomePath(), label: 'Home', icon: LayoutDashboard },
-    { to: '/farmer/mandi', label: 'Mandi', icon: TrendingUp },
-    { to: '/farmer/lots', label: 'Trade', icon: Package },
+    { to: `/${persona}`, label: 'Home', icon: LayoutDashboard },
+    {
+      to: persona === 'seller' ? '/seller/rates' : '/farmer/mandi',
+      label: 'Mandi',
+      icon: TrendingUp,
+    },
+    {
+      to: persona === 'seller' ? '/seller/lots' : '/farmer/lots',
+      label: 'Trade',
+      icon: Package,
+    },
     { to: '/mall', label: 'Mall', icon: ShoppingBag },
     { to: '/community/ai', label: 'Kisan AI', icon: Bot },
   ];
@@ -26,7 +32,7 @@ export const BottomNav: React.FC = () => {
           <NavLink
             key={tab.label}
             to={tab.to}
-            end={tab.to === getPersonaHomePath()}
+            end={tab.to === `/${persona}`}
             className={({ isActive }) =>
               cn(
                 'flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all active:scale-95 hover-lift',

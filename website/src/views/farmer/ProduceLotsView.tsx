@@ -18,7 +18,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { lots, users, leads as leadsApi, uploads, apiErrorMessage, readOne, readList } from '../../lib/api';
-import type { Lead } from '../../lib/api';
+import { isKycError, type Lead } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight, formatDateTime } from '../../lib/utils';
@@ -308,7 +308,11 @@ export const ProduceLotsView: React.FC = () => {
       setCreateModalOpen(false);
       resetForm();
     } catch (err) {
-      setError(apiErrorMessage(err));
+      if (isKycError(err)) {
+        setError('Complete your identity verification (KYC) to post produce — your lot was not published.');
+      } else {
+        setError(apiErrorMessage(err));
+      }
     }
   };
 
@@ -386,10 +390,11 @@ export const ProduceLotsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Package className="w-7 h-7 text-emerald-600" />
-            Sell Produce — Lots & Buyer Leads
+            My Produce
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Post your produce lot — interested agri/vyapari buyers see it and contact you directly (call / WhatsApp / chat). You negotiate and close the deal yourself.
+            Post your produce — verified Vyaparis find it and contact you directly (call / WhatsApp / chat).
+            You negotiate and close the deal yourselves; Agrovercity never holds money.
           </p>
         </div>
 
@@ -462,7 +467,13 @@ export const ProduceLotsView: React.FC = () => {
                         <MapPin className="w-3.5 h-3.5 text-slate-400" /> {lot.location}
                       </p>
                     </div>
-                    <StatusBadge status={lot.status} />
+                    {/* Legacy trade statuses display safely: "negotiating"/"locked"
+                        never imply escrow or platform payment — shown as "contacted". */}
+                    <StatusBadge
+                      status={
+                        lot.status === 'negotiating' || lot.status === 'locked' ? 'contacted' : lot.status
+                      }
+                    />
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl text-xs">

@@ -424,9 +424,12 @@ export interface EquipmentMachine {
   id: string;
   ownerId: string;
   ownerName: string;
-  ownerPhone: string;
+  /** Never present in public discovery responses (spec §6). */
+  ownerPhone?: string;
   name: string;
-  type: 'Tractor' | 'Rotavator' | 'Harvester' | 'Sprayer Drone' | 'Thresher' | 'Seed Drill';
+  /** Free-form — the served listings are the single source of truth for the
+   * equipment catalog (spec §5); no hard-coded mirror list. */
+  type: string;
   ratePerHour: number;
   ratePerDay?: number;
   location: string;
@@ -499,19 +502,21 @@ export interface LandLeaseListing {
   id: string;
   landlordId: string;
   landlordName: string;
-  landlordPhone: string;
-  title: string;
-  surveyNumber: string;
+  /** Never present in public discovery responses (spec §7/§19). */
+  landlordPhone?: string;
+  title?: string;
+  surveyNumber?: string;
   village: string;
   district: string;
-  acres: number;
-  soilType: string;
-  waterSource: 'Borewell' | 'Canal' | 'Open Well' | 'Rainfed';
-  annualRent: number;
-  tenureYears: number;
-  terms: string;
-  status: 'open' | 'negotiating' | 'leased' | 'closed';
-  createdAt: string;
+  acres?: number;
+  soilType?: string;
+  /** Free-form — served listings are the single source of truth (spec §5). */
+  waterSource?: string;
+  annualRent?: number;
+  tenureYears?: number;
+  terms?: string;
+  status: string;
+  createdAt?: string;
   /** Backend (land.py / land_ops.py) aliases — listings are stored with these fields. */
   lat?: number;
   lng?: number;
@@ -521,7 +526,20 @@ export interface LandLeaseListing {
   gatNumber?: string | null;
   availability?: { fromDate: string; toDate: string; status: string }[];
   viewsCount?: number;
-  photos?: { id?: string; url: string; caption?: string }[];
+  photos?: { id?: string; url: string; caption?: string }[] | string[];
+  /** Direct-connect additions (spec §5/§6). */
+  taluka?: string;
+  state?: string;
+  irrigated?: boolean | null;
+  rentUnit?: string;
+  availableFrom?: string | null;
+  minDurationMonths?: number | null;
+  maxDurationMonths?: number | null;
+  permittedCrops?: string | null;
+  notes?: string | null;
+  landDocumentsStatus?: string;
+  landlordVerified?: boolean;
+  landVerified?: boolean;
 }
 
 export interface LeaseNegotiation {
@@ -638,23 +656,180 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+export interface ExportVerificationSummary {
+  exporterId?: string;
+  farmerId?: string;
+  name: string;
+  companyName?: string;
+  village?: string;
+  district?: string;
+  state?: string;
+  /** Legacy browse alias — true only when exporter business docs (IEC/APEDA/GST) were reviewed. */
+  verified: boolean;
+  kycStatus?: string | null;
+  /** Unified-KYC identity verification — never inferred from business docs. */
+  identityVerified: boolean;
+  /** Exporter business docs actually reviewed — never inferred from identity KYC. */
+  businessVerified: boolean;
+}
+
 export interface ExportRfq {
   id: string;
-  commodity: string;
-  variety?: string;
-  quantityMt: number;
-  targetPriceUsd?: number;
-  incoterm: 'CIF' | 'FOB' | 'CFR' | 'EXW';
-  destinationCountry: string;
-  destinationPort: string;
-  originPort?: string;
-  packagingSpecs?: string;
+  exporterId: string;
+  crop: string;
+  variety?: string | null;
+  gradeSpec?: string | null;
+  quantityQuintals: number;
+  quantityUnit?: string | null;
+  maxRatePerQuintal?: number | null;
+  packing?: string | null;
+  deliveryWindow: { from: string; to: string };
+  deliveryLocation: string;
+  paymentTermsDays: number;
+  notes?: string | null;
+  partialQuantityAllowed?: boolean;
+  multiFarmerAllowed?: boolean;
+  moistureRequirement?: string | null;
+  sizeSpec?: string | null;
+  qualityParams?: string | null;
+  residueRequirements?: string | null;
   requiredCertifications?: string[];
-  inspectionAgency?: string;
-  status: 'open' | 'closed' | 'cancelled';
-  quotesCount?: number;
-  validUntil?: string;
+  inspectionRequirements?: string | null;
+  sampleRequirements?: string | null;
+  rejectionConditions?: string | null;
+  requirementDocuments?: { name: string; url: string }[];
+  packagingRequirements?: string | null;
+  labellingRequirements?: string | null;
+  shipmentWindow?: string | null;
+  targetPrice?: number | null;
+  currency?: string | null;
+  priceBasis?: string | null;
+  destinationCountry?: string | null;
+  requiredExportDocuments?: string[];
+  buyerNotes?: string | null;
+  status: 'draft' | 'open' | 'paused' | 'closed' | 'fulfilled' | string;
+  fulfilledQuintals?: number;
+  quoteCount?: number;
+  applicationsCount?: number;
+  applicationsReceived?: boolean;
   createdAt: string;
+  updatedAt?: string;
+  closedAt?: string | null;
+  exporter?: ExportVerificationSummary;
+  /** Farmer opportunity detail extras (GET /opportunities/{id}). */
+  termsText?: string;
+  myApplicationId?: string | null;
+}
+
+export type ExportApplicationStatus =
+  | 'submitted'
+  | 'contacted'
+  | 'dealDone'
+  | 'dismissed'
+  | 'withdrawn'
+  | 'rejected'
+  | 'accepted'
+  | 'pending';
+
+export interface ExportApplicationDocument {
+  id: string;
+  docType?: string;
+  fileName?: string;
+  /** True only when the document was actually reviewed — never from upload alone. */
+  verified: boolean;
+}
+
+export interface ExportApplicationContact {
+  name: string;
+  fullName: string;
+  village?: string;
+  district?: string;
+  state?: string;
+  phone: string;
+  phoneDigits?: string | null;
+  whatsappDigits?: string | null;
+}
+
+export interface ExportContactReveal {
+  farmer: ExportApplicationContact;
+  exporter: ExportApplicationContact;
+  revealedAt: string;
+}
+
+export interface ExportApplication {
+  id: string;
+  rfqId: string;
+  exporterId: string;
+  sellerId: string;
+  sellerName?: string;
+  applicantRole?: string;
+  status: ExportApplicationStatus;
+  quantityOffered: number;
+  quantityUnit: string;
+  price: number;
+  priceUnit: string;
+  currency: string;
+  supplyBasis: 'farmGate' | 'collectionCentre' | 'mandi' | 'other';
+  availableDate: string;
+  supplyLocation: string;
+  qualityDetails?: string | null;
+  certificationNames?: string[];
+  documents?: ExportApplicationDocument[];
+  residueTestRefs?: string[];
+  photos?: string[];
+  packagingCapability?: string | null;
+  previousExperience?: string | null;
+  message?: string | null;
+  sourceLotId?: string | null;
+  sourceLot?: {
+    id: string;
+    crop?: string;
+    quantityQuintals?: number;
+    location?: unknown;
+    harvestDate?: string;
+    photos?: string[];
+  } | null;
+  contactReveal?: ExportContactReveal | null;
+  exporterConsent?: {
+    termsVersion: string;
+    termsAcceptedAt: string;
+    mpinVerified: boolean;
+    contactRevealedAt: string;
+    method?: string;
+  };
+  farmerConsent?: { termsVersion: string; acceptedAt: string };
+  outcome?: {
+    value: 'stillInContact' | 'dealDoneOffline' | 'didNotHappen' | 'withdrawn';
+    reportedBy: string;
+    reportedAt: string;
+    dealDetails?: {
+      finalQuantity?: number;
+      finalQuantityUnit?: string;
+      finalPrice?: number;
+      finalPriceUnit?: string;
+      finalCurrency?: string;
+      supplyDate?: string;
+      collectionLocation?: string;
+    } | null;
+  } | null;
+  chatRoomId?: string;
+  rfq?: {
+    id?: string;
+    crop?: string;
+    variety?: string | null;
+    quantityQuintals?: number;
+    quantityUnit?: string | null;
+    deliveryLocation?: string;
+    deliveryWindow?: { from: string; to: string };
+    status?: string;
+    destinationCountry?: string | null;
+  };
+  exporter?: ExportVerificationSummary;
+  farmer?: ExportVerificationSummary;
+  termsText?: string;
+  negotiationChecklist?: string[];
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ExportQuote {
@@ -662,15 +837,7 @@ export interface ExportQuote {
   rfqId: string;
   sellerId: string;
   sellerName: string;
-  pricePerMtUsd: number;
-  quantityMt: number;
-  incotermOffered: string;
-  shipmentLeadDays: number;
-  originPort: string;
-  packagingOffered: string;
-  inspectionOffered: string;
   status: 'pending' | 'accepted' | 'rejected';
-  notes?: string;
   createdAt: string;
 }
 

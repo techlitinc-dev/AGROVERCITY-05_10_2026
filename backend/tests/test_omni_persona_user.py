@@ -49,6 +49,7 @@ def seed_omni_user(user_store, uid="omni-user-777"):
         "lng": 73.7898,
         "linkedProfiles": list(ALL_PROFILES),
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "agriCoins": 500,
         "status": "active",

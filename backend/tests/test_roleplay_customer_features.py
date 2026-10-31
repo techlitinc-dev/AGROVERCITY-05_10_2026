@@ -39,6 +39,7 @@ def _seed_admin(user_store):
         "isAdmin": True,
         "linkedProfiles": ["superadmin"],
         "activeProfile": "superadmin",
+        "kycStatus": "verified",
     }
 
 

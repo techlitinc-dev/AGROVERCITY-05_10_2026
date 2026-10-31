@@ -39,6 +39,8 @@ from app.services.admin_auth import (
     resolve_admin_role,
 )
 from app.services.audit import log_admin_action
+from app.services.notify import notify_user
+from app.services import storage
 from app.services.tokens import revoke_refresh_family
 from app.services.users import get_user
 
@@ -448,6 +450,12 @@ async def get_user_360_summary(
         personas=personas_out,
         content_summary=content_summary,
         recent_activities=user_activities,
+        verified_name=user.get("verifiedName"),
+        masked_aadhaar=user.get("maskedAadhaar"),
+        verification_mode=user.get("verificationMode"),
+        kyc_verified_at=_parse_datetime(user.get("kycVerifiedAt")),
+        kyc_remarks=user.get("kycRemarks"),
+        signature_verified=bool(user.get("signatureVerified")),
     )
 
 
@@ -501,36 +509,95 @@ async def get_user_kyc(
     user_id: str,
     admin: dict = Depends(get_current_superadmin),
 ):
-    """Uploaded identity documents (Aadhaar, 7/12 land extract, Mandi license, GSTIN) with AI verification status."""
+    """Uploaded identity documents (Aadhaar, 7/12 land extract, Mandi license, GSTIN) with verification status and live DigiLocker sessions."""
     cases = await query("kyc_cases", [("userId", "==", user_id)], limit=50)
     user = await get_user(user_id)
-    if not user and not cases:
+    sessions = await query("kyc_sessions", [("userId", "==", user_id)], limit=50)
+    user_docs = await query("kyc_documents", [("userId", "==", user_id)], limit=50)
+
+    if not user and not cases and not sessions:
         _error(404, "NOT_FOUND", "user not found")
+
+    documents = []
+
+    # 1. From kyc_documents (DigiLocker / uploaded KYC files)
+    for kd in user_docs:
+        file_url = None
+        if kd.get("storagePath"):
+            try:
+                file_url = storage.signed_download_url(kd["storagePath"])
+            except Exception:
+                file_url = None
+
+        extracted = kd.get("extracted") or {}
+        documents.append({
+            "id": kd.get("id"),
+            "docId": kd.get("id"),
+            "docType": kd.get("docType") or "document",
+            "name": kd.get("name") or (kd.get("docType") or "Document").replace("_", " ").title(),
+            "fileUrl": file_url,
+            "status": (kd.get("status") or "VERIFIED").upper(),
+            "source": "digilocker",
+            "extracted": extracted,
+            "submittedAt": kd.get("pulledAt") or kd.get("createdAt"),
+            "issuer": kd.get("issuer"),
+        })
+
+    # 2. From kyc_cases docs
+    for case in cases:
+        for doc in case.get("docs") or []:
+            doc_id = doc.get("docId") or f"{case.get('caseId')}_{doc.get('type')}"
+            file_url = None
+            if doc.get("storagePath"):
+                try:
+                    file_url = storage.signed_download_url(doc["storagePath"])
+                except Exception:
+                    file_url = None
+
+            documents.append({
+                "id": doc_id,
+                "docId": doc_id,
+                "caseId": case.get("caseId"),
+                "docType": doc.get("type") or "document",
+                "name": (doc.get("type") or "Document").replace("_", " ").title(),
+                "fileUrl": file_url,
+                "status": (doc.get("status") or "PENDING").upper(),
+                "source": "case_upload",
+                "aiConfidence": doc.get("aiConfidence"),
+                "riskScore": doc.get("riskScore"),
+                "riskReasons": doc.get("riskReasons"),
+                "reason": doc.get("reason"),
+                "submittedAt": doc.get("updatedAt") or case.get("submittedAt"),
+            })
+
+    # Clean sessions
+    clean_sessions = []
+    for s in sessions:
+        clean_sessions.append({
+            "id": s.get("id"),
+            "status": s.get("status"),
+            "provider": s.get("provider"),
+            "method": s.get("method"),
+            "createdAt": s.get("createdAt"),
+            "completedAt": s.get("completedAt"),
+            "identity": s.get("identity"),
+            "error": s.get("error"),
+        })
+
+    kyc_stat = (user.get("kycStatus") or user.get("kyc_status") or "PENDING").upper() if user else "PENDING"
 
     return {
         "userId": user_id,
-        "kycStatus": user.get("kycStatus") if user else "PENDING",
+        "kycStatus": kyc_stat,
+        "verifiedName": user.get("verifiedName") if user else None,
+        "maskedAadhaar": user.get("maskedAadhaar") if user else None,
+        "verificationMode": user.get("verificationMode") if user else None,
+        "kycVerifiedAt": user.get("kycVerifiedAt") if user else None,
+        "signatureVerified": bool(user.get("signatureVerified")) if user else False,
+        "kycRemarks": user.get("kycRemarks") if user else None,
         "cases": cases,
-        "documents": [
-            {
-                "id": f"doc_aadhaar_{user_id}",
-                "docType": "aadhaar",
-                "name": "Aadhaar Card",
-                "fileUrl": "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&q=80&w=600",
-                "status": user.get("kycStatus", "PENDING").upper() if user else "PENDING",
-                "aiConfidence": 0.94,
-                "submittedAt": user.get("createdAt") if user else None,
-            },
-            {
-                "id": f"doc_land_{user_id}",
-                "docType": "7_12_extract",
-                "name": "7/12 Land Record",
-                "fileUrl": "https://images.unsplash.com/photo-1544377193-33dcf4d68fb5?auto=format&fit=crop&q=80&w=600",
-                "status": user.get("kycStatus", "PENDING").upper() if user else "PENDING",
-                "aiConfidence": 0.88,
-                "submittedAt": user.get("createdAt") if user else None,
-            },
-        ],
+        "sessions": clean_sessions,
+        "documents": documents,
     }
 
 
@@ -558,11 +625,41 @@ async def override_user_kyc(
 
     # Also update kyc_cases if document_id is provided
     if body.document_id:
-        doc = await get_doc("kyc_cases", body.document_id) or {}
-        doc["status"] = new_status.lower()
-        doc["reviewRemarks"] = body.remarks
-        doc["reviewedAt"] = datetime.now(timezone.utc).isoformat()
-        await set_doc("kyc_cases", body.document_id, doc)
+        cases = await query("kyc_cases", [("userId", "==", user_id)], limit=50)
+        found_in_case = False
+        for case in cases:
+            for doc in case.get("docs") or []:
+                if doc.get("docId") == body.document_id or doc.get("type") == body.document_id:
+                    doc["status"] = new_status.lower()
+                    doc["reason"] = body.remarks
+                    doc["reviewedBy"] = admin.get("id") or admin.get("uid")
+                    doc["reviewedAt"] = datetime.now(timezone.utc).isoformat()
+                    case["reviewedAt"] = doc["reviewedAt"]
+                    case["reviewedBy"] = doc["reviewedBy"]
+                    await set_doc("kyc_cases", case["caseId"], case)
+                    found_in_case = True
+                    break
+            if found_in_case:
+                break
+
+        kdoc = await get_doc("kyc_documents", body.document_id)
+        if kdoc:
+            kdoc["status"] = new_status.lower()
+            kdoc["reviewedRemarks"] = body.remarks
+            kdoc["reviewedAt"] = datetime.now(timezone.utc).isoformat()
+            await set_doc("kyc_documents", body.document_id, kdoc)
+
+    if new_status == "RESUBMISSION_REQUESTED":
+        try:
+            await notify_user(
+                user_id,
+                type="kyc_resubmission_requested",
+                title="KYC document resubmission required",
+                body=body.remarks or "Please resubmit your verification documents.",
+                deepLink="/profile/kyc",
+            )
+        except Exception:
+            pass
 
     await log_admin_action(
         admin,

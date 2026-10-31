@@ -556,7 +556,7 @@ async def test_booking_notifies_owner(client, user_store):
     slots = resp.json()["data"]
     resp = await client.post(
         f"/v1/equipment/slots/{slots[0]['id']}/book",
-        json={"farmerName": "Sham Rao"},
+        json={"farmerName": "Sham Rao", "termsAccepted": True},
         headers=_auth(farmer),
     )
     assert resp.status_code == 200

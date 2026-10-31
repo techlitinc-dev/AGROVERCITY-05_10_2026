@@ -7,7 +7,9 @@ from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.direct import DemandCreate, DemandUpdate
 from app.routers.users import require_role
+from app.services.notify import notify_user
 from app.services.users import get_user
+from app.services.verification import is_identity_verified
 
 router = APIRouter(prefix="/demands", tags=["demands"])
 
@@ -44,6 +46,8 @@ async def _company_of(uid: str) -> str:
 @router.post("", status_code=201)
 async def create_demand(body: DemandCreate, ctx: tuple = Depends(_direct_buyer)):
     user, uid = ctx
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to post requirements")
     now = datetime.now(timezone.utc).isoformat()
     doc = {
         **body.model_dump(),
@@ -217,6 +221,21 @@ async def close_demand(demand_id: str, uid: str = Depends(current_user_id)):
     doc["status"] = "closed"
     doc["updatedAt"] = datetime.now(timezone.utc).isoformat()
     await set_doc("demands", demand_id, doc)
+    # Every farmer who applied (has a lead on this demand) hears about it once.
+    applications = await query("leads", [("demandId", "==", demand_id)], limit=1000)
+    notified = set()
+    for app in applications:
+        farmer_id = app.get("farmerId") or ""
+        if not farmer_id or farmer_id in notified or app.get("status") == "dismissed":
+            continue
+        notified.add(farmer_id)
+        await notify_user(
+            farmer_id,
+            type="demand_closed",
+            title="Requirement closed / मागणी बंद",
+            body=f"The {doc.get('crop', 'crop')} requirement you applied to is now closed.",
+            deepLink="/farmer/demands",
+        )
     return doc
 
 

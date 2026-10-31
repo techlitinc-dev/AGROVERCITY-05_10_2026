@@ -100,7 +100,7 @@ async def test_fleet_summary(client, user_store):
     slot = resp.json()["data"][0]
     resp = await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 200
@@ -169,7 +169,7 @@ async def test_owner_dashboard_summary_fields(client, user_store):
     slot = resp.json()["data"][0]
     resp = await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 200
@@ -242,7 +242,7 @@ async def test_owner_dashboard_summary_fields(client, user_store):
     slot = resp.json()["data"][0]
     await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer),
     )
     user_store["equipment_bookings/eqb-done"] = {

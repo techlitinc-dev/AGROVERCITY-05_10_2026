@@ -56,14 +56,15 @@ async def _slots(client, token, equipment_id, date=None):
 async def test_expired_insurance_blocks_new_booking(client, user_store):
     seed_equipment(user_store)
     token = await _token(client)
+    farmer_token = second_farmer_token(user_store)
     _owned_machine(user_store, "uid-1")
     user_store["equipment/eq-2"]["insuranceExpiry"] = (NOW - timedelta(days=1)).isoformat()
     slot = (await _slots(client, token, "eq-2"))[0]
 
     resp = await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Ram Patil"},
-        headers=_auth(token),
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
+        headers=_auth(farmer_token),
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "INSURANCE_EXPIRED"
@@ -80,6 +81,7 @@ async def test_in_flight_booking_unaffected_by_expiry(client, user_store):
         "id": "uid-2",
         "linkedProfiles": ["equipmentRental"],
         "activeProfile": "equipmentRental",
+        "kycStatus": "verified",
         "primaryProfile": "equipmentRental",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }
@@ -90,7 +92,7 @@ async def test_in_flight_booking_unaffected_by_expiry(client, user_store):
     booking = (
         await client.post(
             f"/v1/equipment/slots/{slot['id']}/book",
-            json={"farmerName": "Ram Patil"},
+            json={"farmerName": "Ram Patil", "termsAccepted": True},
             headers=_auth(token),
         )
     ).json()["booking"]
@@ -101,7 +103,7 @@ async def test_in_flight_booking_unaffected_by_expiry(client, user_store):
 
     # the owner can still approve / the job stays in flight
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(owner_token)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(owner_token)
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "booked"
@@ -113,6 +115,7 @@ async def test_in_flight_booking_unaffected_by_expiry(client, user_store):
 async def test_unverified_kyc_case_blocks_booking(client, user_store):
     seed_equipment(user_store)
     token = await _token(client)
+    farmer_token = second_farmer_token(user_store)
     _owned_machine(user_store, "uid-1")
     # the insurance doc falls back to pending — the machine is no longer bookable
     user_store["kyc_cases/kyc_uid-1_equipmentRental"]["docs"][1]["status"] = "pending"
@@ -120,8 +123,8 @@ async def test_unverified_kyc_case_blocks_booking(client, user_store):
     slot = (await _slots(client, token, "eq-2"))[0]
     resp = await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Ram Patil"},
-        headers=_auth(token),
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
+        headers=_auth(farmer_token),
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "EQUIPMENT_NOT_VERIFIED"

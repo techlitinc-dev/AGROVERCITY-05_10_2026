@@ -10,6 +10,7 @@ def _second_admin(user_store, uid="uid-admin2", role="finance_admin"):
         "isAdmin": True,
         "adminRole": role,
         "activeProfile": "admin",
+        "kycStatus": "verified",
     }
     return create_access_token(uid)
 

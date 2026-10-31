@@ -28,6 +28,7 @@ def _seed_seller(user_store, uid, name, **extra):
         "linkedProfiles": ["seller"],
         "primaryProfile": "seller",
         "activeProfile": "seller",
+        "kycStatus": "verified",
         **extra,
     }
     return create_access_token(uid)

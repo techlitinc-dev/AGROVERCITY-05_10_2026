@@ -11,6 +11,7 @@ def _seed_ledger(user_store):
         "name": "Sita Verma",
         "phone": "+919800000001",
         "activeProfile": "seller",
+        "kycStatus": "verified",
         "primaryProfile": "seller",
     }
     # Sent by uid-1 over the shared rail (canonical shape).

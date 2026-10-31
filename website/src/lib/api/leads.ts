@@ -86,6 +86,28 @@ export const applyToDemand = async (
   }
 };
 
+/** Protected contact unlock on an EXISTING connection (e.g. a Vyapari
+ * contacting a farmer who applied on their requirement). Idempotent —
+ * repeated unlocks return the same lead with the same contacts. */
+export const unlockLead = async (
+  leadId: string,
+  termsAccepted: boolean,
+  mpin?: string,
+): Promise<Lead> => {
+  try {
+    const res = await apiClient.post(`/leads/${encodeURIComponent(leadId)}/unlock`, {
+      termsAccepted,
+      mpin: mpin || undefined,
+    });
+    return res.data as Lead;
+  } catch (e) {
+    handleApiError(e);
+  }
+};
+
+/** True when the API error says KYC is required (show "complete KYC" state). */
+export const isKycError = (e: unknown): boolean => e instanceof ApiError && e.code === 'KYC_REQUIRED';
+
 export const getMyLeads = async (
   filter: 'received' | 'sent' = 'received',
   status?: LeadStatus,

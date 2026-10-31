@@ -1,10 +1,11 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from app.core.db import get_doc, query, set_doc
+from app.core.db import count, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.models.notification import NotificationCreate
 from app.services import idempotency
@@ -51,7 +52,10 @@ async def list_notifications(
 ):
     """Own notifications, newest first. ?type= filters by one or more
     comma-separated types (e.g. request_accepted,payment_successful);
-    ?unread=true filters unread only."""
+    ?unread=true filters unread only.
+
+    The unfiltered total comes from a server-side COUNT aggregation (billed as
+    ~1 read) instead of scanning every notification document."""
     docs = await query("notifications", [("userId", "==", uid)], limit=1000)
     if type:
         wanted = {t.strip() for t in type.split(",") if t.strip()}
@@ -59,7 +63,7 @@ async def list_notifications(
     if unread:
         docs = [d for d in docs if not d.get("read")]
     docs.sort(key=lambda d: d.get("createdAt") or "", reverse=True)
-    total = len(docs)
+    total = len(docs) if (type or unread) else await count("notifications", [("userId", "==", uid)])
     start = (page - 1) * pageSize
     return {
         "data": [_shape(d) for d in docs[start : start + pageSize]],
@@ -72,16 +76,18 @@ async def list_notifications(
 @router.put("/read-all")
 async def read_all(uid: str = Depends(current_user_id)):
     docs = await query("notifications", [("userId", "==", uid)], limit=1000)
+    unread = [d for d in docs if not d.get("read")]
     now = datetime.now(timezone.utc).isoformat()
-    updated = 0
-    for doc in docs:
-        if doc.get("read"):
-            continue
+
+    async def _mark(doc):
         doc["read"] = True
         doc["readAt"] = now
         await set_doc("notifications", doc["id"], doc)
-        updated += 1
-    return {"updated": updated}
+
+    # Concurrent writes — same billed documents, one round-trip wave instead of
+    # one sequential write per notification.
+    await asyncio.gather(*[_mark(d) for d in unread])
+    return {"updated": len(unread)}
 
 
 @router.post("/read")

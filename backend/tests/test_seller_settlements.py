@@ -16,6 +16,7 @@ def _seed_user(user_store, uid, name, profiles, active=None, **extra):
         "linkedProfiles": profiles,
         "primaryProfile": active or profiles[-1],
         "activeProfile": active or profiles[-1],
+        "kycStatus": "verified",
         **extra,
     }
     return create_access_token(uid)

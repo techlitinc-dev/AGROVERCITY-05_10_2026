@@ -277,6 +277,12 @@ class User360DetailResponse(BaseModel):
     personas: List[PersonaData] = Field(default_factory=list)
     content_summary: UserContentSummary = Field(default_factory=UserContentSummary)
     recent_activities: List[UserActivityEvent] = Field(default_factory=list)
+    verified_name: Optional[str] = None
+    masked_aadhaar: Optional[str] = None
+    verification_mode: Optional[str] = None
+    kyc_verified_at: Optional[datetime] = None
+    kyc_remarks: Optional[str] = None
+    signature_verified: bool = False
 
 
 class UserCreateAdminSchema(BaseModel):

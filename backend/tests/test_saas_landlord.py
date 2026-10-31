@@ -70,6 +70,7 @@ async def test_landlord_lease_request_counter_and_milestones(client, user_store)
         "listingId": listing_id,
         "proposedRentRupees": 65000,
         "durationMonths": 12,
+        "termsAccepted": True,
         "intendedCrop": "Soybean",
         "startDate": "2026-11-01",
         "message": "Looking forward to leasing your fertile plot.",

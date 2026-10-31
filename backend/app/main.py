@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import sentry_sdk
@@ -9,6 +10,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
+from app.core.db import firestore_usage
 from app.core.firebase import init_firebase, verify_app_check_token
 from app.data.content_seed import seed_content
 from app.data.cold_storage_seed import seed_cold_storage
@@ -151,6 +153,27 @@ if settings.sentry_dsn:
     )
 
 app = FastAPI(title="AGROVERCITY API", version="0.1.0")
+
+_usage_log = logging.getLogger("firestore.usage")
+
+
+@app.middleware("http")
+async def firestore_usage_middleware(request: Request, call_next):
+    """Per-request billed-volume telemetry: documents read/written via the
+    app.core.db helpers during this request (Firestore bills per document,
+    regardless of size). Delta-based, so zero overhead when handlers bypass
+    the helpers."""
+    before = firestore_usage()
+    response = await call_next(request)
+    after = firestore_usage()
+    reads = after["reads"] - before["reads"]
+    writes = after["writes"] - before["writes"]
+    if reads or writes:
+        _usage_log.info(
+            "%s %s -> %s | firestore reads=%d writes=%d",
+            request.method, request.url.path, response.status_code, reads, writes,
+        )
+    return response
 
 
 @app.middleware("http")
@@ -340,9 +363,27 @@ async def request_validation_handler(request: Request, exc: RequestValidationErr
     )
 
 
+async def _ai_decision_retention_loop():
+    """Daily export-then-expire of `ai_decisions` (the /jobs endpoint runs the
+    same task via cron; this in-process loop keeps the collection bounded on
+    deployments with no scheduler). Export happens BEFORE delete — a failed
+    export leaves the doc in place, so re-running is safe."""
+    from app.services.ai.decision_export import export_expired_decisions
+
+    log = logging.getLogger(__name__)
+    while True:
+        try:
+            result = await export_expired_decisions()
+            log.info("ai_decisions retention sweep: %s", result)
+        except Exception:  # noqa: BLE001 — the sweep must never kill the server
+            log.warning("ai_decisions retention sweep failed", exc_info=True)
+        await asyncio.sleep(24 * 3600)
+
+
 @app.on_event("startup")
 async def startup():
     init_firebase()
+    asyncio.create_task(_ai_decision_retention_loop())
     # Content seeds are idempotent dev fixtures. A transient Firestore error
     # (e.g. a quota window) must not take the whole API down — log and continue;
     # the failed seed retries on the next boot.

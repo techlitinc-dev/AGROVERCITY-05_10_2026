@@ -138,6 +138,7 @@ async def _seed_farmer(user_store, uid="uid-f1", phone="+919800000001"):
         "phone": phone,
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

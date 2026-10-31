@@ -21,13 +21,13 @@ async def _setup_booking(client, user_store):
     slot = resp.json()["data"][0]
     resp = await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 200
     booking = resp.json()["booking"]
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(owner_token)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(owner_token)
     )
     assert resp.status_code == 200
     return owner_token, farmer_token, booking
@@ -84,6 +84,7 @@ async def test_stranger_cannot_read_pins(client, user_store):
         "id": "uid-9",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

@@ -58,7 +58,7 @@ async def _confirmed_lease(client, user_store):
     listing_id = resp.json()["id"]
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": listing_id, "durationMonths": 12},
+        json={"listingId": listing_id, "durationMonths": 12, "termsAccepted": True},
         headers=auth(farmer),
     )
     assert resp.status_code == 201
@@ -289,7 +289,7 @@ async def test_escrow_fund_signature_verified_when_keys_set(client, user_store, 
     listing3 = resp.json()["id"]
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": listing3, "durationMonths": 12},
+        json={"listingId": listing3, "durationMonths": 12, "termsAccepted": True},
         headers=auth(farmer3),
     )
     resp = await client.post(

@@ -57,7 +57,7 @@ def _tasks_for(store, uid, kind):
 async def _apply(client, farmer_token, listing_id, months=12):
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": listing_id, "durationMonths": months},
+        json={"listingId": listing_id, "durationMonths": months, "termsAccepted": True},
         headers=auth(farmer_token),
     )
     assert resp.status_code == 201

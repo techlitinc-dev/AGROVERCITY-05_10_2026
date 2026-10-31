@@ -1,348 +1,229 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  Ship,
-  TrendingUp,
-  Package,
-  Globe,
-  FileCheck2,
-  DollarSign,
-  ArrowUpRight,
-  Anchor,
-  Clock,
-  ShieldCheck,
-  Building2,
-  AlertCircle,
-  Plus,
-  RefreshCw,
-  Calculator,
-} from 'lucide-react';
-import { exporter, apiErrorMessage } from '../../lib/api';
-import { StatCard } from '../../components/common/StatCard';
-import { StatusBadge } from '../../components/common/StatusBadge';
-import { formatCurrency, formatDate } from '../../lib/utils';
-import type { ExportOrder, ExportRfq } from '../../types';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Globe2, FileText, Inbox, Handshake, Loader2, Plus, ArrowRight } from 'lucide-react';
+import { exporter } from '../../lib/api/exporter';
+import { apiErrorMessage } from '../../lib/api';
+import type { ExportApplication, ExportRfq } from '../../types';
+import { ExportStatusBadge } from '../export/shared';
 
+/**
+ * Exporter — Home (spec §4.1): open requirement count, new applications,
+ * recent connections, quick action to post a requirement. No shipping,
+ * LC, escrow, forex, or order pipeline lives here.
+ */
 export const ExporterHome: React.FC = () => {
+  const navigate = useNavigate();
   const [rfqs, setRfqs] = useState<ExportRfq[]>([]);
-  const [orders, setOrders] = useState<ExportOrder[]>([]);
-  const [analytics, setAnalytics] = useState<Record<string, unknown> | null>(null);
+  const [connections, setConnections] = useState<ExportApplication[]>([]);
+  const [newApplications, setNewApplications] = useState<ExportApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Currency Converter Widget
-  const [usdAmount, setUsdAmount] = useState<number>(25000);
-  const exchangeRate = 84.15; // USD to INR benchmark
-
-  const fetchData = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [rfqList, orderList, ana] = await Promise.all([
-        exporter.rfqs().catch(() => []),
-        exporter.orders().catch(() => []),
-        exporter.analytics().catch(() => null),
-      ]);
+      const [rfqList, connList] = await Promise.all([exporter.rfqs(), exporter.connections()]);
       setRfqs(rfqList);
-      setOrders(orderList);
-      setAnalytics(ana as Record<string, unknown> | null);
+      setConnections(connList);
+      const openRfqs = rfqList.filter((r) => r.status === 'open' || r.status === 'paused');
+      const apps = (
+        await Promise.all(
+          openRfqs.map(async (r) => {
+            try {
+              return await exporter.rfqApplications(r.id);
+            } catch {
+              return [] as ExportApplication[];
+            }
+          }),
+        )
+      ).flat();
+      setNewApplications(apps.filter((a) => a.status === 'submitted'));
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void fetchData();
   }, []);
 
-  const totalLcEscrowUsd = orders.reduce((sum, o) => sum + (o.totalAmountUsd || 0), 0);
-  const activeShipments = orders.filter((o) =>
-    ['sourcing', 'packed', 'pickedUp', 'inTransit', 'customsCleared', 'shipped'].includes(o.status)
-  ).length;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const openRfqs = rfqs.filter((r) => r.status === 'open').length;
+  const draftRfqs = rfqs.filter((r) => r.status === 'draft').length;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 p-6 sm:p-8 text-white shadow-xl">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 pointer-events-none flex items-center justify-end pr-8">
-          <Ship className="w-64 h-64 text-white" />
-        </div>
-        <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold mb-3">
-            <Globe className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '10s' }} />
-            <span>APEDA & FSSAI Compliant Export Terminal</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-            International Agri Export Cockpit
+    <div className="space-y-6">
+      <div className="border-b border-slate-200 pb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+            <Globe2 className="w-7 h-7 text-emerald-600" />
+            Export Sourcing Home
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-            Manage global RFQ procurement tenders, letter of credit (LC) escrows, phytosanitary
-            inspections, ocean container tracking, and direct FPO sourcing contracts.
+          <p className="text-xs text-slate-500 mt-1">
+            Post structured crop requirements, compare farmer applications, and connect directly.
+            Sampling, contracts, payments, customs, freight, and insurance stay between you and the
+            farmer — Agrovercity only connects you.
           </p>
-          <div className="flex flex-wrap items-center gap-3 mt-5">
-            <Link
-              to="/exporter/rfqs"
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all hover-lift"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Issue New Global RFQ</span>
-            </Link>
-            <Link
-              to="/exporter/orders"
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/20 flex items-center gap-2 transition-all hover-lift"
-            >
-              <Ship className="w-4 h-4" />
-              <span>Track Ocean Shipments</span>
-            </Link>
-            <button
-              onClick={() => void fetchData()}
-              disabled={loading}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => navigate('/exporter/rfqs?new=1')}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold px-4 py-2.5 hover:bg-emerald-700 transition shadow-sm"
+        >
+          <Plus className="w-4 h-4" /> Post Export Requirement
+        </button>
       </div>
 
       {error && (
-        <div className="flex items-center gap-3 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600" />
-          <span>{error}</span>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
+          {error}
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Active Global RFQs"
-          value={rfqs.length.toString()}
-          icon={Globe}
-          subtitle="+3 vs last week"
-          colorScheme="blue"
-        />
-        <StatCard
-          title="Shipments in Transit"
-          value={activeShipments.toString()}
-          icon={Ship}
-          subtitle="Customs Cleared"
-          colorScheme="blue"
-        />
-        <StatCard
-          title="Export LC Escrow"
-          value={`$${totalLcEscrowUsd.toLocaleString()}`}
-          icon={DollarSign}
-          subtitle={`₹${(totalLcEscrowUsd * exchangeRate).toLocaleString()}`}
-          colorScheme="green"
-        />
-        <StatCard
-          title="APEDA FPO Network"
-          value="48 FPOs"
-          icon={Building2}
-          subtitle="Grade-A Certified"
-          colorScheme="green"
-        />
-      </div>
-
-      {/* Main Grid: Live Vessel Tracker & Currency Calculator */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Active Export Orders Pipeline (2 cols) */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Anchor className="w-5 h-5 text-blue-600" />
-                Active Export Shipments & Milestones
-              </h2>
-              <p className="text-xs text-slate-500">
-                Ocean & air cargo monitored across Mundra, Nhava Sheva, and Chennai ports
-              </p>
-            </div>
-            <Link
-              to="/exporter/orders"
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              <span>View All</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </Link>
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading your sourcing desk…
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard icon={FileText} label="Open Requirements" value={openRfqs} sub={`${draftRfqs} draft`} />
+            <StatCard
+              icon={Inbox}
+              label="New Applications"
+              value={newApplications.length}
+              sub="awaiting your review"
+              highlight={newApplications.length > 0}
+            />
+            <StatCard icon={Handshake} label="Connections" value={connections.length} sub="contact unlocked" />
+            <StatCard
+              icon={Globe2}
+              label="Total Requirements"
+              value={rfqs.length}
+              sub={`${rfqs.filter((r) => r.status === 'fulfilled').length} fulfilled`}
+            />
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs divide-y divide-slate-100 overflow-hidden">
-            {orders.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 space-y-3">
-                <Ship className="w-10 h-10 text-slate-300 mx-auto" />
-                <p className="text-sm font-semibold">No active export orders currently in transit</p>
-                <p className="text-xs text-slate-400">
-                  Accept quotes from verified sellers or publish an RFQ to begin overseas procurement.
-                </p>
-                <Link
-                  to="/exporter/rfqs"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs"
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <section className="rounded-3xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-extrabold text-slate-800">New applications</h2>
+                <button
+                  type="button"
+                  onClick={() => navigate('/exporter/applications')}
+                  className="text-[11px] font-bold text-emerald-700 inline-flex items-center gap-1 hover:underline"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Create Tender RFQ</span>
-                </Link>
+                  Review all <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
-            ) : (
-              orders.slice(0, 5).map((order) => (
-                <div key={order.id} className="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-slate-900 text-sm">
-                          {order.commodity} {order.variety ? `(${order.variety})` : ''}
+              {newApplications.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">
+                  No new applications. Farmers apply on your open requirements.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {newApplications.slice(0, 5).map((app) => (
+                    <li key={app.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold text-slate-700">
+                        {app.farmer?.name || app.sellerName || 'Farmer'} · {app.rfq?.crop}
+                        <span className="text-slate-400 ml-1">
+                          {app.quantityOffered} {app.quantityUnit} @ {app.currency} {app.price}/{app.priceUnit}
                         </span>
-                        <StatusBadge status={order.status} />
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                          {order.incoterm}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 flex items-center gap-2">
-                        <span>Destination: <strong>{order.destinationCountry} ({order.destinationPort})</strong></span>
-                        <span>•</span>
-                        <span>Volume: <strong>{order.quantityMt} MT</strong></span>
-                      </p>
-                    </div>
-
-                    <div className="text-left sm:text-right space-y-1">
-                      <p className="text-sm font-extrabold text-slate-900">
-                        ${order.totalAmountUsd.toLocaleString()}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        ₹{(order.totalAmountUsd * exchangeRate).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  {order.shipmentDetails?.vesselName && (
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-4 text-[11px] text-slate-600">
-                      <span className="flex items-center gap-1 font-semibold text-slate-800">
-                        <Ship className="w-3.5 h-3.5 text-blue-600" />
-                        Vessel: {order.shipmentDetails.vesselName} (Voyage: {order.shipmentDetails.voyageNumber || 'N/A'})
                       </span>
-                      <span>Container: {order.shipmentDetails.containerNumber || 'Pending Sourcing'}</span>
-                      <span>BL: {order.shipmentDetails.blNumber || 'Draft'}</span>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+                      <ExportStatusBadge status={app.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-          {/* Quick Tender RFQs Stream */}
-          <div className="pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Globe className="w-4 h-4 text-emerald-600" />
-                Live Global Procurement RFQs
-              </h3>
-              <Link to="/exporter/rfqs" className="text-xs font-bold text-emerald-600 hover:underline">
-                Manage RFQs ({rfqs.length})
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {rfqs.slice(0, 4).map((rfq) => (
-                <div key={rfq.id} className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover-lift space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900">{rfq.commodity}</span>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                      {rfq.destinationCountry}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span>{rfq.quantityMt} MT • {rfq.incoterm}</span>
-                    <span className="font-bold text-slate-800">{rfq.targetPriceUsd ? `$${rfq.targetPriceUsd}/MT` : 'Best Bid'}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Sidebar: Forex Calculator & APEDA Regulatory Center */}
-        <div className="space-y-6">
-          {/* Forex Converter Card */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-amber-600" />
-                Live Forex Exchange Desk
-              </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                1 USD = ₹{exchangeRate}
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase">Export Contract Value ($ USD)</label>
-                <div className="relative mt-1">
-                  <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
-                  <input
-                    type="number"
-                    value={usdAmount}
-                    onChange={(e) => setUsdAmount(Number(e.target.value))}
-                    className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+            <section className="rounded-3xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-extrabold text-slate-800">Recent requirements</h2>
+                <button
+                  type="button"
+                  onClick={() => navigate('/exporter/rfqs')}
+                  className="text-[11px] font-bold text-emerald-700 inline-flex items-center gap-1 hover:underline"
+                >
+                  Manage <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
+              {rfqs.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">
+                  Post your first export requirement to start receiving farmer applications.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {rfqs.slice(0, 5).map((rfq) => (
+                    <li key={rfq.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold text-slate-700">
+                        {rfq.crop}
+                        <span className="text-slate-400 ml-1">
+                          {rfq.quantityQuintals} {rfq.quantityUnit || 'q'} · {rfq.deliveryLocation}
+                        </span>
+                      </span>
+                      <ExportStatusBadge status={rfq.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Realized INR:</span>
-                  <span className="font-extrabold text-slate-900">
-                    ₹{(usdAmount * exchangeRate).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Customs Duty & Cess (0% Agri Ex):</span>
-                  <span className="font-bold text-emerald-600">₹0 (Zero Duty)</span>
-                </div>
-                <div className="flex justify-between text-xs pt-1 border-t border-slate-200">
-                  <span className="text-slate-600 font-semibold">Net Payout to Seller:</span>
-                  <span className="font-black text-blue-700">
-                    ₹{(usdAmount * exchangeRate * 0.985).toLocaleString()}
-                  </span>
-                </div>
+            <section className="rounded-3xl border border-slate-200 bg-white p-4 lg:col-span-2">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-extrabold text-slate-800">Recent connections</h2>
+                <button
+                  type="button"
+                  onClick={() => navigate('/exporter/connections')}
+                  className="text-[11px] font-bold text-emerald-700 inline-flex items-center gap-1 hover:underline"
+                >
+                  All connections <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
-            </div>
+              {connections.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">
+                  Farmers you contact appear here with Call, WhatsApp, and Chat.
+                </p>
+              ) : (
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {connections.slice(0, 4).map((app) => (
+                    <li key={app.id} className="flex items-center justify-between gap-2 text-xs rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+                      <span className="font-semibold text-slate-700">
+                        {app.farmer?.name || app.sellerName || 'Farmer'}
+                        <span className="text-slate-400 ml-1">{app.rfq?.crop}</span>
+                      </span>
+                      <ExportStatusBadge status={app.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
-
-          {/* Export Compliance Standards */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Required Export Certifications
-            </h3>
-            <p className="text-xs text-slate-500">
-              FastAPI automated document verification required prior to customs port clearance:
-            </p>
-            <div className="space-y-2 text-xs">
-              {[
-                { name: 'Phytosanitary Certificate', auth: 'Ministry of Agriculture', status: 'Mandatory' },
-                { name: 'Fumigation Certificate', auth: 'Registered Fumigator', status: 'Mandatory' },
-                { name: 'Commercial Invoice & Packing List', auth: 'Exporter Issued', status: 'Mandatory' },
-                { name: 'Certificate of Origin (COO)', auth: 'Export Inspection Council', status: 'Mandatory' },
-                { name: 'Health & Aflatoxin Test', auth: 'NABL Accredited Lab', status: 'Food Grade' },
-              ].map((doc) => (
-                <div key={doc.name} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
-                  <div>
-                    <p className="font-semibold text-slate-800">{doc.name}</p>
-                    <p className="text-[10px] text-slate-400">{doc.auth}</p>
-                  </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
-                    {doc.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };
+
+const StatCard: React.FC<{
+  icon: React.ElementType;
+  label: string;
+  value: number;
+  sub?: string;
+  highlight?: boolean;
+}> = ({ icon: Icon, label, value, sub, highlight }) => (
+  <div
+    className={`rounded-3xl border p-4 ${
+      highlight ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white'
+    }`}
+  >
+    <div className="flex items-center gap-2 text-slate-400">
+      <Icon className="w-4 h-4" />
+      <span className="text-[10px] font-extrabold uppercase tracking-wide">{label}</span>
+    </div>
+    <p className="mt-1 text-2xl font-black text-slate-900">{value}</p>
+    {sub && <p className="text-[10px] text-slate-400 font-semibold">{sub}</p>}
+  </div>
+);

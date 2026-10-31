@@ -44,6 +44,7 @@ async def test_login_with_phone_mpin_success(client, user_store):
         "name": "Ram Singh",
         "phone": "+919876543210",
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "mpinHash": hash_mpin("4321"),
     }
     resp = await client.post(

@@ -159,6 +159,7 @@ async def test_produce_lot_prefill_rejects_other_farmers_lot(client, user_store)
         "id": "uid-stranger",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }
@@ -393,6 +394,7 @@ async def test_farmer_cannot_accept_another_users_load_or_quote(client, user_sto
         "id": "uid-stranger",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }
@@ -530,6 +532,7 @@ async def _direct_request(client, user_store, transporter_uid="uid-t1"):
         "whatsapp": "+919876543210",
         "linkedProfiles": ["transport"],
         "activeProfile": "transport",
+        "kycStatus": "verified",
         "primaryProfile": "transport",
         "mpinHash": None,
         "createdAt": "2026-10-01T00:00:00+00:00",
@@ -558,6 +561,7 @@ async def test_direct_request_requires_terms_and_valid_transporter(client, user_
         "id": "uid-t1",
         "linkedProfiles": ["transport"],
         "activeProfile": "transport",
+        "kycStatus": "verified",
         "primaryProfile": "transport",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

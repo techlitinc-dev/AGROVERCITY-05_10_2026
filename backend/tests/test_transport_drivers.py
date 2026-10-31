@@ -76,6 +76,7 @@ async def test_driver_outside_fleet_cannot_operate_trip(client, user_store):
         "linkedProfiles": ["driver"],
         "primaryProfile": "driver",
         "activeProfile": "driver",
+        "kycStatus": "verified",
         "fleetOwnerId": "someone-else",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

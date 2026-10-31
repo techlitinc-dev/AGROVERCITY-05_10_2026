@@ -23,6 +23,7 @@ def _seed_role_admin(user_store, uid, role):
         "linkedProfiles": ["farmer"],
         "primaryProfile": "farmer",
         "activeProfile": "admin",
+        "kycStatus": "verified",
         "isAdmin": True,
         "adminRole": role,
         "mpinHash": None,

@@ -154,6 +154,7 @@ async def test_finance_admin_forbidden_on_kyc(client, user_store):
         "isAdmin": True,
         "adminRole": "finance_admin",
         "activeProfile": "admin",
+        "kycStatus": "verified",
     }
     token = create_access_token("uid-finance")
     resp = await client.get("/v1/admin/kyc/pending", headers=auth(token))

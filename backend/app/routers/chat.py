@@ -2,10 +2,12 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.db import get_doc, query, set_doc
+from app.core.db import count, get_doc, latest, query, set_doc
 from app.core.deps import current_user_id
 from app.core.ratelimit import hit
 from app.routers.purchases import TERMINAL_STATUSES
@@ -22,6 +24,7 @@ from app.services.chat import (
 )
 from app.services.notify import notify_user
 from app.services.users import get_user
+from app.services.verification import is_identity_verified
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -135,8 +138,13 @@ async def _room_view(room: dict, uid: str) -> dict:
     unread = not (room.get("readByFarmer") if is_farmer else room.get("readByBuyer"))
     unread_count = 0
     if unread:
-        messages = await query(f"chat_rooms/{room['id']}/messages", [], limit=1000)
-        unread_count = sum(1 for m in messages if m.get("fromId") != uid)
+        # Aggregation COUNT (~1 billed read) instead of scanning every message
+        # in the room to count the other party's messages.
+        other_id = room.get("buyerId") if is_farmer else room.get("farmerId")
+        if other_id:
+            unread_count = await count(
+                f"chat_rooms/{room['id']}/messages", [("fromId", "==", other_id)]
+            )
     counterparty_id = room.get("buyerId") if is_farmer else room.get("farmerId")
     counterparty = await get_user(counterparty_id) if counterparty_id else None
     return {
@@ -144,6 +152,7 @@ async def _room_view(room: dict, uid: str) -> dict:
         "kind": room.get("kind") or "purchase",
         "counterpartyName": room.get("buyerName") if is_farmer else room.get("farmerName"),
         "counterpartyTrustTier": (counterparty or {}).get("trustTier"),
+        "counterpartyVerified": await is_identity_verified(counterparty),
         "unread": unread,
         "unreadCount": unread_count,
     }
@@ -161,7 +170,11 @@ async def list_rooms(uid: str = Depends(current_user_id)):
     as_buyer = await query("chat_rooms", [("buyerId", "==", uid)], limit=500)
     rooms = as_farmer + as_buyer
     rooms.sort(key=lambda r: r.get("lastMessageAt") or r.get("createdAt", ""), reverse=True)
-    return {"data": [await _room_view(r, uid) for r in rooms], "total": len(rooms)}
+    # Concurrent room views — each is ~2 reads after the unread-count
+    # aggregation, so the room list no longer serializes a full message scan
+    # per room.
+    views = await asyncio.gather(*[_room_view(r, uid) for r in rooms])
+    return {"data": list(views), "total": len(views)}
 
 
 @router.get("/rooms/{room_id}")
@@ -316,11 +329,14 @@ async def list_messages(
     uid: str = Depends(current_user_id),
 ):
     room, _terminal = await _load_room(room_id, uid)
-    docs = await query(f"chat_rooms/{room['id']}/messages", [], limit=1000)
-    docs.sort(key=lambda m: m.get("createdAt", ""))
-    total = len(docs)
+    path = f"chat_rooms/{room['id']}/messages"
     start = (page - 1) * pageSize
-    return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
+    # Index-free pushdown: order+offset+limit on the subcollection and a
+    # COUNT aggregation for the total — the old full-scan-then-slice cost up
+    # to 1000 document reads per page view.
+    docs = await latest(path, "createdAt", limit=pageSize, ascending=True, offset=start)
+    total = await count(path)
+    return {"data": docs, "page": page, "pageSize": pageSize, "total": total}
 
 
 async def _post_batch_message(room: dict, body: "MessageIn", uid: str) -> dict:

@@ -1,472 +1,748 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Globe,
+  Ship,
   Plus,
-  Search,
-  Filter,
+  Loader2,
+  Pause,
+  Play,
   CheckCircle2,
   XCircle,
-  Clock,
-  DollarSign,
-  Package,
-  Ship,
-  AlertCircle,
-  FileText,
-  ChevronRight,
-  Eye,
+  Trash2,
+  Pencil,
+  Phone,
 } from 'lucide-react';
-import { exporter, apiErrorMessage } from '../../lib/api';
+import { exporter } from '../../lib/api/exporter';
+import { apiErrorMessage } from '../../lib/api';
+import type { ExportApplication, ExportRfq } from '../../types';
 import { ModalSheet } from '../../components/common/ModalSheet';
-import { StatusBadge } from '../../components/common/StatusBadge';
-import type { ExportRfq, ExportQuote } from '../../types';
+import { isKycError } from '../../lib/api/leads';
+import {
+  ContactActions,
+  ContactUnlockModal,
+  ExportStatusBadge,
+  NegotiationChecklist,
+  VerificationBadges,
+} from '../export/shared';
 
+const EMPTY_FORM: Record<string, unknown> = {
+  crop: '',
+  variety: '',
+  gradeSpec: '',
+  quantityQuintals: '',
+  quantityUnit: 'quintal',
+  partialQuantityAllowed: true,
+  multiFarmerAllowed: true,
+  packing: '',
+  deliveryWindowFrom: '',
+  deliveryWindowTo: '',
+  deliveryLocation: '',
+  paymentTermsDays: 30,
+  notes: '',
+  moistureRequirement: '',
+  sizeSpec: '',
+  qualityParams: '',
+  residueRequirements: '',
+  requiredCertifications: '',
+  inspectionRequirements: '',
+  sampleRequirements: '',
+  rejectionConditions: '',
+  packagingRequirements: '',
+  labellingRequirements: '',
+  shipmentWindow: '',
+  targetPrice: '',
+  currency: 'INR',
+  priceBasis: '',
+  destinationCountry: '',
+  requiredExportDocuments: '',
+  buyerNotes: '',
+  publish: true,
+};
+
+/**
+ * Exporter — My Export Requirements (spec §4.2/4.3, §5).
+ * Create/edit structured sourcing RFQs and review applications per RFQ.
+ */
 export const ExporterRfqsPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rfqs, setRfqs] = useState<ExportRfq[]>([]);
-  const [selectedRfq, setSelectedRfq] = useState<ExportRfq | null>(null);
-  const [quotes, setQuotes] = useState<ExportQuote[]>([]);
-  const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Filter & Search
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<ExportRfq | null>(null);
+  const [form, setForm] = useState<Record<string, unknown>>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Create RFQ Modal
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [rfqForm, setRfqForm] = useState<{
-    commodity: string;
-    variety: string;
-    quantityMt: number;
-    targetPriceUsd: number;
-    incoterm: 'CIF' | 'FOB' | 'CFR' | 'EXW';
-    destinationCountry: string;
-    destinationPort: string;
-    originPort: string;
-    packagingSpecs: string;
-    inspectionAgency: string;
-  }>({
-    commodity: 'Basmati Rice',
-    variety: '1121 Steam Extra Long',
-    quantityMt: 100,
-    targetPriceUsd: 1150,
-    incoterm: 'CIF',
-    destinationCountry: 'United Arab Emirates',
-    destinationPort: 'Jebel Ali Port (Dubai)',
-    originPort: 'Mundra Port (Gujarat)',
-    packagingSpecs: 'Non-woven BOPP bags 25kg with palletization',
-    inspectionAgency: 'SGS International',
-  });
+  const [reviewRfq, setReviewRfq] = useState<ExportRfq | null>(null);
+  const [applications, setApplications] = useState<ExportApplication[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
 
-  const loadRfqs = async () => {
+  const [contactApp, setContactApp] = useState<ExportApplication | null>(null);
+  const [unlockedApp, setUnlockedApp] = useState<ExportApplication | null>(null);
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await exporter.rfqs();
-      setRfqs(data);
+      setRfqs(await exporter.rfqs(statusFilter ? { status: statusFilter } : undefined));
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
-    void loadRfqs();
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      openCreate();
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleOpenQuotes = async (rfq: ExportRfq) => {
-    setSelectedRfq(rfq);
-    setLoadingQuotes(true);
-    try {
-      const qList = await exporter.quotes(rfq.id);
-      setQuotes(qList);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setLoadingQuotes(false);
-    }
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setShowForm(true);
   };
 
-  const handleCreateRfq = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await exporter.createRfq({
-        ...rfqForm,
-        quantityMt: Number(rfqForm.quantityMt),
-        targetPriceUsd: Number(rfqForm.targetPriceUsd),
-      });
-      setCreateModalOpen(false);
-      setActionNotice('International RFQ published successfully to verified farm networks!');
-      await loadRfqs();
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
+  const openEdit = (rfq: ExportRfq) => {
+    setEditing(rfq);
+    setForm({
+      ...EMPTY_FORM,
+      crop: rfq.crop,
+      variety: rfq.variety || '',
+      gradeSpec: rfq.gradeSpec || '',
+      quantityQuintals: String(rfq.quantityQuintals),
+      quantityUnit: rfq.quantityUnit || 'quintal',
+      partialQuantityAllowed: rfq.partialQuantityAllowed !== false,
+      multiFarmerAllowed: rfq.multiFarmerAllowed !== false,
+      packing: rfq.packing || '',
+      deliveryWindowFrom: rfq.deliveryWindow?.from || '',
+      deliveryWindowTo: rfq.deliveryWindow?.to || '',
+      deliveryLocation: rfq.deliveryLocation,
+      paymentTermsDays: rfq.paymentTermsDays,
+      notes: rfq.notes || '',
+      moistureRequirement: rfq.moistureRequirement || '',
+      sizeSpec: rfq.sizeSpec || '',
+      qualityParams: rfq.qualityParams || '',
+      residueRequirements: rfq.residueRequirements || '',
+      requiredCertifications: (rfq.requiredCertifications || []).join(', '),
+      inspectionRequirements: rfq.inspectionRequirements || '',
+      sampleRequirements: rfq.sampleRequirements || '',
+      rejectionConditions: rfq.rejectionConditions || '',
+      packagingRequirements: rfq.packagingRequirements || '',
+      labellingRequirements: rfq.labellingRequirements || '',
+      shipmentWindow: rfq.shipmentWindow || '',
+      targetPrice: rfq.targetPrice ? String(rfq.targetPrice) : '',
+      currency: rfq.currency || 'INR',
+      priceBasis: rfq.priceBasis || '',
+      destinationCountry: rfq.destinationCountry || '',
+      requiredExportDocuments: (rfq.requiredExportDocuments || []).join(', '),
+      buyerNotes: rfq.buyerNotes || '',
+      publish: rfq.status !== 'draft',
+    });
+    setFormError(null);
+    setShowForm(true);
   };
 
-  const handleAcceptQuote = async (quoteId: string) => {
-    if (!confirm('Accept this supplier quote and initiate the export purchase contract?')) return;
+  const saveForm = async () => {
+    setSaving(true);
+    setFormError(null);
+    const payload: Record<string, unknown> = {
+      crop: String(form.crop || '').trim(),
+      variety: form.variety || undefined,
+      gradeSpec: form.gradeSpec || undefined,
+      quantityQuintals: Number(form.quantityQuintals),
+      quantityUnit: form.quantityUnit,
+      partialQuantityAllowed: !!form.partialQuantityAllowed,
+      multiFarmerAllowed: !!form.multiFarmerAllowed,
+      packing: form.packing || undefined,
+      deliveryWindow: { from: form.deliveryWindowFrom, to: form.deliveryWindowTo },
+      deliveryLocation: String(form.deliveryLocation || '').trim(),
+      paymentTermsDays: Number(form.paymentTermsDays ?? 0),
+      notes: form.notes || undefined,
+      moistureRequirement: form.moistureRequirement || undefined,
+      sizeSpec: form.sizeSpec || undefined,
+      qualityParams: form.qualityParams || undefined,
+      residueRequirements: form.residueRequirements || undefined,
+      requiredCertifications: String(form.requiredCertifications || '')
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
+      inspectionRequirements: form.inspectionRequirements || undefined,
+      sampleRequirements: form.sampleRequirements || undefined,
+      rejectionConditions: form.rejectionConditions || undefined,
+      packagingRequirements: form.packagingRequirements || undefined,
+      labellingRequirements: form.labellingRequirements || undefined,
+      shipmentWindow: form.shipmentWindow || undefined,
+      targetPrice: form.targetPrice ? Number(form.targetPrice) : undefined,
+      currency: form.currency || undefined,
+      priceBasis: form.priceBasis || undefined,
+      destinationCountry: form.destinationCountry || undefined,
+      requiredExportDocuments: String(form.requiredExportDocuments || '')
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
+      buyerNotes: form.buyerNotes || undefined,
+      publish: !!form.publish,
+    };
     try {
-      await exporter.acceptQuote(quoteId);
-      setActionNotice('Quote accepted! Export order generated in confirmed status.');
-      if (selectedRfq) {
-        await handleOpenQuotes(selectedRfq);
+      if (editing) {
+        const updated = await exporter.updateRfq(editing.id, payload);
+        setNotice(`Requirement ${updated.status === 'draft' ? 'saved as draft' : 'updated'}.`);
+      } else {
+        const created = await exporter.createRfq(payload);
+        setNotice(
+          created.status === 'draft'
+            ? 'Requirement saved as draft — publish it when ready.'
+            : 'Requirement published. Farmers can now apply.',
+        );
       }
-      await loadRfqs();
+      setShowForm(false);
+      await load();
+    } catch (err) {
+      if (isKycError(err)) {
+        setFormError('Complete your identity verification (KYC) before publishing export requirements.');
+      } else {
+        setFormError(apiErrorMessage(err));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const act = async (rfq: ExportRfq, action: () => Promise<ExportRfq>, success: string) => {
+    setBusyId(rfq.id);
+    try {
+      await action();
+      setNotice(success);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openReview = async (rfq: ExportRfq) => {
+    setReviewRfq(rfq);
+    setReviewLoading(true);
+    setApplications([]);
+    try {
+      setApplications(await exporter.rfqApplications(rfq.id));
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const dismiss = async (app: ExportApplication) => {
+    try {
+      const updated = await exporter.dismissApplication(app.id);
+      setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      setNotice('Application dismissed. The farmer is informed.');
     } catch (err) {
       setError(apiErrorMessage(err));
     }
   };
 
-  const filteredRfqs = rfqs.filter((r) => {
-    const matchSearch =
-      r.commodity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.destinationCountry.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.destinationPort.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchStatus = statusFilter === 'all' || r.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const openUnlock = (app: ExportApplication) => setContactApp(app);
+
+  const onUnlocked = (updated: ExportApplication) => {
+    setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    setUnlockedApp(updated);
+    setContactApp(null);
+    setNotice('Contact unlocked — call, WhatsApp, and chat are now open for both parties.');
+  };
+
+  const visible = useMemo(() => rfqs, [rfqs]);
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+    <div className="space-y-6">
+      <div className="border-b border-slate-200 pb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-            <Globe className="w-7 h-7 text-blue-600" />
-            International RFQs & Sourcing Tenders
+            <Ship className="w-7 h-7 text-emerald-600" />
+            My Export Requirements
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Publish global demand requirements, receive quotes from certified aggregators, and award export contracts
+            Structured sourcing requirements. Partial-quantity and multi-farmer fulfilment are
+            supported — you decide when sourcing is complete. Contacts unlock per application after
+            terms and MPIN verification; no order or payment is created on this platform.
           </p>
         </div>
-
         <button
-          onClick={() => setCreateModalOpen(true)}
-          className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md flex items-center gap-2 self-start sm:self-auto transition-all hover-lift"
+          type="button"
+          onClick={openCreate}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold px-4 py-2.5 hover:bg-emerald-700 transition shadow-sm"
         >
-          <Plus className="w-4 h-4" />
-          <span>Publish New Global RFQ</span>
+          <Plus className="w-4 h-4" /> Post Requirement
         </button>
       </div>
 
-      {actionNotice && (
-        <div className="flex items-center justify-between p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs animate-slide-down">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>{actionNotice}</span>
-          </div>
-          <button onClick={() => setActionNotice(null)} className="font-bold text-emerald-700">
-            Dismiss
+      <div className="flex flex-wrap gap-2">
+        {['', 'draft', 'open', 'paused', 'closed', 'fulfilled'].map((s) => (
+          <button
+            key={s || 'all'}
+            type="button"
+            onClick={() => setStatusFilter(s)}
+            className={`text-xs font-bold rounded-xl px-3 py-1.5 border transition ${
+              statusFilter === s
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            {s === '' ? 'All' : s[0].toUpperCase() + s.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-semibold text-emerald-800 flex items-start justify-between gap-4">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} className="text-emerald-600 font-bold shrink-0">
+            Close
           </button>
         </div>
       )}
 
-      {error && (
-        <div className="flex items-center gap-2 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
-          <AlertCircle className="w-4 h-4 text-rose-600" />
-          <span>{error}</span>
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading requirements…
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="p-10 text-center rounded-3xl border-2 border-dashed border-slate-200">
+          <Ship className="w-10 h-10 mx-auto text-slate-300" />
+          <p className="mt-3 text-sm font-bold text-slate-600">No requirements here</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Post a structured requirement and farmers will apply with their available supply.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {visible.map((rfq) => (
+            <div key={rfq.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">
+                    {rfq.crop}
+                    {rfq.variety ? ` — ${rfq.variety}` : ''}
+                    <span className="ml-2 text-xs font-semibold text-slate-400">
+                      {rfq.quantityQuintals} {rfq.quantityUnit || 'quintals'} · {rfq.deliveryLocation}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    ready {rfq.deliveryWindow?.from || '—'} → {rfq.deliveryWindow?.to || '—'} ·{' '}
+                    {rfq.partialQuantityAllowed ? 'partial OK' : 'full quantity only'} ·{' '}
+                    {rfq.multiFarmerAllowed ? 'multi-farmer allowed' : 'single farmer'}
+                    {rfq.destinationCountry ? ` · ships to ${rfq.destinationCountry}` : ''}
+                  </p>
+                </div>
+                <ExportStatusBadge status={rfq.status} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openReview(rfq)}
+                  className="rounded-xl bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 hover:bg-emerald-700 transition"
+                >
+                  View Applications ({rfq.applicationsCount ?? rfq.quoteCount ?? 0})
+                </button>
+                {rfq.status === 'draft' && (
+                  <button
+                    type="button"
+                    disabled={busyId === rfq.id}
+                    onClick={() => act(rfq, () => exporter.publishRfq(rfq.id), 'Requirement published.')}
+                    className="rounded-xl border border-emerald-300 text-emerald-700 text-[11px] font-bold px-3 py-1.5 hover:bg-emerald-50 transition"
+                  >
+                    Publish
+                  </button>
+                )}
+                {(rfq.status === 'open' || rfq.status === 'paused') && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(rfq)}
+                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold px-3 py-1.5 hover:bg-slate-50 transition"
+                    >
+                      <Pencil className="w-3 h-3" /> Edit
+                    </button>
+                    {rfq.status === 'open' ? (
+                      <button
+                        type="button"
+                        disabled={busyId === rfq.id}
+                        onClick={() => act(rfq, () => exporter.pauseRfq(rfq.id), 'Requirement paused.')}
+                        className="inline-flex items-center gap-1 rounded-xl border border-amber-200 text-amber-700 text-[11px] font-bold px-3 py-1.5 hover:bg-amber-50 transition"
+                      >
+                        <Pause className="w-3 h-3" /> Pause
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busyId === rfq.id}
+                        onClick={() => act(rfq, () => exporter.resumeRfq(rfq.id), 'Requirement resumed.')}
+                        className="inline-flex items-center gap-1 rounded-xl border border-amber-200 text-amber-700 text-[11px] font-bold px-3 py-1.5 hover:bg-amber-50 transition"
+                      >
+                        <Play className="w-3 h-3" /> Resume
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busyId === rfq.id}
+                      onClick={() => act(rfq, () => exporter.fulfillRfq(rfq.id), 'Marked fulfilled — sourcing complete.')}
+                      className="inline-flex items-center gap-1 rounded-xl border border-emerald-300 text-emerald-700 text-[11px] font-bold px-3 py-1.5 hover:bg-emerald-50 transition"
+                    >
+                      <CheckCircle2 className="w-3 h-3" /> Mark Fulfilled
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === rfq.id}
+                      onClick={() => act(rfq, () => exporter.closeRfq(rfq.id), 'Requirement closed.')}
+                      className="inline-flex items-center gap-1 rounded-xl border border-slate-200 text-slate-500 text-[11px] font-bold px-3 py-1.5 hover:bg-slate-50 transition"
+                    >
+                      <XCircle className="w-3 h-3" /> Close
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === rfq.id}
+                      onClick={() => {
+                        if (window.confirm('Delete this requirement permanently?')) {
+                          void act(rfq, () => exporter.deleteRfq(rfq.id).then(() => rfq), 'Requirement deleted.');
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl border border-rose-200 text-rose-600 text-[11px] font-bold px-3 py-1.5 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 className="w-3 h-3" /> Delete
+                    </button>
+                  </>
+                )}
+                {(rfq.status === 'closed' || rfq.status === 'fulfilled') && (
+                  <button
+                    type="button"
+                    disabled={busyId === rfq.id}
+                    onClick={() => act(rfq, () => exporter.reopenRfq(rfq.id), 'Requirement reopened.')}
+                    className="rounded-xl border border-slate-200 text-slate-600 text-[11px] font-bold px-3 py-1.5 hover:bg-slate-50 transition"
+                  >
+                    Reopen
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-          <input
-            type="text"
-            placeholder="Search commodity, destination country or port..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {(['all', 'open', 'closed'] as const).map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-colors ${
-                statusFilter === st
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* RFQ Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading ? (
-          Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-44 rounded-2xl shimmer-bg border border-slate-100" />
-          ))
-        ) : filteredRfqs.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-500 space-y-3">
-            <Globe className="w-12 h-12 text-slate-300 mx-auto" />
-            <p className="text-sm font-bold">No RFQs found</p>
-            <p className="text-xs text-slate-400">Click &quot;Publish New Global RFQ&quot; to issue your first export procurement tender.</p>
-          </div>
-        ) : (
-          filteredRfqs.map((rfq) => (
-            <div
-              key={rfq.id}
-              className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover-lift space-y-3 flex flex-col justify-between"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 uppercase tracking-wider">
-                    {rfq.incoterm}
-                  </span>
-                  <StatusBadge status={rfq.status} />
-                </div>
-
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">{rfq.commodity}</h3>
-                  {rfq.variety && <p className="text-xs text-slate-500 font-medium">{rfq.variety}</p>}
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Destination:</span>
-                    <span className="font-bold text-slate-800 text-right">
-                      {rfq.destinationCountry} ({rfq.destinationPort})
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Target Volume:</span>
-                    <span className="font-bold text-slate-800">{rfq.quantityMt} MT</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Target Price:</span>
-                    <span className="font-extrabold text-blue-600">
-                      {rfq.targetPriceUsd ? `$${rfq.targetPriceUsd}/MT` : 'Open for Bids'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400">
-                  {rfq.inspectionAgency || 'Self-QC'}
-                </span>
-                <button
-                  onClick={() => handleOpenQuotes(rfq)}
-                  className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1 transition-colors"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Review Quotes</span>
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Review Quotes Drawer / Modal */}
+      {/* Create / edit requirement */}
       <ModalSheet
-        isOpen={!!selectedRfq}
-        onClose={() => setSelectedRfq(null)}
-        title={selectedRfq ? `Quotes for: ${selectedRfq.commodity} (${selectedRfq.destinationCountry})` : ''}
-        description="Adjudicate supplier bids, compare CIF/FOB pricing, and award export contract"
+        isOpen={showForm}
+        onClose={() => setShowForm(false)}
+        title={editing ? `Edit requirement — ${editing.crop}` : 'Post Export Requirement'}
+        description="Describe produce, quality, supply window, and collection expectations. Farmers only quote farm-gate / collection-level supply — never international freight or customs."
+        maxWidth="2xl"
       >
-        {selectedRfq && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-xs space-y-1">
-              <p className="font-extrabold text-blue-900">Tender Requirements:</p>
-              <p className="text-blue-800">
-                Quantity: <strong>{selectedRfq.quantityMt} MT</strong> • Incoterm: <strong>{selectedRfq.incoterm}</strong> • Packaging: <strong>{selectedRfq.packagingSpecs || 'Standard'}</strong>
-              </p>
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+          <Section title="A. Produce">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <Field label="Crop / commodity *" value={form.crop} onChange={(v) => setForm((f) => ({ ...f, crop: v }))} />
+              <Field label="Variety" value={form.variety} onChange={(v) => setForm((f) => ({ ...f, variety: v }))} />
+              <Field label="Grade" value={form.gradeSpec} onChange={(v) => setForm((f) => ({ ...f, gradeSpec: v }))} />
+              <Field label="Quality specification" value={form.qualityParams} onChange={(v) => setForm((f) => ({ ...f, qualityParams: v }))} />
+              <Field label="Required quantity *" type="number" value={form.quantityQuintals} onChange={(v) => setForm((f) => ({ ...f, quantityQuintals: v }))} />
+              <label className="text-[10px] font-bold text-slate-400 uppercase">
+                Unit *
+                <select
+                  value={String(form.quantityUnit)}
+                  onChange={(e) => setForm((f) => ({ ...f, quantityUnit: e.target.value }))}
+                  className="mt-1 w-full text-xs bg-white border border-slate-200 rounded-xl px-2.5 py-2"
+                >
+                  <option value="quintal">quintal</option>
+                  <option value="MT">MT</option>
+                  <option value="kg">kg</option>
+                </select>
+              </label>
             </div>
+            <div className="flex flex-wrap gap-4 mt-2">
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={!!form.partialQuantityAllowed}
+                  onChange={(e) => setForm((f) => ({ ...f, partialQuantityAllowed: e.target.checked }))}
+                />
+                Partial-quantity applications allowed
+              </label>
+              <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={!!form.multiFarmerAllowed}
+                  onChange={(e) => setForm((f) => ({ ...f, multiFarmerAllowed: e.target.checked }))}
+                />
+                Multiple farmers can collectively fulfil
+              </label>
+            </div>
+          </Section>
 
-            {loadingQuotes ? (
-              <div className="py-8 text-center text-xs font-bold text-slate-400">Loading incoming supplier quotes...</div>
-            ) : quotes.length === 0 ? (
-              <div className="py-8 text-center text-slate-500 space-y-2">
-                <FileText className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-sm font-semibold">No quotes submitted yet for this RFQ</p>
-                <p className="text-xs text-slate-400">Aggregators and FPOs will submit bids directly through their seller portals.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {quotes.map((q) => (
-                  <div key={q.id} className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-bold text-slate-900 text-sm">{q.sellerName}</span>
-                        <p className="text-[11px] text-slate-500">Origin Port: {q.originPort}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-base font-black text-slate-900">${q.pricePerMtUsd}/MT</span>
-                        <p className="text-[10px] text-slate-400">Lead Time: {q.shipmentLeadDays} days</p>
-                      </div>
-                    </div>
+          <Section title="B. Quality & compliance (optional)">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Moisture / parameters" value={form.moistureRequirement} onChange={(v) => setForm((f) => ({ ...f, moistureRequirement: v }))} />
+              <Field label="Size spec" value={form.sizeSpec} onChange={(v) => setForm((f) => ({ ...f, sizeSpec: v }))} />
+              <Field label="Residue / contaminant requirements" value={form.residueRequirements} onChange={(v) => setForm((f) => ({ ...f, residueRequirements: v }))} />
+              <Field label="Required certifications (comma separated)" value={form.requiredCertifications} onChange={(v) => setForm((f) => ({ ...f, requiredCertifications: v }))} />
+              <Field label="Inspection / testing requirements" value={form.inspectionRequirements} onChange={(v) => setForm((f) => ({ ...f, inspectionRequirements: v }))} />
+              <Field label="Sample requirements" value={form.sampleRequirements} onChange={(v) => setForm((f) => ({ ...f, sampleRequirements: v }))} />
+            </div>
+            <Field label="Rejection conditions (as stated by you)" value={form.rejectionConditions} onChange={(v) => setForm((f) => ({ ...f, rejectionConditions: v }))} textarea />
+          </Section>
 
-                    <div className="p-2.5 rounded-xl bg-slate-50 text-[11px] text-slate-600 space-y-1">
-                      <p>Packaging: <strong>{q.packagingOffered}</strong></p>
-                      <p>Inspection: <strong>{q.inspectionOffered}</strong></p>
-                      {q.notes && <p className="italic text-slate-500">&quot;{q.notes}&quot;</p>}
-                    </div>
+          <Section title="C. Supply">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <Field label="Available from *" type="date" value={form.deliveryWindowFrom} onChange={(v) => setForm((f) => ({ ...f, deliveryWindowFrom: v }))} />
+              <Field label="Required by *" type="date" value={form.deliveryWindowTo} onChange={(v) => setForm((f) => ({ ...f, deliveryWindowTo: v }))} />
+              <Field label="Collection / delivery location *" value={form.deliveryLocation} onChange={(v) => setForm((f) => ({ ...f, deliveryLocation: v }))} span={2} />
+              <Field label="Packaging requirements" value={form.packagingRequirements} onChange={(v) => setForm((f) => ({ ...f, packagingRequirements: v }))} />
+              <Field label="Labelling requirements" value={form.labellingRequirements} onChange={(v) => setForm((f) => ({ ...f, labellingRequirements: v }))} />
+              <Field label="Shipment window" value={form.shipmentWindow} onChange={(v) => setForm((f) => ({ ...f, shipmentWindow: v }))} />
+              <Field label="Price basis expected from farmer" value={form.priceBasis} onChange={(v) => setForm((f) => ({ ...f, priceBasis: v }))} />
+              <Field label="Target price" type="number" value={form.targetPrice} onChange={(v) => setForm((f) => ({ ...f, targetPrice: v }))} />
+              <Field label="Currency" value={form.currency} onChange={(v) => setForm((f) => ({ ...f, currency: v.toUpperCase() }))} />
+              <Field label="Max rate / quintal (₹, reference)" type="number" value={form.maxRatePerQuintal ?? ''} onChange={(v) => setForm((f) => ({ ...f, maxRatePerQuintal: v }))} />
+              <Field label="Payment terms (days)" type="number" value={form.paymentTermsDays} onChange={(v) => setForm((f) => ({ ...f, paymentTermsDays: v }))} />
+            </div>
+            <Field label="Additional notes" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} textarea />
+          </Section>
 
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                      <StatusBadge status={q.status} />
-                      {q.status === 'pending' && (
-                        <button
-                          onClick={() => handleAcceptQuote(q.id)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Accept & Confirm Order</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          <Section title="D. Export context (optional — keep buyer details confidential)">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Destination country" value={form.destinationCountry} onChange={(v) => setForm((f) => ({ ...f, destinationCountry: v }))} />
+              <Field label="Required export documents (comma separated)" value={form.requiredExportDocuments} onChange={(v) => setForm((f) => ({ ...f, requiredExportDocuments: v }))} />
+            </div>
+            <Field label="Buyer / specification notes (never share private buyer contacts)" value={form.buyerNotes} onChange={(v) => setForm((f) => ({ ...f, buyerNotes: v }))} textarea />
+          </Section>
+
+          {!editing && (
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <input
+                type="checkbox"
+                checked={!!form.publish}
+                onChange={(e) => setForm((f) => ({ ...f, publish: e.target.checked }))}
+              />
+              Publish immediately (uncheck to save as draft)
+            </label>
+          )}
+
+          {formError && <p className="text-xs font-semibold text-rose-700">{formError}</p>}
+          <button
+            type="button"
+            onClick={saveForm}
+            disabled={saving || !form.crop || !form.quantityQuintals || !form.deliveryWindowFrom || !form.deliveryWindowTo || !form.deliveryLocation}
+            className="w-full rounded-xl bg-emerald-600 text-white text-sm font-bold py-2.5 hover:bg-emerald-700 transition disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {editing ? 'Save Changes' : form.publish ? 'Publish Requirement' : 'Save Draft'}
+          </button>
+        </div>
       </ModalSheet>
 
-      {/* Create New RFQ Modal */}
+      {/* Applications review (comparison) */}
       <ModalSheet
-        isOpen={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        title="Publish International Export RFQ"
-        description="Issue formal international procurement tender to verified farmer producer cooperatives"
+        isOpen={!!reviewRfq}
+        onClose={() => setReviewRfq(null)}
+        title={reviewRfq ? `Applications — ${reviewRfq.crop}` : ''}
+        maxWidth="4xl"
       >
-        <form onSubmit={handleCreateRfq} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-700">Commodity</label>
-              <input
-                type="text"
-                required
-                value={rfqForm.commodity}
-                onChange={(e) => setRfqForm({ ...rfqForm, commodity: e.target.value })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          {reviewLoading ? (
+            <div className="flex items-center justify-center py-10 text-slate-400">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading applications…
             </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700">Variety / Grade</label>
-              <input
-                type="text"
-                value={rfqForm.variety}
-                onChange={(e) => setRfqForm({ ...rfqForm, variety: e.target.value })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
+          ) : applications.length === 0 ? (
+            <p className="text-xs text-slate-400 italic py-6 text-center">
+              No farmer applications yet. Share your requirement with farmer networks.
+            </p>
+          ) : (
+            applications.map((app) => (
+              <div key={app.id} className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-extrabold text-slate-900">
+                      {app.farmer?.name || app.sellerName || 'Farmer'}
+                      <span className="ml-2 text-xs font-semibold text-slate-400">
+                        {app.farmer?.district ? `${app.farmer.district}` : ''}
+                        {app.farmer?.state ? `, ${app.farmer.state}` : ''}
+                      </span>
+                    </p>
+                    <VerificationBadges identityVerified={app.farmer?.identityVerified} compact />
+                  </div>
+                  <ExportStatusBadge status={app.status} />
+                </div>
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                  <span>
+                    <strong>{app.quantityOffered} {app.quantityUnit}</strong> offered
+                  </span>
+                  <span>
+                    <strong>{app.currency} {app.price}</strong>/{app.priceUnit}
+                  </span>
+                  <span>{app.supplyBasis === 'farmGate' ? 'Farm gate' : app.supplyBasis}</span>
+                  <span>available {app.availableDate}</span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px]">
+                  {app.qualityDetails && (
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">{app.qualityDetails}</span>
+                  )}
+                  {(app.certificationNames || []).map((c) => (
+                    <span key={c} className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-bold">{c}</span>
+                  ))}
+                  {(app.documents || []).map((d) => (
+                    <span
+                      key={d.id}
+                      className={`px-2 py-0.5 rounded-full font-bold border ${
+                        d.verified
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-slate-50 text-slate-400 border-slate-200'
+                      }`}
+                      title={d.verified ? 'Certificate reviewed' : 'Uploaded — review pending; never auto-verified'}
+                    >
+                      {d.fileName || d.docType || 'Document'} {d.verified ? '✓ verified' : '(unreviewed)'}
+                    </span>
+                  ))}
+                  {app.packagingCapability && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-bold">{app.packagingCapability}</span>
+                  )}
+                  {app.previousExperience && (
+                    <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 font-bold">Experience: {app.previousExperience}</span>
+                  )}
+                </div>
+                {app.message && <p className="mt-1.5 text-[11px] italic text-slate-500">"{app.message}"</p>}
+                {app.sourceLot && (
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Referenced produce lot: {app.sourceLot.crop} · {app.sourceLot.quantityQuintals} q · harvest {app.sourceLot.harvestDate || '—'}
+                  </p>
+                )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-700">Quantity (Metric Tonnes)</label>
-              <input
-                type="number"
-                required
-                min={1}
-                value={rfqForm.quantityMt}
-                onChange={(e) => setRfqForm({ ...rfqForm, quantityMt: Number(e.target.value) })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700">Target Price ($ USD / MT)</label>
-              <input
-                type="number"
-                min={1}
-                value={rfqForm.targetPriceUsd}
-                onChange={(e) => setRfqForm({ ...rfqForm, targetPriceUsd: Number(e.target.value) })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700">Incoterm</label>
-              <select
-                value={rfqForm.incoterm}
-                onChange={(e) => setRfqForm({ ...rfqForm, incoterm: e.target.value as 'CIF' | 'FOB' | 'CFR' | 'EXW' })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="CIF">CIF (Cost, Insurance & Freight)</option>
-                <option value="FOB">FOB (Free on Board)</option>
-                <option value="CFR">CFR (Cost & Freight)</option>
-                <option value="EXW">EXW (Ex Works)</option>
-              </select>
-            </div>
-          </div>
+                {app.contactReveal ? (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                      <p className="text-[10px] font-extrabold text-emerald-700 uppercase flex items-center gap-1">
+                        <Phone className="w-3 h-3" /> Farmer contact unlocked
+                      </p>
+                      <p className="text-xs font-bold text-slate-800 mt-1">{app.contactReveal.farmer.fullName}</p>
+                      <p className="text-[11px] text-slate-500">{app.contactReveal.farmer.phone}</p>
+                    </div>
+                    <ContactActions contact={app.contactReveal.farmer} chatRoomId={app.chatRoomId} vertical />
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {app.status === 'submitted' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openUnlock(app)}
+                          className="rounded-xl bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 hover:bg-emerald-700 transition"
+                        >
+                          Contact Farmer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dismiss(app)}
+                          className="rounded-xl border border-slate-200 text-slate-500 text-[11px] font-bold px-3 py-1.5 hover:bg-slate-50 transition"
+                        >
+                          Dismiss
+                        </button>
+                      </>
+                    )}
+                    {app.status === 'contacted' && (
+                      <span className="text-[11px] font-semibold text-amber-700">Contacted — see My Connections</span>
+                    )}
+                  </div>
+                )}
+                {app.contactReveal && app.negotiationChecklist && app.negotiationChecklist.length > 0 && (
+                  <div className="mt-3">
+                    <NegotiationChecklist items={app.negotiationChecklist} />
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </ModalSheet>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-700">Destination Country</label>
-              <input
-                type="text"
-                required
-                value={rfqForm.destinationCountry}
-                onChange={(e) => setRfqForm({ ...rfqForm, destinationCountry: e.target.value })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+      <ContactUnlockModal application={contactApp} onClose={() => setContactApp(null)} onUnlocked={onUnlocked} />
+
+      {/* Unlocked confirmation */}
+      <ModalSheet
+        isOpen={!!unlockedApp}
+        onClose={() => setUnlockedApp(null)}
+        title="Contact unlocked"
+        maxWidth="lg"
+      >
+        {unlockedApp?.contactReveal && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-[10px] font-extrabold text-emerald-700 uppercase">Farmer contact</p>
+              <p className="text-sm font-bold text-slate-900">{unlockedApp.contactReveal.farmer.fullName}</p>
+              <p className="text-xs text-slate-600">{unlockedApp.contactReveal.farmer.phone}</p>
             </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700">Destination Port</label>
-              <input
-                type="text"
-                required
-                value={rfqForm.destinationPort}
-                onChange={(e) => setRfqForm({ ...rfqForm, destinationPort: e.target.value })}
-                className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-700">Packaging Specifications</label>
-            <input
-              type="text"
-              value={rfqForm.packagingSpecs}
-              onChange={(e) => setRfqForm({ ...rfqForm, packagingSpecs: e.target.value })}
-              className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-700">Third-Party Inspection Agency</label>
-            <input
-              type="text"
-              value={rfqForm.inspectionAgency}
-              onChange={(e) => setRfqForm({ ...rfqForm, inspectionAgency: e.target.value })}
-              className="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+            <ContactActions contact={unlockedApp.contactReveal.farmer} chatRoomId={unlockedApp.chatRoomId} vertical />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Quote, samples, inspection, price, payment, packaging, transport, export contracts, customs,
+              freight, and insurance are settled directly with the farmer. This platform never holds export
+              payments and never creates a contract from this unlock.
+            </p>
             <button
               type="button"
-              onClick={() => setCreateModalOpen(false)}
-              className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              onClick={() => setUnlockedApp(null)}
+              className="w-full rounded-xl bg-slate-800 text-white text-sm font-bold py-2.5 hover:bg-slate-900 transition"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md"
-            >
-              <Globe className="w-4 h-4" />
-              <span>{submitting ? 'Publishing...' : 'Publish Global RFQ'}</span>
+              Done
             </button>
           </div>
-        </form>
+        )}
       </ModalSheet>
     </div>
+  );
+};
+
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <section className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+    <h3 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide">{title}</h3>
+    {children}
+  </section>
+);
+
+const Field: React.FC<{
+  label: string;
+  value: unknown;
+  onChange: (value: string) => void;
+  type?: string;
+  textarea?: boolean;
+  span?: number;
+}> = ({ label, value, onChange, type = 'text', textarea, span }) => {
+  const spanCls = span === 2 ? 'col-span-2' : span === 4 ? 'col-span-4' : '';
+  const cls = `mt-1 w-full text-xs bg-white border border-slate-200 rounded-xl px-2.5 py-2 ${spanCls}`;
+  return (
+    <label className={`text-[10px] font-bold text-slate-400 uppercase ${spanCls}`}>
+      {label}
+      {textarea ? (
+        <textarea rows={2} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} className={cls} />
+      ) : (
+        <input type={type} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} className={cls} />
+      )}
+    </label>
   );
 };

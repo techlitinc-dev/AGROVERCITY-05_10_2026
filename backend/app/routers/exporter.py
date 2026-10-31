@@ -13,14 +13,21 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.security import verify_mpin
 from app.models.exporter import (
+    ContactUnlockIn,
+    ExportReadinessIn,
+    FarmerApplicationCreate,
+    IssueReportIn,
     LcIn,
     OrderDocumentIn,
     OrderStatusIn,
+    OutcomeIn,
     QuoteAccept,
     QuoteCreate,
     RemittanceIn,
     RfqCreate,
+    RfqUpdate,
     ShipmentEventIn,
     ShipmentIn,
 )
@@ -30,6 +37,7 @@ from app.services import settlements as settlements_service
 from app.services.chat import ensure_chat_room, ensure_direct_room
 from app.services.notify import notify_user
 from app.services.users import get_user
+from app.services.verification import is_identity_verified, verification_map
 
 router = APIRouter(prefix="/exporter", tags=["exporter"])
 
@@ -221,19 +229,75 @@ async def _quotes_analytics(rfq: dict, quotes: list[dict]) -> dict:
     }
 
 
+async def _exporter_summaries(exporter_ids: list[str]) -> dict[str, dict]:
+    """Batched verification summaries (spec §18: no N+1 in list endpoints)."""
+    ids = list(dict.fromkeys(e for e in exporter_ids if e))
+    if not ids:
+        return {}
+    users = {i: (await get_user(i) or {}) for i in ids}
+    profiles = {i: (await get_doc(f"users/{i}/role_profiles", "exporter") or {}) for i in ids}
+    cases = await query("kyc_cases", [], limit=2000)
+    identity = await verification_map(ids)
+    out: dict[str, dict] = {}
+    for i in ids:
+        persona_cases = [
+            c for c in cases if c.get("userId") == i and c.get("persona") == "exporter"
+        ]
+        persona_cases.sort(key=lambda c: c.get("submittedAt") or "", reverse=True)
+        kyc_status = persona_cases[0].get("status") if persona_cases else None
+        business_verified = kyc_status == "verified"
+        out[i] = {
+            "exporterId": i,
+            "name": users[i].get("name", ""),
+            "companyName": profiles[i].get("companyName", ""),
+            # `verified` is the legacy browse flag: exporter business documents
+            # (IEC/APEDA/GST) actually reviewed under the KYC matrix.
+            "verified": business_verified,
+            "kycStatus": kyc_status,
+            # Distinct badges — never inferred from each other (spec §13).
+            "identityVerified": identity.get(i, False),
+            "businessVerified": business_verified,
+        }
+    return out
+
+
 async def _exporter_summary(exporter_id: str) -> dict:
-    user = await get_user(exporter_id) or {}
-    profile = await get_doc(f"users/{exporter_id}/role_profiles", "exporter") or {}
+    summaries = await _exporter_summaries([exporter_id])
+    return summaries.get(exporter_id) or {
+        "exporterId": exporter_id,
+        "name": "",
+        "companyName": "",
+        "verified": False,
+        "kycStatus": None,
+        "identityVerified": False,
+        "businessVerified": False,
+    }
+
+
+async def _exporter_business_verified(exporter_id: str) -> bool:
     cases = await query("kyc_cases", [("userId", "==", exporter_id)], limit=50)
     cases = [c for c in cases if c.get("persona") == "exporter"]
     cases.sort(key=lambda c: c.get("submittedAt") or "", reverse=True)
-    kyc_status = cases[0].get("status") if cases else None
+    return bool(cases and cases[0].get("status") == "verified")
+
+
+async def _farmer(uid: str = Depends(current_user_id)) -> str:
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    require_role(user, "farmer")
+    return uid
+
+
+async def _farmer_summary(farmer_id: str) -> dict:
+    user = await get_user(farmer_id) or {}
     return {
-        "exporterId": exporter_id,
+        "farmerId": farmer_id,
         "name": user.get("name", ""),
-        "companyName": profile.get("companyName", ""),
-        "verified": kyc_status == "verified",
-        "kycStatus": kyc_status,
+        "village": user.get("village", ""),
+        "district": user.get("district", ""),
+        "state": user.get("state", ""),
+        "identityVerified": await is_identity_verified(user),
     }
 
 
@@ -287,20 +351,108 @@ async def create_rfq(
             "invalid delivery window",
             {"deliveryWindow": "from must be on or before to"},
         )
+    if window_from is None or window_to is None:
+        _error(422, "VALIDATION_ERROR", "invalid delivery window", {"deliveryWindow": "must be valid dates"})
+    user = await get_user(uid) or {}
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to publish export requirements")
     now = _now()
     doc = {
         **body.model_dump(by_alias=True),
         "id": f"erq_{uuid.uuid4().hex[:12]}",
         "exporterId": uid,
-        "status": "open",
+        "status": "open" if body.publish else "draft",
         "fulfilledQuintals": 0.0,
         "createdAt": now,
         "closedAt": None,
     }
     await set_doc("export_rfqs", doc["id"], doc)
-    await _notify_matching_sellers(doc)
+    if doc["status"] == "open":
+        await _notify_matching_sellers(doc)
     await idempotency.store(scope, idempotency_key, doc)
     return doc
+
+
+@router.put("/rfqs/{rfq_id}")
+async def update_rfq(rfq_id: str, body: RfqUpdate, uid: str = Depends(_exporter)):
+    """Edit a draft, open or paused RFQ. Published fields re-validate on save."""
+    rfq = await _own_rfq(rfq_id, uid)
+    if rfq.get("status") not in ("draft", "open", "paused"):
+        _error(409, "RFQ_NOT_EDITABLE", "only draft, open or paused RFQs can be edited")
+    patch = body.model_dump(by_alias=True, exclude_none=True)
+    window = patch.get("deliveryWindow")
+    if window:
+        window_from = _parse_dt(window.get("from"))
+        window_to = _parse_dt(window.get("to"))
+        if window_from is None or window_to is None or window_from > window_to:
+            _error(
+                422,
+                "VALIDATION_ERROR",
+                "invalid delivery window",
+                {"deliveryWindow": "from must be a valid date on or before to"},
+            )
+    rfq.update(patch)
+    rfq["updatedAt"] = _now()
+    await set_doc("export_rfqs", rfq_id, rfq)
+    return rfq
+
+
+@router.post("/rfqs/{rfq_id}/publish")
+async def publish_rfq(rfq_id: str, uid: str = Depends(_exporter)):
+    rfq = await _own_rfq(rfq_id, uid)
+    if rfq.get("status") != "draft":
+        _error(409, "RFQ_NOT_DRAFT", "only a draft RFQ can be published")
+    user = await get_user(uid) or {}
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to publish export requirements")
+    window_from = _parse_dt((rfq.get("deliveryWindow") or {}).get("from"))
+    window_to = _parse_dt((rfq.get("deliveryWindow") or {}).get("to"))
+    if window_from is None or window_to is None or window_from > window_to:
+        _error(422, "VALIDATION_ERROR", "invalid delivery window")
+    rfq["status"] = "open"
+    rfq["publishedAt"] = _now()
+    rfq["updatedAt"] = rfq["publishedAt"]
+    await set_doc("export_rfqs", rfq_id, rfq)
+    await _notify_matching_sellers(rfq)
+    return rfq
+
+
+@router.post("/rfqs/{rfq_id}/pause")
+async def pause_rfq(rfq_id: str, uid: str = Depends(_exporter)):
+    rfq = await _own_rfq(rfq_id, uid)
+    if rfq.get("status") != "open":
+        _error(409, "RFQ_NOT_OPEN", "only an open RFQ can be paused")
+    rfq["status"] = "paused"
+    rfq["updatedAt"] = _now()
+    await set_doc("export_rfqs", rfq_id, rfq)
+    await _notify_rfq_status_change(rfq, "paused", "Export requirement paused / निर्यात आवश्यकता रोकी गई")
+    return rfq
+
+
+@router.post("/rfqs/{rfq_id}/resume")
+async def resume_rfq(rfq_id: str, uid: str = Depends(_exporter)):
+    rfq = await _own_rfq(rfq_id, uid)
+    if rfq.get("status") != "paused":
+        _error(409, "RFQ_NOT_PAUSED", "only a paused RFQ can be resumed")
+    rfq["status"] = "open"
+    rfq["updatedAt"] = _now()
+    await set_doc("export_rfqs", rfq_id, rfq)
+    return rfq
+
+
+@router.post("/rfqs/{rfq_id}/fulfill")
+async def fulfill_rfq(rfq_id: str, uid: str = Depends(_exporter)):
+    """Exporter-controlled manual fulfilment. Offered quantities never flip
+    this automatically, and no export order / payment object is created."""
+    rfq = await _own_rfq(rfq_id, uid)
+    if rfq.get("status") not in ("open", "paused"):
+        _error(409, "RFQ_NOT_OPEN", "only an open or paused RFQ can be marked fulfilled")
+    rfq["status"] = "fulfilled"
+    rfq["closedAt"] = _now()
+    rfq["updatedAt"] = rfq["closedAt"]
+    await set_doc("export_rfqs", rfq_id, rfq)
+    await _notify_rfq_status_change(rfq, "fulfilled", "Sourcing complete / सोर्सिंग पूर्ण")
+    return rfq
 
 
 @router.get("/rfqs/browse")
@@ -367,19 +519,20 @@ async def get_rfq(rfq_id: str, uid: str = Depends(_exporter)):
 @router.post("/rfqs/{rfq_id}/close")
 async def close_rfq(rfq_id: str, uid: str = Depends(_exporter)):
     rfq = await _own_rfq(rfq_id, uid)
-    if rfq.get("status") != "open":
-        _error(409, "RFQ_NOT_OPEN", "only an open RFQ can be closed")
+    if rfq.get("status") not in ("open", "paused"):
+        _error(409, "RFQ_NOT_OPEN", "only an open or paused RFQ can be closed")
     rfq["status"] = "closed"
     rfq["closedAt"] = _now()
     await set_doc("export_rfqs", rfq_id, rfq)
+    await _notify_rfq_status_change(rfq, "closed", "Export requirement closed / निर्यात आवश्यकता बंद")
     return rfq
 
 
 @router.post("/rfqs/{rfq_id}/reopen")
 async def reopen_rfq(rfq_id: str, uid: str = Depends(_exporter)):
     rfq = await _own_rfq(rfq_id, uid)
-    if rfq.get("status") != "closed":
-        _error(409, "RFQ_NOT_CLOSED", "only a closed RFQ can be reopened")
+    if rfq.get("status") not in ("closed", "fulfilled"):
+        _error(409, "RFQ_NOT_CLOSED", "only a closed or fulfilled RFQ can be reopened")
     rfq["status"] = "open"
     rfq["closedAt"] = None
     await set_doc("export_rfqs", rfq_id, rfq)
@@ -389,8 +542,8 @@ async def reopen_rfq(rfq_id: str, uid: str = Depends(_exporter)):
 @router.delete("/rfqs/{rfq_id}", status_code=204)
 async def delete_rfq(rfq_id: str, uid: str = Depends(_exporter)):
     rfq = await _own_rfq(rfq_id, uid)
-    if rfq.get("status") != "open":
-        _error(409, "RFQ_NOT_OPEN", "only an open RFQ can be deleted")
+    if rfq.get("status") not in ("draft", "open", "paused"):
+        _error(409, "RFQ_NOT_OPEN", "only a draft, open or paused RFQ can be deleted")
     await delete_doc("export_rfqs", rfq_id)
 
 
@@ -1156,3 +1309,766 @@ async def exporter_profile(uid: str = Depends(_exporter)):
             "supplierCount": len(supplier_ids),
         },
     }
+
+
+# ==========================================
+# FARMER ⇄ EXPORTER DIRECT-CONNECT SOURCING
+# (spec: exporter RFQ → farmer application → compare → contact unlock
+# (KYC + terms + MPIN) → direct negotiation → user-reported outcome)
+# ==========================================
+
+EXPORT_TERMS_VERSION = "export-dc-1.0"
+EXPORT_DIRECT_CONNECT_TERMS = (
+    "Agrovercity only connects farmers and exporters. Sampling, quality "
+    "inspection, residue testing, certifications, aggregation, final price, "
+    "currency, payment, packaging, domestic transport, export contracts, "
+    "customs, freight, insurance, produce acceptance, and disputes are handled "
+    "directly between the parties and their service providers. Agrovercity "
+    "does not hold payments and does not guarantee quality, compliance, "
+    "payment, export clearance, shipment, or delivery. After confirmation, my "
+    "contact details will be shared with the other party and their contact "
+    "details will be shared with me."
+)
+
+# Application statuses that still block a fresh application for the same
+# farmer+RFQ pair (a farmer may re-apply only once the previous one is closed).
+ACTIVE_APPLICATION_STATUSES = ("submitted", "contacted")
+# RFQ statuses that still accept farmer applications.
+OPEN_FOR_APPLICATIONS = ("open", "applicationsReceived")
+
+# Quintal-equivalent factors so MT/kg offers can be compared against a
+# quintal-based requirement without currency or freight conversion.
+_QUNIT_Q = {
+    "quintal": 1.0,
+    "quintals": 1.0,
+    "q": 1.0,
+    "kg": 0.01,
+    "kgs": 0.01,
+    "mt": 10.0,
+    "metric ton": 10.0,
+    "metric tonnage": 10.0,
+    "metric_ton": 10.0,
+    "tonne": 10.0,
+    "tonnes": 10.0,
+    "ton": 10.0,
+}
+
+# Negotiation guidance shown after contact unlock (informational only).
+EXPORT_NEGOTIATION_CHECKLIST = [
+    "Exchange samples",
+    "Confirm quality and rejection conditions",
+    "Complete residue/inspection testing",
+    "Confirm quantity aggregation and collection arrangements",
+    "Agree on final price, currency, and payment terms",
+    "Confirm packaging and labelling",
+    "Allocate domestic transport responsibilities",
+    "Agree on export contract and logistics responsibilities",
+    "Complete customs/freight/insurance arrangements through chosen providers",
+]
+
+
+def _to_quintals(quantity: float, unit: str | None) -> float:
+    return float(quantity) * _QUNIT_Q.get((unit or "quintal").strip().lower(), 1.0)
+
+
+async def _record_export_terms(uid: str, accepted_for: str, *, rfq_id: str | None = None,
+                               application_id: str | None = None) -> dict:
+    """Append-only audit of an export direct-connect terms acceptance."""
+    doc = {
+        "id": f"ta_{uuid.uuid4().hex[:12]}",
+        "userId": uid,
+        "termsVersion": EXPORT_TERMS_VERSION,
+        "acceptedAt": _now(),
+        "acceptedFor": accepted_for,
+        "rfqId": rfq_id,
+        "applicationId": application_id,
+    }
+    await set_doc("terms_acceptances", doc["id"], doc)
+    return doc
+
+
+async def _notify_rfq_status_change(rfq: dict, status: str, title: str) -> None:
+    """Ping every farmer who applied on this RFQ when it pauses/closes/fulfils."""
+    applications = await query("export_quotes", [("rfqId", "==", rfq["id"])], limit=1000)
+    farmer_ids = {a.get("sellerId") for a in applications if a.get("applicantRole") == "farmer"}
+    for farmer_id in farmer_ids:
+        await notify_user(
+            farmer_id or "",
+            type="rfq_status",
+            title=title,
+            body=f"{rfq.get('crop', '')} — {status}",
+            deepLink="/farmer/export/applications",
+        )
+
+
+def _dc_contact(user: dict) -> dict:
+    """Direct-connect contact block (same shape as produce-lot leads)."""
+    phone = user.get("phone") or ""
+    whatsapp = user.get("whatsapp") or phone
+
+    def digits(value) -> str | None:
+        d = "".join(ch for ch in str(value or "") if ch.isdigit())
+        return d or None
+
+    return {
+        "name": (user.get("name") or "").strip().split(" ")[0],
+        "fullName": user.get("name") or "",
+        "village": user.get("village", ""),
+        "district": user.get("district", ""),
+        "state": user.get("state", ""),
+        "phone": phone,
+        "phoneDigits": digits(phone),
+        "whatsappDigits": digits(whatsapp),
+    }
+
+
+def _public_rfq_view(rfq: dict) -> dict:
+    """Farmer-facing RFQ view: never leak exporter phone/WhatsApp or any
+    private business/KYC fields even if they ever land on the doc."""
+    hidden = {"phone", "whatsapp", "exporterPhone", "exporterWhatsapp", "kycDocs", "businessDocuments"}
+    return {k: v for k, v in rfq.items() if k not in hidden}
+
+
+async def _application_view(app: dict, uid: str) -> dict:
+    """Participant-scoped application view. Contact details are included only
+    for the farmer/exporter pair after the contact unlock."""
+    farmer_id = app.get("sellerId") or ""
+    exporter_id = app.get("exporterId") or ""
+    is_participant = uid in (farmer_id, exporter_id)
+    rfq = await get_doc("export_rfqs", app.get("rfqId") or "") or {}
+    view = {
+        **app,
+        "termsText": EXPORT_DIRECT_CONNECT_TERMS,
+        "negotiationChecklist": EXPORT_NEGOTIATION_CHECKLIST if app.get("contactReveal") else [],
+        "rfq": {
+            "id": rfq.get("id"),
+            "crop": rfq.get("crop"),
+            "variety": rfq.get("variety"),
+            "quantityQuintals": rfq.get("quantityQuintals"),
+            "quantityUnit": rfq.get("quantityUnit"),
+            "deliveryLocation": rfq.get("deliveryLocation"),
+            "deliveryWindow": rfq.get("deliveryWindow"),
+            "status": rfq.get("status"),
+            "destinationCountry": rfq.get("destinationCountry"),
+        },
+        "exporter": await _exporter_summary(exporter_id),
+        "farmer": await _farmer_summary(farmer_id),
+    }
+    if not is_participant:
+        view.pop("contactReveal", None)
+        view.pop("farmerConsent", None)
+        view.pop("exporterConsent", None)
+    return view
+
+
+async def _farmer_summaries(farmer_ids: list[str]) -> dict[str, dict]:
+    ids = list(dict.fromkeys(f for f in farmer_ids if f))
+    if not ids:
+        return {}
+    users = {i: (await get_user(i) or {}) for i in ids}
+    identity = await verification_map(ids)
+    return {
+        i: {
+            "farmerId": i,
+            "name": users[i].get("name", ""),
+            "village": users[i].get("village", ""),
+            "district": users[i].get("district", ""),
+            "state": users[i].get("state", ""),
+            "identityVerified": identity.get(i, False),
+        }
+        for i in ids
+    }
+
+
+async def _application_views(apps: list[dict], uid: str) -> list[dict]:
+    """Batched list view — one pass of users/kyc lookups for every item."""
+    rfq_ids = list({a.get("rfqId") or "" for a in apps})
+    rfqs = {rid: (await get_doc("export_rfqs", rid) or {}) for rid in rfq_ids}
+    exporters = await _exporter_summaries([a.get("exporterId") or "" for a in apps])
+    farmers = await _farmer_summaries([a.get("sellerId") or "" for a in apps])
+    out = []
+    for app in apps:
+        farmer_id = app.get("sellerId") or ""
+        exporter_id = app.get("exporterId") or ""
+        is_participant = uid in (farmer_id, exporter_id)
+        rfq = rfqs.get(app.get("rfqId") or "") or {}
+        view = {
+            **app,
+            "termsText": EXPORT_DIRECT_CONNECT_TERMS,
+            "negotiationChecklist": EXPORT_NEGOTIATION_CHECKLIST if app.get("contactReveal") else [],
+            "rfq": {
+                "id": rfq.get("id"),
+                "crop": rfq.get("crop"),
+                "variety": rfq.get("variety"),
+                "quantityQuintals": rfq.get("quantityQuintals"),
+                "quantityUnit": rfq.get("quantityUnit"),
+                "deliveryLocation": rfq.get("deliveryLocation"),
+                "deliveryWindow": rfq.get("deliveryWindow"),
+                "status": rfq.get("status"),
+                "destinationCountry": rfq.get("destinationCountry"),
+            },
+            "exporter": exporters.get(exporter_id),
+            "farmer": farmers.get(farmer_id),
+        }
+        if not is_participant:
+            view.pop("contactReveal", None)
+            view.pop("farmerConsent", None)
+            view.pop("exporterConsent", None)
+        out.append(view)
+    return out
+
+
+async def _own_application(application_id: str, uid: str) -> dict:
+    app = await get_doc("export_quotes", application_id)
+    if app is None or app.get("applicantRole") != "farmer":
+        _error(404, "APPLICATION_NOT_FOUND", "export application not found")
+    return app
+
+
+async def _resolve_farmer_documents(farmer_id: str, document_ids: list[str]) -> list[dict]:
+    """Validate that certificate/test-document references belong to the
+    farmer. `verified` comes ONLY from an actual review (vault status) —
+    never inferred from the upload itself."""
+    refs = []
+    for doc_id in document_ids:
+        doc = await get_doc(f"users/{farmer_id}/vault_documents", doc_id)
+        if doc is None:
+            _error(422, "VALIDATION_ERROR", "unknown document reference", {"documentIds": f"{doc_id} not found"})
+        refs.append(
+            {
+                "id": doc_id,
+                "docType": doc.get("docType"),
+                "fileName": doc.get("fileName"),
+                "verified": doc.get("status") == "verified",
+            }
+        )
+    return refs
+
+
+# ==========================================
+# FARMER: opportunity discovery
+# ==========================================
+
+
+@router.get("/opportunities")
+async def browse_opportunities(
+    crop: str | None = None,
+    state: str | None = None,
+    district: str | None = None,
+    requiredBy: str | None = None,
+    certification: str | None = None,
+    minQuantity: float | None = None,
+    maxQuantity: float | None = None,
+    uid: str = Depends(_farmer),
+):
+    """Open export requirements visible to farmers (never private contacts)."""
+    docs = await query("export_rfqs", [("status", "==", "open")], limit=1000)
+    if crop:
+        docs = [d for d in docs if crop.lower() in (d.get("crop") or "").lower()]
+    if state:
+        docs = [d for d in docs if state.lower() in (d.get("deliveryLocation") or "").lower()]
+    if district:
+        docs = [d for d in docs if district.lower() in (d.get("deliveryLocation") or "").lower()]
+    if requiredBy:
+        cutoff = _parse_dt(requiredBy)
+        if cutoff:
+            docs = [
+                d
+                for d in docs
+                if (_parse_dt((d.get("deliveryWindow") or {}).get("to")) or cutoff) >= cutoff
+            ]
+    if certification:
+        docs = [
+            d
+            for d in docs
+            if certification.lower()
+            in " ".join(d.get("requiredCertifications") or []).lower()
+        ]
+    if minQuantity is not None:
+        docs = [d for d in docs if _to_quintals(d.get("quantityQuintals") or 0, d.get("quantityUnit")) >= minQuantity]
+    if maxQuantity is not None:
+        docs = [d for d in docs if _to_quintals(d.get("quantityQuintals") or 0, d.get("quantityUnit")) <= maxQuantity]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    summaries = await _exporter_summaries([rfq.get("exporterId") or "" for rfq in docs])
+    enriched = []
+    for rfq in docs:
+        applications = await query("export_quotes", [("rfqId", "==", rfq["id"])], limit=1000)
+        farmer_apps = [a for a in applications if a.get("applicantRole") == "farmer"]
+        enriched.append(
+            {
+                **_public_rfq_view(rfq),
+                "applicationsReceived": bool(farmer_apps),
+                "applicationsCount": len(farmer_apps),
+                "exporter": summaries.get(rfq.get("exporterId") or ""),
+            }
+        )
+    return {"data": enriched, "total": len(enriched)}
+
+
+@router.get("/opportunities/{rfq_id}")
+async def get_opportunity(rfq_id: str, uid: str = Depends(_farmer)):
+    rfq = await get_doc("export_rfqs", rfq_id)
+    if rfq is None or rfq.get("status") not in OPEN_FOR_APPLICATIONS:
+        _error(404, "RFQ_NOT_FOUND", "export requirement not found or not open")
+    mine = await query(
+        "export_quotes", [("rfqId", "==", rfq_id), ("sellerId", "==", uid)], limit=10
+    )
+    my_application = next(
+        (a["id"] for a in mine if a.get("status") in ACTIVE_APPLICATION_STATUSES), None
+    )
+    return {
+        **_public_rfq_view(rfq),
+        "exporter": await _exporter_summary(rfq.get("exporterId") or ""),
+        "myApplicationId": my_application,
+        "termsText": EXPORT_DIRECT_CONNECT_TERMS,
+    }
+
+
+# ==========================================
+# FARMER: applications
+# ==========================================
+
+
+@router.post("/rfqs/{rfq_id}/applications", status_code=201)
+async def create_application(
+    rfq_id: str,
+    body: FarmerApplicationCreate,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    uid: str = Depends(_farmer),
+):
+    if not idempotency_key:
+        _error(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required")
+    scope = f"exporter.applications.{rfq_id}"
+    replayed = await idempotency.replay(scope, idempotency_key)
+    if replayed is not None:
+        return replayed
+
+    farmer = await get_user(uid) or {}
+    if not await is_identity_verified(farmer):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to apply on export requirements")
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "acknowledge the direct-connect and contact-sharing terms to apply")
+
+    rfq = await get_doc("export_rfqs", rfq_id)
+    if rfq is None or rfq.get("status") not in OPEN_FOR_APPLICATIONS:
+        _error(409, "RFQ_NOT_OPEN", "this requirement is not open for applications")
+    if rfq.get("exporterId") == uid:
+        _error(422, "VALIDATION_ERROR", "you cannot apply on your own requirement")
+
+    available_at = _parse_dt(body.availableDate)
+    if available_at is None:
+        _error(422, "VALIDATION_ERROR", "invalid available date", {"availableDate": "must be a valid date"})
+    if available_at.date() < datetime.now(timezone.utc).date():
+        _error(422, "VALIDATION_ERROR", "invalid available date", {"availableDate": "must not be in the past"})
+
+    offered_q = _to_quintals(body.quantityOffered, body.quantityUnit)
+    required_q = _to_quintals(rfq.get("quantityQuintals") or 0, rfq.get("quantityUnit"))
+    if offered_q <= 0:
+        _error(422, "VALIDATION_ERROR", "invalid quantity", {"quantityOffered": "must be positive"})
+    if offered_q > required_q:
+        _error(
+            422,
+            "VALIDATION_ERROR",
+            "offered quantity exceeds the requirement",
+            {"quantityOffered": f"must not exceed {rfq.get('quantityQuintals')} {rfq.get('quantityUnit') or 'quintals'}"},
+        )
+    if offered_q < required_q and not rfq.get("partialQuantityAllowed", True):
+        _error(
+            422,
+            "PARTIAL_NOT_ALLOWED",
+            "this requirement does not accept partial-quantity applications",
+            {"quantityOffered": "full quantity is required"},
+        )
+
+    # One live application per farmer per RFQ.
+    existing = await query(
+        "export_quotes", [("rfqId", "==", rfq_id), ("sellerId", "==", uid)], limit=20
+    )
+    live = [a for a in existing if a.get("status") in ACTIVE_APPLICATION_STATUSES]
+    if live:
+        _error(409, "DUPLICATE_APPLICATION", "you already have a live application on this requirement")
+
+    document_refs = await _resolve_farmer_documents(uid, list(body.documentIds or []))
+
+    source_lot_snapshot = None
+    if body.sourceLotId:
+        lot = await get_doc("market_lots", body.sourceLotId)
+        if lot is None or lot.get("farmerId") != uid:
+            _error(422, "VALIDATION_ERROR", "unknown produce lot", {"sourceLotId": "not your lot"})
+        # Ownership verified server-side: prefill from the stored lot, never
+        # from client-supplied lot data.
+        source_lot_snapshot = {
+            "id": lot["id"],
+            "crop": lot.get("crop"),
+            "quantityQuintals": lot.get("quantityQuintals"),
+            "location": lot.get("location"),
+            "harvestDate": lot.get("harvestDate"),
+            "photos": lot.get("photos") or [],
+        }
+
+    now = _now()
+    application = {
+        **body.model_dump(),
+        "id": f"exq_{uuid.uuid4().hex[:12]}",
+        "rfqId": rfq_id,
+        "exporterId": rfq.get("exporterId") or "",
+        "sellerId": uid,
+        "sellerName": farmer.get("name", ""),
+        "applicantRole": "farmer",
+        "status": "submitted",
+        # Legacy-shape mirrors so existing list/analytics endpoints keep working.
+        "ratePerQuintal": body.price,
+        "availableQuintals": offered_q,
+        "readyDate": body.availableDate,
+        "pickupLocation": body.supplyLocation,
+        "documents": document_refs,
+        "sourceLot": source_lot_snapshot,
+        "farmerConsent": {
+            "termsVersion": EXPORT_TERMS_VERSION,
+            "acceptedAt": now,
+            "termsText": EXPORT_DIRECT_CONNECT_TERMS,
+        },
+        "contactReveal": None,
+        "outcome": None,
+        "createdAt": now,
+    }
+    await set_doc("export_quotes", application["id"], application)
+    await _record_export_terms(uid, "export_application", rfq_id=rfq_id, application_id=application["id"])
+    await notify_user(
+        application["exporterId"],
+        type="application_received",
+        title="New farmer application / नई किसान आवेदन",
+        body=f"{application['sellerName'] or 'A farmer'} offered {body.quantityOffered} {body.quantityUnit} of {rfq.get('crop')} @ {body.currency} {body.price}/{body.priceUnit}",
+        deepLink=f"/exporter/applications?rfq={rfq_id}",
+    )
+    res = await _application_view(application, uid)
+    await idempotency.store(scope, idempotency_key, res)
+    return res
+
+
+@router.get("/applications/mine")
+async def my_applications(
+    status: str | None = None,
+    uid: str = Depends(_farmer),
+):
+    docs = await query("export_quotes", [("sellerId", "==", uid)], limit=1000)
+    docs = [d for d in docs if d.get("applicantRole") == "farmer"]
+    if status:
+        docs = [d for d in docs if d.get("status") == status]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    enriched = await _application_views(docs, uid)
+    return {"data": enriched, "total": len(enriched)}
+
+
+@router.get("/applications/{application_id}")
+async def get_application(application_id: str, uid: str = Depends(current_user_id)):
+    app = await _own_application(application_id, uid)
+    farmer_id = app.get("sellerId") or ""
+    exporter_id = app.get("exporterId") or ""
+    if uid not in (farmer_id, exporter_id):
+        _error(403, "APPLICATION_FORBIDDEN", "only the applicant or the RFQ owner can view this application")
+    return await _application_view(app, uid)
+
+
+@router.post("/applications/{application_id}/withdraw")
+async def withdraw_application(application_id: str, uid: str = Depends(_farmer)):
+    app = await _own_application(application_id, uid)
+    if app.get("sellerId") != uid:
+        _error(403, "APPLICATION_FORBIDDEN", "only the applicant can withdraw this application")
+    if app.get("status") not in ("submitted", "contacted"):
+        _error(409, "APPLICATION_NOT_ACTIVE", "only a submitted or contacted application can be withdrawn")
+    app["status"] = "withdrawn"
+    app["withdrawnAt"] = _now()
+    app["updatedAt"] = app["withdrawnAt"]
+    await set_doc("export_quotes", application_id, app)
+    await notify_user(
+        app.get("exporterId") or "",
+        type="application_withdrawn",
+        title="Application withdrawn / आवेदन वापस",
+        body=f"{app.get('sellerName') or 'A farmer'} withdrew their application",
+        deepLink="/exporter/applications",
+    )
+    return await _application_view(app, uid)
+
+
+# ==========================================
+# EXPORTER: application comparison + contact unlock
+# ==========================================
+
+
+@router.get("/rfqs/{rfq_id}/applications")
+async def list_rfq_applications(rfq_id: str, uid: str = Depends(_exporter)):
+    rfq = await _own_rfq(rfq_id, uid)
+    docs = await query("export_quotes", [("rfqId", "==", rfq_id)], limit=1000)
+    applications = [d for d in docs if d.get("applicantRole") == "farmer"]
+    applications.sort(key=lambda a: float(a.get("price") or 0))
+    enriched = await _application_views(applications, uid)
+    return {"data": enriched, "total": len(enriched)}
+
+
+@router.post("/applications/{application_id}/dismiss")
+async def dismiss_application(application_id: str, uid: str = Depends(_exporter)):
+    app = await _own_application(application_id, uid)
+    rfq = await _own_rfq(app.get("rfqId") or "", uid)
+    if app.get("status") not in ("submitted", "contacted"):
+        _error(409, "APPLICATION_NOT_ACTIVE", "only a submitted or contacted application can be dismissed")
+    app["status"] = "dismissed"
+    app["dismissedAt"] = _now()
+    app["dismissedBy"] = uid
+    app["updatedAt"] = app["dismissedAt"]
+    await set_doc("export_quotes", application_id, app)
+    await notify_user(
+        app.get("sellerId") or "",
+        type="application_dismissed",
+        title="Application not taken forward / आवेदन आगे नहीं बढ़ाया",
+        body=f"Your application for {rfq.get('crop', 'the crop')} was not taken forward by the exporter",
+        deepLink="/farmer/export/applications",
+    )
+    return await _application_view(app, uid)
+
+
+@router.post("/applications/{application_id}/contact")
+async def unlock_application_contact(
+    application_id: str,
+    body: ContactUnlockIn,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    uid: str = Depends(_exporter),
+):
+    """Contact unlock: KYC (both parties) + exporter terms + MPIN. Marks the
+    application contacted, reveals contacts to the pair only, opens one chat
+    room. Idempotent; never creates a purchase, export order, or payment."""
+    if not idempotency_key:
+        _error(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required")
+    scope = f"exporter.applications.contact.{application_id}"
+    replayed = await idempotency.replay(scope, idempotency_key)
+    if replayed is not None:
+        return replayed
+
+    app = await _own_application(application_id, uid)
+    rfq = await _own_rfq(app.get("rfqId") or "", uid)
+    if app.get("exporterId") != uid:
+        _error(403, "APPLICATION_FORBIDDEN", "this application belongs to another exporter")
+    if app.get("status") == "contacted" and app.get("contactReveal"):
+        # Already unlocked — replay the current state instead of erroring.
+        res = await _application_view(app, uid)
+        await idempotency.store(scope, idempotency_key, res)
+        return res
+    if app.get("status") != "submitted":
+        _error(409, "APPLICATION_NOT_CONTACTABLE", "this application can no longer be contacted")
+
+    exporter = await get_user(uid) or {}
+    farmer = await get_user(app.get("sellerId") or "") or {}
+    if not await is_identity_verified(exporter):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to contact farmers")
+    if not await is_identity_verified(farmer):
+        _error(409, "COUNTERPARTY_KYC_REQUIRED", "the farmer must complete identity verification before contact unlock")
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to unlock contact details")
+    mpin_verified = False
+    if exporter.get("mpinHash"):
+        if not body.mpin:
+            _error(401, "WRONG_MPIN", "mpin is required to unlock contact details")
+        if not verify_mpin(body.mpin, exporter["mpinHash"]):
+            _error(401, "WRONG_MPIN", "incorrect MPIN")
+        mpin_verified = True
+
+    now = _now()
+    app["status"] = "contacted"
+    app["contactedAt"] = now
+    app["contactReveal"] = {
+        "farmer": _dc_contact(farmer),
+        "exporter": _dc_contact(exporter),
+        "revealedAt": now,
+    }
+    # Consent/audit metadata — never the MPIN itself (spec §10).
+    app["exporterConsent"] = {
+        "termsVersion": EXPORT_TERMS_VERSION,
+        "termsAcceptedAt": now,
+        "mpinVerified": mpin_verified,
+        "mpinVerifiedAt": now if mpin_verified else None,
+        "method": "mpin" if mpin_verified else "no-mpin-on-file",
+        "userId": uid,
+        "rfqId": rfq["id"],
+        "applicationId": application_id,
+        "contactRevealedAt": now,
+    }
+    app["updatedAt"] = now
+    await set_doc("export_quotes", application_id, app)
+    await _record_export_terms(
+        uid, "export_contact_unlock", rfq_id=rfq["id"], application_id=application_id
+    )
+
+    room = await ensure_direct_room(
+        uid,
+        exporter.get("name", ""),
+        app.get("sellerId") or "",
+        farmer.get("name", ""),
+        rfq.get("crop", ""),
+    )
+    app["chatRoomId"] = room["id"]
+    await set_doc("export_quotes", application_id, app)
+
+    farmer_link = await _application_view(app, app.get("sellerId") or "")
+    await notify_user(
+        app.get("sellerId") or "",
+        type="contact_unlocked",
+        title="Exporter contacted you / निर्यातक ने संपर्क किया",
+        body=f"{exporter.get('name') or 'An exporter'} unlocked contact for {rfq.get('crop', 'their requirement')} — call, WhatsApp and chat are now open",
+        deepLink="/farmer/export/connections",
+    )
+    await notify_user(
+        uid,
+        type="contact_unlocked",
+        title="Contact unlocked / संपर्क खुला",
+        body=f"{farmer.get('name') or 'The farmer'}'s contact details are now available for {rfq.get('crop', 'your requirement')}",
+        deepLink="/exporter/connections",
+    )
+    for party in (uid, app.get("sellerId") or ""):
+        await notify_user(
+            party,
+            type="chat_unlocked",
+            title="Chat unlocked / चैट खुली",
+            body=f"{rfq.get('crop', 'Requirement')} — coordinate directly in-app",
+            deepLink=f"/chat?room={room['id']}",
+        )
+    res = await _application_view(app, uid)
+    res["farmerView"] = farmer_link
+    await idempotency.store(scope, idempotency_key, res)
+    return res
+
+
+# ==========================================
+# OUTCOME (user-reported; never platform-verified)
+# ==========================================
+
+
+@router.post("/applications/{application_id}/outcome")
+async def report_outcome(application_id: str, body: OutcomeIn, uid: str = Depends(current_user_id)):
+    app = await _own_application(application_id, uid)
+    farmer_id = app.get("sellerId") or ""
+    exporter_id = app.get("exporterId") or ""
+    if uid not in (farmer_id, exporter_id):
+        _error(403, "APPLICATION_FORBIDDEN", "only a connection party can report an outcome")
+    if app.get("status") != "contacted":
+        _error(409, "OUTCOME_NOT_ALLOWED", "an outcome can only be reported after contact unlock")
+    now = _now()
+    app["outcome"] = {
+        "value": body.outcome,
+        "reportedBy": uid,
+        "reportedAt": now,
+        "dealDetails": (
+            {
+                "finalQuantity": body.finalQuantity,
+                "finalQuantityUnit": body.finalQuantityUnit,
+                "finalPrice": body.finalPrice,
+                "finalPriceUnit": body.finalPriceUnit,
+                "finalCurrency": body.finalCurrency,
+                "supplyDate": body.supplyDate,
+                "collectionLocation": body.collectionLocation,
+            }
+            if body.outcome == "dealDoneOffline"
+            else None
+        ),
+    }
+    if body.outcome == "dealDoneOffline":
+        app["status"] = "dealDone"
+    elif body.outcome == "withdrawn":
+        app["status"] = "withdrawn"
+    app["updatedAt"] = now
+    await set_doc("export_quotes", application_id, app)
+    other = exporter_id if uid == farmer_id else farmer_id
+    await notify_user(
+        other,
+        type="outcome_updated",
+        title="Outcome updated / परिणाम अपडेट हुआ",
+        body=f"The other party reported: {body.outcome.replace('Offline', ' offline')}",
+        deepLink="/exporter/connections" if uid == farmer_id else "/farmer/export/connections",
+    )
+    return await _application_view(app, uid)
+
+
+# ==========================================
+# CONNECTIONS (both personas)
+# ==========================================
+
+_CONNECTION_STATUSES = ("contacted", "dealDone", "dismissed", "withdrawn")
+
+
+@router.get("/connections")
+async def my_connections(uid: str = Depends(_exporter)):
+    """Exporters: previously contacted farmers + outcome history."""
+    rfqs = await query("export_rfqs", [("exporterId", "==", uid)], limit=1000)
+    rfq_ids = {r["id"] for r in rfqs}
+    docs = await query("export_quotes", [("exporterId", "==", uid)], limit=2000)
+    connections = [
+        d for d in docs if d.get("rfqId") in rfq_ids and d.get("status") in _CONNECTION_STATUSES
+    ]
+    connections.sort(key=lambda d: d.get("contactedAt") or d.get("createdAt") or "", reverse=True)
+    enriched = await _application_views(connections, uid)
+    return {"data": enriched, "total": len(enriched)}
+
+
+@router.get("/connections/mine")
+async def my_connections_farmer(uid: str = Depends(_farmer)):
+    """Farmers: previously contacted exporters + outcome history."""
+    docs = await query("export_quotes", [("sellerId", "==", uid)], limit=2000)
+    connections = [d for d in docs if d.get("status") in _CONNECTION_STATUSES]
+    connections.sort(key=lambda d: d.get("contactedAt") or d.get("createdAt") or "", reverse=True)
+    enriched = await _application_views(connections, uid)
+    return {"data": enriched, "total": len(enriched)}
+
+
+# ==========================================
+# ISSUE REPORTING (records only — no escrow/refund/liability action)
+# ==========================================
+
+
+@router.post("/applications/{application_id}/report", status_code=201)
+async def report_application_issue(
+    application_id: str,
+    body: IssueReportIn,
+    uid: str = Depends(current_user_id),
+):
+    app = await _own_application(application_id, uid)
+    farmer_id = app.get("sellerId") or ""
+    exporter_id = app.get("exporterId") or ""
+    if uid not in (farmer_id, exporter_id):
+        _error(403, "APPLICATION_FORBIDDEN", "only a connection party can report an issue")
+    from app.services.disputes import ingest_dispute
+
+    dispute = await ingest_dispute(
+        "export_application",
+        application_id,
+        {
+            "summary": f"[{body.category}] {body.summary}",
+            "evidence": {
+                **(body.evidence or {}),
+                "reportedBy": uid,
+                "rfqId": app.get("rfqId"),
+                "category": body.category,
+            },
+        },
+    )
+    return dispute
+
+
+# ==========================================
+# FARMER: export-readiness profile (spec §3.4)
+# ==========================================
+
+
+@router.get("/readiness/mine")
+async def get_export_readiness(uid: str = Depends(_farmer)):
+    doc = await get_doc(f"users/{uid}/export_readiness", "profile") or {}
+    return {"farmerId": uid, **ExportReadinessIn().model_dump(), **doc}
+
+
+@router.put("/readiness/mine")
+async def put_export_readiness(body: ExportReadinessIn, uid: str = Depends(_farmer)):
+    doc = {
+        **body.model_dump(),
+        "farmerId": uid,
+        "updatedAt": _now(),
+    }
+    await set_doc(f"users/{uid}/export_readiness", "profile", doc)
+    return doc

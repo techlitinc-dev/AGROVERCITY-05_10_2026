@@ -12,6 +12,7 @@ def _seed_user(user_store, uid, name, phone="+919876543210", active="directBuyer
         "linkedProfiles": ["directBuyer", "farmer"],
         "primaryProfile": "directBuyer",
         "activeProfile": active,
+        "kycStatus": "verified",
         **extra,
     }
     # WS-02 step 7: corporate-buyer KYC gate — grant an approved GST doc so the

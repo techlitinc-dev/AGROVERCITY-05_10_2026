@@ -14,6 +14,7 @@ def emarket(user_store):
         "name": "Amit Agro",
         "linkedProfiles": ["seller"],
         "activeProfile": "seller",
+        "kycStatus": "verified",
         "primaryProfile": "seller",
     }
     user_store["users/cust-1"] = {
@@ -21,6 +22,7 @@ def emarket(user_store):
         "name": "Kiran Shopper",
         "linkedProfiles": ["customer"],
         "activeProfile": "customer",
+        "kycStatus": "verified",
         "primaryProfile": "customer",
     }
     user_store["products/prod-1"] = {
@@ -114,6 +116,7 @@ def _admin(user_store, uid="admin-root"):
         "name": "Super Admin",
         "linkedProfiles": ["farmer"],
         "activeProfile": "admin",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "isAdmin": True,
     }
@@ -170,6 +173,7 @@ async def test_seller_analytics_forbidden_for_non_seller(client, emarket):
         "name": "Ram Patil",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
     }
     resp = await client.get(

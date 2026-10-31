@@ -25,6 +25,7 @@ def _farmer_token(user_store, uid="uid-farmer"):
         "id": uid,
         "linkedProfiles": ["farmer", "seller"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "mpinHash": None,
         "createdAt": "2026-10-01T00:00:00+00:00",
@@ -81,6 +82,7 @@ async def _fleet(client, user_store):
         "id": "uid-3",
         "linkedProfiles": ["transport"],
         "activeProfile": "transport",
+        "kycStatus": "verified",
         "primaryProfile": "transport",
         "mpinHash": None,
         "createdAt": "2026-10-01T00:00:00+00:00",
@@ -545,6 +547,7 @@ async def test_driver_analytics_aggregates_assigned_trips(client, user_store):
         "linkedProfiles": ["driver"],
         "primaryProfile": "driver",
         "activeProfile": "driver",
+        "kycStatus": "verified",
         "fleetOwnerId": "someone-else",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

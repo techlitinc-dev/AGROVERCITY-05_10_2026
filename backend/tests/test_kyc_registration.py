@@ -493,6 +493,7 @@ async def test_legacy_users_login_with_full_sessions(client, user_store):
         "linkedProfiles": ["farmer"],
         "primaryProfile": "farmer",
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "createdAt": "2025-01-01T00:00:00+00:00",
     }
     login = await client.post(

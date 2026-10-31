@@ -66,6 +66,7 @@ def second_farmer_token(user_store, uid="uid-2", name="Suresh Jadhav"):
         "name": name,
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "agriCoins": 0,
         "mpinHash": None,
@@ -99,7 +100,7 @@ async def _slots(client, token, equipment_id, date=None):
 async def _book(client, token, slot_id, farmer_name="Ram Patil"):
     return await client.post(
         f"/v1/equipment/slots/{slot_id}/book",
-        json={"farmerName": farmer_name},
+        json={"farmerName": farmer_name, "termsAccepted": True},
         headers=_auth(token),
     )
 

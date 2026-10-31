@@ -10,6 +10,7 @@ from app.core.deps import current_user_id
 from app.models.lots import LotRequest, LotOut
 from app.routers.users import require_role
 from app.services.users import get_user
+from app.services.verification import is_identity_verified
 
 router = APIRouter(prefix="/market", tags=["lots"])
 
@@ -41,6 +42,9 @@ def _validate_lot(body: LotRequest) -> tuple[float, int]:
 
 @router.post("/lots", status_code=201, response_model=LotOut)
 async def create_lot(body: LotRequest, uid: str = Depends(_farmer_user)):
+    user = await get_user(uid)
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to post produce lots")
     qty, rate = _validate_lot(body)
     now = datetime.now(timezone.utc).isoformat()
     doc = {
@@ -159,12 +163,22 @@ async def browse_lots(
     total = len(docs)
     start = (page - 1) * pageSize
     page_docs = docs[start:start + pageSize]
-    # Anonymity per spec G1/G2: first name + village only, never phone/contact.
+    # Anonymity per spec G1/G2 + the direct-connect privacy rule: first name,
+    # village and the server-derived verification badge only — never phone or
+    # any other contact field (contact unlock happens via /leads only).
     enriched = []
     for lot in page_docs:
         farmer = await get_doc("users", lot.get("farmerId", "")) or {}
         name = (farmer.get("name") or "").strip().split(" ")[0]
-        enriched.append({**lot, "farmerName": name, "farmerVillage": farmer.get("village", "")})
+        public_lot = {k: v for k, v in lot.items() if k not in ("phone", "whatsapp", "phoneDigits", "whatsappDigits")}
+        enriched.append(
+            {
+                **public_lot,
+                "farmerName": name,
+                "farmerVillage": farmer.get("village", ""),
+                "farmerVerified": await is_identity_verified(farmer),
+            }
+        )
     return {"data": enriched, "page": page, "pageSize": pageSize, "total": total}
 
 

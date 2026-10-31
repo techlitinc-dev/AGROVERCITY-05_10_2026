@@ -79,22 +79,44 @@ class RentPaymentOut(RentPaymentIn):
 class LandListingIn(BaseModel):
     village: str
     district: str
-    lat: float
-    lng: float
+    lat: float = 0.0
+    lng: float = 0.0
     areaAcres: float = Field(gt=0)
     expectedRentRupees: float = Field(gt=0)
     soilType: str | None = None
     waterSource: str | None = None
     plotId: str | None = None
+    # Direct-connect listing fields (spec §5) — a basic listing needs no
+    # complicated land-record form; survey/documents stay private.
+    taluka: str = ""
+    state: str = ""
+    irrigated: bool | None = None
+    rentUnit: Literal["perAcrePerYear", "totalPerYear"] = "perAcrePerYear"
+    availableFrom: str | None = None
+    surveyNumber: str | None = None
+    electricityAvailable: bool | None = None
+    roadAccess: str | None = None
+    currentCropStatus: str | None = None
+    minDurationMonths: int | None = Field(None, ge=1, le=120)
+    maxDurationMonths: int | None = Field(None, ge=1, le=120)
+    permittedCrops: str | None = None
+    notes: str | None = None
+    photos: list[str] = Field(default_factory=list)
+    landDocuments: list[str] = Field(default_factory=list)
+    # "none" | "pending" | "verified" | "rejected" — verified ONLY via an
+    # actual document review; never inferred from KYC or an upload.
+    landDocumentsStatus: Literal["none", "pending", "verified", "rejected"] = "none"
 
 
 class LandListingOut(LandListingIn):
     id: str
     landlordId: str
     landlordName: str
-    status: Literal["open", "leased", "closed"]
+    status: Literal["open", "leased", "closed", "paused", "withdrawn"]
     createdAt: str
     qualityAssessment: dict | None = None
+    landlordVerified: bool = False
+    landVerified: bool = False
 
 
 class LandListingUpdate(BaseModel):
@@ -106,13 +128,33 @@ class LandListingUpdate(BaseModel):
     expectedRentRupees: float | None = Field(None, gt=0)
     soilType: str | None = None
     waterSource: str | None = None
-    status: Literal["open", "closed"] | None = None
+    taluka: str | None = None
+    state: str | None = None
+    irrigated: bool | None = None
+    rentUnit: Literal["perAcrePerYear", "totalPerYear"] | None = None
+    availableFrom: str | None = None
+    surveyNumber: str | None = None
+    electricityAvailable: bool | None = None
+    roadAccess: str | None = None
+    currentCropStatus: str | None = None
+    minDurationMonths: int | None = Field(None, ge=1, le=120)
+    maxDurationMonths: int | None = Field(None, ge=1, le=120)
+    permittedCrops: str | None = None
+    notes: str | None = None
+    photos: list[str] | None = None
+    status: Literal["open", "closed", "paused", "leased", "withdrawn"] | None = None
 
 
 class LeaseRequestIn(BaseModel):
     listingId: str
     message: str = ""
     durationMonths: int = Field(ge=1, le=120)
+    # Direct-connect interest request (spec §8).
+    proposedStartDate: str | None = None
+    intendedCrop: str = ""
+    offeredRentRupees: float | None = Field(None, gt=0)
+    offeredRentUnit: str = ""
+    termsAccepted: bool = False
 
 
 class LeaseRequestOut(LeaseRequestIn):
@@ -121,17 +163,48 @@ class LeaseRequestOut(LeaseRequestIn):
     farmerName: str
     farmerPhone: str
     landlordId: str
-    status: Literal["pending", "accepted", "rejected", "countered"]
+    # Legacy: pending/accepted/rejected/countered. Direct-connect adds
+    # contacted/dealDone/dismissed/withdrawn — accepted stays legacy-only and
+    # never implies a completed lease in the new UX.
+    status: Literal[
+        "pending", "accepted", "rejected", "countered",
+        "contacted", "dealDone", "dismissed", "withdrawn",
+    ]
     createdAt: str
     proposedRentRupees: float | None = None
     counterRentRupees: float | None = None
     negotiationRounds: int = 1
     landlordNotes: str | None = None
     compatibilityScore: float | None = None
+    farmerVerified: bool = False
+    landlordVerified: bool = False
+    # Terms / contact-unlock audit (returned to participants only — contact
+    # snapshots stay absent until contactRevealedAt is set by list endpoints).
+    farmerTermsVersion: str | None = None
+    farmerTermsAcceptedAt: str | None = None
+    landlordTermsAcceptedAt: str | None = None
+    contactRevealedAt: str | None = None
+    chatRoomId: str | None = None
+    farmerContact: dict | None = None
+    landlordContact: dict | None = None
 
 
 class RejectRequestIn(BaseModel):
     reason: str = ""
+
+
+class AcceptContactIn(BaseModel):
+    termsAccepted: bool = False
+    mpin: str | None = None
+
+
+class LeaseOutcomeIn(BaseModel):
+    outcome: Literal["stillInContact", "dealDone", "didNotHappen", "withdrawn"]
+    notes: str = Field("", max_length=500)
+    finalStartDate: str | None = None
+    finalEndDate: str | None = None
+    finalRentRupees: float | None = Field(None, gt=0)
+    finalRentUnit: str | None = None
 
 
 class CounterRequestIn(BaseModel):

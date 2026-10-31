@@ -17,6 +17,7 @@ def _seed_admin(user_store, uid="admin-root"):
         "phone": "+919999999999",
         "linkedProfiles": ["farmer", "seller"],
         "activeProfile": "admin",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "isAdmin": True,
         "agriCoins": 1000,

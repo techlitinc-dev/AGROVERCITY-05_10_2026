@@ -50,7 +50,7 @@ async def test_duplicate_request_409(client, user_store):
     landlord = _landlord(user_store)
     listing_id = await _make_listing(client, landlord)
     farmer = _farmer(user_store)
-    payload = {"listingId": listing_id, "durationMonths": 12}
+    payload = {"listingId": listing_id, "durationMonths": 12, "termsAccepted": True}
     resp = await client.post("/v1/land/lease-requests", json=payload, headers=auth(farmer))
     assert resp.status_code == 201
     resp = await client.post("/v1/land/lease-requests", json=payload, headers=auth(farmer))
@@ -65,13 +65,13 @@ async def test_accept_creates_lease_and_flips_listing(client, user_store):
     farmer2 = _farmer(user_store, uid="uid-f2", phone="+919822200002")
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": listing_id, "durationMonths": 12},
+        json={"listingId": listing_id, "durationMonths": 12, "termsAccepted": True},
         headers=auth(farmer1),
     )
     request_id = resp.json()["id"]
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": listing_id, "durationMonths": 6},
+        json={"listingId": listing_id, "durationMonths": 6, "termsAccepted": True},
         headers=auth(farmer2),
     )
     other_request_id = resp.json()["id"]
@@ -94,7 +94,7 @@ async def test_non_owner_accept_403(client, user_store):
     farmer = _farmer(user_store)
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": listing_id, "durationMonths": 12},
+        json={"listingId": listing_id, "durationMonths": 12, "termsAccepted": True},
         headers=auth(farmer),
     )
     request_id = resp.json()["id"]

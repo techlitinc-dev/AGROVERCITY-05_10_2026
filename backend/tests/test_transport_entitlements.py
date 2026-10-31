@@ -117,6 +117,7 @@ async def test_priority_load_board_ranks_pro_bids_first(client, user_store):
             "id": uid,
             "linkedProfiles": ["transport"],
             "activeProfile": "transport",
+            "kycStatus": "verified",
             "primaryProfile": "transport",
             "mpinHash": None,
             "createdAt": "2026-10-01T00:00:00+00:00",

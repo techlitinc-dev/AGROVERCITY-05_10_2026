@@ -205,6 +205,7 @@ async def test_wrong_party_accept_403_and_stranger_403(client, user_store):
         "id": "uid-3",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "mpinHash": None,
         "createdAt": "2026-09-16T00:00:00+00:00",

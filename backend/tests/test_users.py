@@ -245,6 +245,7 @@ async def test_me_hydrates_mobile_fields_for_partial_doc(client, user_store):
         "phone": "+919812345678",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "createdAt": "2026-09-16T00:00:00+00:00",
     }

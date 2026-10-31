@@ -139,6 +139,7 @@ async def test_other_owner_cannot_log_maintenance(client, user_store):
         "id": "uid-2",
         "linkedProfiles": ["equipmentRental"],
         "activeProfile": "equipmentRental",
+        "kycStatus": "verified",
         "primaryProfile": "equipmentRental",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

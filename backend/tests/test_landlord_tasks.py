@@ -27,7 +27,7 @@ async def test_lease_request_emits_task(client, user_store):
     )
     resp = await client.post(
         "/v1/land/lease-requests",
-        json={"listingId": "listing-1", "message": "interested", "durationMonths": 12},
+        json={"listingId": "listing-1", "message": "interested", "durationMonths": 12, "termsAccepted": True},
         headers=auth(farmer),
     )
     assert resp.status_code == 201

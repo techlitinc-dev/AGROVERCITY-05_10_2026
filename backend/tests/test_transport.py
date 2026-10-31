@@ -56,6 +56,7 @@ def _other_transporter_token(user_store):
         "id": "uid-2",
         "linkedProfiles": ["transport"],
         "activeProfile": "transport",
+        "kycStatus": "verified",
         "primaryProfile": "transport",
         "mpinHash": None,
         "createdAt": "2026-09-16T00:00:00+00:00",
@@ -74,6 +75,7 @@ async def test_farmer_bookings_list_scoped_to_own(client, user_store):
         "id": "uid-2",
         "linkedProfiles": ["farmer"],
         "activeProfile": "farmer",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "createdAt": "2026-09-16T00:00:00+00:00",
     }

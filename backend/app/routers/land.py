@@ -7,9 +7,10 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.db import delete_doc, get_doc, query, set_doc
-from app.core.deps import current_user_id
+from app.core.deps import admin_user, current_user_id
 from app.core.security import verify_mpin
 from app.models.land import (
+    AcceptContactIn,
     LandListingIn,
     LandListingOut,
     LandListingUpdate,
@@ -18,6 +19,7 @@ from app.models.land import (
     LeaseRequestIn,
     LeaseRequestOut,
     LeaseUpdate,
+    LeaseOutcomeIn,
     PlotIn,
     PlotOut,
     PlotUpdate,
@@ -33,14 +35,20 @@ from app.models.land import (
 from app.routers.users import require_role
 from app.services import billing, idempotency, land_ai, reports
 from app.services.ai.privacy import build_land_listing_quality_state
+from app.services.chat import ensure_direct_room
 from app.services.land_crm import convert_lead, find_lease_for_caller, promote_waitlist, upsert_lead
+from app.services.notify import notify_user
 from app.services.payments import create_razorpay_order, verify_razorpay_signature
 from app.services.pnl_engine import record_auto_entry
 from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import DEEP_LINKS, emit_task
 from app.services.users import get_user
+from app.services.verification import is_identity_verified, verification_map
 
 router = APIRouter(prefix="/land", tags=["land"])
+
+# Direct-connect terms (spec §11) — versioned like the other flows.
+LEASE_TERMS_VERSION = "land-dc-1.0"
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -389,8 +397,46 @@ async def _require_request(request_id: str) -> dict:
     return request
 
 
+def _contact_of(user: dict) -> dict:
+    phone = user.get("phone") or ""
+    whatsapp = user.get("whatsapp") or phone
+    digits = "".join(ch for ch in str(phone) if ch.isdigit()) or None
+    wa_digits = "".join(ch for ch in str(whatsapp) if ch.isdigit()) or None
+    return {
+        "name": (user.get("name") or "").strip().split(" ")[0],
+        "fullName": user.get("name") or "",
+        "village": user.get("village", ""),
+        "district": user.get("district", ""),
+        "phone": phone,
+        "phoneDigits": digits,
+        "whatsappDigits": wa_digits,
+        "verified": True,
+    }
+
+
+def _public_listing(listing: dict, verified_by_landlord: dict[str, bool]) -> dict:
+    """Public projection (spec §7/§19): badges in, private data out. The full
+    survey/Gat number and private land documents never appear publicly."""
+    row = dict(listing)
+    row.pop("landDocuments", None)
+    survey = row.get("surveyNumber")
+    if survey:
+        row["surveyNumber"] = f"…{str(survey)[-4:]}"
+    row["landlordVerified"] = verified_by_landlord.get(listing.get("landlordId") or "", False)
+    # Land Documents Verified means an actual completed document review only.
+    row["landVerified"] = listing.get("landDocumentsStatus") == "verified"
+    return row
+
+
 @router.post("/listings", status_code=201, response_model=LandListingOut)
 async def create_listing(body: LandListingIn, uid: str = Depends(_landlord)):
+    # Activation requires verified identity KYC (spec §5). Land-document
+    # verification is a SEPARATE review — never implied by identity KYC.
+    landlord = await get_user(uid)
+    if not await is_identity_verified(landlord):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to list farmland")
+    if body.minDurationMonths and body.maxDurationMonths and body.minDurationMonths > body.maxDurationMonths:
+        _error(422, "VALIDATION_ERROR", "minDurationMonths cannot exceed maxDurationMonths")
     plot = None
     if body.plotId is not None:
         plot = await _require_plot(uid, body.plotId)
@@ -426,8 +472,14 @@ async def create_listing(body: LandListingIn, uid: str = Depends(_landlord)):
         status="open",
         createdAt=datetime.now(timezone.utc).isoformat(),
         qualityAssessment=quality_assessment,
+        landlordVerified=await is_identity_verified(user),
+        landVerified=False,
         **body.model_dump(),
     )
+    # Submitting documents with the listing enters the review queue — the
+    # badge still requires an actual review.
+    if listing.landDocuments and listing.landDocumentsStatus == "none":
+        listing.landDocumentsStatus = "pending"
     await set_doc("land_listings", listing.id, listing.model_dump())
     return listing
 
@@ -436,11 +488,34 @@ async def create_listing(body: LandListingIn, uid: str = Depends(_landlord)):
 async def browse_listings(
     near: str | None = None,
     acres: float | None = None,
+    district: str | None = None,
+    taluka: str | None = None,
+    irrigated: bool | None = None,
+    maxRent: float | None = None,
+    availableFrom: str | None = None,
+    sort: str = "latest",
     uid: str = Depends(_owner),
 ):
+    """Public farmland discovery (spec §7) — badges in, private fields out,
+    batched verification summaries (no N+1)."""
     listings = [l for l in await query("land_listings", [], limit=1000) if l.get("status") == "open"]
     if acres is not None:
         listings = [l for l in listings if l.get("areaAcres", 0) >= acres]
+    if district:
+        d = district.strip().lower()
+        listings = [l for l in listings if d in str(l.get("district") or "").lower()]
+    if taluka:
+        t = taluka.strip().lower()
+        listings = [l for l in listings if t in str(l.get("taluka") or "").lower()]
+    if irrigated is not None:
+        listings = [l for l in listings if l.get("irrigated") is irrigated]
+    if maxRent is not None:
+        listings = [l for l in listings if float(l.get("expectedRentRupees") or 0) <= maxRent]
+    if availableFrom:
+        listings = [
+            l for l in listings
+            if not l.get("availableFrom") or str(l.get("availableFrom")) <= availableFrom
+        ]
     if near is not None:
         try:
             lat, lng = (float(p) for p in near.split(","))
@@ -450,13 +525,32 @@ async def browse_listings(
             l for l in listings
             if _haversine_km(lat, lng, l.get("lat", 0), l.get("lng", 0)) <= 25
         ]
-    return _envelope(listings)
+    if sort == "rentAsc":
+        listings.sort(key=lambda l: float(l.get("expectedRentRupees") or 0))
+    elif sort == "rentDesc":
+        listings.sort(key=lambda l: float(l.get("expectedRentRupees") or 0), reverse=True)
+    elif sort == "area":
+        listings.sort(key=lambda l: float(l.get("areaAcres") or 0), reverse=True)
+    elif sort == "available":
+        listings.sort(key=lambda l: str(l.get("availableFrom") or "9999"))
+    else:
+        listings.sort(key=lambda l: l.get("createdAt", ""), reverse=True)
+    verified = await verification_map([l.get("landlordId") or "" for l in listings])
+    return _envelope([_public_listing(l, verified) for l in listings])
 
 
 @router.get("/listings/mine")
 async def my_listings(uid: str = Depends(_landlord)):
     listings = await query("land_listings", [("landlordId", "==", uid)], limit=1000)
-    return _envelope(listings)
+    verified = await verification_map([l.get("landlordId") or "" for l in listings])
+    out = []
+    for l in listings:
+        row = _public_listing(l, verified)
+        # The owner legitimately sees their own document state and full survey.
+        row["landDocuments"] = l.get("landDocuments") or []
+        row["surveyNumber"] = l.get("surveyNumber")
+        out.append(row)
+    return _envelope(out)
 
 
 @router.put("/listings/{listing_id}", response_model=LandListingOut)
@@ -465,6 +559,10 @@ async def update_listing(listing_id: str, body: LandListingUpdate, uid: str = De
     if listing.get("landlordId") != uid:
         _error(403, "NOT_LISTING_OWNER", "listing belongs to another landlord")
     updates = body.model_dump(exclude_unset=True)
+    min_dur = updates.get("minDurationMonths", listing.get("minDurationMonths"))
+    max_dur = updates.get("maxDurationMonths", listing.get("maxDurationMonths"))
+    if min_dur and max_dur and int(min_dur) > int(max_dur):
+        _error(422, "VALIDATION_ERROR", "minDurationMonths cannot exceed maxDurationMonths")
     listing.update(updates)
 
     try:
@@ -494,17 +592,118 @@ async def delete_listing(listing_id: str, uid: str = Depends(_landlord)):
     await delete_doc("land_listings", listing_id)
 
 
+class LandDocumentsIn(BaseModel):
+    urls: list[str] = Field(min_length=1)
+
+
+@router.post("/listings/{listing_id}/documents", status_code=201)
+async def submit_land_documents(listing_id: str, body: LandDocumentsIn, uid: str = Depends(_landlord)):
+    """Private land-document submission (spec §4/§6). Sets the review state to
+    PENDING — uploading alone never earns the Land Documents Verified badge."""
+    listing = await _require_listing(listing_id)
+    if listing.get("landlordId") != uid:
+        _error(403, "NOT_LISTING_OWNER", "listing belongs to another landlord")
+    listing["landDocuments"] = list(body.urls)
+    listing["landDocumentsStatus"] = "pending"
+    await set_doc("land_listings", listing_id, listing)
+    return {"landDocumentsStatus": "pending", "count": len(body.urls)}
+
+
+class VerifyLandDocumentsIn(BaseModel):
+    approved: bool
+    reason: str = ""
+
+
+@router.post("/listings/{listing_id}/verify-documents")
+async def verify_land_documents(
+    listing_id: str,
+    body: VerifyLandDocumentsIn,
+    admin: dict = Depends(admin_user),
+):
+    """Verification-personnel only (spec §6/§19): the single path that may
+    mark land documents verified. Identity KYC or an upload alone never does."""
+    listing = await _require_listing(listing_id)
+    if body.approved:
+        listing["landDocumentsStatus"] = "verified"
+        listing["landDocumentsVerifiedAt"] = datetime.now(timezone.utc).isoformat()
+        listing["landDocumentsVerifiedBy"] = admin["uid"]
+    else:
+        listing["landDocumentsStatus"] = "rejected"
+        listing["landDocumentsRejectionReason"] = body.reason or None
+    await set_doc("land_listings", listing_id, listing)
+    return {"landDocumentsStatus": listing["landDocumentsStatus"]}
+
+
+class LandIssueReportIn(BaseModel):
+    targetUserId: str
+    requestId: str = ""
+    category: str = "other"  # falseListing | ownershipConcern | conduct | paymentDispute | landCondition | other
+    details: str = ""
+
+
+@router.post("/reports", status_code=201)
+async def report_land_issue(body: LandIssueReportIn, uid: str = Depends(_owner)):
+    """Issue reporting for either participant (spec §15) — moderation reviews;
+    it never freezes payments, decides ownership, or determines liability."""
+    if body.category not in (
+        "falseListing", "ownershipConcern", "conduct", "paymentDispute", "landCondition", "other",
+    ):
+        _error(422, "VALIDATION_ERROR", "unknown report category", {"category": "unsupported"})
+    target = await get_user(body.targetUserId)
+    if target is None:
+        _error(404, "USER_NOT_FOUND", "user not found")
+    if body.requestId:
+        request = await get_doc("lease_requests", body.requestId) or {}
+        if uid not in (request.get("farmerId"), request.get("landlordId")):
+            _error(403, "FORBIDDEN", "only the request participants can report on this connection")
+    doc = {
+        "id": f"rep_{uuid.uuid4().hex[:12]}",
+        "reporterId": uid,
+        "targetUserId": body.targetUserId,
+        "requestId": body.requestId,
+        "module": "land",
+        "category": body.category,
+        "reason": body.category,
+        "details": body.details,
+        "status": "open",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc("user_reports", doc["id"], doc)
+    return doc
+
+
 @router.post("/lease-requests", status_code=201, response_model=LeaseRequestOut)
 async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)):
     listing = await _require_listing(body.listingId)
     if listing.get("status") != "open":
-        _error(409, "LISTING_NOT_OPEN", "listing is not open")
+        _error(409, "LISTING_NOT_OPEN", "listing is not open for interest requests")
+    # Direct-connect verification (spec §8) — terms acknowledged here, KYC
+    # verified for BOTH parties before any contact is shared.
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to send interest")
+    farmer = await get_user(uid)
+    if not await is_identity_verified(farmer):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to send interest")
+    landlord = await get_user(listing["landlordId"]) or {}
+    if not await is_identity_verified(landlord):
+        _error(403, "COUNTERPARTY_UNVERIFIED", "the landlord has not completed identity verification")
+    if listing.get("landlordId") == uid:
+        _error(403, "OWN_LISTING", "cannot send interest on your own listing")
+    if body.proposedStartDate:
+        try:
+            date.fromisoformat(body.proposedStartDate)
+        except ValueError:
+            _error(422, "VALIDATION_ERROR", "proposedStartDate must be YYYY-MM-DD", {"proposedStartDate": "invalid date"})
+    # No duplicate ACTIVE request (requested or contacted) for the same pair.
     existing = await query("lease_requests", [("listingId", "==", body.listingId)], limit=1000)
-    if any(r.get("farmerId") == uid and r.get("status") == "pending" for r in existing):
+    if any(
+        r.get("farmerId") == uid and r.get("status") in ("pending", "contacted")
+        for r in existing
+    ):
         _error(409, "DUPLICATE_LEASE_REQUEST", "request already sent for this listing")
-    user = await get_user(uid)
+    now = datetime.now(timezone.utc).isoformat()
     expected_rent = float(listing.get("expectedRentRupees") or 0.0)
-    proposed_rent = float(getattr(body, "proposedRentRupees", None) or expected_rent)
+    proposed_rent = float(getattr(body, "offeredRentRupees", None) or getattr(body, "proposedRentRupees", None) or expected_rent)
     ratio = min(1.0, proposed_rent / expected_rent) if expected_rent > 0 else 1.0
     dur = int(body.durationMonths or 12)
     dur_score = 1.0 if 6 <= dur <= 36 else 0.8
@@ -513,17 +712,22 @@ async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)
     request = LeaseRequestOut(
         id=uuid.uuid4().hex,
         farmerId=uid,
-        farmerName=user.get("name", ""),
-        farmerPhone=user.get("phone", ""),
+        farmerName=farmer.get("name", ""),
+        farmerPhone=farmer.get("phone", ""),
         landlordId=listing["landlordId"],
         status="pending",
-        createdAt=datetime.now(timezone.utc).isoformat(),
+        createdAt=now,
         compatibilityScore=compat_score,
+        farmerVerified=True,
+        landlordVerified=await is_identity_verified(landlord),
+        # Farmer terms acknowledgement (spec §11).
+        farmerTermsVersion=LEASE_TERMS_VERSION,
+        farmerTermsAcceptedAt=now,
         **body.model_dump(),
     )
     await set_doc("lease_requests", request.id, request.model_dump())
     await upsert_lead(
-        listing["landlordId"], listing["id"], uid, user.get("name", ""), "application"
+        listing["landlordId"], listing["id"], uid, farmer.get("name", ""), "application"
     )
     await emit_task(
         listing["landlordId"],
@@ -532,10 +736,17 @@ async def create_lease_request(body: LeaseRequestIn, uid: str = Depends(_farmer)
         kind="lease_request",
         title_en="New lease request",
         title_hi="नया पट्टा अनुरोध",
-        subtitle=f"{request.farmerName} · {request.durationMonths} months · ₹{request.proposedRentRupees or listing['expectedRentRupees']}/mo",
+        subtitle=f"{request.farmerName} · {request.durationMonths} months · ₹{body.offeredRentRupees or listing['expectedRentRupees']}/mo",
         priority="today",
         deep_link=DEEP_LINKS["land"],
         source_id=request.id,
+    )
+    await notify_user(
+        listing["landlordId"],
+        type="land_interest_request",
+        title="New interest request / नवीन रस",
+        body=f"{request.farmerName} is interested in your {listing.get('village', '')} land ({request.durationMonths} months).",
+        deepLink="/landlord/requests",
     )
     return request
 
@@ -545,16 +756,29 @@ async def list_lease_requests(status: str | None = None, uid: str = Depends(_lan
     requests = await query("lease_requests", [("landlordId", "==", uid)], limit=1000)
     if status is not None:
         requests = [r for r in requests if r.get("status") == status]
+    verified = await verification_map([r.get("farmerId") or "" for r in requests])
+    listings = {l["id"]: l for l in await query("land_listings", [], limit=1000)}
+    out = []
     for r in requests:
         if r.get("compatibilityScore") is None:
-            listing = await get_doc("land_listings", r.get("listingId", "")) or {}
+            listing = listings.get(r.get("listingId", "")) or {}
             expected_rent = float(listing.get("expectedRentRupees") or 0.0)
-            proposed_rent = float(r.get("proposedRentRupees") or expected_rent)
+            proposed_rent = float(r.get("offeredRentRupees") or r.get("proposedRentRupees") or expected_rent)
             ratio = min(1.0, proposed_rent / expected_rent) if expected_rent > 0 else 1.0
             dur = int(r.get("durationMonths") or 12)
             dur_score = 1.0 if 6 <= dur <= 36 else 0.8
             r["compatibilityScore"] = round(ratio * 0.7 + dur_score * 0.3, 2)
-    return _envelope(requests)
+        listing = listings.get(r.get("listingId", "")) or {}
+        r["listingVillage"] = listing.get("village", "")
+        r["listingAreaAcres"] = listing.get("areaAcres")
+        r["farmerVerified"] = verified.get(r.get("farmerId") or "", False)
+        # The farmer's phone/contact stays hidden until the contact unlock.
+        if not r.get("contactRevealedAt"):
+            r.pop("farmerContact", None)
+            r.pop("landlordContact", None)
+            r["farmerPhone"] = ""
+        out.append(r)
+    return _envelope(out)
 
 
 @router.post("/lease-requests/{request_id}/accept")
@@ -624,6 +848,15 @@ async def reject_lease_request(request_id: str, body: RejectRequestIn, uid: str 
     request["status"] = "rejected"
     request["reason"] = body.reason
     await set_doc("lease_requests", request_id, request)
+    # Declining changes only THIS request — unrelated requests and the
+    # listing availability are untouched (spec §9).
+    await notify_user(
+        request.get("farmerId"),
+        type="land_request_declined",
+        title="Interest request declined / विनंती नाकारली",
+        body=f"Your interest request was declined." + (f" Reason: {body.reason}" if body.reason else ""),
+        deepLink="/farmer/land",
+    )
     return {"status": "rejected"}
 
 
@@ -739,7 +972,156 @@ async def counter_lease_request(
 async def my_sent_lease_requests(uid: str = Depends(_farmer)):
     requests = await query("lease_requests", [("farmerId", "==", uid)], limit=500)
     requests.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
-    return {"data": requests, "total": len(requests)}
+    verified = await verification_map([r.get("landlordId") or "" for r in requests])
+    listings = {l["id"]: l for l in await query("land_listings", [], limit=1000)}
+    out = []
+    for r in requests:
+        listing = listings.get(r.get("listingId", "")) or {}
+        r["listingVillage"] = listing.get("village", "")
+        r["listingDistrict"] = listing.get("district", "")
+        r["listingAreaAcres"] = listing.get("areaAcres")
+        r["listingStatus"] = listing.get("status")
+        r["landlordVerified"] = verified.get(r.get("landlordId") or "", False)
+        r["landVerified"] = listing.get("landDocumentsStatus") == "verified"
+        if not r.get("contactRevealedAt"):
+            r.pop("farmerContact", None)
+            r.pop("landlordContact", None)
+        out.append(r)
+    return {"data": out, "total": len(out)}
+
+
+@router.post("/lease-requests/{request_id}/accept-contact")
+async def accept_contact_request(request_id: str, body: AcceptContactIn, uid: str = Depends(_landlord)):
+    """Accept Contact Request — the communication unlock (spec §9/§10).
+
+    Does NOT finalize a lease, mark land leased, transfer possession, or
+    create any payment/legal obligation — the legacy /accept lease-finalizing
+    endpoint remains for old clients, hidden from the new UX.
+    """
+    request = await _require_request(request_id)
+    if request.get("landlordId") != uid:
+        _error(403, "NOT_LISTING_OWNER", "request belongs to another landlord")
+    if request.get("status") != "pending":
+        _error(409, "REQUEST_ALREADY_RESOLVED", "request is not awaiting contact acceptance")
+    listing = await _require_listing(request["listingId"])
+    if listing.get("status") != "open":
+        _error(409, "LISTING_NOT_OPEN", "listing is no longer open for contact")
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to share contact details")
+    landlord = await get_user(uid)
+    if not await is_identity_verified(landlord):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to accept contact requests")
+    farmer = await get_user(request["farmerId"]) or {}
+    if not await is_identity_verified(farmer):
+        _error(403, "COUNTERPARTY_UNVERIFIED", "the farmer has not completed identity verification")
+    if (landlord or {}).get("mpinHash"):
+        if not body.mpin:
+            _error(401, "WRONG_MPIN", "mpin is required to accept and share contact details")
+        if not verify_mpin(body.mpin, landlord["mpinHash"]):
+            _error(401, "WRONG_MPIN", "incorrect MPIN")
+
+    now = datetime.now(timezone.utc).isoformat()
+    room = await ensure_direct_room(
+        uid,
+        (landlord or {}).get("name", ""),
+        request["farmerId"],
+        (farmer or {}).get("name", ""),
+        crop=f"{listing.get('village', '')} land",
+    )
+    request.update(
+        {
+            "status": "contacted",
+            "contactRevealedAt": request.get("contactRevealedAt") or now,
+            "chatRoomId": room["id"],
+            "landlordTermsAccepted": True,
+            "landlordTermsVersion": LEASE_TERMS_VERSION,
+            "landlordTermsAcceptedAt": now,
+            "landlordTermsAcceptedBy": uid,
+            "mpinVerified": bool((landlord or {}).get("mpinHash")),
+            "farmerContact": {**_contact_of(farmer or {}), "verified": True},
+            "landlordContact": {**_contact_of(landlord or {}), "verified": True},
+        }
+    )
+    await set_doc("lease_requests", request_id, request)
+    await convert_lead(uid, listing["id"], request["farmerId"])
+
+    await notify_user(
+        request["farmerId"],
+        type="land_contact_accepted",
+        title="Contact request accepted / संपर्क स्वीकारला",
+        body=f"{listing.get('village', '')} land — the landlord shared contact details. Inspect the land and negotiate directly.",
+        deepLink="/farmer/land",
+    )
+    await notify_user(
+        uid,
+        type="land_contact_accepted",
+        title="You accepted a contact request / संपर्क स्वीकारला",
+        body=f"{request.get('farmerName', 'Farmer')} · {listing.get('village', '')} land — farmer contact unlocked.",
+        deepLink="/landlord/connections",
+    )
+    return request
+
+
+@router.post("/lease-requests/{request_id}/outcome")
+async def record_lease_outcome(request_id: str, body: LeaseOutcomeIn, uid: str = Depends(_owner)):
+    """User-reported lease outcome (spec §12) — restricted to the two parties.
+    dealDone stores only optional user-reported details; nothing here is a
+    payment record, legal proof, or platform-verified fact."""
+    request = await _require_request(request_id)
+    if uid not in (request.get("farmerId"), request.get("landlordId")):
+        _error(404, "REQUEST_NOT_FOUND", "lease request not found")
+    status_map = {
+        "stillInContact": "contacted",
+        "dealDone": "dealDone",
+        "didNotHappen": "dismissed",
+        "withdrawn": "withdrawn",
+    }
+    current = request.get("status")
+    allowed_from = ("contacted", "dealDone", "dismissed")
+    if current == "pending":
+        # Before contact, only the farmer may withdraw their own interest.
+        if body.outcome != "withdrawn":
+            _error(409, "ILLEGAL_TRANSITION", "record outcomes after the contact request is accepted")
+        if uid != request.get("farmerId"):
+            _error(403, "FORBIDDEN", "only the farmer can withdraw a pending request")
+    elif current not in allowed_from:
+        _error(409, "ILLEGAL_TRANSITION", f"cannot record an outcome from status '{current}'")
+
+    now = datetime.now(timezone.utc).isoformat()
+    history = list(request.get("statusHistory") or [])
+    history.append({"status": status_map[body.outcome], "at": now, "by": uid})
+    request["status"] = status_map[body.outcome]
+    request["statusHistory"] = history
+    request["outcome"] = {
+        "outcome": body.outcome,
+        "reportedBy": uid,
+        "reportedAt": now,
+        "notes": body.notes or None,
+        # User-reported optional details — never platform-verified.
+        "finalStartDate": body.finalStartDate if body.outcome == "dealDone" else None,
+        "finalEndDate": body.finalEndDate if body.outcome == "dealDone" else None,
+        "finalRentRupees": body.finalRentRupees if body.outcome == "dealDone" else None,
+        "finalRentUnit": body.finalRentUnit if body.outcome == "dealDone" else None,
+    }
+    await set_doc("lease_requests", request_id, request)
+
+    other_id = request.get("landlordId") if uid == request.get("farmerId") else request.get("farmerId")
+    label = {
+        "stillInContact": "still in contact",
+        "dealDone": "lease completed offline (user-reported)",
+        "didNotHappen": "did not happen",
+        "withdrawn": "withdrawn",
+    }[body.outcome]
+    await notify_user(
+        other_id,
+        type="land_outcome_updated",
+        title="Lease outcome updated / परिणाम अद्यतनित",
+        body=f"The {request.get('listingVillage', '')} land connection was marked: {label}.",
+        deepLink="/farmer/land" if other_id == request.get("farmerId") else "/landlord/connections",
+    )
+    if body.outcome == "dealDone":
+        await open_rating_prompt(uid, other_id, request_id, "land_lease")
+    return request
 
 
 @router.get("/leases/{lease_id}/milestones")

@@ -36,6 +36,7 @@ def _other_owner_token(user_store):
         "name": "Dinkar Pawar",
         "linkedProfiles": ["equipmentRental"],
         "activeProfile": "equipmentRental",
+        "kycStatus": "verified",
         "primaryProfile": "equipmentRental",
         "mpinHash": None,
         "createdAt": "2026-09-16T00:00:00+00:00",
@@ -57,7 +58,7 @@ async def _book_pending(client, farmer_token, equipment_id, days_ahead=1):
     slot = resp.json()["data"][0]
     resp = await client.post(
         f"/v1/equipment/slots/{slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 200
@@ -79,7 +80,7 @@ async def test_approve_pending_booking(client, user_store):
     farmer_token = second_farmer_token(user_store)
     booking = await _book_pending(client, farmer_token, "eq-own")
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(owner_token)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(owner_token)
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "booked"
@@ -97,11 +98,11 @@ async def test_approve_non_pending_409(client, user_store):
     farmer_token = second_farmer_token(user_store)
     booking = await _book_pending(client, farmer_token, "eq-own")
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(owner_token)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(owner_token)
     )
     assert resp.status_code == 200
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(owner_token)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(owner_token)
     )
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "ILLEGAL_TRANSITION"
@@ -170,12 +171,12 @@ async def test_non_owner_approve_403(client, user_store):
     booking = await _book_pending(client, farmer_token, "eq-own")
     other_owner = _other_owner_token(user_store)
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(other_owner)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(other_owner)
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "NOT_EQUIPMENT_OWNER"
     resp = await client.post(
-        f"/v1/equipment/bookings/{booking['id']}/approve", headers=_auth(farmer_token)
+        f"/v1/equipment/bookings/{booking['id']}/approve", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(farmer_token)
     )
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"
@@ -252,7 +253,7 @@ async def test_fpo_auto_confirm_vs_private_manual(client, user_store):
     fpo_slot = resp.json()["data"][0]
     resp = await client.post(
         f"/v1/equipment/slots/{fpo_slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 200
@@ -268,7 +269,7 @@ async def test_fpo_auto_confirm_vs_private_manual(client, user_store):
     priv_slot = resp.json()["data"][0]
     resp = await client.post(
         f"/v1/equipment/slots/{priv_slot['id']}/book",
-        json={"farmerName": "Suresh Jadhav"},
+        json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 200

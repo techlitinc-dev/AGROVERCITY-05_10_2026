@@ -455,6 +455,7 @@ async def test_bill_send_and_payment_notify_app_user_client(client, user_store):
         "phone": "+919876543210",
         "linkedProfiles": ["customer"],
         "activeProfile": "customer",
+        "kycStatus": "verified",
         "language": "en",
     }
     c = await make_client(client, token, name="Meena Kulkarni", phone="+919876543210")

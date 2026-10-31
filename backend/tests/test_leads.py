@@ -201,10 +201,12 @@ async def test_farmer_marks_lead_sold_and_lot_closes(client, user_store):
     assert closed.json()["finalRate"] == 1950
     # Buyer is told the lot is gone.
     notifs = [v for k, v in user_store.items() if k.startswith("notifications/")]
-    assert any(n.get("type") == "lead_marked_sold" for n in notifs)
+    assert any(n.get("type") == "lead_outcome_updated" for n in notifs)
 
 
-async def test_only_farmer_can_update_lead(client, user_store):
+async def test_both_parties_can_update_lead_and_strangers_cannot(client, user_store):
+    """Direct-connect outcome updates are restricted to the two connected
+    parties — either of them may record the outcome; anyone else gets 404."""
     farmer_token = await _farmer(client)
     buyer_token = await _buyer(client, user_store)
     lot = await _create_lot(client, farmer_token)
@@ -214,7 +216,14 @@ async def test_only_farmer_can_update_lead(client, user_store):
         )
     ).json()["lead"]
     resp = await client.patch(
-        f"/v1/leads/{lead['id']}", json={"status": "sold"}, headers=_auth(buyer_token)
+        f"/v1/leads/{lead['id']}", json={"status": "contacted"}, headers=_auth(buyer_token)
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "contacted"
+    # A third user who is not part of the connection cannot touch it.
+    stranger_token = _applicant(user_store, uid="uid-stranger")
+    resp = await client.patch(
+        f"/v1/leads/{lead['id']}", json={"status": "sold"}, headers=_auth(stranger_token)
     )
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "LEAD_NOT_FOUND"

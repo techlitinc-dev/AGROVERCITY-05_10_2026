@@ -4,6 +4,10 @@ import os
 # AI_PROVIDER the local .env points at (pydantic-settings gives real env vars
 # priority over the .env file). Must be set before any app import below.
 os.environ["AI_PROVIDER"] = "shim"
+# Sampling of write-only ai_decisions logs (1-in-N successful generate/image
+# calls) is a production volume control; tests pin it to 1 so the logging
+# contract stays deterministic.
+os.environ["AI_LOG_SUCCESS_SAMPLE_RATE"] = "1"
 
 import importlib
 import pkgutil
@@ -72,7 +76,14 @@ async def client(monkeypatch, user_store, fake_redis):
         return user_store.get(_key(collection, doc_id))
 
     async def fake_set_doc(collection, doc_id, data):
-        user_store[_key(collection, doc_id)] = data
+        doc = dict(data)
+        # Test default: identity-verified unless a test seeds an explicit
+        # kycStatus (e.g. "pending"/"unverified") on the user doc. Keeps the
+        # marketplace KYC gates passing for the ~200 tests that create users
+        # through the real registration endpoint.
+        if collection == "users" and "kycStatus" not in doc:
+            doc["kycStatus"] = "verified"
+        user_store[_key(collection, doc_id)] = doc
 
     async def fake_query(collection, filters=None, limit=100):
         if filters is None:
@@ -109,6 +120,14 @@ async def client(monkeypatch, user_store, fake_redis):
     async def fake_delete_doc(collection, doc_id):
         user_store.pop(_key(collection, doc_id), None)
 
+    async def fake_count(collection, filters=None):
+        return len(await fake_query(collection, filters, limit=100000))
+
+    async def fake_latest(collection, order_field="createdAt", limit=10, *, ascending=False, offset=0):
+        docs = await fake_query(collection, [], limit=100000)
+        docs.sort(key=lambda d: d.get(order_field) or "", reverse=not ascending)
+        return docs[offset : offset + limit]
+
     def fake_verify_id_token(id_token, check_revoked=False):
         if id_token == "admin-token":
             return {"uid": "uid-admin-test", "phone_number": "+919800000000", "admin": True, "role": "superadmin"}
@@ -124,6 +143,8 @@ async def client(monkeypatch, user_store, fake_redis):
             ("query_cursor", fake_query_cursor),
             ("delete_doc", fake_delete_doc),
             ("db_query", fake_query),
+            ("count", fake_count),
+            ("latest", fake_latest),
         ):
             if hasattr(mod, name):
                 monkeypatch.setattr(mod, name, fake)

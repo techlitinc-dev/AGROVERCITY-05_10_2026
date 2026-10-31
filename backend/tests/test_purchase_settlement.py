@@ -14,6 +14,7 @@ def _seed_user(user_store, uid, name, active="farmer", **extra):
         "linkedProfiles": ["farmer", "directBuyer"],
         "primaryProfile": "farmer",
         "activeProfile": active,
+        "kycStatus": "verified",
         **extra,
     }
     # WS-02: the QC suite is a Pro-tier feature — grant a Pro subscription so

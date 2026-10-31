@@ -13,6 +13,7 @@ def seed_user(user_store, uid="uid-1", active_profile="farmer", **overrides):
         "bankName": "",
         "kccLimit": 0,
         "mpinHash": None,
+        "kycStatus": "verified",
         "createdAt": "2026-09-16T00:00:00+00:00",
         **overrides,
     }

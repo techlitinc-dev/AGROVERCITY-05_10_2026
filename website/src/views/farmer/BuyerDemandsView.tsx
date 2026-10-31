@@ -9,24 +9,30 @@ import {
   ShieldCheck,
   Phone,
   Lock,
+  BadgeCheck,
 } from 'lucide-react';
 import { demands, apiErrorMessage } from '../../lib/api';
-import { applyToDemand, getMyLeads, isMpinError, type Lead } from '../../lib/api/leads';
+import { applyToDemand, getMyLeads, isMpinError, isKycError, type Lead } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { MpinPad } from '../../components/common/MpinPad';
-import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
+import { DIRECT_CONNECT_TERMS } from '../trade/MyConnectionsView';
 import type { BuyerDemand } from '../../types';
 
+/** Browse rows carry the server-derived buyer summary (spec §9). */
+type DemandRow = BuyerDemand & { buyerSummary?: { verified?: boolean; name?: string } };
+
 export const BuyerDemandsView: React.FC = () => {
-  const [demandsList, setDemandsList] = useState<BuyerDemand[]>([]);
+  const [demandsList, setDemandsList] = useState<DemandRow[]>([]);
   const [myApplications, setMyApplications] = useState<Lead[]>([]);
+  const [cropFilter, setCropFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Apply modal state
-  const [selectedDemand, setSelectedDemand] = useState<BuyerDemand | null>(null);
+  const [selectedDemand, setSelectedDemand] = useState<DemandRow | null>(null);
   const [offerPrice, setOfferPrice] = useState<number>(4760);
   const [offerQuantity, setOfferQuantity] = useState<number>(20);
   const [offerMessage, setOfferMessage] = useState<string>('');
@@ -42,11 +48,12 @@ export const BuyerDemandsView: React.FC = () => {
     setLoading(true);
     Promise.all([
       demands.browse({ status: 'open' }),
-      getMyLeads('sent', undefined, 'demand').catch(() => [] as Lead[]),
+      // Farmer's own applications live on the farmerId side (received).
+      getMyLeads('received', undefined, 'demand').catch(() => [] as Lead[]),
     ])
       .then(([d, apps]) => {
         if (!active) return;
-        setDemandsList(d);
+        setDemandsList(d as DemandRow[]);
         setMyApplications(apps);
       })
       .catch((e) => active && setError(apiErrorMessage(e)))
@@ -59,11 +66,22 @@ export const BuyerDemandsView: React.FC = () => {
   const appFor = (demandId: string): Lead | undefined =>
     myApplications.find((l) => l.demandId === demandId && l.status !== 'dismissed');
 
-  const openApply = (demand: BuyerDemand) => {
+  const visibleDemands = demandsList.filter((d) => {
+    if (cropFilter && !(d.crop || '').toLowerCase().includes(cropFilter.toLowerCase())) return false;
+    if (stateFilter && !((d as DemandRow & { state?: string }).state || (d.deliveryLocation || '')).toLowerCase().includes(stateFilter.toLowerCase()))
+      return false;
+    return true;
+  });
+
+  const openApply = (demand: DemandRow) => {
     const existing = appFor(demand.id);
+    const maxPrice =
+      demand.maxPricePerQuintal ?? Number((demand as DemandRow & { maxPrice?: number }).maxPrice ?? 0);
+    const requiredQty =
+      demand.requiredQuantityQuintal ?? Number((demand as DemandRow & { quantity?: number }).quantity ?? 20);
     setSelectedDemand(demand);
-    setOfferPrice(existing?.pricePerUnit ?? Math.max(1, demand.maxPricePerQuintal - 140));
-    setOfferQuantity(existing?.quantity ?? Math.min(20, demand.requiredQuantityQuintal));
+    setOfferPrice(existing?.pricePerUnit ?? Math.max(1, maxPrice - 140));
+    setOfferQuantity(existing?.quantity ?? Math.min(20, requiredQty));
     setOfferMessage(existing?.message ?? '');
     setTermsAccepted(Boolean(existing));
     setStep(existing ? 'mpin' : 'form');
@@ -104,6 +122,9 @@ export const BuyerDemandsView: React.FC = () => {
       if (isMpinError(err)) {
         setApplyError('Incorrect MPIN — try again.');
         setMpinKey((k) => k + 1);
+      } else if (isKycError(err)) {
+        setApplyError('Complete your identity verification (KYC) before applying — your application was not sent.');
+        setStep('form');
       } else {
         setApplyError(apiErrorMessage(err));
       }
@@ -118,13 +139,30 @@ export const BuyerDemandsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Layers className="w-7 h-7 text-emerald-600" />
-          Industry Buyer Demands (Reverse Marketplace)
+          Buyer Requirements
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Browse procurement demands posted by industrial buyers — food processors, exporters, and
-          large traders. Apply with your quote; on accepting the terms and verifying your MPIN,
-          your contact is shared with the buyer to connect directly.
+          Agri Vyaparis post what they want to buy. Apply with your quantity and price — after terms and MPIN
+          verification your contact is shared so the Vyapari can call or WhatsApp you directly. The deal is
+          settled between you two; Agrovercity never holds money.
         </p>
+        {/* Essential filters only (spec §6) */}
+        <div className="flex flex-wrap gap-2 mt-3">
+          <input
+            type="text"
+            placeholder="Filter by crop"
+            value={cropFilter}
+            onChange={(e) => setCropFilter(e.target.value)}
+            className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-3 py-1.5 w-40"
+          />
+          <input
+            type="text"
+            placeholder="District / area"
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value)}
+            className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-3 py-1.5 w-40"
+          />
+        </div>
       </div>
 
       {error && (
@@ -145,12 +183,12 @@ export const BuyerDemandsView: React.FC = () => {
           <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
             Loading open buyer demands…
           </div>
-        ) : demandsList.length === 0 ? (
+        ) : visibleDemands.length === 0 ? (
           <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
-            No open demands right now. Check back soon — new procurement demands are posted daily.
+            No open requirements match this filter. Try another crop or area.
           </div>
         ) : (
-          demandsList.map((demand) => {
+          visibleDemands.map((demand) => {
             const existing = appFor(demand.id);
             return (
               <div
@@ -166,7 +204,11 @@ export const BuyerDemandsView: React.FC = () => {
                       <h4 className="font-extrabold text-base text-slate-900">{demand.companyName}</h4>
                       <p className="text-[11px] text-slate-400">Buyer: {demand.buyerName}</p>
                     </div>
-                    <StatusBadge status={demand.status} />
+                    {demand.buyerSummary?.verified && (
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <BadgeCheck className="w-3 h-3" /> Verified Vyapari
+                      </span>
+                    )}
                     {existing && (
                       <span className="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                         <ShieldCheck className="w-3 h-3" /> Applied — contact shared
@@ -182,16 +224,21 @@ export const BuyerDemandsView: React.FC = () => {
                   </div>
 
                   <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-600 space-y-1">
-                    <p>
-                      <strong>Quality Specs:</strong> {demand.qualitySpecs}
-                    </p>
+                    {demand.qualitySpecs ? (
+                      <p>
+                        <strong>Quality Specs:</strong> {demand.qualitySpecs}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-4 pt-1 text-[11px] text-slate-500">
                       <span className="flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" /> Delivery: {demand.deliveryLocation}
+                        <MapPin className="w-3.5 h-3.5 text-slate-400" /> Delivery: {demand.deliveryLocation || 'Direct pickup'}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400" /> Valid Until: {demand.validUntil}
-                      </span>
+                      {(demand.validUntil || (demand as DemandRow & { neededBy?: string }).neededBy) && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400" /> Needed by:{' '}
+                          {demand.validUntil || (demand as DemandRow & { neededBy?: string }).neededBy}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -200,14 +247,18 @@ export const BuyerDemandsView: React.FC = () => {
                 <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-end justify-between gap-3 flex-shrink-0">
                   <div className="text-left sm:text-right">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">Required Volume</span>
-                    <span className="text-sm font-bold text-slate-800">{formatWeight(demand.requiredQuantityQuintal)}</span>
-                    <div className="mt-1">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Max Budget Price</span>
-                      <span className="text-xl font-black text-emerald-700">
-                        {formatCurrency(demand.maxPricePerQuintal)}
-                      </span>
-                      <span className="text-xs text-slate-500"> /q</span>
-                    </div>
+                    <span className="text-sm font-bold text-slate-800">
+                      {formatWeight(demand.requiredQuantityQuintal ?? Number((demand as DemandRow & { quantity?: number }).quantity ?? 0))}
+                    </span>
+                    {(demand.maxPricePerQuintal ?? Number((demand as DemandRow & { maxPrice?: number }).maxPrice ?? 0)) > 0 && (
+                      <div className="mt-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Max Budget Price</span>
+                        <span className="text-xl font-black text-emerald-700">
+                          {formatCurrency(demand.maxPricePerQuintal ?? Number((demand as DemandRow & { maxPrice?: number }).maxPrice ?? 0))}
+                        </span>
+                        <span className="text-xs text-slate-500"> /q</span>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -257,7 +308,12 @@ export const BuyerDemandsView: React.FC = () => {
               <div className="flex justify-between text-slate-600">
                 <span>Buyer Max Cap:</span>
                 <span className="font-bold text-emerald-800">
-                  {selectedDemand && formatCurrency(selectedDemand.maxPricePerQuintal)}/q
+                  {selectedDemand &&
+                    formatCurrency(
+                      selectedDemand.maxPricePerQuintal ??
+                        Number((selectedDemand as DemandRow & { maxPrice?: number }).maxPrice ?? 0)
+                    )}
+                  /q
                 </span>
               </div>
             </div>
@@ -302,12 +358,7 @@ export const BuyerDemandsView: React.FC = () => {
                 onChange={(e) => setTermsAccepted(e.target.checked)}
                 className="mt-0.5 w-4 h-4 accent-emerald-600"
               />
-              <span className="text-[11px] text-slate-600 leading-relaxed">
-                I accept the platform <strong>terms & conditions</strong> and consent to sharing my
-                contact number with <strong>{selectedDemand?.companyName}</strong> so they can reach
-                me directly. The final deal — price, payment, pickup and quality — is settled
-                directly between us; Agrovercity only connects the two parties.
-              </span>
+              <span className="text-[11px] text-slate-600 leading-relaxed">{DIRECT_CONNECT_TERMS}</span>
             </label>
 
             {applyError && (

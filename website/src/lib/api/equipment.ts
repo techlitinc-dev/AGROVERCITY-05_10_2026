@@ -2,6 +2,18 @@ import { del, post, readList, readOne } from './http';
 import { MOCK_EQUIPMENT } from './mocks';
 import type { EquipmentMachine } from '../../types';
 
+/** Contact snapshot revealed only after the acceptance unlock. */
+export interface EquipmentContact {
+  name?: string;
+  fullName?: string;
+  village?: string;
+  district?: string;
+  phone?: string;
+  phoneDigits?: string | null;
+  whatsappDigits?: string | null;
+  verified?: boolean;
+}
+
 /** Renter-side booking row from GET /equipment/my-bookings (SR 27). */
 export interface EquipmentMyBooking {
   id: string;
@@ -19,6 +31,28 @@ export interface EquipmentMyBooking {
   machineType?: string | null;
   ownerId?: string | null;
   ownerName?: string | null;
+  ownerVerified?: boolean;
+  /** Present ONLY after the owner's acceptance unlock. */
+  ownerContact?: EquipmentContact | null;
+  chatRoomId?: string;
+  workLocation?: string;
+  workType?: string;
+  workQuantity?: number;
+  workUnit?: string;
+  notes?: string;
+  cancellationReason?: string | null;
+  statusHistory?: { status: string; at: string; by?: string; reason?: string }[];
+}
+
+/** Direct-connect booking-request payload (spec §7). */
+export interface EquipmentRequestPayload {
+  farmerName: string;
+  workLocation?: string;
+  workType?: string;
+  workQuantity?: number;
+  workUnit?: 'acres' | 'hours' | 'days' | '';
+  notes?: string;
+  termsAccepted: boolean;
 }
 
 /** Equipment rental namespace — discovery & booking lifecycle (renter side). */
@@ -39,8 +73,8 @@ export const equipment = {
   quote: (equipmentId: string, payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>(`/equipment/${equipmentId}/quote`, payload),
 
-  /** POST /equipment/slots/{slotId}/book */
-  bookSlot: (slotId: string, payload: Record<string, unknown> = {}): Promise<unknown> =>
+  /** POST /equipment/slots/{slotId}/book — direct-connect request (spec §7). */
+  bookSlot: (slotId: string, payload: EquipmentRequestPayload): Promise<unknown> =>
     post<unknown>(`/equipment/slots/${slotId}/book`, payload),
 
   /** POST /equipment/slots/{slotId}/waitlist */
@@ -49,6 +83,18 @@ export const equipment = {
   /** DELETE /equipment/bookings/{id} */
   cancelBooking: (bookingId: string): Promise<{ success: boolean }> =>
     del<{ success: boolean }>(`/equipment/bookings/${bookingId}`),
+
+  /** POST /equipment/bookings/{id}/cancel — cancellation with a reason (spec §11). */
+  cancelBookingWithReason: (bookingId: string, reason: string): Promise<unknown> =>
+    post<unknown>(`/equipment/bookings/${bookingId}/cancel`, { reason }),
+
+  /** POST /equipment/reports — issue reporting for either participant (spec §13). */
+  reportIssue: (payload: {
+    targetUserId: string;
+    bookingId?: string;
+    category: 'workNotCompleted' | 'equipmentIssue' | 'conduct' | 'safety' | 'other';
+    details?: string;
+  }): Promise<unknown> => post<unknown>('/equipment/reports', payload),
 
   /** GET /equipment/bookings/{id}/execution */
   bookingExecution: (bookingId: string): Promise<unknown> =>

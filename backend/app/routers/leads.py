@@ -31,6 +31,7 @@ from app.services.chat import ensure_direct_room
 from app.services.notify import notify_user
 from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
+from app.services.verification import is_identity_verified
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -39,6 +40,10 @@ LIVE_LEAD_STATUSES = ("new", "contacted")
 # ("Industry Buyer Demands"), the buyer sees them as Farmer Leads.
 LEAD_SOURCE_LOT = "lot"
 LEAD_SOURCE_DEMAND = "demand"
+
+# Direct-connect terms acknowledgement (spec §8). Versioned so future wording
+# changes can tell old acceptances apart.
+TERMS_VERSION = "dc-1.0"
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -125,6 +130,8 @@ async def _create_lot_lead(body: LeadCreate, user: dict, uid: str, response: Res
         _error(409, "LOT_NOT_OPEN", "lot is not open for leads")
     if not body.termsAccepted:
         _error(422, "TERMS_REQUIRED", "accept the terms & conditions to contact the farmer")
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to contact farmers")
     # MPIN step-up: only enforced when this account has an MPIN on file —
     # accounts without one proceed (same contract as contract e-sign).
     if user.get("mpinHash"):
@@ -139,10 +146,15 @@ async def _create_lot_lead(body: LeadCreate, user: dict, uid: str, response: Res
     existing = await query("leads", [("lotId", "==", body.lotId), ("buyerId", "==", uid)], limit=100)
     live = next((l for l in existing if l.get("status") in LIVE_LEAD_STATUSES), None)
     if live is not None:
+        # Idempotent revisit — the connection already exists and both parties
+        # already hold each other's contact.
         response.status_code = 200
         return {"lead": _with_contacts(live), "chatRoomId": live.get("chatRoomId")}
 
     farmer = await get_user(lot["farmerId"]) or {}
+    if not await is_identity_verified(farmer):
+        _error(403, "COUNTERPARTY_UNVERIFIED", "the farmer has not completed identity verification")
+
     now = _now()
     doc = {
         "id": f"lead_{uuid4().hex[:12]}",
@@ -156,14 +168,18 @@ async def _create_lot_lead(body: LeadCreate, user: dict, uid: str, response: Res
         "farmerId": lot["farmerId"],
         "buyerId": uid,
         "buyerRole": user.get("activeProfile", ""),
-        "buyerVerified": bool(user.get("vyapariVerified")),
+        "buyerVerified": bool(user.get("vyapariVerified")) or await is_identity_verified(user),
         "status": "new",
+        "termsAccepted": True,
+        "termsVersion": TERMS_VERSION,
         "termsAcceptedAt": now,
+        "termsAcceptedBy": uid,
+        "contactRevealedAt": now,
         "finalRate": None,
         "farmerContact": _contact_of(farmer),
         "buyerContact": {
             **_contact_of(user),
-            "verified": bool(user.get("vyapariVerified")),
+            "verified": bool(user.get("vyapariVerified")) or await is_identity_verified(user),
             "role": user.get("activeProfile", ""),
         },
         "createdAt": now,
@@ -242,6 +258,8 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
         )
     if not body.termsAccepted:
         _error(422, "TERMS_REQUIRED", "accept the terms & conditions to apply")
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to apply")
     # Same MPIN step-up contract as lot leads: enforced when an MPIN is on file.
     if user.get("mpinHash"):
         if not body.mpin:
@@ -258,10 +276,14 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
     )
     live = next((l for l in existing if l.get("status") in LIVE_LEAD_STATUSES), None)
     if live is not None:
+        # Idempotent re-apply — return the existing application/connection.
         response.status_code = 200
         return {"lead": _with_contacts(live), "chatRoomId": live.get("chatRoomId")}
 
     buyer = await get_user(buyer_id) or {}
+    if not await is_identity_verified(buyer):
+        _error(403, "COUNTERPARTY_UNVERIFIED", "the buyer has not completed identity verification")
+    farmer_verified = await is_identity_verified(user)
     now = _now()
     doc = {
         "id": f"lead_{uuid4().hex[:12]}",
@@ -275,14 +297,18 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
         "farmerId": uid,
         "buyerId": buyer_id,
         "buyerRole": buyer.get("activeProfile", ""),
-        "buyerVerified": bool(buyer.get("vyapariVerified")),
+        "buyerVerified": bool(buyer.get("vyapariVerified")) or await is_identity_verified(buyer),
         "status": "new",
+        "termsAccepted": True,
+        "termsVersion": TERMS_VERSION,
         "termsAcceptedAt": now,
+        "termsAcceptedBy": uid,
+        "contactRevealedAt": now,
         "finalRate": None,
-        "farmerContact": _contact_of(user),
+        "farmerContact": {**_contact_of(user), "verified": farmer_verified},
         "buyerContact": {
             **_contact_of(buyer),
-            "verified": bool(buyer.get("vyapariVerified")),
+            "verified": bool(buyer.get("vyapariVerified")) or await is_identity_verified(buyer),
             "role": buyer.get("activeProfile", ""),
         },
         "createdAt": now,
@@ -342,6 +368,10 @@ async def list_my_leads(
     pageSize: int = 20,
     uid: str = Depends(current_user_id),
 ):
+    """My connections, keyed by platform role: `sent` = leads where I am the
+    buyer (lot enquiries I initiated, applications landing on my requirements),
+    `received` = leads where I am the farmer (buyer leads on my lots,
+    applications I sent on requirements)."""
     field = "buyerId" if filter == "sent" else "farmerId"
     docs = await query("leads", [(field, "==", uid)], limit=1000)
     if source:
@@ -357,10 +387,74 @@ async def list_my_leads(
     return {"data": [_with_contacts(d) for d in docs[start:start + pageSize]], "page": page, "pageSize": pageSize, "total": total}
 
 
+class LeadUnlock(BaseModel):
+    termsAccepted: bool = False
+    mpin: str | None = None
+
+
+@router.post("/{lead_id}/unlock")
+async def unlock_lead_contact(lead_id: str, body: LeadUnlock, uid: str = Depends(current_user_id)):
+    """Protected contact unlock for an EXISTING connection — used when a Vyapari
+    contacts a farmer who applied on their requirement (Journey B step 5), and
+    whenever a participant revisits a connection.
+
+    Idempotent: repeated unlocks return the same lead with the same contacts;
+    nothing new is created. Requires verified KYC for both parties, the
+    direct-connect terms, and the caller's MPIN (when one is on file).
+    """
+    lead = await get_doc("leads", lead_id)
+    if lead is None or uid not in (lead.get("farmerId"), lead.get("buyerId")):
+        _error(404, "LEAD_NOT_FOUND", "lead not found")
+    user = await get_user(uid)
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to unlock contacts")
+    other_id = lead.get("buyerId") if uid == lead.get("farmerId") else lead.get("farmerId")
+    other = await get_user(other_id) or {}
+    if not await is_identity_verified(other):
+        _error(403, "COUNTERPARTY_UNVERIFIED", "the other party has not completed identity verification")
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the terms & conditions to unlock contact details")
+    if user.get("mpinHash"):
+        if not body.mpin:
+            _error(401, "WRONG_MPIN", "mpin is required to reveal contact details")
+        if not verify_mpin(body.mpin, user["mpinHash"]):
+            _error(401, "WRONG_MPIN", "incorrect MPIN")
+    await hit("leads", uid, 30, 60)
+
+    now = _now()
+    first_unlock = lead.get("contactRevealedAt") is None
+    lead["contactRevealedAt"] = lead.get("contactRevealedAt") or now
+    lead["termsAccepted"] = True
+    lead["termsVersion"] = lead.get("termsVersion") or TERMS_VERSION
+    lead["termsAcceptedAt"] = lead.get("termsAcceptedAt") or now
+    lead.setdefault("unlocks", [])
+    if not any(u.get("by") == uid for u in lead["unlocks"]):
+        lead["unlocks"] = [*lead["unlocks"], {"by": uid, "at": now, "termsVersion": lead["termsVersion"]}]
+    if lead.get("status") == "new":
+        lead["status"] = "contacted"
+    lead["updatedAt"] = now
+    await set_doc("leads", lead_id, lead)
+
+    if first_unlock or lead.get("status") == "contacted":
+        crop = lead.get("lotCrop") or lead.get("demandCrop") or "produce"
+        other_name = ((user.get("name") or "").strip().split(" ") or [""])[0] or "The other party"
+        await notify_user(
+            other_id,
+            type="contact_unlocked",
+            title="Contact unlocked / संपर्क उघडला",
+            body=f"{other_name} unlocked the contact for your {crop} connection — call, WhatsApp or chat directly.",
+            deepLink=f"/chat?room={lead['chatRoomId']}" if lead.get("chatRoomId") else "/farmer/connections",
+        )
+    return _with_contacts(lead)
+
+
 @router.patch("/{lead_id}")
 async def update_lead_status(lead_id: str, body: LeadStatusUpdate, uid: str = Depends(current_user_id)):
+    """Deal outcome update — restricted to the two connected parties. The
+    outcome is user-reported only; it never creates or verifies any payment,
+    purchase, procurement, or settlement object."""
     lead = await get_doc("leads", lead_id)
-    if lead is None or lead.get("farmerId") != uid:
+    if lead is None or uid not in (lead.get("farmerId"), lead.get("buyerId")):
         _error(404, "LEAD_NOT_FOUND", "lead not found")
     lead["status"] = body.status
     if body.finalRate is not None:
@@ -369,6 +463,9 @@ async def update_lead_status(lead_id: str, body: LeadStatusUpdate, uid: str = De
         lead["finalRate"] = body.finalRate
     lead["updatedAt"] = _now()
     await set_doc("leads", lead_id, lead)
+
+    other_id = lead.get("buyerId") if uid == lead.get("farmerId") else lead.get("farmerId")
+    crop = lead.get("lotCrop") or lead.get("demandCrop") or "produce"
     if body.status == "sold":
         lot = await get_doc("market_lots", lead.get("lotId", ""))
         if lot is not None and lot.get("status") == "open":
@@ -378,10 +475,18 @@ async def update_lead_status(lead_id: str, body: LeadStatusUpdate, uid: str = De
             lot["updatedAt"] = _now()
             await set_doc("market_lots", lot["id"], lot)
         await notify_user(
-            lead.get("buyerId"),
-            type="lead_marked_sold",
-            title="Lot sold / लॉट बिक गया",
-            body=f"The {lead.get('lotCrop', 'produce')} lot you enquired about is marked sold on Agrovercity.",
-            deepLink="/farmer/lots",
+            other_id,
+            type="lead_outcome_updated",
+            title="Deal marked completed / सौदा पूर्ण",
+            body=f"The {crop} connection was marked 'deal completed' — a user-reported outcome, not a payment record.",
+            deepLink="/seller/connections" if other_id == lead.get("buyerId") else "/farmer/connections",
+        )
+    elif body.status == "dismissed":
+        await notify_user(
+            other_id,
+            type="lead_outcome_updated",
+            title="Connection closed / संपर्क बंद",
+            body=f"The {crop} connection was marked 'did not happen'.",
+            deepLink="/seller/connections" if other_id == lead.get("buyerId") else "/farmer/connections",
         )
     return _with_contacts(lead)

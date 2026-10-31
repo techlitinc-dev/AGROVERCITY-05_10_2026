@@ -163,6 +163,7 @@ async def test_tenant_compatibility_score_on_inbox(client, user_store):
     req_body = {
         "listingId": listing_id,
         "durationMonths": 12,
+        "termsAccepted": True,
         "message": "Interested in organic farming",
     }
     req_resp = await client.post("/v1/land/lease-requests", json=req_body, headers=auth(farmer_token))

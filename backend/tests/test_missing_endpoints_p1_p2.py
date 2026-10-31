@@ -32,6 +32,7 @@ def _seed_persona(user_store: dict, uid: str, role: str, name: str = "Test User"
         "phone": f"+9198{uid[-8:]}".ljust(13, "0"),
         "linkedProfiles": [role],
         "activeProfile": role,
+        "kycStatus": "verified",
         "primaryProfile": role,
         "state": "Maharashtra",
         "district": "Nashik",

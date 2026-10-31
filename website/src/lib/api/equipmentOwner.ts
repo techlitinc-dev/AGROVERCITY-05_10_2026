@@ -32,9 +32,17 @@ export const equipmentOwner = {
   /** GET /equipment/bookings/pending */
   pendingBookings: (): Promise<unknown[]> => readList<unknown[]>('/equipment/bookings/pending'),
 
-  /** POST /equipment/bookings/{id}/approve */
-  approveBooking: (bookingId: string): Promise<unknown> =>
-    post<unknown>(`/equipment/bookings/${bookingId}/approve`),
+  /** POST /equipment/bookings/{id}/approve — acceptance = contact unlock:
+   * owner direct-connect terms + MPIN, KYC for both parties (spec §9). */
+  approveBooking: (
+    bookingId: string,
+    payload: { termsAccepted: boolean; mpin?: string },
+  ): Promise<unknown> => post<unknown>(`/equipment/bookings/${bookingId}/approve`, payload),
+
+  /** GET /equipment/owner/requests?status= — all bookings across my machines
+   * (pending | upcoming | completed | closed), farmer contact gated until unlock. */
+  ownerRequests: (status?: 'pending' | 'upcoming' | 'completed' | 'closed'): Promise<unknown[]> =>
+    readList<unknown[]>('/equipment/owner/requests', { params: status ? { status } : {} }),
 
   /** POST /equipment/bookings/{id}/reject */
   rejectBooking: (bookingId: string, reason?: string): Promise<unknown> =>

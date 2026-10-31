@@ -21,6 +21,7 @@ interface Room {
   name: string;
   subtitle: string;
   otherUserId?: string;
+  verified?: boolean;
 }
 
 interface Msg {
@@ -89,6 +90,7 @@ export const ChatPage: React.FC = () => {
               `Room ${id.slice(0, 6)}`,
             subtitle: pickStr(r, 'lastMessage', 'subtitle', 'context') || 'Chat room',
             otherUserId,
+            verified: (r as Record<string, unknown>).counterpartyVerified === true,
           };
         });
         setRooms(list);
@@ -279,6 +281,11 @@ export const ChatPage: React.FC = () => {
               <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-100 bg-white">
                 <p className="text-xs font-bold text-slate-900 truncate">
                   {rooms.find((r) => r.id === activeRoom)?.name ?? 'Conversation'}
+                  {rooms.find((r) => r.id === activeRoom)?.verified && (
+                    <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-full text-[9px] font-bold">
+                      <ShieldCheck className="w-2.5 h-2.5" /> Verified
+                    </span>
+                  )}
                   {isBlocked && (
                     <span className="ml-2 px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[9px] font-bold">
                       Blocked

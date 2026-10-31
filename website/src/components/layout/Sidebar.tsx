@@ -42,6 +42,7 @@ import {
   Megaphone,
   HandCoins,
   Search,
+  Handshake,
   Sprout,
   Tag,
   TreePine,
@@ -50,6 +51,11 @@ import {
   ArrowLeftRight,
   ClipboardList,
   PawPrint,
+  Briefcase,
+  Mountain,
+  BadgeCheck,
+  Globe2,
+  Plus,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../lib/utils';
@@ -64,16 +70,27 @@ export const Sidebar: React.FC = () => {
       case 'farmer':
         return [
           {
+            title: 'Trade — Buy & Sell',
+            items: [
+              { to: '/farmer/lots', label: 'My Produce / माझे उत्पादन', icon: Package },
+              { to: '/farmer/demands', label: 'Buyer Requirements / खरेदी मागण्या', icon: Layers },
+              { to: '/farmer/land', label: 'Lease Farm Land / शेतजमीन भाड्याने', icon: Mountain },
+              { to: '/farmer/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
+              { to: '/farmer/export', label: 'Export Opportunities / निर्यात संधी', icon: Globe2 },
+              { to: '/farmer/export/applications', label: 'My Export Applications', icon: FileText },
+              { to: '/farmer/export/connections', label: 'Export Connections', icon: Handshake },
+              { to: '/farmer/export/readiness', label: 'Export Readiness', icon: ClipboardList },
+              { to: '/farmer/mandi', label: 'Mandi Prices / बाजारभाव', icon: TrendingUp },
+              { to: '/farmer/transport', label: 'Book Gadi / Transport', icon: Truck },
+            ],
+          },
+          {
             title: 'Kisan Core Hub',
             items: [
               { to: '/farmer', label: 'Farmer Cockpit', icon: LayoutDashboard },
               { to: '/farmer/crops', label: 'My Crops / माझी पिके', icon: Sprout },
               { to: '/farmer/crop-plan', label: 'AI Crop Plan / पीक नियोजन', icon: Sparkles },
               { to: '/farmer/crop-doctor', label: 'AI Crop Doctor (रोग निदान)', icon: Stethoscope },
-              { to: '/farmer/mandi', label: 'Live Mandi Prices', icon: TrendingUp },
-              { to: '/farmer/lots', label: 'Sell Produce Lots', icon: Package },
-              { to: '/farmer/demands', label: 'Industry Buyer Demands', icon: Layers },
-              { to: '/farmer/transport', label: 'Book Gadi / Transport', icon: Truck },
               { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
               { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
@@ -108,13 +125,14 @@ export const Sidebar: React.FC = () => {
       case 'landlord':
         return [
           {
-            title: 'Landlord Workspace',
+            title: 'Farmland Leasing',
             items: [
-              { to: '/landlord', label: 'Landlord Cockpit', icon: LayoutDashboard },
-              { to: '/landlord/plots', label: 'My Plots & 7/12', icon: FileSpreadsheet },
-              { to: '/landlord/listings', label: 'Lease Listings', icon: Layers },
-              { to: '/landlord/inbox', label: 'Lease Inquiries', icon: FileCheck },
-              { to: '/landlord/rent', label: 'Rent Ledger & Escrow', icon: DollarSign },
+              { to: '/landlord', label: 'Home', icon: LayoutDashboard },
+              { to: '/landlord/listings', label: 'My Land Listings', icon: Mountain },
+              { to: '/landlord/verification', label: 'Land Verification', icon: BadgeCheck },
+              { to: '/landlord/requests', label: 'Interest Requests', icon: FileCheck },
+              { to: '/landlord/connections', label: 'My Connections / Leases', icon: Handshake },
+              { to: '/profile', label: 'Profile & Verification', icon: User },
             ],
           },
         ];
@@ -140,40 +158,14 @@ export const Sidebar: React.FC = () => {
       case 'seller':
         return [
           {
-            title: 'Vyapari Marketplace',
+            title: 'Vyapari Trade',
             items: [
-              { to: '/seller', label: 'Vyapari Cockpit', icon: LayoutDashboard },
-              { to: '/seller/profile', label: 'Business Profile', icon: Building2 },
-              { to: '/seller/lots', label: 'Discover Produce Lots', icon: Search },
-              { to: '/seller/purchases', label: 'My Purchases & Pickup', icon: FileCheck },
-              { to: '/seller/direct-buyers', label: 'Industrial Buyers Network', icon: Users },
-              { to: '/seller/ai', label: 'AI Insights & Sourcing', icon: Sparkles },
-            ],
-          },
-          {
-            title: 'Trading Operations',
-            items: [
-              { to: '/seller/rates', label: 'Mandi Rates & Arbitrage', icon: Landmark },
-              { to: '/seller/procure', label: 'J-Form Procurement', icon: FileSpreadsheet },
-              { to: '/seller/demands', label: 'Post Crop Demands', icon: Layers },
-              { to: '/seller/stock', label: 'Stock & Resale Desk', icon: Package },
-              { to: '/seller/pos', label: 'POS & Finance CEO', icon: DollarSign },
-              { to: '/seller/settlements', label: 'Weekly Settlements', icon: HandCoins },
-              { to: '/seller/pnl', label: 'Trader P&L (Buy vs Sell)', icon: TrendingUp },
-              { to: '/seller/ratings', label: 'Rate Farmers & Reviews', icon: Star },
-              { to: '/seller/ads', label: 'Ad Manager & Campaigns', icon: Megaphone },
-              { to: '/seller/diary', label: 'Business Diary & Khata', icon: BookOpen },
-            ],
-          },
-          {
-            title: 'Utilities & Ecosystem',
-            items: [
-              { to: '/seller/chatbot', label: 'Chatbot Support', icon: Bot },
-              { to: '/seller/news', label: 'Agri News Feed', icon: Radio },
-              { to: '/seller/coins', label: 'Coin Rewards Wallet', icon: Award },
-              { to: '/seller/referrals', label: 'Refer & Earn', icon: Gift },
-              { to: '/seller/712', label: '7/12 Land Records', icon: FileText },
-              { to: '/seller/trees', label: 'Tree Plantation Hub', icon: Droplets },
+              { to: '/seller', label: 'Home', icon: LayoutDashboard },
+              { to: '/seller/lots', label: 'Find Produce / शेतमाल शोधा', icon: Search },
+              { to: '/seller/demands', label: 'Post Requirement / मागणी टाका', icon: Megaphone },
+              { to: '/seller/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
+              { to: '/seller/rates', label: 'Mandi Prices / बाजारभाव', icon: TrendingUp },
+              { to: '/seller/profile', label: 'Profile & Verification', icon: Building2 },
             ],
           },
         ];
@@ -181,14 +173,14 @@ export const Sidebar: React.FC = () => {
       case 'equipmentOwner':
         return [
           {
-            title: 'Equipment Suite',
+            title: 'Equipment Service',
             items: [
-              { to: '/equipment', label: 'Fleet Overview', icon: LayoutDashboard },
-              { to: '/equipment/fleet', label: 'Machinery Registry', icon: Wrench },
-              { to: '/equipment/bookings', label: 'Incoming Bookings', icon: FileCheck },
-              { to: '/equipment/claims', label: 'Damage Claims', icon: ShieldAlert },
-              { to: '/equipment/settlements', label: 'Settlements & P&L', icon: DollarSign },
-              { to: '/equipment/market', label: 'Rental Heatmap & Intel', icon: TrendingUp },
+              { to: '/equipment', label: 'Home', icon: LayoutDashboard },
+              { to: '/equipment/machines', label: 'My Equipment', icon: Wrench },
+              { to: '/equipment/availability', label: 'Availability', icon: Calendar },
+              { to: '/equipment/requests', label: 'Booking Requests', icon: FileCheck },
+              { to: '/equipment/jobs', label: 'My Jobs', icon: Briefcase },
+              { to: '/profile', label: 'Profile & Verification', icon: User },
             ],
           },
         ];
@@ -198,11 +190,12 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Global Export Hub',
             items: [
-              { to: '/exporter', label: 'Export Cockpit', icon: LayoutDashboard },
-              { to: '/exporter/rfqs', label: 'International RFQs', icon: Ship },
-              { to: '/exporter/orders', label: 'Shipping & LC Orders', icon: Package },
-              { to: '/exporter/suppliers', label: 'APEDA Farm Cooperatives', icon: Users },
-              { to: '/exporter/analytics', label: 'Forex & Trade Stats', icon: TrendingUp },
+              { to: '/exporter', label: 'Home', icon: LayoutDashboard },
+              { to: '/exporter/rfqs?new=1', label: 'Post Export Requirement', icon: Plus },
+              { to: '/exporter/rfqs', label: 'My Export Requirements', icon: Ship },
+              { to: '/exporter/applications', label: 'Applications Received', icon: Inbox },
+              { to: '/exporter/connections', label: 'My Connections', icon: Handshake },
+              { to: '/profile', label: 'Business Profile & Verification', icon: BadgeCheck },
             ],
           },
         ];

@@ -9,7 +9,8 @@ class DemandCreate(BaseModel):
     quantity: float = Field(gt=0)
     unit: str = "quintal"
     qualityGrade: Literal["A", "B", "C"] = "A"
-    maxPrice: int = Field(ge=0)
+    # Optional per the direct-connect spec: 0 = price not specified.
+    maxPrice: int = Field(default=0, ge=0)
     packaging: str = ""
     deliveryLocation: str = ""
     neededBy: str = ""

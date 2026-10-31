@@ -56,6 +56,7 @@ def _admin(user_store, uid="admin-root"):
         "name": "Super Admin",
         "linkedProfiles": ["farmer"],
         "activeProfile": "admin",
+        "kycStatus": "verified",
         "primaryProfile": "farmer",
         "isAdmin": True,
     }

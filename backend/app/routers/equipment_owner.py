@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import admin_action, admin_user, current_user_id
+from app.core.security import verify_mpin
 from app.models.equipment import (
     CheckInPinIn,
     DamageClaimIn,
@@ -16,16 +17,19 @@ from app.models.equipment import (
     MaintenanceLogIn,
     RejectEquipmentBookingRequest,
 )
-from app.routers.equipment import IST, promote_waitlist_head
+from app.routers.equipment import EQUIPMENT_TERMS_VERSION, IST, promote_waitlist_head
 from app.routers.equipment_rental import expire_counter_if_due
 from app.routers.users import require_role
 from app.services import equipment_ai
 from app.services.ai.privacy import build_equipment_booking_rec_state
 from app.services.billing import entitlement_guard, record_usage
+from app.services.chat import ensure_direct_room
 from app.services.notifications import send_fcm_to_user
+from app.services.notify import notify_user
 from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import emit_task, module_deep_link
 from app.services.users import get_user
+from app.services.verification import is_identity_verified, verification_map
 
 router = APIRouter(prefix="/equipment", tags=["equipment-owner"])
 
@@ -34,6 +38,19 @@ UPDATABLE_FIELDS = (
     "name", "type", "hourlyRate", "perAcreRate", "slotTemplate",
     "rcDocUrl", "insuranceDocUrl", "serviceSchedule", "insuranceExpiry", "rcExpiry",
     "pricing",
+    # Direct-connect listing fields (spec §5).
+    "location", "photos", "operatorOption", "capacity", "pricingUnit",
+    "ratePerDay", "fuelIncluded", "travelCharge", "minBookingQty", "notes", "active",
+)
+
+DIRECT_CONNECT_EQUIPMENT_TERMS = (
+    "Agrovercity only connects farmers and equipment owners. Final price, payment, "
+    "equipment condition, operator arrangements, fuel, equipment transportation, work "
+    "quality, safety, damage, cancellation, security deposits, and disputes are handled "
+    "directly between the parties. Agrovercity does not hold payments or guarantee the "
+    "equipment, operator, work quality, payment, safety, or completion. After acceptance, "
+    "my contact details will be shared with the other party and their contact details "
+    "will be shared with me."
 )
 
 
@@ -124,6 +141,14 @@ async def create_equipment(
 ):
     if body.slotTemplate is not None:
         _validate_slot_template(body.slotTemplate)
+    # Activation requires verified identity KYC (spec §5). Equipment
+    # verification is a SEPARATE document review (docStatus) — never implied
+    # by the owner's KYC.
+    owner = await get_user(uid)
+    if not await is_identity_verified(owner):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to list equipment")
+    if body.pricingUnit not in ("perHour", "perAcre", "perDay"):
+        _error(422, "VALIDATION_ERROR", "pricingUnit must be perHour, perAcre or perDay")
     # docStatus verify/reject is an admin action in the Day 14 KYC queue
     doc = {
         "id": f"eq_{uuid.uuid4().hex[:12]}",
@@ -140,8 +165,18 @@ async def create_equipment(
         "insuranceExpiry": body.insuranceExpiry,
         "rcExpiry": body.rcExpiry,
         "pricing": body.pricing,
+        "location": body.location,
+        "photos": body.photos,
+        "operatorOption": body.operatorOption,
+        "capacity": body.capacity,
+        "pricingUnit": body.pricingUnit,
+        "ratePerDay": body.ratePerDay,
+        "fuelIncluded": body.fuelIncluded,
+        "travelCharge": body.travelCharge,
+        "minBookingQty": body.minBookingQty,
+        "notes": body.notes,
         "distanceKm": 0,
-        "active": True,
+        "active": body.active,
         "docStatus": "pending",
         "rejectionReason": None,
         "createdAt": datetime.now(timezone.utc).isoformat(),
@@ -156,6 +191,8 @@ async def update_equipment(equipment_id: str, body: EquipmentUpsertRequest, uid:
     equipment = await _own_equipment(equipment_id, uid)
     if body.slotTemplate is not None:
         _validate_slot_template(body.slotTemplate)
+    if body.pricingUnit not in ("perHour", "perAcre", "perDay"):
+        _error(422, "VALIDATION_ERROR", "pricingUnit must be perHour, perAcre or perDay")
     for field in UPDATABLE_FIELDS:
         equipment[field] = getattr(body, field)
     equipment["updatedAt"] = datetime.now(timezone.utc).isoformat()
@@ -296,22 +333,150 @@ async def pending_bookings(uid: str = Depends(_owner)):
     return {"data": data}
 
 
+class AcceptBookingIn(BaseModel):
+    termsAccepted: bool = False
+    mpin: str | None = None
+
+
+def _contact_of(user: dict) -> dict:
+    phone = user.get("phone") or ""
+    whatsapp = user.get("whatsapp") or phone
+    digits = "".join(ch for ch in str(phone) if ch.isdigit()) or None
+    wa_digits = "".join(ch for ch in str(whatsapp) if ch.isdigit()) or None
+    return {
+        "name": (user.get("name") or "").strip().split(" ")[0],
+        "fullName": user.get("name") or "",
+        "village": user.get("village", ""),
+        "district": user.get("district", ""),
+        "phone": phone,
+        "phoneDigits": digits,
+        "whatsappDigits": wa_digits,
+        "verified": True,
+    }
+
+
+@router.get("/owner/requests")
+async def owner_requests(
+    status: str | None = None,
+    uid: str = Depends(_owner),
+):
+    """Every booking request across the owner's machines (spec §12) — pending,
+    upcoming (accepted/in-progress), completed, declined/cancelled — with the
+    farmer's identity badge. Farmer contact snapshots appear ONLY after the
+    acceptance unlock."""
+    machines = await query("equipment", [("ownerId", "==", uid)], limit=1000)
+    by_id = {m["id"]: m for m in machines}
+    bookings = await query("equipment_bookings", [], limit=1000)
+    mine = [b for b in bookings if b.get("equipmentId") in by_id]
+    verified_by_farmer = await verification_map([b.get("userId") or "" for b in mine])
+    groups = {
+        "pending": "pending",
+        "upcoming": "booked,in_progress",
+        "completed": "completed",
+        "closed": "rejected,cancelled",
+    }
+    if status in groups:
+        wanted = set(groups[status].split(","))
+        mine = [b for b in mine if b.get("status") in wanted]
+    mine.sort(key=lambda b: b.get("createdAt", ""), reverse=True)
+    data = []
+    for booking in mine:
+        equipment = by_id.get(booking.get("equipmentId")) or {}
+        row = {
+            **booking,
+            "equipmentName": equipment.get("name"),
+            "equipmentType": equipment.get("type"),
+            "equipmentLocation": equipment.get("location"),
+            "equipmentPricingUnit": equipment.get("pricingUnit") or "perHour",
+            "equipmentRate": equipment.get("hourlyRate"),
+            "farmerVerified": verified_by_farmer.get(booking.get("userId") or "", False),
+        }
+        if not booking.get("contactRevealedAt"):
+            row.pop("farmerContact", None)
+            row.pop("ownerContact", None)
+        data.append(row)
+    return {"data": data, "total": len(data)}
+
+
 @router.post("/bookings/{booking_id}/approve")
-async def approve_booking(booking_id: str, uid: str = Depends(_owner)):
+async def approve_booking(booking_id: str, body: AcceptBookingIn | None = None, uid: str = Depends(_owner)):
+    """Owner acceptance = the contact-unlock moment (spec §9).
+
+    Requires: ownership, request still `requested` (pending), equipment still
+    active, the slot still held for this request, verified KYC for BOTH
+    parties, the owner's direct-connect terms, and the owner's MPIN (when one
+    is on file). Revalidates the slot immediately before marking accepted so a
+    double-accept or a conflicting booking cannot slip through; releases the
+    slot back on failure. Creates exactly one chat room per pair.
+    """
     booking, equipment, slot = await _pending_owner_booking(booking_id, uid)
-    booking["status"] = "booked"
+    if not equipment.get("active", True):
+        _error(409, "EQUIPMENT_INACTIVE", "equipment is not active")
+    body = body or AcceptBookingIn()
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to accept this request")
+    owner = await get_user(uid)
+    if not await is_identity_verified(owner):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to accept requests")
+    farmer = await get_user(booking["userId"])
+    if not await is_identity_verified(farmer):
+        _error(403, "COUNTERPARTY_UNVERIFIED", "the farmer has not completed identity verification")
+    if (owner or {}).get("mpinHash"):
+        if not body.mpin:
+            _error(401, "WRONG_MPIN", "mpin is required to accept and share contact details")
+        if not verify_mpin(body.mpin, owner["mpinHash"]):
+            _error(401, "WRONG_MPIN", "incorrect MPIN")
+    # Atomic-enough revalidation: the slot must still be held for THIS request.
+    fresh_slot = await get_doc("equipment_slots", booking["slotId"])
+    if fresh_slot is None or fresh_slot.get("status") != "pending" or fresh_slot.get("bookedByName") != booking.get("farmerName"):
+        _error(409, "SLOT_UNAVAILABLE", "this schedule is no longer available")
+
+    now = datetime.now(timezone.utc).isoformat()
+    history = list(booking.get("statusHistory") or [])
+    history.append({"status": "accepted", "at": now, "by": uid})
+    booking.update(
+        {
+            "status": "booked",
+            "statusHistory": history,
+            "ownerTermsAccepted": True,
+            "ownerTermsVersion": EQUIPMENT_TERMS_VERSION,
+            "ownerTermsAcceptedAt": now,
+            "ownerTermsAcceptedBy": uid,
+            "mpinVerified": bool((owner or {}).get("mpinHash")),
+            "contactRevealedAt": booking.get("contactRevealedAt") or now,
+            "farmerContact": _contact_of(farmer or {}),
+            "ownerContact": {**_contact_of(owner or {}), "verified": True},
+        }
+    )
+    room = await ensure_direct_room(
+        uid,
+        (owner or {}).get("name", ""),
+        booking["userId"],
+        (farmer or {}).get("name", ""),
+        crop=equipment.get("name", ""),
+    )
+    booking["chatRoomId"] = room["id"]
     await set_doc("equipment_bookings", booking_id, booking)
-    if slot is not None:
-        slot["status"] = "booked"
-        await set_doc("equipment_slots", slot["id"], slot)
+    await set_doc("equipment_slots", fresh_slot["id"], {**fresh_slot, "status": "booked"})
+
     await send_fcm_to_user(
         booking["userId"],
         "बुकिंग स्वीकृत",
-        f"{equipment['name']} की आपकी बुकिंग स्वीकार कर ली गई है",
-        {"type": "equipment_booking_approved", "bookingId": booking_id},
+        f"{equipment['name']} की आपकी बुकिंग स्वीकार कर ली गई है — संपर्क विवरण साझा किए गए हैं",
+        {
+            "type": "equipment_booking_approved",
+            "bookingId": booking_id,
+            "deepLink": "/farmer/equipment",
+        },
     )
-    # SMS alert (best-effort, DLT-stubbed) — the in-app notification is the
-    # doc persisted by send_fcm_to_user above.
+    await notify_user(
+        uid,
+        type="equipment_booking_accepted",
+        title="You accepted a request / विनंती स्वीकारली",
+        body=f"{booking.get('farmerName', 'Farmer')} · {equipment['name']} · {booking.get('date', '')} — farmer contact unlocked.",
+        deepLink="/equipment/requests",
+    )
+    # SMS alert (best-effort, DLT-stubbed).
     from app.services.sms import send_sms
 
     farmer_user = await get_user(booking["userId"])
@@ -485,14 +650,37 @@ async def update_booking_execution(
     # Sync back to booking
     booking = await get_doc("equipment_bookings", booking_id)
     if booking is not None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        history = list(booking.get("statusHistory") or [])
         if body.jobStatus in ("completed", "verified"):
             booking["status"] = "completed"
-            # WS-03: renter rates the equipment owner on completion.
+            history.append({"status": "completed", "at": now_iso, "by": uid})
+            # WS-03: renter rates the equipment owner on completion — and the
+            # owner rates the farmer. Completion is a user-reported work
+            # outcome, never proof of payment (spec §11).
             await open_rating_prompt(
                 booking.get("userId"), booking.get("ownerId") or uid, booking_id, "equipment_booking"
             )
+            await open_rating_prompt(uid, booking.get("userId") or "", booking_id, "equipment_booking")
+            await notify_user(
+                booking.get("userId"),
+                type="equipment_work_completed",
+                title="Work completed / काम पूर्ण",
+                body=f"Work for {booking.get('date', '')} {booking.get('slotName', '')} is marked completed — rate your experience and report any issue if needed.",
+                deepLink="/farmer/equipment",
+            )
         elif body.jobStatus in ("en_route", "on_site", "work_started"):
+            if booking.get("status") != "in_progress":
+                history.append({"status": "inProgress", "at": now_iso, "by": uid})
             booking["status"] = "in_progress"
+            await notify_user(
+                booking.get("userId"),
+                type="equipment_work_started",
+                title="Work started / काम सुरू",
+                body=f"Work for {booking.get('date', '')} {booking.get('slotName', '')} has started.",
+                deepLink="/farmer/equipment",
+            )
+        booking["statusHistory"] = history
         if body.hoursLogged:
             booking["hoursLogged"] = body.hoursLogged
         await set_doc("equipment_bookings", booking_id, booking)

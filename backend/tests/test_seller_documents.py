@@ -61,6 +61,7 @@ async def test_other_sellers_sale_404(client, user_store):
         "id": "uid-2",
         "linkedProfiles": ["seller"],
         "activeProfile": "seller",
+        "kycStatus": "verified",
         "primaryProfile": "seller",
         "createdAt": "2026-10-01T00:00:00+00:00",
     }

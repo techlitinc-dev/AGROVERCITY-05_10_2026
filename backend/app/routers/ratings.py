@@ -84,6 +84,19 @@ async def _resolve_provider(kind: str, booking_id: str, uid: str, target_role: s
                 _error(404, "DEAL_NOT_FOUND", "deal has no linked farmer")
             return seller
         _error(422, "VALIDATION_ERROR", "targetRole is required for deal ratings", {"targetRole": "broker|farmer"})
+    if kind == "export_connection":
+        # Farmer ⇄ exporter direct-connect sourcing: either party rates the
+        # other once the connection exists (contact unlock or beyond).
+        app = await get_doc("export_quotes", booking_id)
+        if app is None or app.get("applicantRole") != "farmer":
+            _error(404, "APPLICATION_NOT_FOUND", "export connection not found")
+        farmer_id = app.get("sellerId") or ""
+        exporter_id = app.get("exporterId") or ""
+        if uid not in (farmer_id, exporter_id):
+            _error(403, "FORBIDDEN", "only a connection party can rate this connection")
+        if app.get("status") not in ("contacted", "dealDone", "dismissed", "withdrawn"):
+            _error(409, "NOT_COMPLETED", "rate only after the exporter contacts the farmer")
+        return exporter_id if uid == farmer_id else farmer_id
     if kind == "transport":
         booking = await get_doc("transport_bookings", booking_id)
         if booking is None or booking.get("userId") != uid:

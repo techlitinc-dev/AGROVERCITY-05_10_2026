@@ -11,6 +11,25 @@ class EquipmentOut(BaseModel):
     distanceKm: float
     ratingAvg: float | None = None
     ratingCount: int = 0
+    # Direct-connect listing surface (spec §5/§6) — all optional so legacy
+    # seed docs keep validating. NEVER contact fields: public responses must
+    # not contain owner phone/WhatsApp/address/documents.
+    location: str = ""
+    photos: list[str] = []
+    operatorOption: str = "withoutOperator"  # withOperator | withoutOperator | both
+    capacity: str = ""
+    pricingUnit: str = "perHour"  # perHour | perAcre | perDay
+    ratePerDay: float | None = None
+    fuelIncluded: bool | None = None
+    travelCharge: str = ""
+    minBookingQty: float | None = None
+    notes: str = ""
+    docStatus: str = "pending"
+    nextAvailableDate: str | None = None
+    ownerId: str | None = None
+    ownerName: str = ""
+    ownerVerified: bool = False
+    equipmentVerified: bool = False
 
 
 class SlotOut(BaseModel):
@@ -43,6 +62,20 @@ class EquipmentUpsertRequest(BaseModel):
     # WS-04 step 6: pricing engine — {"hourly": 850, "perAcre": 1400,
     # "package": {"fullDay": 6000, "sowingSeason": 25000}}
     pricing: dict | None = None
+    # Direct-connect listing fields (spec §5). Single source of truth for the
+    # catalog lives in scripts/seed_equipment.py; the frontend reads types from
+    # the served listings, no hard-coded mirror list.
+    location: str = ""
+    photos: list[str] = []
+    operatorOption: str = "withoutOperator"  # withOperator | withoutOperator | both
+    capacity: str = ""
+    pricingUnit: str = "perHour"  # perHour | perAcre | perDay
+    ratePerDay: float | None = None
+    fuelIncluded: bool | None = None
+    travelCharge: str = ""
+    minBookingQty: float | None = None
+    notes: str = ""
+    active: bool = True
 
 
 class EquipmentQuoteIn(BaseModel):
@@ -62,6 +95,14 @@ class MaintenanceLogIn(BaseModel):
 
 class BookSlotRequest(BaseModel):
     farmerName: str
+    # Direct-connect request fields (spec §7). termsAccepted is required —
+    # the farmer acknowledges the contact-sharing terms when submitting.
+    workLocation: str = ""
+    workType: str = ""
+    workQuantity: float | None = Field(default=None, gt=0)
+    workUnit: str = ""  # "acres" | "hours" | "days"
+    notes: str = ""
+    termsAccepted: bool = False
 
 
 class RejectEquipmentBookingRequest(BaseModel):

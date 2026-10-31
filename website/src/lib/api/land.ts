@@ -82,15 +82,49 @@ export const land = {
   /** GET /land/lease-requests/mine */
   myLeaseRequests: (): Promise<unknown[]> => readList<unknown[]>('/land/lease-requests/mine'),
 
-  /** POST /land/lease-requests */
+  /** POST /land/listings/{id}/documents — private land-doc submission (spec §6). */
+  submitLandDocuments: (listingId: string, urls: string[]): Promise<unknown> =>
+    post<unknown>(`/land/listings/${listingId}/documents`, { urls }),
+
+  /** POST /land/lease-requests — interest request (spec §8). */
   createLeaseRequest: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/land/lease-requests', payload),
+
+  /** POST /land/lease-requests/{id}/accept-contact — the direct-connect
+   * communication unlock: landlord terms + MPIN, KYC both parties (spec §9/§10).
+   * Does NOT finalize a lease or change the listing. */
+  acceptContact: (
+    requestId: string,
+    payload: { termsAccepted: boolean; mpin?: string },
+  ): Promise<unknown> => post<unknown>(`/land/lease-requests/${requestId}/accept-contact`, payload),
+
+  /** POST /land/lease-requests/{id}/outcome — user-reported lease outcome
+   * (stillInContact | dealDone | didNotHappen | withdrawn), spec §12. */
+  recordOutcome: (
+    requestId: string,
+    payload: {
+      outcome: 'stillInContact' | 'dealDone' | 'didNotHappen' | 'withdrawn';
+      notes?: string;
+      finalStartDate?: string;
+      finalEndDate?: string;
+      finalRentRupees?: number;
+      finalRentUnit?: string;
+    },
+  ): Promise<unknown> => post<unknown>(`/land/lease-requests/${requestId}/outcome`, payload),
+
+  /** POST /land/reports — issue reporting for either participant (spec §15). */
+  reportIssue: (payload: {
+    targetUserId: string;
+    requestId?: string;
+    category: 'falseListing' | 'ownershipConcern' | 'conduct' | 'paymentDispute' | 'landCondition' | 'other';
+    details?: string;
+  }): Promise<unknown> => post<unknown>('/land/reports', payload),
 
   /** POST /land/lease-requests/{id}/accept */
   acceptLeaseRequest: (requestId: string): Promise<unknown> =>
     post<unknown>(`/land/lease-requests/${requestId}/accept`),
 
-  /** POST /land/lease-requests/{id}/reject */
+  /** POST /land/lease-requests/{id}/reject — decline with a safe reason (spec §9). */
   rejectLeaseRequest: (requestId: string, reason?: string): Promise<unknown> =>
     post<unknown>(`/land/lease-requests/${requestId}/reject`, reason ? { reason } : {}),
 

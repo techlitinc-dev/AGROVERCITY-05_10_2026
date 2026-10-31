@@ -17,6 +17,7 @@ class RatingIn(BaseModel):
         "course_enrollment",
         "lot_sale",
         "lot_purchase",
+        "export_connection",
     ]
     bookingId: str
     stars: int = Field(ge=1, le=5)
