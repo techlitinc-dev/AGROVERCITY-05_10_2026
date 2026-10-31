@@ -200,6 +200,8 @@ async def test_farmer_sold_below_mandi_uses_history(client, user_store):
 
 
 async def test_transport_settlement_insight(client, user_store):
+    """Direct-connect: transport fares settle off-platform, so the transport
+    intelligence surface never reports pending settlements."""
     token = seed_user(user_store, uid="uid-t1", active_profile="transport")
     now = datetime.now(timezone.utc)
     this_month = now.strftime("%Y-%m")
@@ -213,6 +215,7 @@ async def test_transport_settlement_insight(client, user_store):
     user_store["transport_bookings/b3"] = {
         "id": "b3", "vehicleId": "v-other", "status": "delivered", "fare": 9999, "date": f"{this_month}-02",
     }
+    # even a stale transport settlement row must not surface as an insight
     user_store["settlements/s1"] = {
         "id": "s1", "role": "transport", "entityId": "uid-t1", "status": "pending", "netRupees": 2700,
     }
@@ -225,8 +228,8 @@ async def test_transport_settlement_insight(client, user_store):
     assert kpis["completedTrips"]["value"] == 1
     assert kpis["completionRate"]["value"] == 50.0
     assert kpis["completionRate"]["unit"] == "%"
-    insights = {i["labelKey"]: i for i in body["insights"]}
-    assert insights["settlement_pending"]["params"] == {"amount": 2700}
+    # no settlement insight surfaces even with a stale transport settlement row
+    assert all(i["labelKey"] != "settlement_pending" for i in body["insights"])
     breakdown = body["breakdowns"][0]
     assert breakdown["items"][0]["label"] == "MH-15-AB-1234"
     assert breakdown["items"][0]["value"] == 3000

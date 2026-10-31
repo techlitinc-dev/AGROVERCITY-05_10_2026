@@ -69,8 +69,9 @@ async def test_waiting_billing_happy_path(client, user_store):
     body = pnl.json()
     assert body["detentionChargePaisa"] == 45000
     assert body["detentionCharge"] == 450.0
-    # fare 1200 + detention 450 − 0 expenses − 120 commission
-    assert body["netProfit"] == 1530.0
+    # fare 1200 + detention 450 − 0 expenses − 0 commission (direct-connect)
+    assert body["netProfit"] == 1650.0
+    assert body["platformCommission"] == 0
 
     bilty = await client.get(
         f"/v1/transport/bookings/{booking['id']}/bilty", headers=_auth(token)

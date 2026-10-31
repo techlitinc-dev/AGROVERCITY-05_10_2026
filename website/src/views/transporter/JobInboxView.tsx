@@ -14,6 +14,9 @@ import {
   X,
 } from 'lucide-react';
 import { chat, transport, apiClient, apiErrorMessage } from '../../lib/api';
+import { DIRECT_CONNECT_TERMS_TEXT } from '../../lib/api/transport';
+import { isMpinError } from '../../lib/api/leads';
+import { MpinPad } from '../../components/common/MpinPad';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight } from '../../lib/utils';
@@ -32,6 +35,9 @@ export const JobInboxView: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [acceptFor, setAcceptFor] = useState<TransportBooking | null>(null);
   const [acceptVehicleId, setAcceptVehicleId] = useState('');
+  const [acceptStep, setAcceptStep] = useState<'vehicle' | 'mpin'>('vehicle');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [mpinKey, setMpinKey] = useState(0);
   const [rejectFor, setRejectFor] = useState<TransportBooking | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -92,23 +98,42 @@ export const JobInboxView: React.FC = () => {
   const openAccept = (b: TransportBooking) => {
     setAcceptFor(b);
     setAcceptVehicleId(vehicles[0]?.id ?? '');
+    setAcceptStep('vehicle');
+    setAcceptTerms(false);
+    setMpinKey((k) => k + 1);
   };
 
-  const confirmAccept = async () => {
+  const confirmAccept = async (mpin?: string) => {
     if (!acceptFor) return;
     try {
       const vehicle = vehicles.find((v) => v.id === acceptVehicleId);
+      const isDirect = acceptFor.requestKind === 'direct' || Boolean(acceptFor.transporterId);
       // AcceptBookingRequest takes the vehicle in the same call; the PATCH
       // lane can't re-assign later (accepted→accepted is not a legal transition).
+      // Direct requests additionally carry the direct-connect terms + MPIN.
       await apiClient.post(`/transport/bookings/${acceptFor.id}/accept`, {
         vehicleId: vehicle?.id,
         vehicleNo: vehicle?.registrationNo ?? vehicle?.registrationNumber,
+        ...(isDirect ? { termsAccepted: true, ...(mpin ? { mpin } : {}) } : {}),
       });
       setAcceptFor(null);
-      flash(`Booking ${acceptFor.id} accepted. Trip is ready to start.`);
+      setAcceptStep('vehicle');
+      setAcceptTerms(false);
+      flash(
+        isDirect
+          ? `Request accepted — phone & WhatsApp unlocked for both sides. Trip ${acceptFor.id} is ready to start.`
+          : `Booking ${acceptFor.id} accepted. Trip is ready to start.`
+      );
       await load();
     } catch (e) {
-      setError(apiErrorMessage(e));
+      if (isMpinError(e)) {
+        setMpinKey((k) => k + 1);
+        setError('Incorrect MPIN — try again.');
+      } else {
+        setAcceptFor(null);
+        setAcceptStep('vehicle');
+        setError(apiErrorMessage(e));
+      }
     }
   };
 
@@ -308,8 +333,8 @@ export const JobInboxView: React.FC = () => {
 
       {vehicles.length === 0 && !loading && (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-bold text-amber-900">
-          No verified vehicles on file — a verified vehicle is required before bookings can be accepted (422
-          VEHICLE_NOT_VERIFIED). Add and verify one in <Link to="/transporter/fleet" className="underline">Fleet</Link>.
+          No vehicles on file — add one in <Link to="/transporter/fleet" className="underline">Fleet</Link>. Vehicles are
+          usable immediately (no review) unless a document date has expired.
         </div>
       )}
 
@@ -335,7 +360,14 @@ export const JobInboxView: React.FC = () => {
                     </h4>
                     <p className="text-xs text-slate-400">{b.id} • {fmtDate(b.date ?? b.pickupTime)}</p>
                   </div>
-                  <StatusBadge status={b.status} />
+                  <div className="flex items-center gap-2">
+                    {b.requestKind === 'direct' && (
+                      <span className="text-[10px] font-black uppercase tracking-wide text-sky-700 bg-sky-50 border border-sky-200 px-2 py-1 rounded-lg">
+                        Direct request
+                      </span>
+                    )}
+                    <StatusBadge status={b.status} />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -447,23 +479,82 @@ export const JobInboxView: React.FC = () => {
         )}
       </div>
 
-      <ModalSheet isOpen={!!acceptFor} onClose={() => setAcceptFor(null)} title="Accept Booking" description={acceptFor ? `${acceptFor.commodity || acceptFor.cargoCrop} — ${acceptFor.id}` : undefined} maxWidth="sm">
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle for this trip</label>
-            <select value={acceptVehicleId} onChange={(e) => setAcceptVehicleId(e.target.value)} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white" required>
-              <option value="">Select vehicle…</option>
-              {vehicles.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.registrationNo ?? v.registrationNumber} — {v.vehicleType}
-                </option>
-              ))}
-            </select>
+      <ModalSheet
+        isOpen={!!acceptFor}
+        onClose={() => {
+          setAcceptFor(null);
+          setAcceptStep('vehicle');
+        }}
+        title={acceptFor?.requestKind === 'direct' ? 'Accept Direct Request' : 'Accept Booking'}
+        description={acceptFor ? `${acceptFor.commodity || acceptFor.cargoCrop} — ${acceptFor.id}` : undefined}
+        maxWidth="sm"
+      >
+        {acceptFor && (
+          <div className="space-y-3">
+            {acceptStep === 'vehicle' ? (
+              <>
+                {acceptFor.requestKind === 'direct' && (
+                  <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl text-[11px] font-semibold text-sky-800">
+                    This farmer requested you directly. Accepting confirms the trip and unlocks both
+                    sides' phone &amp; WhatsApp.
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle for this trip</label>
+                  <select value={acceptVehicleId} onChange={(e) => setAcceptVehicleId(e.target.value)} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white" required>
+                    <option value="">Select vehicle…</option>
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.registrationNo ?? v.registrationNumber} — {v.vehicleType}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {acceptFor.requestKind === 'direct' ? (
+                  <>
+                    <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={acceptTerms}
+                        onChange={(e) => setAcceptTerms(e.target.checked)}
+                        className="w-3.5 h-3.5 mt-0.5 accent-emerald-600 flex-shrink-0"
+                      />
+                      <span className="text-[10px] text-amber-800 leading-relaxed">
+                        I confirm: {DIRECT_CONNECT_TERMS_TEXT}
+                      </span>
+                    </label>
+                    <button
+                      onClick={() => setAcceptStep('mpin')}
+                      disabled={!acceptVehicleId || !acceptTerms}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60"
+                    >
+                      Continue — Verify MPIN
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => void confirmAccept()} disabled={!acceptVehicleId} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
+                    Accept & Assign Vehicle
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <MpinPad
+                  key={mpinKey}
+                  onSuccess={(mpin) => void confirmAccept(mpin)}
+                  title="Verify MPIN to Accept"
+                  subtitle="Accepting unlocks the farmer's phone & WhatsApp for direct coordination."
+                />
+                <button
+                  onClick={() => setAcceptStep('vehicle')}
+                  className="w-full py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-[11px] hover:bg-slate-50"
+                >
+                  Back
+                </button>
+              </>
+            )}
           </div>
-          <button onClick={confirmAccept} disabled={!acceptVehicleId} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs disabled:opacity-60">
-            Accept & Assign Vehicle
-          </button>
-        </div>
+        )}
       </ModalSheet>
 
       <ModalSheet isOpen={!!rejectFor} onClose={() => setRejectFor(null)} title="Reject Booking" description={rejectFor ? `Booking ${rejectFor.id}` : undefined} maxWidth="sm">

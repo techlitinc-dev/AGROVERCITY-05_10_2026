@@ -37,6 +37,7 @@ from app.models.user import RegisterRequest, VALID_PROFILES
 from app.services import onboarding_seed
 from app.services.tokens import (
     create_access_token,
+    create_onboarding_token,
     create_refresh_token,
     decode_refresh_token,
     decode_token,
@@ -78,9 +79,26 @@ def _public_user(user: dict) -> dict:
     return {k: v for k, v in user.items() if k != "mpinHash"}
 
 
-async def _issue_session(uid: str, user_agent: str | None) -> dict:
-    pair = {"accessToken": create_access_token(uid), "refreshToken": create_refresh_token(uid)}
-    _, jti = decode_refresh_token(pair["refreshToken"])
+REGISTRATION_PENDING_STATES = ("pendingProfile", "pendingKyc")
+
+
+async def _issue_session(uid: str, user_agent: str | None, user: dict | None = None) -> dict:
+    """Issue a session for the user. Registration-incomplete users (new OTP
+    registrants, pending-KYC resumers) get the RESTRICTED onboarding token
+    pair — type=onboarding is rejected by every protected endpoint — so no
+    unrestricted marketplace access exists before verification completes."""
+    if user is None:
+        user = await get_doc("users", uid) or {}
+    if user.get("registrationStatus") in REGISTRATION_PENDING_STATES:
+        pair = {
+            "accessToken": create_onboarding_token(uid),
+            "refreshToken": create_refresh_token(uid, token_type="onboarding_refresh"),
+        }
+        refresh_type = "onboarding_refresh"
+    else:
+        pair = {"accessToken": create_access_token(uid), "refreshToken": create_refresh_token(uid)}
+        refresh_type = "refresh"
+    _, jti = decode_refresh_token(pair["refreshToken"], expected_type=refresh_type)
     await store_refresh_jti(jti, uid)
     try:
         from app.core.cache import get_redis
@@ -159,7 +177,7 @@ async def onboard_user(
     except Exception:
         pass
 
-    pair = await _issue_session(uid, user_agent)
+    pair = await _issue_session(uid, user_agent, user)
     return AuthResponse(
         accessToken=pair["accessToken"],
         refreshToken=pair["refreshToken"],
@@ -216,7 +234,7 @@ async def login_with_phone_mpin(
         await record_return(uid)
     except Exception:  # noqa: BLE001 — outcome hook must never fail a login
         pass
-    pair = await _issue_session(uid, user_agent)
+    pair = await _issue_session(uid, user_agent, user)
     return AuthResponse(
         accessToken=pair["accessToken"],
         refreshToken=pair["refreshToken"],
@@ -239,7 +257,7 @@ async def firebase_verify(body: FirebaseVerifyRequest, user_agent: str | None = 
         await record_return(uid)
     except Exception:  # noqa: BLE001 — outcome hook must never fail a login
         pass
-    pair = await _issue_session(uid, user_agent)
+    pair = await _issue_session(uid, user_agent, user)
     return AuthResponse(
         accessToken=pair["accessToken"],
         refreshToken=pair["refreshToken"],
@@ -367,13 +385,30 @@ async def otp_verify(body: OtpVerifyRequest, user_agent: str | None = Header(Non
     # precedent: user_<last 10 digits>).
     uid = f"user_{phone.replace('+', '')[-10:]}"
     user, is_new = await upsert_user_from_firebase(uid, phone)
+    if is_new:
+        # New mobile → start the mandatory registration journey at the
+        # profile step. A restricted onboarding session is issued below —
+        # never unrestricted marketplace access before KYC completes.
+        user.update(
+            {
+                "registrationStatus": "pendingProfile",
+                "kycStatus": "unverified",
+                "registrationMobileVerifiedAt": now.isoformat(),
+            }
+        )
+        await set_doc("users", uid, user)
+    elif user.get("registrationStatus") in REGISTRATION_PENDING_STATES:
+        # Resume: keep the existing account (no duplicates), refresh the
+        # mobile-verification timestamp, stay restricted until completed.
+        user["registrationMobileVerifiedAt"] = now.isoformat()
+        await set_doc("users", uid, user)
     try:
         from app.services.churn import record_return
 
         await record_return(uid)
     except Exception:  # noqa: BLE001 — outcome hook must never fail a login
         pass
-    pair = await _issue_session(uid, user_agent)
+    pair = await _issue_session(uid, user_agent, user)
     return AuthResponse(
         accessToken=pair["accessToken"],
         refreshToken=pair["refreshToken"],
@@ -496,7 +531,7 @@ async def register(body: RegisterRequest, user_agent: str | None = Header(None))
             await onboarding_seed.seed_dashboard(uid, body.profiles)
         except Exception:  # noqa: BLE001 — seeding must never fail registration
             logger.warning("post-registration seeding failed for uid=%s", uid, exc_info=True)
-    pair = await _issue_session(uid, user_agent)
+    pair = await _issue_session(uid, user_agent, user)
     return AuthResponse(
         accessToken=pair["accessToken"],
         refreshToken=pair["refreshToken"],
@@ -508,11 +543,27 @@ async def register(body: RegisterRequest, user_agent: str | None = Header(None))
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(body: RefreshRequest):
-    user_id, jti = decode_refresh_token(body.refreshToken)
+    try:
+        user_id, jti = decode_refresh_token(body.refreshToken, expected_type="refresh")
+        refresh_type = "refresh"
+    except HTTPException:
+        user_id, jti = decode_refresh_token(body.refreshToken, expected_type="onboarding_refresh")
+        refresh_type = "onboarding_refresh"
     if not await is_refresh_live(jti):
         await revoke_refresh_family(user_id)
         _error(401, "REFRESH_REPLAYED", "refresh token reuse detected — all sessions revoked")
     await revoke_refresh_jti(jti)
+    if refresh_type == "onboarding_refresh":
+        # Restricted sessions rotate within the restricted scope only. Once
+        # registration completes the client holds the full pair from
+        # /auth/registration/complete and onboarding refreshes stop working.
+        user = await get_doc("users", user_id) or {}
+        if user.get("registrationStatus") not in REGISTRATION_PENDING_STATES:
+            _error(403, "REGISTRATION_ALREADY_COMPLETED", "onboarding session is no longer valid")
+        new_refresh = create_refresh_token(user_id, token_type="onboarding_refresh")
+        _, new_jti = decode_refresh_token(new_refresh, expected_type="onboarding_refresh")
+        await store_refresh_jti(new_jti, user_id)
+        return TokenPair(accessToken=create_onboarding_token(user_id), refreshToken=new_refresh)
     new_refresh = create_refresh_token(user_id)
     _, new_jti = decode_refresh_token(new_refresh)
     await store_refresh_jti(new_jti, user_id)
@@ -888,7 +939,7 @@ async def quick_login(body: QuickLoginRequest, user_agent: str | None = Header(N
                 existing["mpinHash"] = hash_mpin(body.mpin)
                 await set_doc("users", uid, existing)
             user = existing
-        pair = await _issue_session(uid, user_agent)
+        pair = await _issue_session(uid, user_agent, user)
         return AuthResponse(
             accessToken=pair["accessToken"],
             refreshToken=pair["refreshToken"],
@@ -904,7 +955,7 @@ async def quick_login(body: QuickLoginRequest, user_agent: str | None = Header(N
         if user.get("mpinHash") is None:
             user["mpinHash"] = hash_mpin(body.mpin)
             await set_doc("users", uid, user)
-        pair = await _issue_session(uid, user_agent)
+        pair = await _issue_session(uid, user_agent, user)
         return AuthResponse(
             accessToken=pair["accessToken"],
             refreshToken=pair["refreshToken"],
@@ -947,7 +998,7 @@ async def quick_login(body: QuickLoginRequest, user_agent: str | None = Header(N
         }
         await set_doc("users", uid, user)
 
-    pair = await _issue_session(uid, user_agent)
+    pair = await _issue_session(uid, user_agent, user)
     return AuthResponse(
         accessToken=pair["accessToken"],
         refreshToken=pair["refreshToken"],
@@ -989,7 +1040,12 @@ async def revoke_session(jti: str, uid: str = Depends(current_user_id)):
 
 @router.post("/logout")
 async def logout(body: RefreshRequest):
-    user_id, jti = decode_refresh_token(body.refreshToken)
+    # Registration-incomplete sessions hold onboarding refresh tokens — accept
+    # both types so signing out during the registration journey is not a 401.
+    try:
+        user_id, jti = decode_refresh_token(body.refreshToken)
+    except HTTPException:
+        user_id, jti = decode_refresh_token(body.refreshToken, expected_type="onboarding_refresh")
     await revoke_refresh_jti(jti)
     return {"ok": True}
 

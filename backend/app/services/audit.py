@@ -19,14 +19,17 @@ async def log_admin_action(
     reason: str,
     ip: str | None,
 ) -> str:
-    """Write one canonical `audit_logs` document and return its id."""
+    """Write one canonical `audit_logs` and `admin_audit_logs` document and return its id."""
     audit_id = f"aud_{uuid4().hex}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    actor_id = admin.get("id") or admin.get("uid")
+
     await set_doc(
         "audit_logs",
         audit_id,
         {
             "id": audit_id,
-            "adminId": admin.get("id") or admin.get("uid"),
+            "adminId": actor_id,
             "adminEmail": admin.get("email"),
             "module": module,
             "action": action,
@@ -34,8 +37,30 @@ async def log_admin_action(
             "previousState": previous,
             "newState": new,
             "reason": reason,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": now_iso,
             "ipAddress": ip,
         },
     )
+
+    # Superadmin audit requirements (Phase 1 WS):
+    # admin_audit_logs: target_user_id, actor_admin_id, action, metadata, created_at
+    await set_doc(
+        "admin_audit_logs",
+        audit_id,
+        {
+            "id": audit_id,
+            "target_user_id": target_id,
+            "actor_admin_id": actor_id,
+            "action": action,
+            "metadata": {
+                "module": module,
+                "previousState": previous,
+                "newState": new,
+                "reason": reason,
+                "ip": ip,
+            },
+            "created_at": now_iso,
+        },
+    )
+
     return audit_id

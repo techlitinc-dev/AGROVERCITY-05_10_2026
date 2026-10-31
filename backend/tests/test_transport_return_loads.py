@@ -21,6 +21,7 @@ def _load_body(pickup, date):
         "preferredVehicleType": "Tractor Trolley",
         "pickupDate": date,
         "targetFare": 1800,
+        "termsAccepted": True,
     }
 
 

@@ -293,13 +293,10 @@ async def test_roleplay_sita_ramesh_ops_saga(client, user_store):
     for step, label in WAYPOINT_LABELS.items():
         assert by_waypoint[step] == label, step
 
-    # ── 5. Earnings: wallet, JSON receipt, PDF receipt ──
+    # ── 5. Earnings: direct-connect — wallet/escrow endpoints are gone; the
+    #    receipt records the fare with a direct-settlement note ──
     resp = await client.get("/v1/transport/wallet", headers=_auth(token))
-    assert resp.status_code == 200
-    wallet = resp.json()
-    assert wallet["balancePaisa"] == 0  # no escrow was funded on this trip
-    assert wallet["currency"] == "INR"
-    assert "tds" in wallet
+    assert resp.status_code == 404
 
     resp = await client.get(
         f"/v1/transport/bookings/{b1['id']}/receipt", headers=_auth(token)
@@ -307,9 +304,10 @@ async def test_roleplay_sita_ramesh_ops_saga(client, user_store):
     assert resp.status_code == 200
     receipt = resp.json()
     assert receipt["farePaisa"] == 130000  # the negotiated counter fare
-    assert receipt["commissionPaisa"] == 13000
-    assert receipt["netPaise"] == 117000
-    assert receipt["escrowStatus"] == "unfunded"
+    assert "commissionPaisa" not in receipt
+    assert "netPaise" not in receipt
+    assert "escrowStatus" not in receipt
+    assert "directly" in receipt["settlement"]
 
     resp = await client.get(
         f"/v1/transport/bookings/{b1['id']}/receipt.pdf", headers=_auth(token)
@@ -766,20 +764,22 @@ async def test_roleplay_sita_ramesh_ops_saga(client, user_store):
         (s.get("plan") or {}).get("planId") == "transport_pro" for s in subs["data"]
     )
 
-    # A trip fare sits held in escrow (seeded doc, same shape as B1).
-    held = {
-        **user_store[f"transport_bookings/{b1['id']}"],
-        "id": "tb-held",
-        "status": "accepted",
-        "escrow": {"status": "held", "amountPaise": 75000, "fundedAt": _past_iso(90)},
+    # A trade purchase sits held in escrow (direct-connect: transport trips
+    # never carry escrow, so the holdings report is purchase-only).
+    user_store["purchases/pur-held"] = {
+        "id": "pur-held",
+        "buyerId": "uid-1",
+        "buyerName": "Ramesh Vyapari",
+        "farmerName": "Sita Patil",
+        "escrow": {"status": "held", "amount": 750.0, "fundedAt": _past_iso(90)},
+        "createdAt": _past_iso(120),
     }
-    user_store["transport_bookings/tb-held"] = held
     resp = await client.get("/v1/admin/escrow/holdings", headers=ADMIN_HEADERS)
     assert resp.status_code == 200
     holdings = resp.json()
     kinds = {r["refId"]: r["kind"] for r in holdings["data"]}
-    assert kinds["tb-held"] == "transport_booking"
-    assert holdings["totals"]["byKind"]["transport_booking"]["amountPaise"] >= 75000
+    assert kinds["pur-held"] == "purchase"
+    assert holdings["totals"]["byKind"]["purchase"]["amountPaise"] >= 75000
     assert holdings["totals"]["totalAmountPaise"] >= 75000
 
     day_from = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()

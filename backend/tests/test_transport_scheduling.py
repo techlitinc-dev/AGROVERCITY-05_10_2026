@@ -75,11 +75,12 @@ async def test_open_load_carries_pickup_time_into_booking(client, user_store):
                 "pickupLocation": "Pimplas, Nashik",
                 "dropLocation": "Vashi APMC",
                 "crop": "Onion",
-                "quantityQuintals": 20,
+                "quantityQuintals": 12,
                 "preferredVehicleType": "Bolero Maxi",
-                "pickupDate": "2026-10-09",
+                "pickupDate": "2026-11-09",
                 "pickupTime": PICKUP_TIME,
                 "targetFare": 9000,
+                "termsAccepted": True,
             },
             headers=_auth(token),
         )
@@ -95,7 +96,8 @@ async def test_open_load_carries_pickup_time_into_booking(client, user_store):
         )
     ).json()
     accepted = await client.post(
-        f"/v1/transport/loads/{load['id']}/accept-bid?bidId={bid['id']}",
+        f"/v1/transport/loads/{load['id']}/accept-bid",
+        json={"bidId": bid["id"], "termsAccepted": True, "mpin": "1234"},
         headers=_auth(token),
     )
     assert accepted.status_code == 200

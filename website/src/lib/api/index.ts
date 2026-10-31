@@ -54,7 +54,7 @@ export {
 } from './mocks';
 
 // --- domains ---
-export { auth } from './auth';
+export { auth, registration } from './auth';
 export type { AuthTokens, OtpSendResult, OtpVerifyResult, RegisterResult } from './auth';
 export { users } from './users';
 export type { UserSettings, UserConsents } from './users';
@@ -101,6 +101,7 @@ export { postHarvest } from './postHarvest';
 export { intelligence } from './intelligence';
 export { priceAlerts } from './priceAlerts';
 export { kyc } from './kyc';
+export type { KycSessionInfo, KycMeResult, KycSessionStatus } from './kyc';
 export { bankAccounts } from './bankAccounts';
 export { billing } from './billing';
 export { admin } from './admin';

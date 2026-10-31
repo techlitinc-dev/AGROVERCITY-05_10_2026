@@ -7,16 +7,15 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import admin_action, current_user_id
 from app.core.ratelimit import hit
 from app.core.security import verify_mpin
 from app.models.transport import (
     AcceptBookingRequest,
+    AcceptLoadBidRequest,
     AssignDriverRequest,
     AvailabilityRequest,
-    BookingPaymentRequest,
     BookingStopsRequest,
     BreakdownRequest,
     CreateBookingRequest,
@@ -29,10 +28,11 @@ from app.models.transport import (
     OwnerVehicleUpdateRequest,
     RejectBookingRequest,
     StopPodRequest,
-    TransportPayoutRequest,
     TransportProfileUpdate,
     TripExpenseRequest,
     TripLocationUpdate,
+    TripReportRequest,
+    TripReportResolveRequest,
     UpdateBookingRequest,
     VehicleLocationRequest,
     VehicleTypeOut,
@@ -46,25 +46,16 @@ from app.models.transport import (
 )
 from app.routers.purchases import HANDOVER_OTP_MAX_ATTEMPTS, HANDOVER_OTP_VALID_MINUTES
 from app.routers.users import require_role
-from app.services import kyc as kyc_service
 from app.services import reports
-from app.services import settlements as settlements_service
-from app.services import escrow as escrow_service
 from app.services.geo import ROAD_FACTOR, GeoProviderError, get_geo, resolve_distance_km
-from app.services.payments import (
-    create_razorpay_order,
-    create_razorpayx_payout,
-    refund_razorpay_payment,
-    verify_razorpay_signature,
-)
 from app.services.pnl_engine import record_auto_entry
 from app.services import transport_match
-from app.services.billing import effective_plan, entitlement_guard, record_usage
+from app.services.billing import effective_plan, record_usage
 from app.services.chat import ensure_transport_room
 from app.services.notifications import send_fcm_to_user
 from app.services.notify import notify_user
 from app.services.rating_prompts import open_rating_prompt
-from app.services.tasks import emit_task, module_deep_link
+from app.services.tasks import emit_task
 from app.services.users import get_user
 
 router = APIRouter(prefix="/transport", tags=["transport"])
@@ -73,9 +64,6 @@ router = APIRouter(prefix="/transport", tags=["transport"])
 # seeded by scripts/seed_vehicle_catalog.py, editable by ops. Nothing here is
 # hardcoded: empty catalog ⇒ empty fleet board (seed the collection first).
 VEHICLE_CATALOG_COLLECTION = "vehicle_catalog"
-
-# Aligned with services/settlements.py DEFAULT_CONFIG.transportPct (10%).
-TRANSPORT_COMMISSION_RATE = 0.10
 
 # Surge multiplier hard cap (transporter-side earning lever; never applied farmer-side).
 SURGE_MULTIPLIER_CAP = 1.5
@@ -362,7 +350,7 @@ def _places_match(pickup: str, drop: str) -> bool:
 # Flipkart-style step tracker (spec v1 granular trip steps): the intermediate
 # steps are optional — accepted may skip loading (straight to enRoute) and
 # reachedDestination may skip unloading (straight to delivered). `delivered`
-# remains the only settlement/escrow-release trigger.
+# is the terminal trip state; settlement happens directly between the parties.
 ALLOWED_TRANSITIONS = {
     "requested": {"accepted", "cancelled"},
     "accepted": {"arrivedPickup", "enRoute", "cancelled"},
@@ -497,7 +485,11 @@ async def _emit_pickup_reminder(uid: str, persona: str, booking: dict, label: st
         title_hi=f"{label} के लिए पिकअप स्लॉट",
         subtitle=subtitle,
         priority="high" if persona == "transport" else "medium",
-        deep_link=module_deep_link("transport", booking.get("id")),
+        deep_link=(
+            f"/transporter/trips/{booking.get('id')}"
+            if persona == "transport"
+            else f"/farmer/transport/{booking.get('id')}"
+        ),
         source_id=booking.get("id"),
         due_at=due_at,
     )
@@ -526,26 +518,17 @@ async def _emit_doc_expiry_reminders(uid: str, vehicle: dict):
             f"{label} {days_left} दिन में समाप्त होगा",
             f"{vehicle.get('registrationNo', 'Vehicle')} — renew before {expiry.isoformat()}",
             "high" if days_left <= 7 else "medium",
-            module_deep_link("transport", vehicle.get("id")),
+            f"/transporter/fleet",
             f"{vehicle.get('id')}:{field}",
         )
 
 
 async def _vehicle_docs_verified(vehicle: dict) -> bool:
-    """Real KYC gate (T7): the owner's transport KYC case must have rc+dl
-    verified through the phase-00 pipeline, and no vehicle document
-    (PUC / fitness / insurance) may be past its expiry date."""
-    owner_id = vehicle.get("ownerId")
-    case = await kyc_service.get_case(kyc_service.case_id_for(owner_id, "transport"))
-    if not case:
-        return False
-    verified_types = {
-        doc.get("type")
-        for doc in case.get("docs") or []
-        if doc.get("status") == "verified"
-    }
-    if not {"rc", "dl"} <= verified_types:
-        return False
+    """Document validity check — no review gate. Vehicle ownership and
+    documents are self-declared at creation (direct-connect: the transporter
+    adds a vehicle and it is usable immediately). The only remaining check is
+    that no vehicle document (PUC / fitness / insurance) is past its expiry
+    date."""
     now = datetime.now(timezone.utc)
     for field in ("pucExpiry", "fitnessExpiry", "insuranceExpiry"):
         raw = vehicle.get(field)
@@ -577,9 +560,6 @@ async def _assign_vehicle(
         _error(403, "NOT_VEHICLE_OWNER", "vehicle does not belong to this transporter")
     if not await _vehicle_docs_verified(vehicle):
         _error(422, "VEHICLE_NOT_VERIFIED", "vehicle documents are not verified or are expired", {"vehicleId": "documents not verified or expired"})
-    vehicle["docStatus"] = "verified"
-    vehicle["docReview"] = "kyc"
-    await set_doc("vehicles", vehicle_id, vehicle)
     booking["vehicleId"] = vehicle_id
     booking["vehicleNo"] = vehicle_no or vehicle.get("registrationNo")
     booking["driverName"] = driver_name or vehicle.get("driverName") or "असाइन किया गया चालक"
@@ -662,7 +642,6 @@ async def list_vehicle_types(extended: bool = False, uid: str = Depends(_viewer)
 async def create_vehicle(
     body: OwnerVehicleRequest,
     uid: str = Depends(_transporter),
-    _plan: dict = Depends(entitlement_guard("transport", "vehicles")),
 ):
     payload = body.model_dump()
     # Custom rates are stored only when provided — they override the catalog
@@ -675,8 +654,10 @@ async def create_vehicle(
         "id": f"veh_{uuid.uuid4().hex[:12]}",
         "ownerId": uid,
         "active": True,
-        "docStatus": "pending",
-        "docReview": "pending",
+        # Direct-connect: a newly added vehicle is usable immediately — no
+        # document review. The transporter self-declares ownership.
+        "docStatus": "verified",
+        "docReview": "self",
         "rejectionReason": None,
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
@@ -691,7 +672,9 @@ async def list_my_vehicles(verifiedOnly: bool = False, uid: str = Depends(_trans
     docs = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
     docs = [d for d in docs if d.get("active", True)]
     if verifiedOnly:
-        docs = [d for d in docs if d.get("docStatus") == "verified"]
+        # "verified" = usable right now: self-declared at creation and no
+        # document past its expiry date.
+        docs = [d for d in docs if d.get("docStatus") == "verified" and await _vehicle_docs_verified(d)]
     return {"data": docs}
 
 
@@ -704,8 +687,10 @@ async def update_vehicle(vehicle_id: str, body: OwnerVehicleUpdateRequest, uid: 
         if field in update and update[field] is None:
             update.pop(field)
     vehicle.update(update)
-    vehicle["docStatus"] = "pending"
-    vehicle["docReview"] = "pending"
+    # Direct-connect: edits don't re-trigger a review — the vehicle stays
+    # usable with its self-declared documents.
+    vehicle["docStatus"] = "verified"
+    vehicle["docReview"] = "self"
     await set_doc("vehicles", vehicle_id, vehicle)
     await _emit_doc_expiry_reminders(uid, vehicle)
     return vehicle
@@ -939,6 +924,21 @@ async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)
         if lot.get("status") != "open":
             _error(409, "LOT_NOT_OPEN", "lot is not open")
 
+    # Option C — direct request to a specific transporter: the terms must be
+    # accepted up front (contact details unlock only when the transporter
+    # accepts and confirms the same terms + their MPIN).
+    direct_transporter = None
+    if body.transporterId:
+        if not body.termsAccepted:
+            _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to request this transporter")
+        direct_transporter = await get_user(body.transporterId)
+        if direct_transporter is None:
+            _error(404, "TRANSPORTER_NOT_FOUND", "transporter not found")
+        try:
+            require_role(direct_transporter, "transport")
+        except HTTPException:
+            _error(422, "NOT_A_TRANSPORTER", "the requested user is not a transporter")
+
     distance_km = body.distanceKm
     geo_extra = {}
     if body.pickupCoords and body.dropCoords:
@@ -951,9 +951,11 @@ async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)
             "distanceSource": distance_source,
         }
     fare = vt["baseFare"] + vt["perKmRate"] * distance_km
+    now_iso = datetime.now(timezone.utc).isoformat()
     doc = {
         "id": f"trb_{uuid.uuid4().hex[:12]}",
         "userId": uid,
+        "transporterId": body.transporterId,
         "vehicleType": body.vehicleType,
         "distanceKm": distance_km,
         "pickup": body.pickup,
@@ -970,16 +972,17 @@ async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)
         "insurance": await _insurance_block(body.insuranceOptIn, body.declaredValuePaisa),
         "fare": int(round(fare)),
         "status": "requested",
+        "requestKind": "direct" if body.transporterId else "open",
         "vehicleId": None,
         "vehicleNo": None,
         "driverName": None,
         "driverPhone": None,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": now_iso,
         "waypointsLog": [
             {
                 "waypoint": "booking_created",
                 "label": "बुकिंग पंजीकृत हुई",
-                "time": datetime.now(timezone.utc).isoformat(),
+                "time": now_iso,
             }
         ],
     }
@@ -989,6 +992,19 @@ async def create_booking(body: CreateBookingRequest, uid: str = Depends(_booker)
     await set_doc("transport_bookings", doc["id"], doc)
     if body.pickupTime:
         await _emit_pickup_reminder(uid, "farmer", doc, "your load")
+    if body.transporterId:
+        await _record_terms_acceptance(uid, "booking", booking_id=doc["id"])
+        await notify_user(
+            body.transporterId,
+            type="direct_request_received",
+            title="New transport request / नया परिवहन अनुरोध",
+            body=(
+                f"{(await get_user(uid) or {}).get('name', 'A farmer')} requested you for "
+                f"{body.commodity or 'a load'} — {body.pickup} → {body.drop} on {body.date}. "
+                "Accept to reveal contact details."
+            ),
+            deepLink=f"/transporter/trips/{doc['id']}",
+        )
     return doc
 
 
@@ -1003,20 +1019,31 @@ async def list_bookings(
     user_persona = (user or {}).get("activeProfile") or "farmer"
     docs = await query("transport_bookings", [], limit=1000)
     if user_persona in ("farmer", "seller", "directBuyer"):
+        # Own bookings only — every booking doc carries its booker's userId.
+        # (No `not farmerId` fallback: that leaked every load-flow booking —
+        # including contactReveal phone numbers — to all farmers.)
         docs = [
             d for d in docs
             if d.get("farmerId") == uid
             or d.get("userId") == uid
             or d.get("requesterId") == uid
-            or not d.get("farmerId")
         ]
     else:
         vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
         vehicle_ids = {v["id"] for v in vehicles}
-        docs = [
-            d for d in docs
-            if d.get("status") == "requested" or d.get("vehicleId") in vehicle_ids or d.get("transporterId") == uid
-        ]
+
+        def _transporter_visible(d: dict) -> bool:
+            if d.get("transporterId") == uid:
+                return True
+            if d.get("vehicleId") in vehicle_ids:
+                return True
+            # Open requests sit on the public board; a direct request is
+            # visible only to the transporter it was addressed to.
+            if d.get("status") == "requested" and not d.get("transporterId"):
+                return True
+            return False
+
+        docs = [d for d in docs if _transporter_visible(d)]
     if status:
         docs = [d for d in docs if d.get("status") == status]
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
@@ -1111,7 +1138,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
                     type="chat_unlocked",
                     title="Chat unlocked / चैट खुली",
                     body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
-                    deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                    deepLink=f"/chat?room={booking_id}",
                 )
     elif body.status == "arrivedPickup":
         await notify_user(
@@ -1119,7 +1146,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_arrived_pickup",
             title="Vehicle at pickup / गाड़ी पिकअप पर",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {booking.get('vehicleNo') or 'vehicle'} arrived for loading",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     elif body.status == "loading":
         await notify_user(
@@ -1127,7 +1154,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_loading",
             title="Loading started / लोडिंग शुरू",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} is being loaded",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     elif body.status == "enRoute":
         await notify_user(
@@ -1135,7 +1162,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_enroute",
             title="Vehicle en route / गाड़ी निकली",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {booking.get('vehicleNo') or 'vehicle'} is heading to pickup",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     elif body.status == "reachedDestination":
         await notify_user(
@@ -1143,7 +1170,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_reached_destination",
             title="Reached destination / गंतव्य पर पहुंचे",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — arrived at {booking.get('drop') or 'the drop point'}",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     elif body.status == "unloading":
         await notify_user(
@@ -1151,7 +1178,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_unloading",
             title="Unloading started / अनलोडिंग शुरू",
             body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} is being unloaded",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     elif body.status == "delivered":
         await notify_user(
@@ -1159,7 +1186,7 @@ async def update_booking(booking_id: str, body: UpdateBookingRequest, uid: str =
             type="trip_delivered",
             title="Delivered / डिलीवर हुआ",
             body="Proof of delivery filed — inspect and rate your transporter",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     return booking
 
@@ -1287,8 +1314,34 @@ async def verify_pod_otp(booking_id: str, body: PodOtpVerifyRequest, uid: str = 
         type="trip_delivered",
         title="Delivered / डिलीवर हुआ",
         body="Proof of delivery verified with OTP — inspect and rate your transporter",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/farmer/transport/{booking_id}",
     )
+    return booking
+
+
+@router.post("/bookings/{booking_id}/confirm-delivery")
+async def confirm_delivery(booking_id: str, uid: str = Depends(_booker)):
+    """Farmer marks the delivered trip as confirmed (record-keeping close-out
+    under direct-connect). Idempotent; notifies the transporter."""
+    booking = await _get_booking(booking_id)
+    if booking.get("userId") != uid:
+        _error(403, "FORBIDDEN", "only the booker can confirm this delivery")
+    if booking.get("status") != "delivered":
+        _error(409, "INVALID_STATUS_TRANSITION", f"cannot confirm a {booking.get('status')} booking")
+    if booking.get("farmerConfirmedAt"):
+        return booking
+    now = datetime.now(timezone.utc).isoformat()
+    booking["farmerConfirmedAt"] = now
+    booking["updatedAt"] = now
+    await set_doc("transport_bookings", booking_id, booking)
+    if booking.get("transporterId"):
+        await notify_user(
+            booking["transporterId"],
+            type="delivery_confirmed",
+            title="Delivery confirmed / डिलीवरी पक्की",
+            body="The farmer confirmed the delivery — settle any pending dues directly and keep the POD safe.",
+            deepLink=f"/transporter/trips/{booking_id}",
+        )
     return booking
 
 
@@ -1298,14 +1351,52 @@ async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str =
     booking = await _get_booking(booking_id)
     if booking.get("status") != "requested":
         _error(409, "ILLEGAL_TRANSITION", "only a requested booking can be accepted")
+
+    is_direct = booking.get("requestKind") == "direct" or bool(booking.get("transporterId"))
+    if is_direct:
+        # Option C — direct request: only the addressed transporter may act,
+        # and acceptance is the pre-reveal checkpoint (terms + MPIN) at which
+        # both parties' contact details unlock.
+        if booking.get("transporterId") != uid:
+            _error(403, "FORBIDDEN", "this request was addressed to another transporter")
+        if not body.termsAccepted:
+            _error(422, "TERMS_REQUIRED", "confirm the direct-connect terms to accept this request")
+        transporter_user = await get_user(uid) or {}
+        if transporter_user.get("mpinHash"):
+            if not body.mpin:
+                _error(401, "WRONG_MPIN", "mpin is required to accept this request")
+            if not verify_mpin(body.mpin, transporter_user["mpinHash"]):
+                _error(401, "WRONG_MPIN", "incorrect MPIN")
+
     await _assign_vehicle(booking, uid, body.vehicleId, body.vehicleNo, body.driverName, body.driverPhone)
     booking["status"] = "accepted"
     booking["transporterId"] = uid
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if is_direct:
+        farmer = await get_user(booking["userId"]) or {}
+        transporter_user = await get_user(uid) or {}
+        contact_reveal = {
+            "farmer": _contact_of(farmer),
+            "transporter": _contact_of(transporter_user),
+            "revealedAt": now_iso,
+        }
+        booking["contactReveal"] = contact_reveal
+        booking["farmerPhone"] = farmer.get("phone", "")
+        booking["driverPhone"] = booking.get("driverPhone") or transporter_user.get("phone", "")
+        booking["consent"] = {
+            "termsAccepted": True,
+            "termsVersion": TERMS_VERSION,
+            "acceptedAt": now_iso,
+            "acceptedBy": uid,
+            "bookingId": booking_id,
+            "contactRevealedAt": now_iso,
+        }
+        await _record_terms_acceptance(uid, "contactReveal", booking_id=booking_id)
     waypoints = booking.get("waypointsLog", [])
     waypoints.append({
         "waypoint": "accepted",
         "label": "ट्रांसपोर्टर द्वारा स्वीकृत",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": now_iso,
     })
     booking["waypointsLog"] = waypoints
     await set_doc("transport_bookings", booking_id, booking)
@@ -1319,7 +1410,7 @@ async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str =
         title_hi="यात्रा तय — तैयार रहें",
         subtitle=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} · {booking.get('date', '')}",
         priority="urgent",
-        deep_link=module_deep_link("transport", booking_id),
+        deep_link=f"/transporter/trips/{booking_id}",
         source_id=booking_id,
         due_at=booking.get("date"),
     )
@@ -1330,6 +1421,17 @@ async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str =
         f"{vehicle_label} आपकी बुकिंग स्वीकार कर रहा है",
         {"type": "booking_accepted", "bookingId": booking_id},
     )
+    if is_direct and booking.get("contactReveal"):
+        await notify_user(
+            booking["userId"],
+            type="direct_request_accepted",
+            title="Transporter accepted / ट्रांसपोर्टर तैयार",
+            body=(
+                f"{booking['contactReveal']['transporter']['name']} accepted your transport request — "
+                "phone & WhatsApp are now unlocked. Fare is settled directly with the transporter."
+            ),
+            deepLink=f"/farmer/transport/{booking_id}",
+        )
     await _emit_pickup_reminder(uid, "transport", booking, "accepted trip")
     room = await ensure_transport_room(booking)
     if room:
@@ -1339,7 +1441,7 @@ async def accept_booking(booking_id: str, body: AcceptBookingRequest, uid: str =
                 type="chat_unlocked",
                 title="Chat unlocked / चैट खुली",
                 body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
-                deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                deepLink=f"/chat?room={room['id']}",
             )
     return booking
 
@@ -1349,6 +1451,12 @@ async def reject_booking(booking_id: str, body: RejectBookingRequest, uid: str =
     booking = await _get_booking(booking_id)
     if booking.get("status") != "requested":
         _error(409, "ILLEGAL_TRANSITION", "only a requested booking can be rejected")
+    is_direct = booking.get("requestKind") == "direct" or bool(booking.get("transporterId"))
+    if is_direct and booking.get("transporterId") != uid:
+        _error(403, "FORBIDDEN", "this request was addressed to another transporter")
+    # Declining marks ONLY this direct request as declined — it never cancels
+    # an underlying open load or blocks the farmer from requesting another
+    # transporter or posting the requirement to the load board.
     booking["status"] = "cancelled"
     booking["cancellationReason"] = body.reason
     booking["cancelledBy"] = "transporter"
@@ -1366,6 +1474,20 @@ async def reject_booking(booking_id: str, body: RejectBookingRequest, uid: str =
         f"ट्रांसपोर्टर ने आपकी बुकिंग अस्वीकार की: {body.reason}",
         {"type": "booking_rejected", "bookingId": booking_id},
     )
+    if is_direct:
+        # Direct requests get an additional farmer-facing notice that makes
+        # the no-side-effects guarantee explicit (the open-board flow keeps
+        # its existing single notification).
+        await notify_user(
+            booking["userId"],
+            type="direct_request_declined",
+            title="Request declined / अनुरोध अस्वीकृत",
+            body=(
+                f"The transporter declined your {booking.get('commodity') or 'transport'} request ({body.reason}). "
+                "Your produce lot and any open requirement are unaffected — request another transporter or post to the load board."
+            ),
+            deepLink="/farmer/transport",
+        )
     return booking
 
 
@@ -1426,7 +1548,7 @@ async def cancel_booking(booking_id: str, body: RejectBookingRequest, uid: str =
             type="booking_cancelled",
             title="Booking cancelled / बुकिंग रद्द",
             body=body_text,
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/transporter/trips/{booking_id}",
         )
     return booking
 
@@ -1510,7 +1632,7 @@ async def create_booking_offer(
         type="booking_offer_received",
         title="Fare offer / भाड़ा प्रस्ताव",
         body=f"₹{body.farePaise / 100:.0f} quoted for {booking.get('commodity') or booking.get('vehicleType', 'Trip')} — accept or counter",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/farmer/transport/{booking_id}",
     )
     return offer
 
@@ -1579,7 +1701,7 @@ async def accept_booking_offer(
         type="booking_offer_accepted",
         title="Offer accepted / प्रस्ताव स्वीकृत",
         body=f"₹{int(offer['farePaise']) / 100:.0f} locked for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/transporter/trips/{booking_id}",
     )
     room = await ensure_transport_room(booking)
     if room:
@@ -1589,7 +1711,7 @@ async def accept_booking_offer(
                 type="chat_unlocked",
                 title="Chat unlocked / चैट खुली",
                 body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
-                deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                deepLink=f"/chat?room={booking_id}",
             )
     return offer
 
@@ -1614,7 +1736,7 @@ async def decline_booking_offer(
         type="booking_offer_declined",
         title="Offer declined / प्रस्ताव अस्वीकृत",
         body=f"₹{int(offer['farePaise']) / 100:.0f} was declined for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=_trip_link_for(offer.get("fromUserId"), booking_id, booking.get("transporterId")),
     )
     return offer
 
@@ -1664,7 +1786,7 @@ async def counter_booking_offer(
         type="booking_offer_countered",
         title="Counter offer / काउंटर प्रस्ताव",
         body=f"₹{body.farePaise / 100:.0f} proposed for {booking.get('commodity') or booking.get('vehicleType', 'Trip')} — round {current_round}",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=_trip_link_for(counter["toUserId"], booking_id, booking.get("transporterId")),
     )
     return counter
 
@@ -1673,11 +1795,31 @@ async def counter_booking_offer(
 # 4. LOAD BOARD / LOAD MARKETPLACE (लोड बाज़ार)
 # ==========================================
 
+# Fields that must never leave the backend on load-board / load-detail
+# surfaces — the farmer's phone/WhatsApp unlock only when they accept a bid.
+_LOAD_PRIVATE_FIELDS = ("farmerPhone", "contactReveal")
+
+
+def _load_public_view(load: dict, *, owner: bool = False) -> dict:
+    """Load-board projection: contact details are revealed to the load owner
+    only (and even then only once a bid is accepted — the contactReveal block
+    is attached by accept_load_bid). Everyone else gets the demand fields."""
+    if owner:
+        return load
+    return {k: v for k, v in load.items() if k not in _LOAD_PRIVATE_FIELDS}
+
+
 @router.get("/loads")
 async def list_open_loads(
     crop: str | None = None,
     pickup: str | None = None,
     drop: str | None = None,
+    vehicleType: str | None = None,
+    pickupDate: str | None = None,
+    minQuantity: float | None = None,
+    maxQuantity: float | None = None,
+    urgent: bool | None = None,
+    matchingFleet: bool = False,
     uid: str = Depends(_viewer),
 ):
     loads = await query("transport_loads", [], limit=500)
@@ -1689,10 +1831,74 @@ async def list_open_loads(
         loads = [ld for ld in loads if pickup.lower() in ld.get("pickupLocation", "").lower()]
     if drop:
         loads = [ld for ld in loads if drop.lower() in ld.get("dropLocation", "").lower()]
+    if vehicleType:
+        loads = [
+            ld for ld in loads
+            if vehicleType.lower() in (ld.get("preferredVehicleType") or "").lower()
+        ]
+    if pickupDate:
+        loads = [ld for ld in loads if str(ld.get("pickupDate", "")) >= pickupDate]
+    if minQuantity is not None:
+        loads = [ld for ld in loads if float(ld.get("quantityQuintals") or 0) >= minQuantity]
+    if maxQuantity is not None:
+        loads = [ld for ld in loads if float(ld.get("quantityQuintals") or 0) <= maxQuantity]
+    if urgent is not None:
+        loads = [ld for ld in loads if bool(ld.get("urgent", False)) == urgent]
+    if matchingFleet:
+        # Only loads the caller's verified fleet can actually carry: a load
+        # with no vehicle preference matches everything; a preferred type
+        # matches a fleet vehicle of the same type (or a bigger one).
+        my_vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
+        my_types = {(v.get("vehicleType") or "").lower() for v in my_vehicles if v.get("active", True)}
+        my_max_capacity = max(
+            (float(v.get("capacityTonnes") or 0) for v in my_vehicles), default=0.0
+        )
+
+        def _fleet_matches(ld: dict) -> bool:
+            pref = (ld.get("preferredVehicleType") or "").lower()
+            if pref and pref not in ("any", "any suitable vehicle") and pref not in my_types:
+                return False
+            return float(ld.get("quantityQuintals") or 0) * 0.1 <= my_max_capacity
+
+        loads = [ld for ld in loads if _fleet_matches(ld)]
 
     # Urgent loads pin to the top; within a tier, newest first.
     loads.sort(key=lambda x: (bool(x.get("urgent", False)), x.get("createdAt", "")), reverse=True)
-    return {"data": loads, "total": len(loads)}
+    return {"data": [_load_public_view(ld) for ld in loads], "total": len(loads)}
+
+
+# Direct-connect terms: one versioned text shown at every connection moment
+# (posting a load, applying on a load, and the pre-reveal confirmation when the
+# farmer selects a transporter). Every acceptance is audited.
+TERMS_VERSION = "dc-1.0"
+DIRECT_CONNECT_TERMS_TEXT = (
+    "Agrovercity only connects farmers and transporters. It does not collect or "
+    "guarantee trip payments and is not a party to their transport arrangement. "
+    "Fare, payment, loading, cargo condition, delivery, loss, and disputes are "
+    "solely between the farmer and transporter. Verify the other party, vehicle, "
+    "documents, and commercial terms before proceeding."
+)
+
+
+async def _record_terms_acceptance(
+    uid: str,
+    accepted_for: str,  # "load" | "bid" | "contactReveal"
+    *,
+    load_id: str | None = None,
+    booking_id: str | None = None,
+) -> dict:
+    """Append-only audit of a direct-connect terms acceptance."""
+    doc = {
+        "id": f"ta_{uuid.uuid4().hex[:12]}",
+        "userId": uid,
+        "termsVersion": TERMS_VERSION,
+        "acceptedAt": datetime.now(timezone.utc).isoformat(),
+        "acceptedFor": accepted_for,
+        "loadId": load_id,
+        "bookingId": booking_id,
+    }
+    await set_doc("terms_acceptances", doc["id"], doc)
+    return doc
 
 
 def _build_open_load(uid: str, user: dict, fields: dict) -> dict:
@@ -1708,17 +1914,91 @@ def _build_open_load(uid: str, user: dict, fields: dict) -> dict:
     }
 
 
+# Quintals → tonnes conversion for capacity checks (1 quintal = 0.1 tonne).
+QUINTAL_TO_TONNE = 0.1
+ANY_VEHICLE = "Any"
+
+
+def _normalize_vehicle_preference(preferred: str | None) -> str | None:
+    """None / 'Any' / 'Any suitable vehicle' all normalize to None (no
+    preference); a specific catalog type is returned verbatim."""
+    if not preferred:
+        return None
+    cleaned = preferred.strip()
+    if not cleaned or cleaned.lower() in ("any", "any suitable vehicle"):
+        return None
+    return cleaned
+
+
 @router.post("/loads", status_code=201)
 async def post_open_load(body: OpenLoadCreateRequest, uid: str = Depends(_booker)):
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to post this load")
+
+    # Option B — produce-lot prefill: the lot must belong to the caller and its
+    # crop/quantity/pickup ground-truth comes from the server-side lot doc;
+    # client-sent copies of those fields are ignored when sourceLotId is set.
+    crop = body.crop
+    quantity = body.quantityQuintals
+    pickup_location = body.pickupLocation
+    source_lot_id = None
+    if body.sourceLotId:
+        lot = await get_doc("market_lots", body.sourceLotId)
+        if lot is None or lot.get("farmerId") != uid:
+            _error(404, "LOT_NOT_FOUND", "produce lot not found", {"sourceLotId": "lot not found or not yours"})
+        if lot.get("status") not in ("open", "sold"):
+            _error(409, "LOT_NOT_OPEN", "this produce lot cannot be linked to a transport load")
+        crop = lot.get("crop", crop)
+        quantity = lot.get("quantityQuintals", quantity)
+        village = lot.get("village") or ""
+        district = lot.get("district") or ""
+        if village or district:
+            pickup_location = ", ".join(p for p in (village, district) if p)
+        source_lot_id = lot["id"]
+
+    if not crop or not str(crop).strip():
+        _error(422, "CROP_REQUIRED", "crop / commodity is required", {"crop": "required"})
+    if quantity is None or float(quantity) <= 0:
+        _error(422, "QUANTITY_REQUIRED", "quantity in quintals must be positive", {"quantityQuintals": "must be positive"})
+
+    # Schedule must be in the future — a same-day pickup earlier in the day is
+    # still allowed when no explicit time was given.
+    try:
+        pickup_day = datetime.fromisoformat(str(body.pickupDate)).date()
+    except ValueError:
+        _error(422, "INVALID_PICKUP_DATE", "pickup date must be a valid ISO date", {"pickupDate": "invalid date"})
+    today = datetime.now(timezone.utc).date()
+    if pickup_day < today:
+        _error(422, "PICKUP_IN_PAST", "pickup date cannot be in the past", {"pickupDate": "pick a future date"})
+
+    preferred = _normalize_vehicle_preference(body.preferredVehicleType)
+    if preferred is not None:
+        entry = await _catalog_entry(preferred)
+        if entry is None:
+            _error(422, "UNKNOWN_VEHICLE_TYPE", "unknown vehicle type", {"preferredVehicleType": "unknown type"})
+        # Block an impossible booking up front: the preferred vehicle must be
+        # able to carry the whole quantity in one trip (multi-trip is not
+        # supported by the trip model — never imply that it is).
+        required_tonnes = float(quantity) * QUINTAL_TO_TONNE
+        capacity = float(entry.get("capacityTonnes") or 0)
+        if capacity > 0 and required_tonnes > capacity + 1e-9:
+            _error(
+                422,
+                "VEHICLE_CAPACITY_INSUFFICIENT",
+                f"{preferred} carries {capacity}T but the load needs {required_tonnes:g}T in one trip",
+                {"preferredVehicleType": f"capacity {capacity}T < required {required_tonnes:g}T"},
+            )
+        preferred = entry.get("type", preferred)
+
     user = await get_user(uid)
     doc = _build_open_load(uid, user, {
-        "pickupLocation": body.pickupLocation,
+        "pickupLocation": pickup_location,
         "dropLocation": body.dropLocation,
-        "crop": body.crop,
-        "quantityQuintals": body.quantityQuintals,
+        "crop": crop,
+        "quantityQuintals": quantity,
         "packaging": body.packaging,
         "perishable": body.perishable,
-        "preferredVehicleType": body.preferredVehicleType,
+        "preferredVehicleType": preferred or ANY_VEHICLE,
         "pickupDate": body.pickupDate,
         "pickupTime": body.pickupTime,
         "targetFare": body.targetFare,
@@ -1726,12 +2006,14 @@ async def post_open_load(body: OpenLoadCreateRequest, uid: str = Depends(_booker
         "urgent": body.urgent,
         "pickupLat": body.pickupLat,
         "pickupLng": body.pickupLng,
+        "sourceLotId": source_lot_id,
         "insurance": await _insurance_block(body.insuranceOptIn, body.declaredValuePaisa),
     })
     match_info = await transport_match.score_transport_match(doc, ctx=uid)
     doc["noshowRisk"] = match_info.get("noshow_risk", 0.05)
     doc["fit"] = match_info.get("fit", 0.7)
     await set_doc("transport_loads", doc["id"], doc)
+    await _record_terms_acceptance(uid, "load", load_id=doc["id"])
     if doc.get("urgent"):
         await _notify_urgent_load_nearby(doc)
     return doc
@@ -1797,6 +2079,15 @@ def _contact_of(user: dict) -> dict:
     }
 
 
+def _trip_link_for(user_id: str, booking_id: str, transporter_id: str | None = None) -> str:
+    """Persona-correct trip deep link: transporters land on the logistics hub
+    trip page, everyone else (farmer/seller booker) on the farmer transport
+    detail page. The legacy /dashboard/p/transport prefix has no real route."""
+    if transporter_id is not None and user_id == transporter_id:
+        return f"/transporter/trips/{booking_id}"
+    return f"/farmer/transport/{booking_id}"
+
+
 def _bid_public_view(bid: dict) -> dict:
     """Anonymized bid for every surface except the accepted one — the
     transporter's phone/WhatsApp stay hidden until the load owner accepts."""
@@ -1824,8 +2115,23 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         if not verify_mpin(body.mpin, user["mpinHash"]):
             _error(401, "WRONG_MPIN", "incorrect MPIN")
 
-    # Vehicle-availability gate: a bid must attach a vehicle the transporter
-    # owns that is document-verified and free on the load's pickup date.
+    # Required KYC status: an explicitly failed/blocked KYC disqualifies a
+    # transporter from the load board. Absent/pending/verified KYC stays
+    # eligible — the direct-connect model does not hard-gate bidding on a
+    # review step (vehicles are self-declared; doc validity is checked below).
+    kyc_status = str(user.get("kycStatus") or user.get("kyc_status") or "").lower()
+    if kyc_status in ("failed", "rejected", "blocked", "suspended"):
+        _error(403, "KYC_REQUIRED", "complete transporter KYC to apply on loads")
+
+    # One active application per transporter per load — the transporter can
+    # withdraw and re-quote instead of stacking duplicates.
+    existing_bids = await query(f"transport_loads/{load_id}/bids", [("transporterId", "==", uid)], limit=100)
+    if any(b.get("status") == "pending" for b in existing_bids):
+        _error(409, "DUPLICATE_BID", "you already have an active application on this load — withdraw it to quote again")
+
+    # Vehicle-availability gate: a bid must attach an active vehicle the
+    # transporter owns that is free on the load's pickup date. Vehicles are
+    # self-declared (no review); only expired documents block a bid.
     vehicle_no = body.vehicleNo
     if body.vehicleId:
         vehicle = await _own_vehicle(body.vehicleId, uid)
@@ -1847,11 +2153,26 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
                 f"this vehicle is not available on {pickup_date or 'the pickup date'}",
                 {"vehicleId": "not available on the pickup date"},
             )
+        # One-trip capacity check (1 quintal = 0.1 tonne): the quoted vehicle
+        # must carry the whole load — the trip model has no multi-trip support,
+        # so an under-capacity quote is rejected, not silently accepted.
+        required_tonnes = float(load.get("quantityQuintals") or 0) * QUINTAL_TO_TONNE
+        capacity = float(vehicle.get("capacityTonnes") or 0)
+        if capacity > 0 and required_tonnes > capacity + 1e-9:
+            _error(
+                422,
+                "VEHICLE_CAPACITY_INSUFFICIENT",
+                f"this vehicle carries {capacity}T but the load needs {required_tonnes:g}T in one trip",
+                {"vehicleId": f"capacity {capacity}T < required {required_tonnes:g}T"},
+            )
         vehicle_no = vehicle_no or vehicle.get("registrationNo")
 
     await hit("load_bids", uid, 30, 60)
     plan = await effective_plan(uid, "transport")
     now = datetime.now(timezone.utc).isoformat()
+    # Quote-comparison metadata for the farmer: genuine rating/trip count and
+    # the quoted vehicle's capacity. No contact fields.
+    rating_stats = user.get("transportRatingStats") or {}
     bid_doc = {
         "id": f"bid_{uuid.uuid4().hex[:10]}",
         "loadId": load_id,
@@ -1862,14 +2183,19 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         "quotedFare": body.quotedFare,
         "vehicleId": body.vehicleId,
         "vehicleNo": vehicle_no,
+        "vehicleCapacityTonnes": (vehicle or {}).get("capacityTonnes") if body.vehicleId else None,
+        "transporterRating": rating_stats.get("avg"),
+        "transporterTripsCompleted": rating_stats.get("count") or 0,
         "estimatedPickupTime": body.estimatedPickupTime,
         "notes": body.notes,
         "termsAcceptedAt": now,
+        "termsVersion": TERMS_VERSION,
         "priority": (plan.get("tier") in ("pro", "enterprise")),
         "status": "pending",
         "createdAt": now,
     }
     await set_doc(f"transport_loads/{load_id}/bids", bid_doc["id"], bid_doc)
+    await _record_terms_acceptance(uid, "bid", load_id=load_id)
 
     load["bidsCount"] = load.get("bidsCount", 0) + 1
     await set_doc("transport_loads", load_id, load)
@@ -1951,6 +2277,7 @@ async def list_load_bids(load_id: str, uid: str = Depends(_viewer)):
     return {"loadId": load_id, "data": [_bid_public_view(b) for b in bids], "total": len(bids)}
 
 
+
 class LoadBidCounterRequest(BaseModel):
     quotedFare: float
     notes: str | None = None
@@ -2001,22 +2328,119 @@ async def counter_load_bid(
     return bid
 
 
+@router.post("/loads/{load_id}/bids/{bid_id}/withdraw")
+async def withdraw_load_bid(load_id: str, bid_id: str, uid: str = Depends(_transporter)):
+    """Transporter pulls their pending application off the load. Allowed only
+    while it is pending — once any bid is accepted the auction is over and no
+    changes are permitted."""
+    bid = await get_doc(f"transport_loads/{load_id}/bids", bid_id)
+    if bid is None or bid.get("transporterId") != uid:
+        _error(404, "BID_NOT_FOUND", "bid not found")
+    if bid.get("status") != "pending":
+        _error(409, "BID_NOT_PENDING", "only a pending application can be withdrawn")
+    load = await get_doc("transport_loads", load_id)
+    if load is None:
+        _error(404, "LOAD_NOT_FOUND", "load not found")
+    now = datetime.now(timezone.utc).isoformat()
+    bid["status"] = "withdrawn"
+    bid["updatedAt"] = now
+    await set_doc(f"transport_loads/{load_id}/bids", bid_id, bid)
+    load["bidsCount"] = max(0, int(load.get("bidsCount") or 0) - 1)
+    await set_doc("transport_loads", load_id, load)
+    await notify_user(
+        load.get("userId"),
+        type="load_bid_withdrawn",
+        title="Application withdrawn / आवेदन वापस",
+        body=f"A transporter withdrew their ₹{bid.get('quotedFare')} application on your {load.get('crop', 'load')} load.",
+        deepLink="/farmer/transport",
+    )
+    return bid
+
+
+@router.post("/loads/{load_id}/cancel")
+async def cancel_open_load(load_id: str, body: RejectBookingRequest, uid: str = Depends(_booker)):
+    """Farmer cancels an open requirement before accepting any quote. Pending
+    bidders are notified and released; nothing else is touched — in particular
+    this never affects direct transporter requests (they are bookings, not
+    loads)."""
+    load = await get_doc("transport_loads", load_id)
+    if load is None or load.get("userId") != uid:
+        _error(404, "LOAD_NOT_FOUND", "load not found or unauthorized")
+    if load.get("status") != "open":
+        _error(409, "LOAD_NOT_OPEN", f"cannot cancel a {load.get('status')} load")
+    now = datetime.now(timezone.utc).isoformat()
+    load["status"] = "cancelled"
+    load["cancellationReason"] = body.reason
+    load["cancelledBy"] = uid
+    load["cancelledAt"] = now
+    await set_doc("transport_loads", load_id, load)
+    bids = await query(f"transport_loads/{load_id}/bids", [], limit=100)
+    for bid in bids:
+        if bid.get("status") != "pending":
+            continue
+        bid["status"] = "rejected"
+        bid["rejectReason"] = "load_cancelled"
+        bid["updatedAt"] = now
+        await set_doc(f"transport_loads/{load_id}/bids", bid["id"], bid)
+        await notify_user(
+            bid.get("transporterId"),
+            type="load_cancelled",
+            title="Load cancelled / लोड रद्द",
+            body=(
+                f"The {load.get('crop', 'load')} load ({load.get('pickupLocation', '')} → "
+                f"{load.get('dropLocation', '')}) was cancelled by the farmer: {body.reason}"
+            ),
+            deepLink="/transporter/loads",
+        )
+    return load
+
+
 @router.post("/loads/{load_id}/accept-bid")
-async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depends(_booker)):
+async def accept_load_bid(load_id: str, body: AcceptLoadBidRequest, uid: str = Depends(_booker)):
     load = await get_doc("transport_loads", load_id)
     if load is None or load.get("userId") != uid:
         _error(404, "LOAD_NOT_FOUND", "load not found or unauthorized")
     if load.get("status") != "open":
         _error(409, "LOAD_NOT_OPEN", "load is no longer open for bidding")
-    bid = await get_doc(f"transport_loads/{load_id}/bids", bidId)
+    # Pre-reveal checkpoint: the farmer re-confirms the direct-connect terms
+    # at the moment contacts are about to unlock.
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "confirm the direct-connect terms to reveal contact details")
+    farmer = await get_user(uid) or {}
+    # MPIN step-up (same contract as bidding): only enforced when this account
+    # has an MPIN on file. The plain MPIN is verified and never stored/logged.
+    if farmer.get("mpinHash"):
+        if not body.mpin:
+            _error(401, "WRONG_MPIN", "mpin is required to confirm this application")
+        if not verify_mpin(body.mpin, farmer["mpinHash"]):
+            _error(401, "WRONG_MPIN", "incorrect MPIN")
+    bid = await get_doc(f"transport_loads/{load_id}/bids", body.bidId)
     if bid is None:
         _error(404, "BID_NOT_FOUND", "bid not found")
     if bid.get("status") != "pending":
         _error(409, "BID_NOT_PENDING", "only a pending application can be accepted")
     await _assert_load_board_access(bid["transporterId"])
+    # Revalidate the vehicle eligibility at acceptance time — the bid may be
+    # hours old and the vehicle could have been deactivated, re-documented or
+    # booked for the same day since.
+    if bid.get("vehicleId"):
+        vehicle = await _own_vehicle(bid["vehicleId"], bid["transporterId"])
+        if vehicle.get("active", True) is False or not await _vehicle_docs_verified(vehicle):
+            _error(409, "VEHICLE_NOT_VERIFIED", "the selected vehicle is no longer eligible")
+        pickup_date = str(load.get("pickupDate") or "")
+        today = datetime.now(timezone.utc).date().isoformat()
+        if not _vehicle_available_on(vehicle, pickup_date, today):
+            _error(409, "VEHICLE_NOT_AVAILABLE", "the selected vehicle is no longer available on the pickup date")
+
+    # Double-acceptance guard: re-read the load inside the acceptance window
+    # and refuse if another request already booked it (concurrent accepts).
+    fresh_load = await get_doc("transport_loads", load_id)
+    if fresh_load is None or fresh_load.get("status") != "open":
+        _error(409, "LOAD_NOT_OPEN", "this load has already been booked")
+    if fresh_load.get("acceptedBookingId"):
+        _error(409, "ALREADY_BOOKED", "a booking already exists for this load")
 
     transporter = await get_user(bid["transporterId"]) or {}
-    farmer = await get_user(uid) or {}
     now_iso = datetime.now(timezone.utc).isoformat()
     # Direct-connect reveal (produce/vyapari parity): accepting the application
     # unlocks both sides' phone + WhatsApp; the trip itself is still tracked
@@ -2028,7 +2452,7 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
     }
 
     load["status"] = "booked"
-    load["acceptedBidId"] = bidId
+    load["acceptedBidId"] = body.bidId
     load["contactReveal"] = contact_reveal
     await set_doc("transport_loads", load_id, load)
 
@@ -2056,6 +2480,17 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
         "driverWhatsappDigits": contact_reveal["transporter"]["whatsappDigits"],
         "farmerPhone": farmer.get("phone", ""),
         "contactReveal": contact_reveal,
+        # Direct-connect consent audit: the farmer's terms + MPIN confirmation
+        # at this pre-reveal checkpoint (the transporter's is on their bid).
+        "consent": {
+            "termsAccepted": True,
+            "termsVersion": TERMS_VERSION,
+            "acceptedAt": now_iso,
+            "acceptedBy": uid,
+            "loadId": load_id,
+            "bidId": body.bidId,
+            "contactRevealedAt": now_iso,
+        },
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "waypointsLog": [
             {
@@ -2067,14 +2502,25 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
     }
     await set_doc("transport_bookings", booking_id, booking_doc)
 
+    # Point the load at its single booking — the double-acceptance guard reads
+    # this field, so exactly one booking can ever exist per load.
+    load["acceptedBookingId"] = booking_id
+    await set_doc("transport_loads", load_id, load)
+
     bid["status"] = "accepted"
     bid["updatedAt"] = now_iso
-    await set_doc(f"transport_loads/{load_id}/bids", bidId, bid)
+    await set_doc(f"transport_loads/{load_id}/bids", body.bidId, bid)
+
+    # Both sides are now on record for the contact reveal: the farmer just
+    # re-confirmed above; the transporter's confirmation carries from their
+    # bid-time acceptance.
+    await _record_terms_acceptance(uid, "contactReveal", load_id=load_id, booking_id=booking_id)
+    await _record_terms_acceptance(bid["transporterId"], "contactReveal", load_id=load_id, booking_id=booking_id)
 
     # Sibling pending applications lose the auction (produce-offer parity).
     siblings = await query(f"transport_loads/{load_id}/bids", [], limit=100)
     for sib in siblings:
-        if sib["id"] == bidId or sib.get("status") != "pending":
+        if sib["id"] == body.bidId or sib.get("status") != "pending":
             continue
         sib["status"] = "rejected"
         sib["rejectReason"] = "load_fulfilled"
@@ -2105,7 +2551,7 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
             f"{contact_reveal['farmer']['name']} accepted your ₹{bid['quotedFare']} application for the "
             f"{load.get('crop', 'load')} load — phone & WhatsApp are now unlocked."
         ),
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/transporter/trips/{booking_id}",
     )
     await _emit_pickup_reminder(bid["transporterId"], "transport", booking_doc, "won auction trip")
     room = await ensure_transport_room(booking_doc)
@@ -2116,7 +2562,7 @@ async def accept_load_bid(load_id: str, bidId: str = Query(...), uid: str = Depe
                 type="chat_unlocked",
                 title="Chat unlocked / चैट खुली",
                 body=f"{booking_doc.get('commodity') or 'Trip'} — coordinate the pickup in-app",
-                deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                deepLink=f"/chat?room={room['id']}",
             )
     return {"booking": booking_doc, "load": load, "contactReveal": contact_reveal}
 
@@ -2164,7 +2610,7 @@ async def update_trip_location(booking_id: str, body: TripLocationUpdate, uid: s
             type="trip_milestone",
             title="Trip update / यात्रा अपडेट",
             body=f"{body.waypointLabel or body.waypoint} — {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            deepLink=f"/farmer/transport/{booking_id}",
         )
     return {"bookingId": booking_id, "location": location_data}
 
@@ -2172,6 +2618,9 @@ async def update_trip_location(booking_id: str, body: TripLocationUpdate, uid: s
 @router.get("/bookings/{booking_id}/location")
 async def get_trip_location(booking_id: str, uid: str = Depends(_viewer)):
     booking = await _get_booking(booking_id)
+    # Live GPS, driver identity and phone are private trip details — only the
+    # booking parties (and the fleet's drivers) may track them.
+    await _assert_booking_reader(booking, uid)
     last_loc = booking.get("lastLocation") or {
         "lat": 19.9975,
         "lng": 73.7898,
@@ -2200,6 +2649,7 @@ async def get_booking_route(booking_id: str, uid: str = Depends(_viewer)):
     haversine fallback otherwise; cached on the booking doc under routeCache
     (legs are not persisted)."""
     booking = await _get_booking(booking_id)
+    await _assert_booking_reader(booking, uid)
     pickup = booking.get("pickupGeo")
     drop = booking.get("dropGeo")
     if not pickup or not drop:
@@ -2235,6 +2685,7 @@ async def get_booking_route(booking_id: str, uid: str = Depends(_viewer)):
 @router.get("/bookings/{booking_id}/bilty")
 async def get_digital_bilty(booking_id: str, uid: str = Depends(_viewer)):
     booking = await _get_booking(booking_id)
+    await _assert_booking_reader(booking, uid)
     fare = booking.get("fare", 0)
     weighbridge = booking.get("weighbridgeSlip") or {
         "slipNo": f"DK-{booking_id[-6:].upper()}",
@@ -2293,8 +2744,6 @@ async def _trip_receipt(booking_id: str) -> dict:
         fare_paisa = int(booking["farePaise"])
     else:
         fare_paisa = int(round(float(booking.get("fare") or 0) * 100))
-    commission_paisa = int(round(fare_paisa * TRANSPORT_COMMISSION_RATE))
-    escrow = booking.get("escrow") or {}
     farmer = {}
     transporter = {}
     if booking.get("userId"):
@@ -2316,9 +2765,7 @@ async def _trip_receipt(booking_id: str) -> dict:
         "pickup": booking.get("pickup"),
         "drop": booking.get("drop"),
         "farePaisa": fare_paisa,
-        "commissionPaisa": commission_paisa,
-        "netPaise": fare_paisa - commission_paisa,
-        "escrowStatus": escrow.get("status") or "unfunded",
+        "settlement": "Fare settled directly between farmer and transporter",
         "verificationCode": f"AGRO-TMS-VERIFY-{booking_id}",
     }
 
@@ -2377,7 +2824,7 @@ async def record_weighbridge_slip(booking_id: str, body: WeighbridgeSlipRequest,
         type="weighbridge_recorded",
         title="Weighbridge slip / वेब्रिज स्लिप",
         body=f"Net {net_weight} kg recorded for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/farmer/transport/{booking_id}",
     )
     return slip_doc
 
@@ -2405,17 +2852,15 @@ async def add_trip_expense(booking_id: str, body: TripExpenseRequest, uid: str =
 @router.get("/bookings/{booking_id}/expenses")
 async def get_trip_expenses(booking_id: str, uid: str = Depends(_transporter)):
     booking = await _get_booking(booking_id)
+    await _assert_trip_operator(booking, uid)
     expenses = await query(f"transport_bookings/{booking_id}/expenses", [], limit=100)
     gross_fare = float(booking.get("fare") or 0.0)
     total_expenses = sum(float(e.get("amount") or 0.0) for e in expenses)
-    # Commission comes from platform_config/settlements.transportPct — the same
-    # config the weekly settlement run charges (single source of truth).
-    config = await settlements_service._config()
-    platform_commission = round(gross_fare * (config["transportPct"] / 100), 2)
-    # FT-2 detention: extra farmer-paid income on top of the agreed fare.
+    # Direct-connect: the platform takes no commission on the fare, so the
+    # trip P&L is fare + detention − expenses.
     detention_paisa = int((booking.get("detention") or {}).get("totalChargePaisa") or 0)
     detention_rupees = round(detention_paisa / 100, 2)
-    net_profit = round(gross_fare + detention_rupees - total_expenses - platform_commission, 2)
+    net_profit = round(gross_fare + detention_rupees - total_expenses, 2)
 
     return {
         "bookingId": booking_id,
@@ -2423,7 +2868,7 @@ async def get_trip_expenses(booking_id: str, uid: str = Depends(_transporter)):
         "detentionChargePaisa": detention_paisa,
         "detentionCharge": detention_rupees,
         "totalExpenses": total_expenses,
-        "platformCommission": platform_commission,
+        "platformCommission": 0,
         "netProfit": net_profit,
         "expenses": expenses,
     }
@@ -2445,7 +2890,8 @@ async def get_transport_analytics(uid: str = Depends(_transporter)):
     total_gross = sum(int(b.get("fare") or 0) for b in completed)
     total_km = sum(float(b.get("distanceKm") or 0) for b in completed)
     estimated_diesel = round(total_km * 14.5, 2)  # Avg ₹14.5/km fuel
-    estimated_net = round(total_gross - estimated_diesel - (total_gross * TRANSPORT_COMMISSION_RATE), 2)
+    # Direct-connect: no platform commission, so net = gross − diesel.
+    estimated_net = round(total_gross - estimated_diesel, 2)
     reputation = await _computed_reputation(uid, active_vehicles, bookings)
 
     return {
@@ -2680,23 +3126,6 @@ async def transporter_dashboard(uid: str = Depends(_transporter)):
         if v.get("active", True)
     ]
 
-    settlements = await query(
-        "settlements", [("role", "==", "transport"), ("entityId", "==", uid)], limit=100
-    )
-    pending = sorted(
-        (s for s in settlements if s.get("status") == "pending"),
-        key=lambda s: s.get("periodStart", ""),
-    )
-    next_settlement = (
-        {
-            "periodStart": pending[0].get("periodStart"),
-            "periodEnd": pending[0].get("periodEnd"),
-            "netRupees": pending[0].get("netRupees"),
-        }
-        if pending
-        else None
-    )
-
     now = datetime.now(timezone.utc)
     doc_expiries = []
     for v in vehicles:
@@ -2731,98 +3160,90 @@ async def transporter_dashboard(uid: str = Depends(_transporter)):
         "fleet": fleet,
         "earningsTodayPaisa": earnings_today_paisa,
         "earningsWeekPaisa": earnings_week_paisa,
-        "nextSettlement": next_settlement,
         "documentExpiries": doc_expiries,
         "returnLoads": return_loads,
     }
 
 
 # ==========================================
-# 9. DAMAGE DISPUTES (POD damage claim lane)
+# 9. TRIP REPORTS (support cases — direct-connect, no funds held)
 # ==========================================
 
-class DamageDisputeCreateRequest(BaseModel):
-    photos: list[str] = []
-    claimPaisa: int
-    notes: str | None = None
-
-
-class DamageDisputeResolveRequest(BaseModel):
-    resolution: str | None = None
+# Valid report kinds; anything else is coerced to "other".
+TRIP_REPORT_KINDS = ("damage", "payment", "behaviour", "other")
 
 
 def _dispute_participant(booking: dict, uid: str):
     if uid not in (booking.get("userId"), booking.get("transporterId")):
-        _error(403, "FORBIDDEN", "only the booking parties can access this dispute")
+        _error(403, "FORBIDDEN", "only the booking parties can access this report")
 
 
-@router.post("/bookings/{booking_id}/damage-disputes", status_code=201)
-async def create_damage_dispute(
+@router.post("/bookings/{booking_id}/reports", status_code=201)
+async def create_trip_report(
     booking_id: str,
-    body: DamageDisputeCreateRequest,
+    body: TripReportRequest,
     uid: str = Depends(_viewer),
 ):
+    """Either party files a report/support case (damage, payment issue,
+    behaviour, other). Agrovercity holds no trip funds, so a report is a
+    support follow-up record — there is no claim amount and no refund."""
     booking = await _get_booking(booking_id)
     _dispute_participant(booking, uid)
-    if body.claimPaisa < 0:
-        _error(422, "INVALID_CLAIM", "claim must be non-negative integer paisa", {"claimPaisa": "must be >= 0"})
+    kind = body.kind if body.kind in TRIP_REPORT_KINDS else "other"
     doc = {
-        "id": f"dsp_{uuid.uuid4().hex[:10]}",
+        "id": f"rpt_{uuid.uuid4().hex[:10]}",
         "bookingId": booking_id,
+        "kind": kind,
         "photos": body.photos,
-        "claimPaisa": body.claimPaisa,
-        "notes": body.notes,
+        "note": body.note,
         "status": "open",
         "createdBy": uid,
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
-    # FT-6: an insured trip auto-tags the dispute as an insurance claim, with
-    # the policy snapshot the arbitrator (and future insurer API) needs.
-    if booking.get("insurance"):
-        doc["insuranceClaim"] = True
-        doc["coveragePaisaAtClaim"] = booking["insurance"].get("coveragePaisa")
-    await set_doc(f"transport_bookings/{booking_id}/damage_disputes", doc["id"], doc)
+    await set_doc(f"transport_bookings/{booking_id}/reports", doc["id"], doc)
     other = booking.get("transporterId") if uid == booking.get("userId") else booking.get("userId")
     if other:
         await notify_user(
             other,
-            type="damage_dispute_opened",
-            title="Damage dispute / नुकसान विवाद",
-            body=f"Claim of ₹{body.claimPaisa / 100:.2f} filed on booking {booking_id}",
-            deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+            type="trip_report_opened",
+            title="Trip report / यात्रा रिपोर्ट",
+            body=f"A {kind} report was filed on booking {booking_id}",
+            deepLink=_trip_link_for(other, booking_id, booking.get("transporterId")),
         )
     return doc
 
 
-@router.get("/bookings/{booking_id}/damage-disputes")
-async def list_damage_disputes(booking_id: str, uid: str = Depends(_viewer)):
+@router.get("/bookings/{booking_id}/reports")
+async def list_trip_reports(booking_id: str, uid: str = Depends(_viewer)):
     booking = await _get_booking(booking_id)
     _dispute_participant(booking, uid)
-    disputes = await query(f"transport_bookings/{booking_id}/damage_disputes", [], limit=100)
-    disputes.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
-    return {"bookingId": booking_id, "data": disputes, "total": len(disputes)}
+    reports_docs = await query(f"transport_bookings/{booking_id}/reports", [], limit=100)
+    reports_docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return {"bookingId": booking_id, "data": reports_docs, "total": len(reports_docs)}
 
 
-@router.post("/bookings/{booking_id}/damage-disputes/{dispute_id}/resolve")
-async def resolve_damage_dispute(
+@router.post("/bookings/{booking_id}/reports/{report_id}/resolve")
+async def resolve_trip_report(
     booking_id: str,
-    dispute_id: str,
-    body: DamageDisputeResolveRequest,
+    report_id: str,
+    body: TripReportResolveRequest,
     claims: dict = Depends(admin_action("RESOLVE_TRANSPORT_DISPUTE")),
 ):
-    """Admin-consumable resolution lane; the phase-07 console UI drives this."""
+    """Admin-consumable resolution lane; the phase-07 console UI drives this.
+    Resolution is a support outcome only — the platform never holds or moves
+    trip money."""
     await _get_booking(booking_id)
-    dispute = await get_doc(f"transport_bookings/{booking_id}/damage_disputes", dispute_id)
-    if dispute is None:
-        _error(404, "DISPUTE_NOT_FOUND", "dispute not found")
-    if dispute.get("status") != "open":
-        _error(409, "DISPUTE_NOT_OPEN", f"dispute is {dispute.get('status')}")
-    dispute["status"] = "resolved"
-    dispute["resolution"] = body.resolution
-    dispute["resolvedBy"] = claims["uid"]
-    dispute["resolvedAt"] = datetime.now(timezone.utc).isoformat()
-    await set_doc(f"transport_bookings/{booking_id}/damage_disputes", dispute_id, dispute)
-    return dispute
+    report = await get_doc(f"transport_bookings/{booking_id}/reports", report_id)
+    if report is None:
+        _error(404, "REPORT_NOT_FOUND", "report not found")
+    if report.get("status") != "open":
+        _error(409, "REPORT_NOT_OPEN", f"report is {report.get('status')}")
+    report["status"] = "resolved"
+    report["resolution"] = body.resolution
+    report["resolvedBy"] = claims["uid"]
+    report["resolvedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc(f"transport_bookings/{booking_id}/reports", report_id, report)
+    return report
 
 
 # ==========================================
@@ -2904,31 +3325,6 @@ async def list_drivers(uid: str = Depends(_transporter)):
     drivers = await query("users", [], limit=1000)
     mine = [d for d in drivers if d.get("fleetOwnerId") == uid and _is_driver(d)]
     return {"data": mine, "total": len(mine)}
-
-
-# ==========================================
-# 12. PER-TRIP COMMISSION INVOICE
-# ==========================================
-
-@router.get("/bookings/{booking_id}/commission-invoice")
-async def commission_invoice(booking_id: str, uid: str = Depends(_transporter)):
-    """PDF invoice for the platform commission on this trip (integer-paisa math
-    identical to the trip P&L and the weekly settlement run)."""
-    booking = await _get_booking(booking_id)
-    if booking.get("transporterId") != uid:
-        _error(403, "FORBIDDEN", "only the assigned transporter can download this invoice")
-    config = await settlements_service._config()
-    pct = config["transportPct"]
-    commission = round(float(booking.get("fare") or 0) * (pct / 100), 2)
-    transporter = await get_user(uid) or {}
-    file_path = reports.build_commission_invoice_pdf(booking, transporter, commission, pct)
-    with open(file_path, "rb") as handle:
-        content = handle.read()
-    return Response(
-        content=content,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="commission-invoice-{booking_id}.pdf"'},
-    )
 
 
 # ==========================================
@@ -3044,7 +3440,7 @@ async def log_waiting_event(
         type="detention_recorded",
         title="Waiting charges / प्रतीक्षा शुल्क",
         body=f"{body.phase}: {minutes} min waited · ₹{charge_paisa / 100:.0f} detention added to the trip",
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/farmer/transport/{booking_id}",
     )
     return {"event": open_event, "detention": detention}
 
@@ -3428,6 +3824,56 @@ async def my_ledger_entries(uid: str = Depends(_viewer)):
 NEARBY_SORTS = ("fare", "distance", "rating")
 
 
+@router.get("/directory")
+async def transporter_directory(
+    vehicleType: str | None = None,
+    minCapacityTonnes: float | None = None,
+    availableOnly: bool = True,
+    uid: str = Depends(_booking_persona),
+):
+    """Option C discovery: browse verified, available transporter vehicles
+    without a geo anchor (the nearby-vehicles search stays the geo variant).
+    Contact details are never included — a direct request must be confirmed
+    before either side's phone/WhatsApp unlocks."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    vehicles = await query("vehicles", [], limit=1000)
+    entries = []
+    for vehicle in vehicles:
+        if vehicle.get("active", True) is False:
+            continue
+        if not await _vehicle_docs_verified(vehicle):
+            continue
+        if availableOnly and not _vehicle_available_on(vehicle, today, today):
+            continue
+        if vehicleType and vehicle.get("vehicleType") != vehicleType:
+            continue
+        capacity_t = float(vehicle.get("capacityTonnes") or 0)
+        if minCapacityTonnes is not None and capacity_t < minCapacityTonnes:
+            continue
+        catalog = await _catalog_entry(vehicle.get("vehicleType"))
+        if catalog is None:
+            continue  # unpriceable fleet entries stay off the board
+        owner = await get_user(vehicle.get("ownerId")) or {}
+        home = vehicle.get("homeLocation") or {}
+        entries.append({
+            "vehicleId": vehicle["id"],
+            "ownerId": vehicle.get("ownerId"),
+            "vehicleType": vehicle.get("vehicleType"),
+            "regNo": vehicle.get("registrationNo"),
+            "capacityTonnes": capacity_t,
+            "verified": True,
+            "availableNow": bool(vehicle.get("availableNow")),
+            "operatingArea": home.get("address") or owner.get("district") or "",
+            "driver": {"name": vehicle.get("driverName") or ""},  # phone stays hidden
+            "rating": (owner.get("transportRatingStats") or {}).get("avg"),
+            "tripsCompleted": (owner.get("transportRatingStats") or {}).get("count") or 0,
+            "baseFare": catalog.get("baseFare"),
+            "perKmRate": catalog.get("perKmRate"),
+        })
+    entries.sort(key=lambda e: (e["rating"] is None, -(e["rating"] or 0), e["vehicleType"] or ""))
+    return {"data": entries, "total": len(entries)}
+
+
 @router.get("/nearby-vehicles")
 async def nearby_vehicles(
     lat: float = Query(...),
@@ -3477,8 +3923,9 @@ async def nearby_vehicles(
             "distanceKm": distance_km,
             "fare": fare,
             "driver": {
+                # Contact details stay hidden until a booking is confirmed —
+                # discovery shows the driver name only, never the phone.
                 "name": vehicle.get("driverName") or "",
-                "phone": vehicle.get("driverPhone") or "",
             },
             "rating": (owner.get("transportRatingStats") or {}).get("avg"),
             "availableNow": bool(vehicle.get("availableNow")),
@@ -3587,7 +4034,7 @@ async def create_instant_booking(
                 f"{body.commodity or vehicle['vehicleType']} — pickup "
                 f"{body.pickup.address} on {body.pickupDate}"
             ),
-            deepLink=f"/dashboard/p/transport/trips/{doc['id']}",
+            deepLink=f"/transporter/trips/{doc['id']}",
         )
     await notify_user(
         uid,
@@ -3597,7 +4044,7 @@ async def create_instant_booking(
             f"{vehicle.get('registrationNo') or vehicle['vehicleType']} "
             "accepted your instant booking"
         ),
-        deepLink=f"/dashboard/p/transport/trips/{doc['id']}",
+        deepLink=f"/farmer/transport/{doc['id']}",
     )
     response = {"booking": doc, "fare": doc["fareBreakdown"]}
     await idempotency.store("transport.instant-bookings", idempotency_key, response)
@@ -3664,108 +4111,19 @@ async def driver_analytics(driver_id: str, uid: str = Depends(_transporter)):
 
 
 # ==========================================
-# 21. TRIP FARE PAYMENTS & IN-TRIP ESCROW (P0-1, spec F10/S4)
+# 21. TRIP CHAT (direct-connect: room opens on acceptance, not payment)
 # ==========================================
-
-TRANSPORT_WALLET_LEDGER = "transport_wallet_ledger"
-
-# Booking statuses after which no fare payment is accepted.
-PAYMENT_CLOSED_STATUSES = ("cancelled", "delivered", "breakdown")
-
 
 def _fare_paisa(booking: dict) -> int:
     """The agreed fare in integer paisa (bookings store rupees)."""
     return int(round(float(booking.get("fare") or 0) * 100))
 
 
-def _insurance_premium_paisa(booking: dict) -> int:
-    """FT-6: the opted-in transit insurance premium carried by the booking."""
-    insurance = booking.get("insurance") or {}
-    if not insurance.get("optIn"):
-        return 0
-    return int(insurance.get("premiumPaisa") or 0)
-
-
-def _payable_paisa(booking: dict) -> int:
-    """What the booker owes in integer paisa: fare + opted-in insurance premium."""
-    return _fare_paisa(booking) + _insurance_premium_paisa(booking)
-
-
-def _empty_escrow() -> dict:
-    """Escrow subdoc shape — mirrors the purchases escrow contract."""
-    return {
-        "status": "unfunded",
-        "amountPaisa": 0,
-        "fundedAt": None,
-        "releaseAt": None,
-        "releasedAt": None,
-        "refundedAt": None,
-        "disputeWindowHours": None,
-        "disputeOpenedAt": None,
-        "disputeResolvedAt": None,
-        "commissionPaisa": None,
-        "netReleasePaisa": None,
-    }
-
-
-async def _post_wallet_entry(
-    uid: str,
-    kind: str,  # "credit" | "debit"
-    amount_paisa: int,
-    *,
-    booking_id: str | None = None,
-    payout_id: str | None = None,
-    note: str | None = None,
-) -> dict:
-    """Append-only wallet ledger line; the wallet balance is the sum of it."""
-    doc = {
-        "id": f"twl_{uuid.uuid4().hex[:12]}",
-        "userId": uid,
-        "kind": kind,
-        "amountPaisa": int(amount_paisa),
-        "bookingId": booking_id,
-        "payoutId": payout_id,
-        "note": note,
-        "at": datetime.now(timezone.utc).isoformat(),
-    }
-    await set_doc(TRANSPORT_WALLET_LEDGER, doc["id"], doc)
-    return doc
-
-
-async def _wallet_entries(uid: str) -> list[dict]:
-    entries = await query(TRANSPORT_WALLET_LEDGER, [("userId", "==", uid)], limit=2000)
-    entries.sort(key=lambda e: e.get("at", ""), reverse=True)
-    return entries
-
-
-async def _wallet_balance_paisa(uid: str) -> int:
-    balance = 0
-    for entry in await _wallet_entries(uid):
-        amount = int(entry.get("amountPaisa") or 0)
-        balance += amount if entry.get("kind") == "credit" else -amount
-    return balance
-
-
-async def _post_tds_entry(uid: str, txn_id: str, gross_paisa: int) -> dict:
-    """TDS 194-O ledger line (same rail the weekly settlement run writes)."""
-    tds_paisa = int(round(gross_paisa * settlements_service.TDS_194O_RATE))
-    doc = {
-        "txnId": txn_id,
-        "persona": "transport",
-        "entityId": uid,
-        "grossPaisa": int(gross_paisa),
-        "tdsPaisa": tds_paisa,
-        "section": "194-O",
-        "at": datetime.now(timezone.utc).isoformat(),
-    }
-    await set_doc("tds_ledger", f"tds_{txn_id}", doc)
-    return doc
-
-
 async def _transport_room_local(booking: dict) -> dict:
     """Local copy of services/chat.ensure_transport_room (spec S5/D room
-    shape) — payment-in-escrow also unlocks chat when the booking is already
-    accepted. Writes collection "chat_rooms"."""
+    shape) — under direct-connect the room opens when the trip is accepted
+    (contacts revealed), not on a fare payment. Writes collection
+    "chat_rooms"."""
     existing = await get_doc("chat_rooms", booking["id"])
     if existing is not None:
         return existing
@@ -3791,319 +4149,6 @@ async def _transport_room_local(booking: dict) -> dict:
     }
     await set_doc("chat_rooms", room["id"], room)
     return room
-
-
-@router.post("/bookings/{booking_id}/payments")
-async def create_booking_payment(
-    booking_id: str,
-    body: BookingPaymentRequest,
-    uid: str = Depends(_booker),
-):
-    """P0-1: fare order creation (returns orderId) or, when the razorpay*
-    fields are supplied, signature verification that captures the payment,
-    funds the trip escrow and unlocks chat on an accepted trip."""
-    booking = await _get_booking(booking_id)
-    if booking.get("userId") != uid:
-        _error(403, "FORBIDDEN", "only the booker pays for this booking")
-    if booking.get("status") in PAYMENT_CLOSED_STATUSES:
-        _error(
-            409,
-            "INVALID_STATUS_TRANSITION",
-            f"cannot pay a {booking.get('status')} booking",
-        )
-
-    if body.razorpayOrderId or body.razorpayPaymentId or body.razorpaySignature:
-        missing = [
-            field
-            for field, value in (
-                ("razorpayOrderId", body.razorpayOrderId),
-                ("razorpayPaymentId", body.razorpayPaymentId),
-                ("razorpaySignature", body.razorpaySignature),
-            )
-            if not value
-        ]
-        if missing:
-            _error(
-                422,
-                "PAYMENT_INCOMPLETE",
-                "order id, payment id and signature are all required to verify",
-                {f: "required for verification" for f in missing},
-            )
-        return await _verify_booking_payment(booking, body)
-    return await _create_booking_order(booking, body)
-
-
-async def _create_booking_order(booking: dict, body: BookingPaymentRequest) -> dict:
-    amount_paisa = body.amountPaisa or _payable_paisa(booking)
-    if amount_paisa <= 0:
-        _error(422, "VALIDATION_ERROR", "nothing to pay on this booking", {"amountPaisa": "fare is zero"})
-    order = create_razorpay_order(amount_paisa, booking["id"])
-    booking["pendingOrderId"] = order["id"]
-    booking["pendingOrderAmountPaisa"] = amount_paisa
-    booking["updatedAt"] = datetime.now(timezone.utc).isoformat()
-    await set_doc("transport_bookings", booking["id"], booking)
-    return {
-        "bookingId": booking["id"],
-        "orderId": order["id"],
-        "amountPaisa": amount_paisa,
-        "currency": "INR",
-        "keyId": settings.razorpay_key_id or None,
-        "status": "created",
-    }
-
-
-async def _verify_booking_payment(booking: dict, body: BookingPaymentRequest) -> dict:
-    escrow = booking.get("escrow") or {}
-    if escrow.get("status") == "released":
-        _error(409, "ESCROW_ALREADY_RELEASED", "the trip escrow is already released")
-    if not booking.get("pendingOrderId"):
-        _error(400, "ORDER_NOT_CREATED", "create a payment order for this booking first")
-    if body.razorpayOrderId != booking["pendingOrderId"]:
-        _error(
-            400,
-            "ORDER_MISMATCH",
-            "payment order does not match the booking's pending order",
-            {"razorpayOrderId": "does not match the booking's pending order"},
-        )
-    payments = booking.setdefault("payments", [])
-    if any(
-        p.get("razorpayPaymentId") == body.razorpayPaymentId and p.get("status") == "captured"
-        for p in payments
-    ):
-        return {"ok": True, "duplicate": True, "bookingId": booking["id"]}
-    if not verify_razorpay_signature(
-        body.razorpayOrderId, body.razorpayPaymentId, body.razorpaySignature
-    ):
-        _error(400, "PAYMENT_SIGNATURE_INVALID", "payment signature verification failed")
-
-    now = datetime.now(timezone.utc).isoformat()
-    amount_paisa = int(booking.get("pendingOrderAmountPaisa") or _payable_paisa(booking))
-    payment = {
-        "amountPaisa": amount_paisa,
-        "razorpayOrderId": body.razorpayOrderId,
-        "razorpayPaymentId": body.razorpayPaymentId,
-        "status": "captured",
-        "at": now,
-    }
-    insurance_premium = _insurance_premium_paisa(booking)
-    if insurance_premium:
-        payment["farePaisa"] = _fare_paisa(booking)
-        payment["insurancePremiumPaisa"] = insurance_premium
-    payments.append(payment)
-    booking["payments"] = payments
-
-    first_funding = escrow.get("status") != "held"
-    if not escrow:
-        escrow = _empty_escrow()
-        booking["escrow"] = escrow
-    escrow["status"] = "held"
-    escrow["amountPaisa"] = int(escrow.get("amountPaisa") or 0) + amount_paisa
-    escrow["fundedAt"] = now
-    if first_funding:
-        escrow_service.start_clock(escrow)  # releaseAt = now + dispute window
-    booking["updatedAt"] = now
-    await set_doc("transport_bookings", booking["id"], booking)
-
-    # Spec D.5: payment in escrow confirms the trip → chat room exists.
-    if booking.get("transporterId") and booking.get("status") in TRIP_LIVE_STATUSES:
-        room = await _transport_room_local(booking)
-        if room:
-            for party in (booking["userId"], booking["transporterId"]):
-                await notify_user(
-                    party,
-                    type="chat_unlocked",
-                    title="Chat unlocked / चैट खुली",
-                    body="Fare secured in escrow — coordinate the pickup in-app",
-                    deepLink=f"/dashboard/p/transport/trips/{booking['id']}/chat",
-                )
-    await notify_user(
-        booking["userId"],
-        type="fare_payment_captured",
-        title="Payment secured / भुगतान सुरक्षित",
-        body=f"₹{amount_paisa / 100:.0f} held in escrow for {booking.get('commodity') or booking.get('vehicleType', 'Trip')}",
-        deepLink=f"/dashboard/p/transport/trips/{booking['id']}",
-    )
-    return {"ok": True, "payment": payment, "escrow": booking["escrow"], "bookingId": booking["id"]}
-
-
-async def _perform_escrow_release(booking: dict) -> dict:
-    """Shared release body (endpoint + nightly job): commission per the
-    settlements config, net credited to the transporter's wallet, TDS 194-O
-    ledger line, platform ledger line. Callers gate on status/due/disputes."""
-    escrow = booking["escrow"]
-    amount_paisa = int(escrow.get("amountPaisa") or 0)
-    config = await settlements_service._config()
-    commission_paisa = int(round(amount_paisa * float(config.get("transportPct", 10)) / 100))
-    net_release = amount_paisa - commission_paisa
-    now = datetime.now(timezone.utc).isoformat()
-    escrow.update(
-        status="released",
-        releasedAt=now,
-        commissionPaisa=commission_paisa,
-        netReleasePaisa=net_release,
-    )
-    booking["updatedAt"] = now
-    await set_doc("transport_bookings", booking["id"], booking)
-
-    transporter_id = booking.get("transporterId")
-    if transporter_id:
-        await _post_wallet_entry(
-            transporter_id,
-            "credit",
-            net_release,
-            booking_id=booking["id"],
-            note="escrow released",
-        )
-        await _post_tds_entry(transporter_id, f"trb_{booking['id']}", amount_paisa)
-    await set_doc(
-        "platform_ledger",
-        f"escrow_rel_{booking['id']}",
-        {
-            "id": f"escrow_rel_{booking['id']}",
-            "kind": "transport_escrow_release",
-            "bookingId": booking["id"],
-            "userId": transporter_id,
-            "amountPaisa": net_release,
-            "commissionPaisa": commission_paisa,
-            "status": "posted",
-            "createdAt": now,
-        },
-    )
-    return booking
-
-
-async def release_booking_escrow(booking: dict) -> dict:
-    """Release a held trip escrow once the dispute window closed silently
-    (spec S4 auto-release). Imported by the nightly-job agent — no-ops unless
-    the escrow is held, unpaused and due; returns the (possibly updated)
-    booking."""
-    escrow = booking.get("escrow") or {}
-    if escrow.get("status") != "held":
-        return booking
-    if escrow_service.is_paused(escrow):
-        return booking
-    if not escrow_service.is_due(escrow):
-        return booking
-    return await _perform_escrow_release(booking)
-
-
-@router.post("/bookings/{booking_id}/escrow/release")
-async def release_escrow_now(booking_id: str, uid: str = Depends(_viewer)):
-    """Manual release: on POD (spec S4 "released on POD") or once the dispute
-    window closed. A dispute opened inside the window pauses the release."""
-    booking = await _get_booking(booking_id)
-    if uid not in (booking.get("userId"), booking.get("transporterId")):
-        _error(403, "FORBIDDEN", "only a booking party can release this escrow")
-    escrow = booking.get("escrow") or {}
-    if escrow.get("status") != "held":
-        _error(409, "ESCROW_NOT_HELD", f"escrow is {escrow.get('status') or 'unfunded'}")
-    if escrow_service.is_paused(escrow):
-        _error(409, "ESCROW_DISPUTE_OPEN", "release paused until the open dispute is resolved")
-    if not escrow_service.is_due(escrow) and booking.get("status") != "delivered":
-        _error(409, "ESCROW_NOT_DUE", "escrow can be released on delivery or after the dispute window")
-    await _perform_escrow_release(booking)
-    return booking
-
-
-# ==========================================
-# 22. TRANSPORTER WALLET & PAYOUTS (P0-1, spec T9)
-# ==========================================
-
-@router.get("/wallet")
-async def transport_wallet(uid: str = Depends(_transporter)):
-    """Wallet balance from the booking payment/payout ledger entries, plus the
-    TDS 194-O summary for this transporter."""
-    entries = await _wallet_entries(uid)
-    balance = 0
-    for entry in entries:
-        amount = int(entry.get("amountPaisa") or 0)
-        balance += amount if entry.get("kind") == "credit" else -amount
-    tds_docs = await query(
-        "tds_ledger", [("persona", "==", "transport"), ("entityId", "==", uid)], limit=1000
-    )
-    tds_deducted = sum(int(d.get("tdsPaisa") or 0) for d in tds_docs)
-    return {
-        "userId": uid,
-        "balancePaisa": balance,
-        "currency": "INR",
-        "entries": entries,
-        "entryCount": len(entries),
-        "tds": {
-            "tdsDeductedPaisa": tds_deducted,
-            "tdsRatePct": round(settlements_service.TDS_194O_RATE * 100, 2),
-        },
-    }
-
-
-@router.post("/payouts", status_code=201)
-async def create_transport_payout(
-    body: TransportPayoutRequest,
-    uid: str = Depends(_transporter),
-):
-    """Move wallet balance to the transporter's penny-drop-verified bank
-    account over the RazorpayX rail. MPIN-gated (high-risk money movement)."""
-    user = await get_user(uid) or {}
-    stored = user.get("mpinHash")
-    if not stored:
-        _error(409, "MPIN_NOT_SET", "set an MPIN before requesting a payout")
-    if not verify_mpin(body.mpin, stored):
-        _error(401, "WRONG_MPIN", "incorrect MPIN")
-
-    accounts = await query(f"users/{uid}/bank_accounts", [], limit=100)
-    verified = [a for a in accounts if a.get("verifyStatus") == "verified"]
-    if not verified:
-        _error(422, "NO_VERIFIED_BANK_ACCOUNT", "add and verify a bank account to receive payouts")
-    primary = next((a for a in verified if a.get("isPrimary")), verified[0])
-
-    balance = await _wallet_balance_paisa(uid)
-    amount_paisa = body.amountPaisa or balance
-    if amount_paisa <= 0:
-        _error(422, "AMOUNT_INVALID", "payout amount must be positive", {"amountPaisa": "must be > 0"})
-    if amount_paisa > balance:
-        _error(
-            422,
-            "INSUFFICIENT_BALANCE",
-            f"payout exceeds the wallet balance of ₹{balance / 100:.2f}",
-            {"amountPaisa": f"must be <= {balance}"},
-        )
-
-    payout_id = f"tpay_{uuid.uuid4().hex[:12]}"
-    result = await create_razorpayx_payout(
-        primary.get("razorpayFundAccountId", ""), amount_paisa, payout_id
-    )
-    payout = {
-        "id": payout_id,
-        "userId": uid,
-        "amountPaisa": amount_paisa,
-        "status": result.get("status", "processed"),
-        "razorpayPayoutId": result.get("id"),
-        "bankAccountId": primary["id"],
-        "at": datetime.now(timezone.utc).isoformat(),
-    }
-    await set_doc("transport_payouts", payout_id, payout)
-    await _post_wallet_entry(
-        uid, "debit", amount_paisa, payout_id=payout_id, note="payout to bank"
-    )
-    return payout
-
-
-@router.get("/payouts")
-async def list_transport_payouts(uid: str = Depends(_transporter)):
-    """Payouts this transporter has drawn from the transport wallet, newest
-    first, with the RazorpayX payout id (UTR reference) per row."""
-    payouts = await query("transport_payouts", [("userId", "==", uid)], limit=500)
-    payouts.sort(key=lambda p: p.get("at") or p.get("createdAt") or "", reverse=True)
-    rows = [
-        {
-            "id": p.get("id"),
-            "amountPaisa": p.get("amountPaisa"),
-            "status": p.get("status"),
-            "razorpayPayoutId": p.get("razorpayPayoutId"),
-            "createdAt": p.get("at") or p.get("createdAt"),
-        }
-        for p in payouts
-    ]
-    return {"data": rows, "total": len(rows)}
 
 
 # ==========================================
@@ -4241,9 +4286,9 @@ async def report_breakdown(
     uid: str = Depends(_fleet_member),
 ):
     """Transporter taps "Breakdown" mid-trip (spec E11): trip parks in
-    `breakdown`, the booker is notified for the re-match, and a funded escrow
-    settles pro-rata — the completed-distance leg (minus commission) is
-    released to the transporter, the remainder is refunded to the booker."""
+    `breakdown` and the booker is notified for the re-match. Under
+    direct-connect the fare was never platform-held, so there is no pro-rata
+    release or refund — the two parties settle the partial leg directly."""
     booking = await _get_booking(booking_id)
     await _assert_trip_operator(booking, uid)
     if booking.get("status") not in TRIP_LIVE_STATUSES:
@@ -4254,25 +4299,10 @@ async def report_breakdown(
         )
 
     now = datetime.now(timezone.utc).isoformat()
-    fare_paisa = _fare_paisa(booking)
-    distance_km = float(booking.get("distanceKm") or 0)
-    completed_km = body.completedDistanceKm
-    pro_rata_paisa = 0
-    refund_paisa = 0
-    adjustment = None
-    if completed_km is not None and distance_km > 0 and fare_paisa > 0:
-        # Fare rules: pro-rata = agreed fare × completed fraction of the trip.
-        completed_km = min(float(completed_km), distance_km)
-        pro_rata_paisa = int(round(fare_paisa * completed_km / distance_km))
-        refund_paisa = fare_paisa - pro_rata_paisa
-        adjustment = {"proRataFarePaisa": pro_rata_paisa, "refundPaisa": refund_paisa}
-
     booking["breakdown"] = {
         "note": body.note,
         "location": body.location,
         "completedDistanceKm": body.completedDistanceKm,
-        "proRataFarePaisa": pro_rata_paisa,
-        "refundPaisa": refund_paisa,
         "reportedBy": uid,
         "reportedAt": now,
     }
@@ -4280,62 +4310,6 @@ async def report_breakdown(
     waypoints = booking.get("waypointsLog", [])
     waypoints.append({"waypoint": "breakdown", "label": f"ब्रेकडाउन: {body.note}", "time": now})
     booking["waypointsLog"] = waypoints
-
-    escrow = booking.get("escrow") or {}
-    if adjustment and escrow.get("status") == "held":
-        config = await settlements_service._config()
-        commission_paisa = int(
-            round(pro_rata_paisa * float(config.get("transportPct", 10)) / 100)
-        )
-        net_release = pro_rata_paisa - commission_paisa
-        escrow.update(
-            status="released",
-            releasedAt=now,
-            commissionPaisa=commission_paisa,
-            netReleasePaisa=net_release,
-            breakdownRefundPaisa=refund_paisa,
-        )
-        transporter_id = booking.get("transporterId")
-        if transporter_id:
-            await _post_wallet_entry(
-                transporter_id,
-                "credit",
-                net_release,
-                booking_id=booking_id,
-                note="breakdown pro-rata",
-            )
-            await _post_tds_entry(transporter_id, f"trb_{booking_id}", pro_rata_paisa)
-        refund_ref = None
-        captured = [
-            p for p in (booking.get("payments") or []) if p.get("razorpayPaymentId")
-        ]
-        if refund_paisa > 0 and captured:
-            refund = await refund_razorpay_payment(
-                captured[-1]["razorpayPaymentId"], refund_paisa
-            )
-            refund_ref = {
-                "amountPaisa": refund_paisa,
-                "razorpayRefundId": refund.get("id"),
-                "status": refund.get("status"),
-            }
-        elif refund_paisa > 0:
-            refund_ref = {"amountPaisa": refund_paisa, "razorpayRefundId": None, "status": "recorded"}
-        booking["breakdown"]["refund"] = refund_ref
-        await set_doc(
-            "platform_ledger",
-            f"brk_{booking_id}",
-            {
-                "id": f"brk_{booking_id}",
-                "kind": "transport_breakdown_prorata",
-                "bookingId": booking_id,
-                "userId": transporter_id,
-                "amountPaisa": net_release,
-                "commissionPaisa": commission_paisa,
-                "refundPaisa": refund_paisa,
-                "status": "posted",
-                "createdAt": now,
-            },
-        )
 
     booking["updatedAt"] = now
     await set_doc("transport_bookings", booking_id, booking)
@@ -4347,7 +4321,7 @@ async def report_breakdown(
             f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {body.note}. "
             "The platform is re-matching your load; any fare paid is settled pro-rata."
         ),
-        deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+        deepLink=f"/farmer/transport/{booking_id}",
     )
     return booking
 
@@ -4396,9 +4370,20 @@ async def matched_loads(uid: str = Depends(_transporter)):
         if history_tokens & corridor_tokens:
             score += 1
             reasons.append("history_corridor")
-        scored.append({**load, "score": score, "matchReasons": reasons})
+        scored.append({**_load_public_view(load), "score": score, "matchReasons": reasons})
     scored.sort(key=lambda l: (l["score"], l.get("createdAt", "")), reverse=True)
     return {"data": scored, "total": len(scored)}
+
+@router.get("/loads/{load_id}")
+async def get_open_load(load_id: str, uid: str = Depends(_viewer)):
+    """Single load for the board/detail screens. Registered after the static
+    /loads/mine, /loads/my-bids and /loads/matched routes so it never
+    shadows them; the owner sees everything, everyone else gets the
+    contact-scrubbed projection."""
+    load = await get_doc("transport_loads", load_id)
+    if load is None:
+        _error(404, "LOAD_NOT_FOUND", "load not found")
+    return _load_public_view(load, owner=load.get("userId") == uid)
 
 
 FARE_TREND_BANDS = (

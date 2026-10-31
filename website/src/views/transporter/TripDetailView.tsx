@@ -9,7 +9,6 @@ import {
   MapPin,
   Navigation,
   PackageCheck,
-  Percent,
   RefreshCw,
   Scale,
   Share2,
@@ -100,11 +99,10 @@ export const TripDetailView: React.FC = () => {
   const [cancelModal, setCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [disputeModal, setDisputeModal] = useState(false);
-  const [disputeForm, setDisputeForm] = useState({ claimPaisa: 0, notes: '', photos: '' });
+  const [disputeForm, setDisputeForm] = useState({ kind: 'damage', notes: '', photos: '' });
   const [breakdownModal, setBreakdownModal] = useState(false);
   const [breakdownForm, setBreakdownForm] = useState({ note: '', location: '', completedDistanceKm: 0 });
   const [biltyData, setBiltyData] = useState<Rec | null>(null);
-  const [invoiceData, setInvoiceData] = useState<Rec | null>(null);
   const [route, setRoute] = useState<BookingRoute | null>(null);
   /** 'geo' = 422 GEO_REQUIRED (booking has no coordinates yet); 'error' = anything else. */
   const [routeState, setRouteState] = useState<'loading' | 'ready' | 'geo' | 'error'>('loading');
@@ -135,7 +133,7 @@ export const TripDetailView: React.FC = () => {
       .then((ex) => setExpenses(asArr(ex).map(asRec)))
       .catch(() => setExpenses([]));
     transport
-      .damageDisputes(id)
+      .reports(id)
       .then((d) => setDisputes(asArr(d).map(asRec)))
       .catch(() => setDisputes([]));
   }, [id]);
@@ -385,7 +383,7 @@ export const TripDetailView: React.FC = () => {
             </div>
           ) : (
             ['delivered', 'completed'].includes(booking.status) && (
-              <p className="text-[11px] text-emerald-700 font-bold">Trip delivered — settlement follows after platform reconciliation.</p>
+              <p className="text-[11px] text-emerald-700 font-bold">Trip delivered — collect the agreed fare directly from the farmer. Agrovercity is not part of the payment.</p>
             )
           )}
           <p className="text-[10px] text-slate-400">
@@ -499,9 +497,9 @@ export const TripDetailView: React.FC = () => {
           </div>
         </div>
 
-        {/* Bilty + share + commission */}
+        {/* Bilty + share */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
-          <h3 className="font-bold text-sm text-slate-900">Bilty, Commission & Sharing</h3>
+          <h3 className="font-bold text-sm text-slate-900">Bilty & Sharing</h3>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() =>
@@ -513,17 +511,6 @@ export const TripDetailView: React.FC = () => {
               className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5"
             >
               <FileText className="w-3.5 h-3.5" /> View Bilty
-            </button>
-            <button
-              onClick={() =>
-                run(async () => {
-                  setInvoiceData(asRec(await transport.commissionInvoice(id)));
-                }, 'Commission invoice fetched.')
-              }
-              disabled={busy}
-              className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5"
-            >
-              <Percent className="w-3.5 h-3.5" /> Commission Invoice
             </button>
             <button
               onClick={() =>
@@ -582,26 +569,26 @@ export const TripDetailView: React.FC = () => {
         )}
       </div>
 
-      {/* Disputes + incidents */}
+      {/* Trip reports + incidents (support cases — direct-connect, no funds held) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-rose-600" /> Damage Disputes
+              <ShieldAlert className="w-4 h-4 text-rose-600" /> Trip Reports
             </h3>
             <button onClick={() => setDisputeModal(true)} className="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs">
-              Raise Dispute
+              File Report
             </button>
           </div>
           {disputes.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-4">No damage disputes on this trip.</p>
+            <p className="text-xs text-slate-400 text-center py-4">No reports on this trip.</p>
           ) : (
             <div className="space-y-2">
               {disputes.map((d) => (
                 <div key={str(d.id) || JSON.stringify(d).slice(0, 24)} className="p-3 bg-slate-50 rounded-2xl text-xs flex items-center justify-between gap-2">
                   <div>
-                    <p className="font-bold text-slate-800">{formatCurrency(firstNum(d, ['claimPaisa'], 0) / 100)} claimed</p>
-                    <p className="text-slate-400">{str(d.notes, '') !== '—' ? str(d.notes).slice(0, 80) : ''}</p>
+                    <p className="font-bold text-slate-800">{str(d.kind, 'damage')}</p>
+                    <p className="text-slate-400">{str(d.note, '') !== '—' ? str(d.note).slice(0, 80) : ''}</p>
                   </div>
                   <StatusBadge status={str(d.status, 'open')} />
                 </div>
@@ -614,7 +601,7 @@ export const TripDetailView: React.FC = () => {
           <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
             <Wrench className="w-4 h-4 text-amber-600" /> Vehicle Breakdown
           </h3>
-          <p className="text-xs text-slate-400">Report a breakdown to notify the shipper; covered distance drives pro-rata.</p>
+          <p className="text-xs text-slate-400">Report a breakdown to notify the shipper. Under direct-connect you settle the partial leg directly with the farmer — no platform pro-rata.</p>
           <button onClick={() => setBreakdownModal(true)} className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs">
             Report Breakdown
           </button>
@@ -915,39 +902,48 @@ export const TripDetailView: React.FC = () => {
         </div>
       </ModalSheet>
 
-      <ModalSheet isOpen={disputeModal} onClose={() => setDisputeModal(false)} title="Raise Damage Dispute" maxWidth="sm">
+      <ModalSheet isOpen={disputeModal} onClose={() => setDisputeModal(false)} title="File a Trip Report" maxWidth="sm">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             run(async () => {
-              await transport.openDamageDispute(id, {
-                claimPaisa: Math.round(disputeForm.claimPaisa * 100),
-                notes: disputeForm.notes || undefined,
+              await transport.openReport(id, {
+                kind: disputeForm.kind,
+                note: disputeForm.notes,
                 photos: disputeForm.photos.split(',').map((u) => u.trim()).filter(Boolean),
               });
-              const d = await transport.damageDisputes(id);
+              const d = await transport.reports(id);
               setDisputes(asArr(d).map(asRec));
-            }, 'Damage dispute raised.', () => {
+            }, 'Report filed — support will follow up. Settle any money matters directly with the farmer.', () => {
               setDisputeModal(false);
-              setDisputeForm({ claimPaisa: 0, notes: '', photos: '' });
+              setDisputeForm({ kind: 'damage', notes: '', photos: '' });
             });
           }}
           className="space-y-3"
         >
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Claim amount (₹)</label>
-            <input type="number" value={disputeForm.claimPaisa} onChange={(e) => setDisputeForm({ ...disputeForm, claimPaisa: Number(e.target.value) })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" required />
+            <label className="block text-xs font-bold text-slate-700 mb-1">Report kind</label>
+            <select
+              value={disputeForm.kind}
+              onChange={(e) => setDisputeForm({ ...disputeForm, kind: e.target.value })}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+            >
+              <option value="damage">Cargo damage</option>
+              <option value="payment">Payment issue</option>
+              <option value="behaviour">Behaviour / conduct</option>
+              <option value="other">Other</option>
+            </select>
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Evidence photo URLs (comma separated)</label>
-            <input type="text" value={disputeForm.photos} onChange={(e) => setDisputeForm({ ...disputeForm, photos: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" required />
+            <input type="text" value={disputeForm.photos} onChange={(e) => setDisputeForm({ ...disputeForm, photos: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Notes</label>
-            <textarea value={disputeForm.notes} onChange={(e) => setDisputeForm({ ...disputeForm, notes: e.target.value })} rows={2} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
+            <label className="block text-xs font-bold text-slate-700 mb-1">What happened?</label>
+            <textarea value={disputeForm.notes} onChange={(e) => setDisputeForm({ ...disputeForm, notes: e.target.value })} rows={3} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" required minLength={3} />
           </div>
           <button type="submit" disabled={busy} className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs disabled:opacity-60">
-            Submit Dispute
+            Submit Report
           </button>
         </form>
       </ModalSheet>
@@ -1009,22 +1005,6 @@ export const TripDetailView: React.FC = () => {
                 Download JSON
               </button>
             </div>
-          </div>
-        )}
-      </ModalSheet>
-
-      <ModalSheet isOpen={!!invoiceData} onClose={() => setInvoiceData(null)} title={`Commission Invoice — ${id}`} description="Platform commission (10%) invoice for this trip" maxWidth="sm">
-        {invoiceData && (
-          <div className="space-y-2">
-            {Object.entries(invoiceData).map(([k, v]) => (
-              <div key={k} className="flex justify-between p-3 bg-slate-50 rounded-2xl text-xs">
-                <span className="text-slate-500 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
-                <span className="font-bold text-slate-900 text-right max-w-[60%]">{typeof v === 'string' || typeof v === 'number' ? String(v) : JSON.stringify(v)}</span>
-              </div>
-            ))}
-            <button onClick={() => window.print()} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs no-print">
-              Print / Save PDF
-            </button>
           </div>
         )}
       </ModalSheet>

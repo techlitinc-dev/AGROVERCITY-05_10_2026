@@ -1,24 +1,21 @@
 """Missing-endpoint audit items for the transport module.
 
-P0-1  fare payments + in-trip escrow + wallet + payouts (spec F10/S4/T9)
+Direct-connect: fare payments, in-trip escrow, wallet and payouts are removed —
+the farmer pays the transporter directly. This suite now covers the direct-connect
+terms gates, the report/support-case lane, confirm-delivery, and the 404 surface
+for the removed money endpoints.
 P1-27 ratings received + aggregate + tags (spec T10)
 P2-36 multi-drop stops + per-stop POD (spec F15/E16)
-P2-37 mid-trip breakdown + pro-rata settlement (spec E11)
+P2-37 mid-trip breakdown (spec E11)
 P2-38 personalized load matching + fare trends (spec T3/T4/F14)
 P2-39 compliance view — strikes / cooldowns / penalty matrix (spec T11)
 
 All tests drive the real API through the httpx ASGI harness.
 """
 
-import hashlib
-import hmac
 from datetime import datetime, timedelta, timezone
 
-from app.core.config import settings
-from app.routers import transport as transport_router
-from app.services.tokens import create_access_token
 from tests.test_transport import (
-    BOOKING_BODY,
     POD,
     _activate,
     _add_vehicle,
@@ -29,16 +26,10 @@ from tests.test_transport import (
 )
 from tests.test_users import _auth
 
-RZP_SECRET = "rzp_test_secret"
-
-
-def _sign(order_id: str, payment_id: str) -> str:
-    return hmac.new(
-        RZP_SECRET.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
-    ).hexdigest()
-
 
 def _seed_user(user_store, uid, profiles):
+    from app.services.tokens import create_access_token
+
     user_store[f"users/{uid}"] = {
         "id": uid,
         "linkedProfiles": list(profiles),
@@ -47,6 +38,20 @@ def _seed_user(user_store, uid, profiles):
         "createdAt": "2026-10-01T00:00:00+00:00",
     }
     return create_access_token(uid)
+
+
+LOAD_BODY = {
+    "pickupLocation": "Pimpalgaon",
+    "dropLocation": "Nashik APMC",
+    "crop": "Onion",
+    "quantityQuintals": 20,
+    "packaging": "Gunny Bags",
+    "perishable": False,
+    "preferredVehicleType": "Tractor Trolley",
+    "pickupDate": "2026-11-05",
+    "targetFare": 2500,
+    "termsAccepted": True,
+}
 
 
 async def _accepted_booking(client, user_store, **vehicle_overrides):
@@ -65,26 +70,6 @@ async def _accepted_booking(client, user_store, **vehicle_overrides):
     return token, booking, vehicle
 
 
-async def _pay_fare(client, token, booking_id, monkeypatch, payment_id="pay_test_1"):
-    """Create the fare order, then verify the capture (real API, test keys)."""
-    order_resp = await client.post(
-        f"/v1/transport/bookings/{booking_id}/payments", json={}, headers=_auth(token)
-    )
-    assert order_resp.status_code == 200
-    order = order_resp.json()
-    verify_resp = await client.post(
-        f"/v1/transport/bookings/{booking_id}/payments",
-        json={
-            "razorpayOrderId": order["orderId"],
-            "razorpayPaymentId": payment_id,
-            "razorpaySignature": _sign(order["orderId"], payment_id),
-        },
-        headers=_auth(token),
-    )
-    assert verify_resp.status_code == 200
-    return order, verify_resp.json()
-
-
 async def _deliver(client, token, booking_id):
     for payload in ({"status": "enRoute"}, {"status": "delivered", **POD}):
         resp = await client.patch(
@@ -93,290 +78,186 @@ async def _deliver(client, token, booking_id):
         assert resp.status_code == 200
 
 
-# ---------------- P0-1: fare payment & escrow ----------------
+# ---------------- Direct-connect: money endpoints gone, terms gates live ----------------
 
 
-async def test_fare_payment_order_and_verify_funds_escrow(client, user_store, monkeypatch):
-    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_SECRET)
+async def test_money_endpoints_removed_under_direct_connect(client, user_store):
     token = await _token(client)
     booking = (await _book(client, token)).json()
-    fare_paisa = booking["fare"] * 100
+    for method, url in (
+        ("POST", f"/v1/transport/bookings/{booking['id']}/payments"),
+        ("POST", f"/v1/transport/bookings/{booking['id']}/escrow/release"),
+        ("GET", "/v1/transport/wallet"),
+        ("POST", "/v1/transport/payouts"),
+        ("GET", "/v1/transport/payouts"),
+        ("GET", f"/v1/transport/bookings/{booking['id']}/commission-invoice"),
+        ("GET", "/v1/transport/settlements"),
+    ):
+        resp = await client.request(method, url, headers=_auth(token))
+        assert resp.status_code == 404, f"{method} {url} → {resp.status_code}"
 
-    # only the booker can pay
+
+async def test_post_load_requires_terms_acceptance(client, user_store):
+    token = await _token(client)
+    body = {k: v for k, v in LOAD_BODY.items() if k != "termsAccepted"}
+    resp = await client.post("/v1/transport/loads", json=body, headers=_auth(token))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "TERMS_REQUIRED"
+
+    resp = await client.post("/v1/transport/loads", json=LOAD_BODY, headers=_auth(token))
+    assert resp.status_code == 201
+    load = resp.json()
+    accepted = [
+        d for key, d in user_store.items()
+        if key.startswith("terms_acceptances/") and d.get("acceptedFor") == "load"
+    ]
+    assert any(d["loadId"] == load["id"] and d["userId"] == "uid-1" for d in accepted)
+    assert all(d["termsVersion"] for d in accepted)
+
+
+async def test_accept_bid_requires_farmer_terms_confirmation(client, user_store):
+    token = await _token(client)
+    load = (await client.post("/v1/transport/loads", json=LOAD_BODY, headers=_auth(token))).json()
+    await _activate(client, token)
+    bid = (
+        await client.post(
+            f"/v1/transport/loads/{load['id']}/bid",
+            json={"quotedFare": 2800, "termsAccepted": True, "mpin": "1234"},
+            headers=_auth(token),
+        )
+    ).json()
+
+    # without the farmer's confirmation contacts stay hidden
+    resp = await client.post(
+        f"/v1/transport/loads/{load['id']}/accept-bid",
+        json={"bidId": bid["id"]},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "TERMS_REQUIRED"
+    stored = (await client.get(f"/v1/transport/loads/{load['id']}/bids", headers=_auth(token))).json()
+    assert stored["data"][0]["status"] == "pending"
+
+    # with confirmation → booked, contacts revealed, both parties on record
+    resp = await client.post(
+        f"/v1/transport/loads/{load['id']}/accept-bid",
+        json={"bidId": bid["id"], "termsAccepted": True, "mpin": "1234"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    reveal = resp.json()["contactReveal"]
+    assert reveal["farmer"]["phoneDigits"]
+    assert reveal["transporter"]["phoneDigits"]
+    booking = resp.json()["booking"]
+    reveals = [
+        d for key, d in user_store.items()
+        if key.startswith("terms_acceptances/") and d.get("acceptedFor") == "contactReveal"
+    ]
+    parties = {d["userId"] for d in reveals if d.get("bookingId") == booking["id"]}
+    assert parties == {"uid-1"}
+
+    # chat room exists right after acceptance (no payment needed)
+    assert user_store[f"chat_rooms/{booking['id']}"]["kind"] == "transport"
+
+
+async def test_confirm_delivery_is_booker_gated_and_idempotent(client, user_store):
+    token = await _token(client)
+    booking = (await _book(client, token)).json()
+    await _activate(client, token)
+    vehicle = await _add_vehicle(client, token)
+    _verify_vehicle(user_store, vehicle["id"])
+    resp = await client.post(
+        f"/v1/transport/bookings/{booking['id']}/accept",
+        json={"vehicleId": vehicle["id"], "vehicleNo": vehicle["registrationNo"]},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    await _deliver(client, token, booking["id"])
+
+    # not delivered yet → nothing to confirm
+    other = (await _book(client, token)).json()
+    resp = await client.post(
+        f"/v1/transport/bookings/{other['id']}/confirm-delivery", headers=_auth(token)
+    )
+    assert resp.status_code == 409
+
+    # stranger cannot confirm
     stranger = _seed_user(user_store, "uid-9", ("farmer",))
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments", json={}, headers=_auth(stranger)
+        f"/v1/transport/bookings/{booking['id']}/confirm-delivery", headers=_auth(stranger)
     )
     assert resp.status_code == 403
 
-    # order creation → orderId for the full fare
+    # booker confirms; second call is an idempotent no-op
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments", json={}, headers=_auth(token)
+        f"/v1/transport/bookings/{booking['id']}/confirm-delivery", headers=_auth(token)
     )
     assert resp.status_code == 200
-    order = resp.json()
-    assert order["orderId"].startswith("order_dev_")
-    assert order["amountPaisa"] == fare_paisa
-    assert order["status"] == "created"
-
-    # bad signature → 400
+    first = user_store[f"transport_bookings/{booking['id']}"]["farmerConfirmedAt"]
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments",
-        json={
-            "razorpayOrderId": order["orderId"],
-            "razorpayPaymentId": "pay_bad",
-            "razorpaySignature": "bogus",
-        },
-        headers=_auth(token),
-    )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "PAYMENT_SIGNATURE_INVALID"
-
-    # mismatched order → 400
-    resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments",
-        json={
-            "razorpayOrderId": "order_dev_someone_else",
-            "razorpayPaymentId": "pay_bad",
-            "razorpaySignature": "bogus",
-        },
-        headers=_auth(token),
-    )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "ORDER_MISMATCH"
-
-    # good signature → captured, escrow held
-    resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments",
-        json={
-            "razorpayOrderId": order["orderId"],
-            "razorpayPaymentId": "pay_ok",
-            "razorpaySignature": _sign(order["orderId"], "pay_ok"),
-        },
-        headers=_auth(token),
+        f"/v1/transport/bookings/{booking['id']}/confirm-delivery", headers=_auth(token)
     )
     assert resp.status_code == 200
-    body = resp.json()
-    payment = body["payment"]
-    assert payment["amountPaisa"] == fare_paisa
-    assert payment["razorpayOrderId"] == order["orderId"]
-    assert payment["razorpayPaymentId"] == "pay_ok"
-    assert payment["status"] == "captured"
-    assert body["escrow"]["status"] == "held"
-    assert body["escrow"]["amountPaisa"] == fare_paisa
-    assert body["escrow"]["releaseAt"]
-    assert body["escrow"]["disputeWindowHours"] == settings.escrow_dispute_window_hours
-
-    stored = user_store[f"transport_bookings/{booking['id']}"]
-    assert stored["payments"][0]["status"] == "captured"
-
-    # re-verifying the same payment is an idempotent no-op
-    resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments",
-        json={
-            "razorpayOrderId": order["orderId"],
-            "razorpayPaymentId": "pay_ok",
-            "razorpaySignature": _sign(order["orderId"], "pay_ok"),
-        },
-        headers=_auth(token),
-    )
-    assert resp.status_code == 200
-    assert resp.json()["duplicate"] is True
-    assert user_store[f"transport_bookings/{booking['id']}"]["escrow"]["amountPaisa"] == fare_paisa
+    assert user_store[f"transport_bookings/{booking['id']}"]["farmerConfirmedAt"] == first
+    notes = [d for key, d in user_store.items() if key.startswith("notifications/")]
+    assert sum(1 for n in notes if n.get("type") == "delivery_confirmed") == 1
 
 
-async def test_fare_payment_rejected_on_terminal_bookings(client, user_store, monkeypatch):
-    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_SECRET)
+async def test_trip_report_support_case_lane(client, user_store):
     token = await _token(client)
     booking = (await _book(client, token)).json()
+    await _activate(client, token)
+    vehicle = await _add_vehicle(client, token)
+    _verify_vehicle(user_store, vehicle["id"])
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/cancel",
-        json={"reason": "plans changed"},
+        f"/v1/transport/bookings/{booking['id']}/accept",
+        json={"vehicleId": vehicle["id"], "vehicleNo": vehicle["registrationNo"]},
         headers=_auth(token),
     )
     assert resp.status_code == 200
-    resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/payments", json={}, headers=_auth(token)
-    )
-    assert resp.status_code == 409
 
-
-async def test_escrow_release_on_delivery_credits_wallet_and_ledger(client, user_store, monkeypatch):
-    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_SECRET)
-    token, booking, _ = await _accepted_booking(client, user_store)
-    await _pay_fare(client, token, booking["id"], monkeypatch)
-    amount_paisa = booking["fare"] * 100
-    commission = int(round(amount_paisa * 0.10))
-
-    # window still open and trip not delivered → release blocked
-    resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/escrow/release", headers=_auth(token)
-    )
-    assert resp.status_code == 409
-    assert resp.json()["error"]["code"] == "ESCROW_NOT_DUE"
-
-    # unpaid booking → not held
-    other_booking = (await _book(client, token)).json()
-    resp = await client.post(
-        f"/v1/transport/bookings/{other_booking['id']}/escrow/release", headers=_auth(token)
-    )
-    assert resp.status_code == 409
-    assert resp.json()["error"]["code"] == "ESCROW_NOT_HELD"
-
-    # non-party cannot release
+    # a non-party cannot file
     stranger = _seed_user(user_store, "uid-9", ("transport",))
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/escrow/release", headers=_auth(stranger)
+        f"/v1/transport/bookings/{booking['id']}/reports",
+        json={"kind": "damage", "note": "cartons crushed"},
+        headers=_auth(stranger),
     )
     assert resp.status_code == 403
 
-    await _deliver(client, token, booking["id"])
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/escrow/release", headers=_auth(token)
-    )
-    assert resp.status_code == 200
-    escrow = resp.json()["escrow"]
-    assert escrow["status"] == "released"
-    assert escrow["releasedAt"]
-    assert escrow["commissionPaisa"] == commission
-    assert escrow["netReleasePaisa"] == amount_paisa - commission
-
-    stored = user_store[f"transport_bookings/{booking['id']}"]
-    assert stored["escrow"]["status"] == "released"
-
-    # settlement/ledger entries written
-    ledger = user_store[f"platform_ledger/escrow_rel_{booking['id']}"]
-    assert ledger["kind"] == "transport_escrow_release"
-    assert ledger["amountPaisa"] == amount_paisa - commission
-    wallet_entries = [
-        d for key, d in user_store.items() if key.startswith("transport_wallet_ledger/")
-    ]
-    assert len(wallet_entries) == 1
-    assert wallet_entries[0]["kind"] == "credit"
-    assert wallet_entries[0]["amountPaisa"] == amount_paisa - commission
-
-    # wallet read: balance + TDS 194-O summary
-    resp = await client.get("/v1/transport/wallet", headers=_auth(token))
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["balancePaisa"] == amount_paisa - commission
-    assert body["tds"]["tdsDeductedPaisa"] == int(round(amount_paisa * 0.01))
-    assert body["tds"]["tdsRatePct"] == 1.0
-    assert body["entryCount"] == 1
-
-
-async def test_release_booking_escrow_module_helper_is_clock_gated(client, user_store, monkeypatch):
-    """The nightly-job import: releases only when held, unpaused and due."""
-    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_SECRET)
-    token, booking, _ = await _accepted_booking(client, user_store)
-    await _pay_fare(client, token, booking["id"], monkeypatch)
-    amount_paisa = booking["fare"] * 100
-
-    # not due yet → untouched
-    stored = user_store[f"transport_bookings/{booking['id']}"]
-    result = await transport_router.release_booking_escrow(stored)
-    assert result["escrow"]["status"] == "held"
-
-    # dispute inside the window pauses the release
-    stored["escrow"]["disputeOpenedAt"] = datetime.now(timezone.utc).isoformat()
-    result = await transport_router.release_booking_escrow(stored)
-    assert result["escrow"]["status"] == "held"
-
-    # window closed silently → released with settlement entries
-    stored["escrow"]["disputeOpenedAt"] = None
-    stored["escrow"]["disputeResolvedAt"] = datetime.now(timezone.utc).isoformat()
-    stored["escrow"]["releaseAt"] = (
-        datetime.now(timezone.utc) - timedelta(hours=1)
-    ).isoformat()
-    result = await transport_router.release_booking_escrow(stored)
-    assert result["escrow"]["status"] == "released"
-    assert result["escrow"]["netReleasePaisa"] == amount_paisa - int(round(amount_paisa * 0.10))
-    assert user_store[f"transport_bookings/{booking['id']}"]["escrow"]["status"] == "released"
-    wallet_entries = [
-        d for key, d in user_store.items() if key.startswith("transport_wallet_ledger/")
-    ]
-    assert len(wallet_entries) == 1
-
-
-async def test_wallet_payout_is_mpin_gated(client, user_store, monkeypatch):
-    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_SECRET)
-    token, booking, _ = await _accepted_booking(client, user_store)
-    await _pay_fare(client, token, booking["id"], monkeypatch)
-    await _deliver(client, token, booking["id"])
-    resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/escrow/release", headers=_auth(token)
-    )
-    assert resp.status_code == 200
-    balance = booking["fare"] * 100 - int(round(booking["fare"] * 100 * 0.10))
-
-    # a user without an MPIN gets 409 (registered users default to mpin "1234")
-    no_mpin = _seed_user(user_store, "uid-9", ("transport",))
-    resp = await client.post(
-        "/v1/transport/payouts", json={"mpin": "4567"}, headers=_auth(no_mpin)
-    )
-    assert resp.status_code == 409
-    assert resp.json()["error"]["code"] == "MPIN_NOT_SET"
-
-    # wrong MPIN → 401 (registration set mpin "1234")
-    resp = await client.post(
-        "/v1/transport/payouts", json={"mpin": "0000"}, headers=_auth(token)
-    )
-    assert resp.status_code == 401
-    assert resp.json()["error"]["code"] == "WRONG_MPIN"
-
-    # no verified bank account → 422
-    resp = await client.post(
-        "/v1/transport/payouts", json={"mpin": "1234"}, headers=_auth(token)
-    )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "NO_VERIFIED_BANK_ACCOUNT"
-
-    user_store["users/uid-1/bank_accounts/ba_1"] = {
-        "id": "ba_1",
-        "verifyStatus": "verified",
-        "isPrimary": True,
-        "razorpayFundAccountId": "fa_test_1",
-        "createdAt": "2026-09-01T00:00:00+00:00",
-    }
-
-    # over-balance request → 422
-    resp = await client.post(
-        "/v1/transport/payouts",
-        json={"mpin": "1234", "amountPaisa": balance + 100},
+        f"/v1/transport/bookings/{booking['id']}/reports",
+        json={"kind": "damage", "note": "cartons crushed", "photos": ["https://x/1.jpg"]},
         headers=_auth(token),
     )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "INSUFFICIENT_BALANCE"
-
-    calls = []
-
-    async def fake_payout(fund_account_id, amount_paise, reference_id):
-        calls.append((fund_account_id, amount_paise, reference_id))
-        return {"id": "po_test_1", "status": "processed"}
-
-    monkeypatch.setattr("app.routers.transport.create_razorpayx_payout", fake_payout)
-
-    # full-balance payout → processed, wallet drained
-    resp = await client.post(
-        "/v1/transport/payouts", json={"mpin": "1234"}, headers=_auth(token)
-    )
     assert resp.status_code == 201
-    body = resp.json()
-    assert body["amountPaisa"] == balance
-    assert body["status"] == "processed"
-    assert body["razorpayPayoutId"] == "po_test_1"
-    assert calls[0][0] == "fa_test_1"
-    assert calls[0][1] == balance
+    report = resp.json()
+    assert report["kind"] == "damage"
+    assert report["status"] == "open"
+    assert "claimPaisa" not in report
 
-    payouts = [d for key, d in user_store.items() if key.startswith("transport_payouts/")]
-    assert len(payouts) == 1
-    assert payouts[0]["userId"] == "uid-1"
+    # unknown kinds coerce to "other"; the other party is notified
+    resp = await client.post(
+        f"/v1/transport/bookings/{booking['id']}/reports",
+        json={"kind": "whatever", "note": "late arrival"},
+        headers=_auth(token),
+    )
+    assert resp.json()["kind"] == "other"
+    notes = [d for key, d in user_store.items() if key.startswith("notifications/")]
+    assert any(n.get("type") == "trip_report_opened" for n in notes)
 
-    resp = await client.get("/v1/transport/wallet", headers=_auth(token))
-    assert resp.json()["balancePaisa"] == 0
-    kinds = [e["kind"] for e in resp.json()["entries"]]
-    assert kinds.count("credit") == 1
-    assert kinds.count("debit") == 1
+    listed = (
+        await client.get(f"/v1/transport/bookings/{booking['id']}/reports", headers=_auth(token))
+    ).json()
+    assert listed["total"] == 2
+
+    # old damage-dispute lane is gone
+    resp = await client.post(
+        f"/v1/transport/bookings/{booking['id']}/damage-disputes",
+        json={"photos": [], "claimPaisa": 100},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 404
 
 
 # ---------------- P1-27: ratings received ----------------
@@ -557,10 +438,10 @@ async def test_multi_drop_stops_and_per_stop_pod(client, user_store):
 # ---------------- P2-37: mid-trip breakdown ----------------
 
 
-async def test_breakdown_settles_escrow_pro_rata_and_notifies(client, user_store, monkeypatch):
-    monkeypatch.setattr(settings, "razorpay_key_secret", RZP_SECRET)
+async def test_breakdown_parks_trip_and_notifies_without_money_movement(client, user_store):
+    """Direct-connect: a breakdown parks the trip and notifies the booker for
+    the re-match — no pro-rata release, refund, wallet or ledger entries."""
     token, booking, _ = await _accepted_booking(client, user_store)
-    await _pay_fare(client, token, booking["id"], monkeypatch)
     resp = await client.patch(
         f"/v1/transport/bookings/{booking['id']}",
         json={"status": "enRoute"},
@@ -568,7 +449,6 @@ async def test_breakdown_settles_escrow_pro_rata_and_notifies(client, user_store
     )
     assert resp.status_code == 200
 
-    # half the distance covered before the breakdown
     resp = await client.post(
         f"/v1/transport/bookings/{booking['id']}/breakdown",
         json={
@@ -581,34 +461,19 @@ async def test_breakdown_settles_escrow_pro_rata_and_notifies(client, user_store
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "breakdown"
-    fare_paisa = booking["fare"] * 100
-    assert body["breakdown"]["proRataFarePaisa"] == fare_paisa // 2
-    assert body["breakdown"]["refundPaisa"] == fare_paisa // 2
     assert body["breakdown"]["reportedBy"] == "uid-1"
-
-    # escrow split: pro-rata net released, remainder refunded to the booker
-    escrow = body["escrow"]
-    assert escrow["status"] == "released"
-    pro_rata = fare_paisa // 2
-    commission = int(round(pro_rata * 0.10))
-    assert escrow["commissionPaisa"] == commission
-    assert escrow["netReleasePaisa"] == pro_rata - commission
-    assert escrow["breakdownRefundPaisa"] == pro_rata
-    refund = body["breakdown"]["refund"]
-    assert refund["amountPaisa"] == pro_rata
-    assert refund["razorpayRefundId"].startswith("rfnd_dev_")
+    assert body["breakdown"]["completedDistanceKm"] == 10
+    # no money movement anywhere
+    assert "escrow" not in body
+    assert "proRataFarePaisa" not in body["breakdown"]
+    assert not any(k.startswith("transport_wallet_ledger/") for k in user_store)
+    assert not any(
+        k.startswith("platform_ledger/") for k in user_store
+    )
 
     stored = user_store[f"transport_bookings/{booking['id']}"]
     assert stored["status"] == "breakdown"
     assert any(w["waypoint"] == "breakdown" for w in stored["waypointsLog"])
-    ledger = user_store[f"platform_ledger/brk_{booking['id']}"]
-    assert ledger["kind"] == "transport_breakdown_prorata"
-    assert ledger["refundPaisa"] == pro_rata
-    wallet_entries = [
-        d for key, d in user_store.items() if key.startswith("transport_wallet_ledger/")
-    ]
-    assert len(wallet_entries) == 1
-    assert wallet_entries[0]["amountPaisa"] == pro_rata - commission
 
     # booker notified for the re-match
     notes = [d for key, d in user_store.items() if key.startswith("notifications/")]
@@ -636,7 +501,7 @@ async def test_breakdown_requires_assigned_live_trip(client, user_store):
     )
     assert resp.status_code == 403  # uid-1 is not the assigned transporter yet
 
-    # no completed distance → pro-rata stays zero, booking still parks
+    # no completed distance recorded → booking still parks
     token2, booking2, _ = await _accepted_booking(client, user_store)
     resp = await client.post(
         f"/v1/transport/bookings/{booking2['id']}/breakdown",
@@ -645,7 +510,7 @@ async def test_breakdown_requires_assigned_live_trip(client, user_store):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "breakdown"
-    assert resp.json()["breakdown"]["proRataFarePaisa"] == 0
+    assert resp.json()["breakdown"]["completedDistanceKm"] is None
 
     # already broken-down trip → 409
     resp = await client.post(
@@ -680,10 +545,11 @@ async def test_loads_matched_ranked_for_my_fleet_and_routes(client, user_store):
                 "pickupLocation": "मालेगाव, नासिक",
                 "dropLocation": "सूरत सरदार मार्केट",
                 "crop": "हरी मिर्च",
-                "quantityQuintals": 22,
+                "quantityQuintals": 12,
                 "preferredVehicleType": "Bolero Maxi",
-                "pickupDate": "2026-10-20",
+                "pickupDate": "2026-11-20",
                 "targetFare": 9500,
+                "termsAccepted": True,
             },
             headers=_auth(token),
         )
@@ -695,10 +561,11 @@ async def test_loads_matched_ranked_for_my_fleet_and_routes(client, user_store):
                 "pickupLocation": "पिंपलगाव, नासिक",
                 "dropLocation": "आज़ादपुर मंडी, दिल्ली",
                 "crop": "टमाटर",
-                "quantityQuintals": 35,
+                "quantityQuintals": 5,
                 "preferredVehicleType": "Tata Ace",
-                "pickupDate": "2026-10-21",
+                "pickupDate": "2026-11-21",
                 "targetFare": 38000,
+                "termsAccepted": True,
             },
             headers=_auth(token),
         )

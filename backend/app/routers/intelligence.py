@@ -386,7 +386,8 @@ async def _transport_intel(uid: str, now: datetime) -> dict:
     vehicle_ids = {v.get("id") for v in vehicles}
     bookings = await query("transport_bookings", [], limit=1000)
     mine = [b for b in bookings if b.get("vehicleId") in vehicle_ids]
-    settlements = await query("settlements", [("role", "==", "transport"), ("entityId", "==", uid)], limit=500)
+    # Direct-connect: transport fares settle off-platform, so there are no
+    # transport settlements to surface.
     months = _last_months(6, now)
     this_month = now.strftime("%Y-%m")
 
@@ -442,14 +443,7 @@ async def _transport_intel(uid: str, now: datetime) -> dict:
         )
 
     insights = []
-    pending = round(
-        sum(s.get("netRupees", 0) for s in settlements if s.get("status") == "pending"), 2
-    )
-    if pending > 0:
-        insights.append(
-            {"severity": "info", "labelKey": "settlement_pending", "params": {"amount": pending}}
-        )
-    pending_settlements_paisa = int(round(pending * 100))
+    pending_settlements_paisa = 0
     return {
         "kpis": kpis,
         "series": series,

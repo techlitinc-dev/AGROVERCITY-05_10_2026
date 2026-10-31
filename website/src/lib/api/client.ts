@@ -43,6 +43,21 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Restricted onboarding tokens are REJECTED by protected endpoints by
+      // design — refreshing cannot fix that (the rotated token is still
+      // onboarding-typed) and would burn the refresh family. Reject as-is;
+      // the registration journey surfaces the error itself.
+      const current = localStorage.getItem('agrovercity_access_token');
+      if (current && current.split('.').length === 3) {
+        try {
+          const payload = JSON.parse(atob(current.split('.')[1]));
+          if (payload?.type === 'onboarding') {
+            return Promise.reject(error);
+          }
+        } catch {
+          // malformed token — fall through to the normal refresh path
+        }
+      }
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('agrovercity_refresh_token');
       if (refreshToken) {

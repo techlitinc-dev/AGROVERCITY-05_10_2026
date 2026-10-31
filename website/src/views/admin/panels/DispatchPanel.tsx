@@ -200,7 +200,7 @@ const BookingDetailCard: React.FC<{ bookingId: string; onClose: () => void }> = 
   return (
     <PanelShell
       title={`Trip file — ${bookingId}`}
-      subtitle="GET /admin/transport/bookings/{id}: booking, negotiation rounds, waypoint history, expenses, POD photos, escrow & payments."
+      subtitle="GET /admin/transport/bookings/{id}: booking, negotiation rounds, waypoint history, expenses, POD photos & trip reports (direct-connect — no escrow or payments)."
       icon={Truck}
       loading={detail.loading}
       error={detail.error}

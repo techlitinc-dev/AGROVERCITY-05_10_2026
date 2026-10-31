@@ -107,17 +107,9 @@ async def run_settlements(period_start: str, period_end: str) -> dict:
     config = await _config()
     # role -> entityId -> {gross, sourceIds}
     totals: dict[str, dict[str, dict]] = {role: {} for role in PCT_KEYS}
-
-    bookings = await query("transport_bookings", [("status", "==", "delivered")], limit=1000)
-    for booking in bookings:
-        if not _in_period(booking.get("date"), period_start, period_end):
-            continue
-        vehicle = await get_doc("vehicles", booking.get("vehicleId") or "")
-        if vehicle is None:
-            continue
-        bucket = totals["transport"].setdefault(vehicle["ownerId"], {"gross": 0, "sourceIds": []})
-        bucket["gross"] += int(booking.get("fare", 0))
-        bucket["sourceIds"].append(booking["id"])
+    # Direct-connect: transport fares settle directly between farmer and
+    # transporter, so delivered transport bookings no longer accrue a
+    # platform settlement bucket.
 
     bookings = await query("equipment_bookings", [("status", "==", "completed")], limit=1000)
     for booking in bookings:

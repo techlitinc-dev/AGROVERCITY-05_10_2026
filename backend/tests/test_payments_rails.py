@@ -286,6 +286,32 @@ async def test_payout_pays_verified_account(client, user_store):
 
 
 async def test_tds_ledger_and_commission_invoice(client, user_store):
+    user_store["broker_deals/deal-t1"] = {
+        "id": "deal-t1",
+        "brokerId": "uid-t1",
+        "status": "completed",
+        "grossAmount": 2000,
+        "createdAt": "2026-09-08T10:00:00+00:00",
+    }
+    resp = await client.post("/v1/jobs/settlements/run", json=PERIOD)
+    assert resp.status_code == 200
+
+    tds = user_store["tds_ledger/tds_st_broker_uid-t1_2026-09-07"]
+    assert tds["grossPaisa"] == 200000
+    assert tds["tdsPaisa"] == 2000
+    assert tds["section"] == "194-O"
+    assert tds["period"] == "2026-09-07..2026-09-13"
+
+    invoice = user_store["invoices/inv_st_broker_uid-t1_2026-09-07"]
+    assert invoice["kind"] == "commission"
+    assert invoice["commissionPaisa"] == 4000  # brokerPct 2
+    assert invoice["gstPaisa"] == 720
+    assert invoice["totalPaisa"] == 4720
+
+
+async def test_no_tds_or_invoice_for_transport_under_direct_connect(client, user_store):
+    """Delivered transport bookings no longer settle through the platform, so
+    the settlement run writes no TDS line and no commission invoice for them."""
     user_store["vehicles/veh-t1"] = {"id": "veh-t1", "ownerId": "uid-t1"}
     user_store["transport_bookings/b-t1-0"] = {
         "id": "b-t1-0",
@@ -296,18 +322,8 @@ async def test_tds_ledger_and_commission_invoice(client, user_store):
     }
     resp = await client.post("/v1/jobs/settlements/run", json=PERIOD)
     assert resp.status_code == 200
-
-    tds = user_store["tds_ledger/tds_st_transport_uid-t1_2026-09-07"]
-    assert tds["grossPaisa"] == 200000
-    assert tds["tdsPaisa"] == 2000
-    assert tds["section"] == "194-O"
-    assert tds["period"] == "2026-09-07..2026-09-13"
-
-    invoice = user_store["invoices/inv_st_transport_uid-t1_2026-09-07"]
-    assert invoice["kind"] == "commission"
-    assert invoice["commissionPaisa"] == 20000
-    assert invoice["gstPaisa"] == 3600
-    assert invoice["totalPaisa"] == 23600
+    assert not any(k.startswith("tds_ledger/tds_st_transport_") for k in user_store)
+    assert not any(k.startswith("invoices/inv_st_transport_") for k in user_store)
 
 
 # ---------------- Reconciliation ----------------

@@ -731,13 +731,17 @@ async def get_admin_financial_report(
     format: str = Query("json"),
     user: dict = Depends(require_admin_role("superadmin", "finance_admin")),
 ):
-    """P2-27 (SOP-25 §3): Consolidated financial report (GST invoices, TDS deductions, settlement fees)."""
+    """P2-27 (SOP-25 §3): Consolidated financial report (GST invoices, TDS deductions, settlement fees).
+
+    Transport fares settle directly between farmer and transporter under
+    direct-connect, so transport contributes GMV reporting only — no
+    commission, GST-on-commission, or TDS on transport fares."""
     purchases = await query("purchases", [("status", "==", "completed")], limit=2000)
     transport_bookings = await query("transport_bookings", [("status", "==", "delivered")], limit=2000)
 
     total_gmv = sum(float(p.get("agreedPrice") or p.get("totalAmount") or 0) for p in purchases)
     transport_gmv = sum(float(b.get("fare") or 0) for b in transport_bookings)
-    platform_commission = round(total_gmv * 0.02 + transport_gmv * 0.05, 2)
+    platform_commission = round(total_gmv * 0.02, 2)
     gst_collected = round(platform_commission * 0.18, 2)
     tds_deducted = round(total_gmv * 0.01, 2)
 
@@ -861,9 +865,10 @@ async def list_all_subscriptions(
 async def escrow_holdings(
     user: dict = Depends(require_admin_role("superadmin", "finance_admin", "compliance_officer")),
 ):
-    """Aggregated in-escrow money: trade purchases and transport trips whose
-    escrow is currently `held` (services/escrow.py representation), with
-    platform totals in paisa."""
+    """Aggregated in-escrow money: trade purchases whose escrow is currently
+    `held` (services/escrow.py representation), with platform totals in paisa.
+    Transport trips carry no escrow under direct-connect, so they never
+    appear here."""
     rows = []
 
     purchases = await query("purchases", None, limit=2000)
@@ -884,26 +889,6 @@ async def escrow_holdings(
                 "counterpartyName": purchase.get("farmerName"),
                 "amountPaise": amount_paise,
                 "heldSince": escrow.get("fundedAt") or purchase.get("createdAt"),
-                "status": escrow.get("status"),
-                "paused": bool(escrow.get("disputeOpenedAt")) and not escrow.get("disputeResolvedAt"),
-            }
-        )
-
-    bookings = await query("transport_bookings", None, limit=2000)
-    for booking in bookings:
-        escrow = booking.get("escrow") or {}
-        if escrow.get("status") != "held":
-            continue
-        holder = users_by_id.get(booking.get("userId") or "") or {}
-        rows.append(
-            {
-                "kind": "transport_booking",
-                "refId": booking.get("id"),
-                "holderName": holder.get("name") or booking.get("userId"),
-                "holderId": booking.get("userId"),
-                "counterpartyName": booking.get("transporterId"),
-                "amountPaise": int(escrow.get("amountPaise") or 0),
-                "heldSince": escrow.get("fundedAt") or booking.get("createdAt"),
                 "status": escrow.get("status"),
                 "paused": bool(escrow.get("disputeOpenedAt")) and not escrow.get("disputeResolvedAt"),
             }

@@ -72,10 +72,11 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
             "quantityQuintals": 18.0,
             "packaging": "Plastic Crates",
             "perishable": True,
-            "preferredVehicleType": "Tata Ace",
-            "pickupDate": "2026-09-30",
+            "preferredVehicleType": "Tractor Trolley",
+            "pickupDate": "2026-11-15",
             "targetFare": 2500,
             "notes": "तुरंत लोडिंग आवश्यक",
+            "termsAccepted": True,
         },
         headers=_auth(farmer_token),
     )
@@ -84,7 +85,7 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
     custom_load_id = custom_load["id"]
 
     # 3. Transporter registers vehicle & submits bid on the load
-    veh = await _add_vehicle(client, trans_token, registrationNo="MH-12-PQ-4567")
+    veh = await _add_vehicle(client, trans_token, registrationNo="MH-12-PQ-4567", vehicleType="Tractor Trolley", capacityTonnes=3.0)
     # Direct-connect apply gate: owned vehicle must be document-verified and
     # free on the pickup date (stands in for the admin KYC review).
     user_store[f"vehicles/{veh['id']}"]["docStatus"] = "verified"
@@ -100,7 +101,7 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
     }
     await client.put(
         f"/v1/transport/vehicles/{veh['id']}/availability",
-        json={"availableDates": ["2026-09-30"]},
+        json={"availableDates": ["2026-11-15"]},
         headers=_auth(trans_token),
     )
     bid_resp = await client.post(
@@ -126,7 +127,8 @@ async def test_load_board_bidding_and_acceptance(client, user_store):
 
     # 5. Farmer accepts the bid -> auto-creates booking in transport_bookings
     accept_resp = await client.post(
-        f"/v1/transport/loads/{custom_load_id}/accept-bid?bidId={bid['id']}",
+        f"/v1/transport/loads/{custom_load_id}/accept-bid",
+        json={"bidId": bid["id"], "termsAccepted": True, "mpin": "1234"},
         headers=_auth(farmer_token),
     )
     assert accept_resp.status_code == 200

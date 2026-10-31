@@ -10,10 +10,6 @@ from tests.test_transport import (
 from tests.test_users import _auth
 
 
-def _kyc_case(user_store):
-    return user_store.get("kyc_cases/kyc_uid-1_transport") or {}
-
-
 async def _setup(client, user_store, **vehicle_overrides):
     token = await _token(client)
     booking = (await _book(client, token)).json()
@@ -40,14 +36,14 @@ async def test_expired_fitness_doc_blocks_accept_422(client, user_store):
     assert resp.json()["error"]["code"] == "VEHICLE_NOT_VERIFIED"
 
 
-async def test_unverified_owner_blocks_accept_422(client, user_store):
+async def test_new_vehicle_accept_works_without_review(client, user_store):
+    """Direct-connect: vehicles are self-declared and usable at creation —
+    no KYC case or review step is required to accept a booking."""
     token, booking, vehicle = await _setup(client, user_store)
-    # no kyc case, docStatus left pending — the old shim would have allowed a
-    # bare docStatus flip; the real pipeline must not.
 
     resp = await _attempt_accept(client, token, booking, vehicle)
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "VEHICLE_NOT_VERIFIED"
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "accepted"
 
 
 async def test_verified_case_with_valid_docs_accepts(client, user_store):
@@ -60,7 +56,6 @@ async def test_verified_case_with_valid_docs_accepts(client, user_store):
     resp = await _attempt_accept(client, token, booking, vehicle)
     assert resp.status_code == 200
     assert resp.json()["status"] == "accepted"
-    assert _kyc_case(user_store)["docs"][0]["status"] == "verified"
 
 
 async def test_doc_expiring_in_7_days_emits_reminder_task(client, user_store):

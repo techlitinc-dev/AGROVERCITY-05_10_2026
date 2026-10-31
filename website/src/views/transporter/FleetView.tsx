@@ -193,10 +193,10 @@ export const FleetView: React.FC = () => {
     try {
       if (editingVehicle) {
         await transport.updateVehicle(editingVehicle.id, payload as Partial<TransportVehicle>);
-        flash('Vehicle updated — documents re-enter review (docStatus: pending).');
+        flash('Vehicle updated — it stays usable immediately (no review).');
       } else {
         await transport.addVehicle(payload as Partial<TransportVehicle>);
-        flash('Vehicle added to fleet — documents under review.');
+        flash('Vehicle added to fleet — ready to use immediately, no review.');
       }
       setVehModal(false);
       await load();
@@ -267,7 +267,7 @@ export const FleetView: React.FC = () => {
     }
   };
 
-  const docStatusOf = (v: TransportVehicle): string => v.docStatus ?? 'pending';
+  const docStatusOf = (v: TransportVehicle): string => v.docStatus ?? 'verified';
   const strikeCount = firstNum(compliance, ['strikeCount', 'noShowStrikes', 'strikes'], 0);
 
   /** Live trip this vehicle is currently assigned to (by id or registration no). */
@@ -514,7 +514,7 @@ export const FleetView: React.FC = () => {
       )}
 
       {/* Vehicle modal */}
-      <ModalSheet isOpen={vehModal} onClose={() => setVehModal(false)} title={editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'} description="Documents re-enter review on every change (docStatus resets to pending)" maxWidth="md">
+      <ModalSheet isOpen={vehModal} onClose={() => setVehModal(false)} title={editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'} description="Direct-connect: vehicles are usable immediately — ownership and documents are self-declared, no review." maxWidth="md">
         <form onSubmit={saveVehicle} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>

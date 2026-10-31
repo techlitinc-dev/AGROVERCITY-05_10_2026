@@ -505,7 +505,7 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
     if kind == "offer":
         path = f"/dashboard/p/myOffers/{room['id']}/chat"
     elif kind == "transport":
-        path = f"/dashboard/p/transport/trips/{room['id']}/chat"
+        path = f"/chat?room={room['id']}"
     elif kind == "direct":
         path = f"/dashboard/p/chats/{room['id']}"
     else:

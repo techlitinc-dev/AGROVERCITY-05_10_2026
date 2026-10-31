@@ -1,16 +1,17 @@
-from tests.test_transport import _activate, _add_vehicle, _token, _verify_vehicle
+from tests.test_transport import _activate, _add_vehicle, _other_transporter_token, _token, _verify_vehicle
 from tests.test_users import _auth
 
 LOAD_BODY = {
     "pickupLocation": "Pimpalgaon",
     "dropLocation": "Nashik APMC",
     "crop": "Onion",
-    "quantityQuintals": 40,
+    "quantityQuintals": 20,
     "packaging": "Gunny Bags",
     "perishable": False,
     "preferredVehicleType": "Tractor Trolley",
-    "pickupDate": "2026-10-05",
+    "pickupDate": "2026-11-05",
     "targetFare": 2500,
+    "termsAccepted": True,
 }
 
 
@@ -101,7 +102,7 @@ async def test_bid_requires_correct_mpin_when_on_file(client):
     assert resp.json()["error"]["code"] == "WRONG_MPIN"
 
 
-async def test_bid_contact_hidden_until_accepted_then_revealed(client):
+async def test_bid_contact_hidden_until_accepted_then_revealed(client, user_store):
     """Produce/vyapari parity: bids stay anonymized; the farmer's accept
     unlocks both sides' phone + WhatsApp and rejects sibling applications."""
     token = await _token(client)
@@ -118,10 +119,21 @@ async def test_bid_contact_hidden_until_accepted_then_revealed(client):
     assert first.status_code == 201
     assert "transporterPhone" not in first.json()
 
-    second = await client.post(
+    # The same transporter cannot stack a second active application.
+    duplicate = await client.post(
         f"/v1/transport/loads/{load['id']}/bid",
         json={"quotedFare": 2600, "termsAccepted": True, "mpin": "1234"},
         headers=_auth(token),
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "DUPLICATE_BID"
+
+    # A different transporter bids lower.
+    other_token = _other_transporter_token(user_store)
+    second = await client.post(
+        f"/v1/transport/loads/{load['id']}/bid",
+        json={"quotedFare": 2600, "termsAccepted": True},
+        headers=_auth(other_token),
     )
     assert second.status_code == 201
 
@@ -132,7 +144,7 @@ async def test_bid_contact_hidden_until_accepted_then_revealed(client):
 
     accept = await client.post(
         f"/v1/transport/loads/{load['id']}/accept-bid",
-        params={"bidId": first.json()["id"]},
+        json={"bidId": first.json()["id"], "termsAccepted": True, "mpin": "1234"},
         headers=_auth(token),
     )
     assert accept.status_code == 200
@@ -170,7 +182,13 @@ async def test_bid_vehicle_availability_gate(client, user_store):
     assert resp.status_code == 201
     load = resp.json()
     await _activate(client, token)
-    vehicle = await _add_vehicle(client, token)
+    vehicle = await _add_vehicle(
+        client,
+        token,
+        vehicleType="Eicher 6-Wheeler",
+        registrationNo="MH12 CD 9011",
+        capacityTonnes=6.0,
+    )
     _verify_vehicle(user_store, vehicle["id"])
 
     # Vehicle busy on the pickup date → rejected.

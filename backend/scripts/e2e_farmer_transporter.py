@@ -105,37 +105,6 @@ async def clear_otp_sessions(phone):
     return len(docs)
 
 
-async def seed_transport_kyc(uid, vehicle_id):
-    """The real KYC gate (transport.py::_vehicle_docs_verified): a kyc_cases doc
-    with rc+dl verified, plus vehicle docStatus='verified' (mirrors
-    tests/test_transport.py::_verify_vehicle)."""
-    from app.core.db import get_doc, set_doc
-    case_id = f"kyc_{uid[:8]}_transport"
-    await set_doc(
-        "kyc_cases",
-        case_id,
-        {
-            "caseId": case_id,
-            "userId": uid,
-            "persona": "transport",
-            "docs": [
-                {"docId": f"{case_id}:rc", "type": "rc", "status": "verified"},
-                {"docId": f"{case_id}:dl", "type": "dl", "status": "verified"},
-            ],
-            "status": "verified",
-        },
-    )
-    vehicle = await get_doc("vehicles", vehicle_id)
-    if vehicle is None:
-        raise StepFail(f"vehicle {vehicle_id} missing for KYC seed")
-    vehicle["docStatus"] = "verified"
-    vehicle["docReview"] = "kyc"
-    await set_doc("vehicles", vehicle_id, vehicle)
-    return case_id
-
-
-# ------------------------------------------------------------------- auth
-
 async def transporter_token_via_otp(client):
     cleared = await clear_otp_sessions(TRANSPORTER_PHONE)
     anon = Api(client)
@@ -424,9 +393,13 @@ async def transporter_flow(client):
         return f"{s1}", note
 
     async def t03_kyc_gate():
-        case_id = await seed_transport_kyc(CTX["transporter_uid"], CTX["vehicle_id"])
-        CTX["kyc_case_id"] = case_id
-        return "DB", f"wrote kyc_cases/{case_id} (rc+dl verified) + vehicles/{CTX['vehicle_id']} docStatus=verified"
+        # Direct-connect: no KYC review — the vehicle is usable at creation.
+        # The step now just asserts the fleet carries docStatus=verified.
+        s, fleet = await tr.j("GET", "/v1/transport/vehicles/my", expect=200)
+        mine = [v for v in fleet.get("data", []) if v.get("id") == CTX["vehicle_id"]]
+        if not mine or mine[0].get("docStatus") != "verified":
+            raise StepFail(f"vehicle not verified at creation: {mine}", s)
+        return s, f"vehicle {CTX['vehicle_id']} docStatus=verified (no review — direct-connect)"
 
     async def t04_vehicle_location():
         s, veh = await tr.j("POST", f"/v1/transport/vehicles/{CTX['vehicle_id']}/location",
@@ -521,24 +494,28 @@ async def transporter_flow(client):
         s2, exp = await tr.j("GET", f"/v1/transport/bookings/{bid}/expenses", expect=200)
         gross = float(exp.get("grossFare") or 0)
         comm = float(exp.get("platformCommission") or 0)
-        if gross <= 0 or abs(comm - round(gross * 0.10, 2)) > 0.05:
-            raise StepFail(f"commission {comm} != 10% of {gross}", s2)
+        # direct-connect: the platform takes no commission on transport fares
+        if gross <= 0 or comm != 0:
+            raise StepFail(f"commission {comm} != 0 on gross {gross}", s2)
         s3, bilty = await tr.j("GET", f"/v1/transport/bookings/{bid}/bilty", expect=200)
         s4, receipt = await tr.j("GET", f"/v1/transport/bookings/{bid}/receipt", expect=200)
         r5 = await tr.req("GET", f"/v1/transport/bookings/{bid}/receipt.pdf", expect=200)
         ctype = r5.headers.get("content-type", "")
-        detail = f"rated 5; fare={gross} commission={comm} (10%); bilty+receipt ok; pdf={ctype}"
+        detail = f"rated 5; fare={gross} commission=0 (direct-connect); bilty+receipt ok; pdf={ctype}"
         if "pdf" not in ctype:
             detail += f" (body: {r5.text[:80]})"
         return f"{s1}/{s2}/{s3}/{s4}/{r5.status_code}", detail
 
-    async def t10_dashboard_wallet_ratings():
+    async def t10_dashboard_confirm_ratings():
         s1, dash = await tr.j("GET", "/v1/transport/dashboard", expect=200)
-        s2, wallet = await tr.j("GET", "/v1/transport/wallet", expect=200)
+        # farmer confirms the delivered trip (direct-connect close-out)
+        s2, confirmed = await anon_farmer.j(
+            "POST", f"/v1/transport/bookings/{CTX['booking_id']}/confirm-delivery", expect=200
+        )
         s3, ratings = await tr.j("GET", "/v1/transport/ratings", expect=200)
         return f"{s1}/{s2}/{s3}", (
             f"dashboard trips={dash.get('todayTrips', dash.get('activeTrips', '?'))} | "
-            f"wallet balancePaisa={wallet.get('balancePaisa')} entries={wallet.get('entryCount')} | "
+            f"farmerConfirmedAt={'set' if confirmed.get('farmerConfirmedAt') else 'missing'} | "
             f"ratings total={ratings.get('total')}"
         )
 
@@ -558,13 +535,12 @@ async def transporter_flow(client):
         s2, r = await anon_farmer.j("GET", f"/v1/transport/bookings/{other['id']}", expect=(403, 404))
         return f"{s1}/{s2}", f"foreign booking {other['id'][:14]}... -> {s2} {r.get('detail', {}).get('code', '')}"
 
-    async def n03_payout_no_mpin():
-        # Fresh OTP user has no mpinHash -> 409 MPIN_NOT_SET (with a dummy 4-digit
-        # mpin that passes model validation). Omitting mpin entirely is a 422.
-        s, r = await tr.j("POST", "/v1/transport/payouts", expect=(409, 401),
+    async def n03_payout_endpoint_removed():
+        # Direct-connect: payouts (and the wallet) are gone — a payout attempt
+        # now 404s like every other removed money endpoint.
+        s, r = await tr.j("POST", "/v1/transport/payouts", expect=404,
                           json={"mpin": "1234"})
-        code = r.get("detail", {}).get("code", r) if isinstance(r.get("detail"), dict) else r
-        return s, f"payout without account MPIN -> {s} {code}"
+        return s, f"payout endpoint removed -> {s}"
 
     async def n04_analytics_entitlement():
         s, r = await tr.j("GET", "/v1/transport/analytics", expect=(200, 402))
@@ -576,17 +552,17 @@ async def transporter_flow(client):
     steps = [
         ("T01 OTP login + transport profile activate", t01_profile),
         ("T02 register vehicle (plan-cap aware)", t02_vehicle),
-        ("T03 KYC gate seeded (kyc_cases + vehicle)", t03_kyc_gate),
+        ("T03 vehicle verified at creation (no review)", t03_kyc_gate),
         ("T04 vehicle location ping", t04_vehicle_location),
         ("T05 farmer fare-estimate + booking", t05_farmer_books),
         ("T06 offer -> farmer accepts (fare locked)", t06_offer_accept),
         ("T07 drive trip: arrived/loading/ping/enRoute", t07_drive_trip),
         ("T08 POD-OTP delivery", t08_pod_otp),
         ("T09 rate farmer + expenses/bilty/receipt", t09_rate_docs),
-        ("T10 dashboard/wallet/ratings", t10_dashboard_wallet_ratings),
+        ("T10 dashboard/confirm-delivery/ratings", t10_dashboard_confirm_ratings),
         ("N01 PATCH delivered again -> 409", n01_patch_delivered_again),
         ("N02 farmer reads foreign booking -> 403/404", n02_farmer_reads_foreign_booking),
-        ("N03 payout without MPIN -> 409/401", n03_payout_no_mpin),
+        ("N03 payout endpoint removed -> 404", n03_payout_endpoint_removed),
         ("N04 analytics entitlement (200 or 402)", n04_analytics_entitlement),
     ]
     for name, fn in steps:

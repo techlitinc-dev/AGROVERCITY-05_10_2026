@@ -80,8 +80,8 @@ export const FarmerView: React.FC = () => {
         setAdvisoryScans(scans);
         setSoilTests(tests);
       } else if (subTab === 'farmers') {
-        const data = await api.getAllUsers('farmer');
-        setFarmers(data);
+        const res = await api.fetchFarmers({ sort_by: 'createdAt', order: 'desc' });
+        setFarmers(res.farmers || res.data || []);
       }
     } catch (err: any) {
       console.error('Failed to load farmer data:', err);

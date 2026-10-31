@@ -219,7 +219,7 @@ export const TransporterProfileView: React.FC = () => {
             </p>
             {!verified && (
               <p className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-100 rounded-xl p-2.5">
-                <ShieldAlert className="w-4 h-4" /> KYC not verified — complete it to unlock payouts.
+                <ShieldAlert className="w-4 h-4" /> KYC not verified — complete it to build trust with farmers.
                 <Link to="/kyc" className="underline font-bold">Open KYC</Link>
               </p>
             )}

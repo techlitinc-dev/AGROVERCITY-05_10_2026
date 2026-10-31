@@ -9,6 +9,11 @@ const activatePersona = (persona: PersonaType): void => {
   setPendingPersonaSync(users.activateProfile(persona).catch(() => undefined));
 };
 
+/** Registration-incomplete sessions hold RESTRICTED onboarding tokens: persona
+ * activation (and every other protected call) 401s by design, so skip it. */
+export const isRestrictedRegistration = (user: UserProfile | null): boolean =>
+  user?.registrationStatus === 'pendingProfile' || user?.registrationStatus === 'pendingKyc';
+
 interface AuthState {
   user: UserProfile | null;
   accessToken: string | null;
@@ -117,6 +122,11 @@ export function normalizeUserProfile(rawUser: any): UserProfile {
     availablePersonas,
     disabledPersonas,
     kycStatus: source.kycStatus || 'verified',
+    // Server-controlled; absent on legacy docs = grandfathered completed.
+    registrationStatus: source.registrationStatus || 'completed',
+    maskedAadhaar: source.maskedAadhaar || '',
+    verifiedName: source.verifiedName || '',
+    verificationMode: source.verificationMode || '',
     hasMpin: source.hasMpin ?? true,
     avatarUrl: source.avatarUrl || '',
     farmSizeAcres: source.farmSizeAcres ?? source.landAreaAcres ?? 4.5,
@@ -169,7 +179,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       activePersona: user.activePersona,
       isAuthenticated: true,
     });
-    if (user.activePersona) {
+    if (user.activePersona && !isRestrictedRegistration(user)) {
       activatePersona(user.activePersona);
     }
   },
@@ -259,7 +269,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 // linked (activation would silently link them server-side) or has hidden.
 const hasValidSession =
   !!savedAccessToken && savedAccessToken !== 'undefined' && savedAccessToken !== 'null';
-if (hasValidSession && savedUser) {
+if (hasValidSession && savedUser && !isRestrictedRegistration(savedUser)) {
   const bootPersona = savedUser.activePersona || savedPersona;
   if (
     savedUser.availablePersonas.includes(bootPersona) &&

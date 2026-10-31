@@ -24,12 +24,14 @@ TIER_MATRIX = [
     ("womenShg", "yearly", 999, {}),
     ("farmLandlord", "free", 0, {"plots": 1, "activeLeases": 1, "listings": 5}),
     ("farmLandlord", "pro", 299, {"listings": 100}),
-    ("transport", "free", 0, {"vehicles": 1}),
-    # Spec pricing: Transporter Starter ₹99/month (2 vehicles) and
-    # Starter Annual ₹999/year (same allowance, billed yearly).
-    ("transport", "starter", 99, {"vehicles": 2}),
-    ("transport", "starter_annual", 999, {"vehicles": 2}),
-    ("transport", "pro", 499, {"vehicles": 5}),
+    # Direct-connect: fleet size is not paywalled — every transport plan allows
+    # unlimited vehicles (prices/features still differ by tier).
+    ("transport", "free", 0, {}),
+    # Spec pricing: Transporter Starter ₹99/month and Starter Annual ₹999/year
+    # (same allowance, billed yearly).
+    ("transport", "starter", 99, {}),
+    ("transport", "starter_annual", 999, {}),
+    ("transport", "pro", 499, {}),
     # robust.md §6.3: unlimited fleet, API dispatch, dedicated support (price
     # set per platform convention — between Pro ₹499 and directBuyer Enterprise).
     ("transport", "enterprise", 1999, {}),

@@ -124,20 +124,15 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Logistics Desk',
             items: [
+              // The cockpit hosts the Load Board, Live Trips, Bilty and
+              // Trip P&L as tabs — one entry, no duplicate deep-links.
               { to: '/transporter', label: 'Transporter Cockpit', icon: LayoutDashboard },
-              { to: '/transporter/loads', label: 'Freight Load Board', icon: Layers },
-              { to: '/transporter/trips', label: 'Live Trips & Tracking', icon: Truck },
-              { to: '/transporter/bilty', label: 'Bilty Generator', icon: FileText },
-              { to: '/transporter/settlements', label: 'Trip P&L', icon: DollarSign },
               { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
-              { to: '/transporter/bookings', label: 'My Bookings', icon: FileCheck },
               { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
-              { to: '/transporter/profile', label: 'Profile', icon: User },
               { to: '/transporter/ratings', label: 'Ratings', icon: Star },
               { to: '/transporter/ads', label: 'Advertisements', icon: Megaphone },
-              { to: '/transporter/ai', label: 'AI Insights', icon: Sparkles },
-              { to: '/transporter/chatbot', label: 'Chatbot', icon: Bot },
               { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
+              { to: '/transporter/profile', label: 'Profile', icon: User },
             ],
           },
         ];

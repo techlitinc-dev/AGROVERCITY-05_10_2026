@@ -58,7 +58,12 @@ async def test_driver_settlements_read_forbidden(client, user_store):
     ).json()
     driver_token = create_access_token(driver["id"])
 
+    # the transport settlements endpoint itself is gone under direct-connect
     resp = await client.get("/v1/transport/settlements", headers=_auth(driver_token))
+    assert resp.status_code == 404
+
+    # the driver guard still holds on the remaining settlement surfaces
+    resp = await client.get("/v1/equipment/settlements", headers=_auth(driver_token))
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "DRIVERS_CANNOT_VIEW_SETTLEMENTS"
 

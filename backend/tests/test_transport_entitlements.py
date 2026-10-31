@@ -1,8 +1,9 @@
 """Transporter SaaS entitlements (instructions.md WS-02 step 13 / robust.md §6.3):
-Free = 1 vehicle, commission-only; Pro ₹499/mo = fleet of 5 + driver
+Free = 1 vehicle; Pro ₹499/mo = fleet of 5 + driver
 sub-accounts + route analytics + priority load board; Enterprise = unlimited
-fleet + API dispatch + dedicated support. Commission stays 10% on every tier —
-no entitlement bypasses platform_config/settlements.transportPct.
+fleet + API dispatch + dedicated support. Direct-connect: the platform takes
+no commission on transport fares at any tier — fares settle directly between
+farmer and transporter, so no transport settlement accrues on any plan.
 """
 from app.services.billing import seed_plans
 from tests.test_transport import _activate, _add_vehicle, _token
@@ -18,44 +19,42 @@ async def _subscribe(client, token, plan_id):
     return resp.json()
 
 
-async def test_free_tier_one_vehicle_limit(client, user_store):
+async def test_free_tier_unlimited_vehicles(client, user_store):
+    """Direct-connect: fleet size is not paywalled — the free plan allows
+    unlimited vehicles."""
     await seed_plans()
     token = await _token(client)
     await _activate(client, token)
 
     resp = await _add_vehicle(client, token)
-    assert resp["docStatus"] == "pending"
+    # direct-connect: usable immediately, no review
+    assert resp["docStatus"] == "verified"
 
-    blocked = await client.post("/v1/transport/vehicles", json={
-        "vehicleType": "Bolero Maxi",
-        "registrationNo": "MH15 CD 5678",
-        "capacityTonnes": 1.5,
-    }, headers=_auth(token))
-    assert blocked.status_code == 402
-    error = blocked.json()["error"]
-    assert error["code"] == "ENTITLEMENT_EXCEEDED"
-    assert error["limit"] == 1
-    assert error["used"] == 1
-    assert error["planId"] == "transport_free"
+    # no 402 — keep adding well past the old Free limit of 1
+    for i in range(4):
+        extra = await client.post("/v1/transport/vehicles", json={
+            "vehicleType": "Bolero Maxi",
+            "registrationNo": f"MH15 CD 56{i}8",
+            "capacityTonnes": 1.5,
+        }, headers=_auth(token))
+        assert extra.status_code == 201, extra.json()
 
 
-async def test_pro_tier_fleet_of_five(client, user_store):
+async def test_pro_tier_unlimited_fleet(client, user_store):
+    """Pro keeps its feature gates (drivers, analytics) but the fleet itself
+    is unlimited on every tier."""
     await seed_plans()
     token = await _token(client)
     await _activate(client, token)
-    await _add_vehicle(client, token)  # free allowance: 1
     await _subscribe(client, token, "transport_pro")
 
-    for _ in range(4):  # Pro raises the cap to 5 total
-        await _add_vehicle(client, token)
-
-    blocked = await client.post("/v1/transport/vehicles", json={
-        "vehicleType": "Bolero Maxi",
-        "registrationNo": "MH15 CD 5678",
-        "capacityTonnes": 1.5,
-    }, headers=_auth(token))
-    assert blocked.status_code == 402
-    assert blocked.json()["error"]["limit"] == 5
+    for i in range(7):  # old Pro cap was 5
+        resp = await client.post("/v1/transport/vehicles", json={
+            "vehicleType": "Bolero Maxi",
+            "registrationNo": f"MH15 CD {i}567",
+            "capacityTonnes": 1.5,
+        }, headers=_auth(token))
+        assert resp.status_code == 201
 
 
 async def test_enterprise_tier_unlimited_fleet(client, user_store):
@@ -64,7 +63,7 @@ async def test_enterprise_tier_unlimited_fleet(client, user_store):
     await _activate(client, token)
     await _subscribe(client, token, "transport_enterprise")
 
-    for _ in range(8):  # no vehicles limit on Enterprise
+    for _ in range(8):  # unlimited fleet (true on every tier now)
         await _add_vehicle(client, token)
 
 
@@ -150,9 +149,9 @@ async def test_priority_load_board_ranks_pro_bids_first(client, user_store):
     assert bids[1]["id"] == free_bid["id"]
 
 
-async def test_commission_stays_ten_pct_on_pro_tier(client, user_store):
-    """No entitlement bypasses platform_config/settlements.transportPct: a
-    Pro transporter's settlement still deducts exactly 10%."""
+async def test_no_transport_settlement_on_any_tier(client, user_store):
+    """Direct-connect: a Pro transporter's delivered fares never accrue a
+    platform settlement — fare payment is entirely between the parties."""
     await seed_plans()
     token = await _token(client)
     await _activate(client, token)
@@ -171,7 +170,4 @@ async def test_commission_stays_ten_pct_on_pro_tier(client, user_store):
         json={"periodStart": "2026-09-07", "periodEnd": "2026-09-13"},
     )
     assert resp.status_code == 200
-    doc = user_store["settlements/st_transport_uid-1_2026-09-07"]
-    assert doc["grossRupees"] == 1200
-    assert doc["commissionRupees"] == 120  # 10% — identical to the Free-tier math
-    assert doc["netRupees"] == 1080
+    assert not any(k.startswith("settlements/st_transport_") for k in user_store)

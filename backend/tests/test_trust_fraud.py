@@ -82,17 +82,15 @@ async def test_legit_batch_unaffected(client, user_store):
 
 async def test_payout_anomaly_hold_and_release(client, user_store):
     config_store.clear_cache()
-    # Anomalous line: a huge transport fare (net > ₹5,00,000) → held.
-    user_store["vehicles/veh-big"] = {"id": "veh-big", "ownerId": "owner-big"}
-    user_store["transport_bookings/tb-big"] = {
-        "id": "tb-big", "status": "delivered", "date": "2026-10-02", "vehicleId": "veh-big",
-        "fare": 6000000,
+    # Anomalous line: a huge broker deal (net > ₹5,00,000) → held.
+    user_store["broker_deals/deal-big"] = {
+        "id": "deal-big", "brokerId": "owner-big", "status": "completed",
+        "grossAmount": 6000000, "createdAt": "2026-10-02T10:00:00+00:00",
     }
     # Legit line stays under the anomaly threshold and settles.
-    user_store["vehicles/veh-small"] = {"id": "veh-small", "ownerId": "owner-small"}
-    user_store["transport_bookings/tb-small"] = {
-        "id": "tb-small", "status": "delivered", "date": "2026-10-02", "vehicleId": "veh-small",
-        "fare": 10000,
+    user_store["broker_deals/deal-small"] = {
+        "id": "deal-small", "brokerId": "owner-small", "status": "completed",
+        "grossAmount": 10000, "createdAt": "2026-10-02T10:00:00+00:00",
     }
 
     await run_settlements(*PERIOD)
@@ -100,7 +98,7 @@ async def test_payout_anomaly_hold_and_release(client, user_store):
     lines = {
         d["entityId"]: d
         for k, d in user_store.items()
-        if k.startswith("settlements/") and d.get("role") == "transport"
+        if k.startswith("settlements/") and d.get("role") == "broker"
     }
     big = lines["owner-big"]
     small = lines["owner-small"]

@@ -1,4 +1,5 @@
 """FastAPI Superadmin Management Router for AGROVERCITY Platform."""
+import math
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -106,32 +107,114 @@ async def get_admin_overview(user: dict = Depends(current_admin_user)):
 @router.get("/users")
 async def list_users(
     persona: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
+    kyc_status: Optional[str] = Query(None),
+    is_blocked: Optional[bool] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
+    limit: Optional[int] = Query(None),
+    sort_by: str = Query("createdAt"),
+    order: str = Query("desc"),
     user: dict = Depends(admin_user),
 ):
-    users_list = await query("users", limit=500)
+    effective_limit = limit or pageSize
+    query_str = q or search
+    effective_role = role or persona
+
+    def _parse_dt(dt_str):
+        if not dt_str:
+            return None
+        try:
+            clean = str(dt_str).strip().replace("Z", "+00:00")
+            if " " in clean:
+                last_space = clean.rfind(" ")
+                if last_space > clean.find("T") and "+" not in clean[last_space:] and "-" not in clean[last_space:]:
+                    clean = clean[:last_space] + "+" + clean[last_space + 1:]
+            if len(clean) == 10:
+                return datetime.fromisoformat(clean).replace(tzinfo=timezone.utc)
+            dt = datetime.fromisoformat(clean)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            return None
+
+    start_dt = _parse_dt(start_date)
+    end_dt = _parse_dt(end_date)
+    if end_dt and end_date and len(end_date.strip()) == 10:
+        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    users_list = await query("users", limit=2000)
     filtered = []
     for u in users_list:
-        if persona and persona not in u.get("linkedProfiles", []):
-            continue
-        if status and u.get("status", "active") != status:
-            continue
-        if search:
-            s_lower = search.lower()
-            if s_lower not in u.get("name", "").lower() and s_lower not in u.get("phone", "") and s_lower not in u.get("id", ""):
+        if effective_role:
+            r_low = effective_role.lower()
+            u_roles = [str(p).lower() for p in (u.get("linkedProfiles") or [])]
+            if (u.get("primaryProfile") or "").lower() == r_low:
+                u_roles.append(r_low)
+            if r_low not in u_roles:
                 continue
+        if status and (u.get("status") or "active").lower() != status.lower():
+            continue
+        if kyc_status and (u.get("kycStatus") or u.get("kyc_status") or "pending").lower() != kyc_status.lower():
+            continue
+        if is_blocked is not None:
+            user_blocked = bool(u.get("is_blocked") or u.get("is_suspended") or u.get("status") in ("suspended", "banned"))
+            if user_blocked != is_blocked:
+                continue
+        if query_str:
+            s_lower = query_str.lower()
+            if (
+                s_lower not in (u.get("name") or "").lower()
+                and s_lower not in (u.get("fullName") or "").lower()
+                and s_lower not in (u.get("phone") or "")
+                and s_lower not in (u.get("email") or "").lower()
+                and s_lower not in (u.get("id") or "").lower()
+            ):
+                continue
+
+        # Datetime filter
+        if start_dt or end_dt:
+            c_raw = u.get("createdAt") or u.get("created_at") or u.get("timestamp")
+            if c_raw:
+                try:
+                    c_dt = datetime.fromisoformat(str(c_raw).replace("Z", "+00:00"))
+                    if start_dt and c_dt < start_dt:
+                        continue
+                    if end_dt and c_dt > end_dt:
+                        continue
+                except Exception:
+                    pass
+            elif start_dt:
+                continue
+
         filtered.append(u)
 
-    start = (page - 1) * pageSize
-    end = start + pageSize
+    # Sort recent entered user 1st by default
+    is_desc = (order.lower() == "desc") if order else True
+    def sort_fn(item):
+        if sort_by in ("createdAt", "created_at", "datetime"):
+            return item.get("createdAt") or item.get("created_at") or ""
+        return str(item.get(sort_by) or "").lower()
+
+    filtered.sort(key=sort_fn, reverse=is_desc)
+
+    start = (page - 1) * effective_limit
+    end = start + effective_limit
+    paged = filtered[start:end]
     return {
-        "data": filtered[start:end],
+        "users": paged,
+        "data": paged,
         "page": page,
-        "pageSize": pageSize,
+        "pageSize": effective_limit,
+        "limit": effective_limit,
         "total": len(filtered),
+        "totalPages": math.ceil(len(filtered) / effective_limit) if effective_limit > 0 else 1,
     }
 
 

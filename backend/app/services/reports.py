@@ -656,9 +656,7 @@ def build_trip_receipt_pdf(receipt: dict) -> str:
         ["Vehicle", f"{receipt.get('vehicleType') or '-'} · {receipt.get('vehicleNo') or '-'}"],
         ["Route", f"{receipt.get('pickup') or '-'} -> {receipt.get('drop') or '-'}"],
         ["Fare", _rupees(receipt.get("farePaisa"))],
-        ["Platform commission (10%)", _rupees(receipt.get("commissionPaisa"))],
-        ["Net payable to transporter", _rupees(receipt.get("netPaise"))],
-        ["Payment / escrow status", str(receipt.get("escrowStatus") or "unfunded")],
+        ["Settlement", str(receipt.get("settlement") or "Fare settled directly between farmer and transporter")],
     ]
     table = Table(rows, colWidths=[180, 300])
     table.setStyle(

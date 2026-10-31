@@ -45,19 +45,10 @@ async def _add_vehicle(client, token, **overrides):
 
 
 def _verify_vehicle(user_store, vehicle_id):
-    # stands in for the admin KYC review (phase-00 pipeline): the transporter's
-    # transport case has rc+dl verified, so the real gate accepts the vehicle.
+    # No-op kept for call-site compatibility: vehicles are self-declared and
+    # usable at creation under direct-connect (no review). Only expiry-dated
+    # documents can invalidate a vehicle now.
     user_store[f"vehicles/{vehicle_id}"]["docStatus"] = "verified"
-    user_store["kyc_cases/kyc_uid-1_transport"] = {
-        "caseId": "kyc_uid-1_transport",
-        "userId": "uid-1",
-        "persona": "transport",
-        "docs": [
-            {"docId": "kyc_uid-1_transport:rc", "type": "rc", "status": "verified"},
-            {"docId": "kyc_uid-1_transport:dl", "type": "dl", "status": "verified"},
-        ],
-        "status": "verified",
-    }
 
 
 def _other_transporter_token(user_store):
@@ -70,6 +61,35 @@ def _other_transporter_token(user_store):
         "createdAt": "2026-09-16T00:00:00+00:00",
     }
     return create_access_token("uid-2")
+
+
+async def test_farmer_bookings_list_scoped_to_own(client, user_store):
+    """A farmer must never see another farmer's bookings — load-flow bookings
+    carry userId (not farmerId), so the old `not farmerId` fallback leaked
+    every booking (with contactReveal phone numbers) to all farmers."""
+    token = await _token(client)
+    mine = (await _book(client, token)).json()
+    # a second farmer (uid-2) books through the API as their own user
+    user_store["users/uid-2"] = {
+        "id": "uid-2",
+        "linkedProfiles": ["farmer"],
+        "activeProfile": "farmer",
+        "primaryProfile": "farmer",
+        "createdAt": "2026-09-16T00:00:00+00:00",
+    }
+    stranger = create_access_token("uid-2")
+    theirs = (
+        await client.post(
+            "/v1/transport/bookings",
+            json=BOOKING_BODY,
+            headers=_auth(stranger),
+        )
+    ).json()
+    resp = await client.get("/v1/transport/bookings", headers=_auth(token))
+    assert resp.status_code == 200
+    ids = {b["id"] for b in resp.json()["data"]}
+    assert mine["id"] in ids
+    assert theirs["id"] not in ids
 
 
 async def test_vehicle_types(client):
@@ -209,18 +229,37 @@ async def test_vehicle_calendar_and_availability(client, user_store):
     assert user_store[f"vehicles/{vehicle['id']}"]["availableDates"] == dates
 
 
-async def test_new_vehicle_pending_doc_status(client):
+async def test_new_vehicle_verified_doc_status_no_review(client):
     token = await _token(client, profiles=("transport",), primary="transport")
     vehicle = await _add_vehicle(client, token)
-    assert vehicle["docStatus"] == "pending"
+    # direct-connect: a newly added vehicle is usable immediately — no review.
+    assert vehicle["docStatus"] == "verified"
+    assert vehicle["docReview"] == "self"
     assert vehicle["rejectionReason"] is None
 
 
-async def test_accept_with_unverified_vehicle_422(client):
+async def test_accept_with_new_vehicle_works_without_review(client):
     token = await _token(client)
     booking = (await _book(client, token)).json()
     await _activate(client, token)
     vehicle = await _add_vehicle(client, token)
+    resp = await client.post(
+        f"/v1/transport/bookings/{booking['id']}/accept",
+        json={"vehicleId": vehicle["id"]},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "accepted"
+
+
+async def test_accept_with_expired_docs_422(client, user_store):
+    """The only remaining document check is expiry — an expired fitness
+    certificate still blocks assignment."""
+    token = await _token(client)
+    booking = (await _book(client, token)).json()
+    await _activate(client, token)
+    vehicle = await _add_vehicle(client, token)
+    user_store[f"vehicles/{vehicle['id']}"]["fitnessExpiry"] = "2020-01-01T00:00:00+00:00"
     resp = await client.post(
         f"/v1/transport/bookings/{booking['id']}/accept",
         json={"vehicleId": vehicle["id"]},
@@ -259,6 +298,9 @@ async def test_verified_only_filter(client, user_store):
     pending = await _add_vehicle(client, token, registrationNo="MH15 AA 0001")
     verified = await _add_vehicle(client, token, registrationNo="MH15 AA 0002")
     _verify_vehicle(user_store, verified["id"])
+    # simulate a vehicle knocked back by the expiry check (the only remaining
+    # document gate): an expired PUC invalidates it for verified-only lists.
+    user_store[f"vehicles/{pending['id']}"]["pucExpiry"] = "2020-01-01T00:00:00+00:00"
     headers = _auth(token)
     resp = await client.get("/v1/transport/vehicles/my", headers=headers)
     assert len(resp.json()["data"]) == 2
@@ -414,7 +456,6 @@ async def test_dashboard_summary_fields(client, user_store):
         "fleet",
         "earningsTodayPaisa",
         "earningsWeekPaisa",
-        "nextSettlement",
         "documentExpiries",
         "returnLoads",
     ):
@@ -429,7 +470,6 @@ async def test_dashboard_summary_fields(client, user_store):
     fleet_row = next(f for f in body["fleet"] if f["id"] == vehicle["id"])
     assert fleet_row["availableToday"] is False
     assert fleet_row["onTripId"] is None
-    assert body["nextSettlement"] is None
     assert body["returnLoads"] == []
 
     # accept + deliver today's trip -> earnings and on-trip fleet update
@@ -463,21 +503,6 @@ async def test_dashboard_summary_fields(client, user_store):
     assert puc["vehicleId"] == vehicle["id"]
     assert puc["daysLeft"] > 0
 
-    # next settlement surfaces the earliest pending doc
-    user_store["settlements/stl_x"] = {
-        "id": "stl_x",
-        "role": "transport",
-        "entityId": "uid-1",
-        "periodStart": "2026-09-29",
-        "periodEnd": "2026-10-05",
-        "netRupees": 1080,
-        "status": "pending",
-    }
-    resp = await client.get("/v1/transport/dashboard", headers=_auth(token))
-    assert resp.json()["nextSettlement"] == {
-        "periodStart": "2026-09-29",
-        "periodEnd": "2026-10-05",
-        "netRupees": 1080,
-    }
+    # direct-connect: no settlement block on the transport dashboard anymore
     week_ago = (datetime.now(timezone.utc).date() - timedelta(days=6)).isoformat()
     assert week_ago <= today

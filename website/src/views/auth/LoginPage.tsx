@@ -33,37 +33,10 @@ import { OtpField } from '../../components/common/OtpField';
 import { MpinPad } from '../../components/common/MpinPad';
 import { ParticleNetworkCanvas } from '../../components/common/ParticleNetworkCanvas';
 import { apiErrorMessage } from '../../lib/api';
+import { personaHome } from '../../lib/personas';
 import type { PersonaType, UserProfile } from '../../types';
 import { auth } from '../../lib/api';
 import { useAuthStore, normalizeUserProfile } from '../../stores/authStore';
-
-/** Persona → active dashboard cockpit route mapping. */
-export const PERSONA_HOME: Record<PersonaType, string> = {
-  farmer: '/farmer',
-  landlord: '/landlord',
-  transporter: '/transporter',
-  seller: '/seller',
-  equipmentOwner: '/equipment',
-  exporter: '/exporter',
-  milkSeller: '/milkSeller',
-  vet: '/vet',
-  fpoManager: '/fpoManager',
-  womenShg: '/womenShg',
-  broker: '/broker',
-  dairyManager: '/dairy',
-  instructor: '/instructor',
-  directBuyer: '/directbuyer',
-  customer: '/customer',
-  bankManager: '/bank',
-  insuranceProvider: '/insurance',
-  coldStorageProvider: '/coldStorageProvider',
-  gaushalaManager: '/gaushalaManager',
-  nursery: '/nursery',
-  superadmin: '/admin',
-};
-
-export const personaHome = (persona?: PersonaType): string =>
-  (persona && PERSONA_HOME[persona]) || '/farmer';
 
 interface DemoPersonaPreset {
   id: PersonaType;
@@ -191,6 +164,7 @@ export const LoginPage: React.FC = () => {
   const [demoCategory, setDemoCategory] = useState<'all' | 'producers' | 'trade' | 'logistics' | 'finance'>('all');
   const [phone, setPhone] = useState('9975721517');
   const [userName, setUserName] = useState<string | null>(null);
+  const [accountState, setAccountState] = useState<'new' | 'existingNoMpin' | null>(null);
   const [step, setStep] = useState<'phone' | 'otp' | 'mpin'>('phone');
   const [otpSessionId, setOtpSessionId] = useState<string>('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
@@ -205,18 +179,25 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setMessage(null);
     try {
-      // 1. Check if user exists in Firestore and has MPIN configured
+      // 1. Check if user exists in Firestore and has MPIN configured.
+      // OTP is for new/unregistered numbers only — every registered account
+      // goes to the MPIN gate (its "Verify with OTP" button covers accounts
+      // that never set an MPIN).
       const check = await auth.checkPhone(phone);
-      if (check.exists && check.hasMpin) {
+      if (check.exists) {
+        setAccountState(check.hasMpin ? null : 'existingNoMpin');
         setUserName(check.name || null);
         setMessage(
-          check.name
-            ? `Welcome back, ${check.name}! Enter your 4-digit security MPIN.`
-            : 'Enter your 4-digit security MPIN to enter your dashboard.'
+          check.hasMpin
+            ? check.name
+              ? `Welcome back, ${check.name}! Enter your 4-digit security MPIN.`
+              : 'Enter your 4-digit security MPIN to enter your dashboard.'
+            : 'This account does not have a security MPIN yet — use "Forgot MPIN? Verify with OTP" below to sign in and set one from your dashboard.'
         );
         setStep('mpin');
       } else {
-        setUserName(check.name || null);
+        setAccountState('new');
+        setUserName(null);
         const res = await auth.requestOtp(phone);
         if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
         if (res.devOtp) {
@@ -239,6 +220,11 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setMessage(null);
     try {
+      // Re-check so the OTP screen can tell a brand-new number apart from an
+      // existing account without an MPIN, whichever button started the flow.
+      const check = await auth.checkPhone(phone);
+      setAccountState(check.exists ? 'existingNoMpin' : 'new');
+      setUserName(check.name || null);
       const res = await auth.requestOtp(phone);
       if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
       if (res.devOtp) {
@@ -260,12 +246,16 @@ export const LoginPage: React.FC = () => {
     setError(null);
     try {
       const res = await auth.verifyOtp(phone, otp, otpSessionId);
-      if (res.isNewUser) {
-        navigate('/register', { state: { phone } });
-        return;
-      }
       const normalized = normalizeUserProfile(res.user);
       login(normalized, res);
+      // Registration-incomplete users (new OTP registrants or pending-KYC
+      // resumers) hold restricted onboarding tokens — send them back into the
+      // mandatory registration journey; protected pages stay locked anyway.
+      const regStatus = normalized.registrationStatus;
+      if (regStatus === 'pendingProfile' || regStatus === 'pendingKyc') {
+        navigate('/register', { state: { phone, resume: regStatus } });
+        return;
+      }
       navigate(fromPath || personaHome(normalized.activePersona), { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -279,12 +269,13 @@ export const LoginPage: React.FC = () => {
     setError(null);
     try {
       const res = await auth.loginWithMpin(phone, mpin);
-      if (res.isNewUser) {
-        navigate('/register', { state: { phone } });
-        return;
-      }
       const normalized = normalizeUserProfile(res.user);
       login(normalized, res);
+      const regStatus = normalized.registrationStatus;
+      if (regStatus === 'pendingProfile' || regStatus === 'pendingKyc') {
+        navigate('/register', { state: { phone, resume: regStatus } });
+        return;
+      }
       navigate(fromPath || personaHome(normalized.activePersona), { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -351,6 +342,22 @@ export const LoginPage: React.FC = () => {
   const filteredDemoPersonas = DEMO_PERSONAS.filter(
     (p) => demoCategory === 'all' || p.category === demoCategory
   );
+
+  const otpCopy =
+    accountState === 'new'
+      ? {
+          badge: 'New Number — Account Setup',
+          body: `This number is not registered yet. We've sent a 6-digit verification code to +91 ${phone}. Once verified, we'll create your account and finish registration.`,
+        }
+      : accountState === 'existingNoMpin'
+        ? {
+            badge: 'Account Verification',
+            body: `This number is registered but has no security MPIN yet. Enter the 6-digit code sent to +91 ${phone} to sign in — you can set an MPIN afterwards from Settings.`,
+          }
+        : {
+            badge: 'One-Time First Login Verification',
+            body: `Enter 6-digit code sent to +91 ${phone}`,
+          };
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-950 via-emerald-950/80 to-slate-950 text-slate-100 flex items-center justify-center p-4 sm:p-6 lg:p-10 relative overflow-hidden">
@@ -636,11 +643,9 @@ export const LoginPage: React.FC = () => {
                   <div className="space-y-4 text-center">
                     <div>
                       <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200 mb-2">
-                        One-Time First Login Verification
+                        {otpCopy.badge}
                       </span>
-                      <p className="text-xs text-slate-600">
-                        Enter 6-digit code sent to <strong>+91 {phone}</strong>
-                      </p>
+                      <p className="text-xs text-slate-600">{otpCopy.body}</p>
                       <button
                         onClick={() => setStep('phone')}
                         className="text-[11px] text-emerald-700 font-bold hover:underline mt-0.5"

@@ -37,6 +37,16 @@ export interface UserProfile {
   /** Personas the user hid in profile settings — options hidden, data kept. */
   disabledPersonas?: PersonaType[];
   kycStatus: 'unverified' | 'submitted' | 'verified' | 'rejected';
+  /**
+   * Server-controlled registration journey state. Missing for legacy accounts
+   * (grandfathered = completed); new registrations move pendingProfile →
+   * pendingKyc → completed only after identity verification succeeds.
+   */
+  registrationStatus?: 'pendingProfile' | 'pendingKyc' | 'completed';
+  /** Identity-verification artefacts (DigiLocker-style), masked only. */
+  maskedAadhaar?: string;
+  verifiedName?: string;
+  verificationMode?: string;
   hasMpin: boolean;
   avatarUrl?: string;
   farmSizeAcres?: number;
@@ -349,6 +359,20 @@ export interface TransportBooking {
   cancelledBy?: string;
   /** Original trip id when this booking was created via one-tap rebook. */
   rebookOf?: string;
+  /** Option C direct request: preset transporter + direct-connect consent. */
+  requestKind?: 'open' | 'direct';
+  contactReveal?: {
+    farmer?: { name?: string; phone?: string; phoneDigits?: string; whatsappDigits?: string };
+    transporter?: { name?: string; phone?: string; phoneDigits?: string; whatsappDigits?: string };
+    revealedAt?: string;
+  };
+  consent?: {
+    termsAccepted?: boolean;
+    termsVersion?: string;
+    acceptedAt?: string;
+    acceptedBy?: string;
+    contactRevealedAt?: string;
+  };
   waypointsLog?: { waypoint?: string; label?: string; time?: string }[];
   /** Instant-booking pinned coordinates (transport.py pickupGeo/dropGeo). */
   pickupGeo?: { lat: number; lng: number } | null;

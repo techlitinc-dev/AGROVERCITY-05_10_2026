@@ -225,6 +225,8 @@ async def test_escrow_holdings_totals(client, user_store):
         "escrow": {"status": "released", "amount": 500.0, "fundedAt": _past_iso(500)},
         "createdAt": _past_iso(600),
     }
+    # transport trips carry no escrow under direct-connect — a stale held
+    # transport escrow row must NOT appear in the holdings report.
     user_store["transport_bookings/tb-esc"] = {
         "id": "tb-esc",
         "userId": "u-buyer-1",
@@ -235,14 +237,14 @@ async def test_escrow_holdings_totals(client, user_store):
     resp = await client.get("/v1/admin/escrow/holdings", headers=ADMIN_HEADERS)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["total"] == 2
+    assert body["total"] == 1
     totals = body["totals"]
-    assert totals["totalAmountPaise"] == 1000 * 100 + 50000
+    assert totals["totalAmountPaise"] == 1000 * 100
     assert totals["byKind"]["purchase"]["count"] == 1
     assert totals["byKind"]["purchase"]["amountPaise"] == 100000
-    assert totals["byKind"]["transport_booking"]["amountPaise"] == 50000
+    assert "transport_booking" not in totals["byKind"]
     kinds = {r["refId"]: r["kind"] for r in body["data"]}
-    assert kinds == {"pur-1": "purchase", "tb-esc": "transport_booking"}
+    assert kinds == {"pur-1": "purchase"}
 
     resp = await client.get("/v1/admin/escrow/holdings", headers=PLAIN_HEADERS)
     assert resp.status_code == 403

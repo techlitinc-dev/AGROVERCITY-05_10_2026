@@ -5,6 +5,9 @@ PERIOD = {"periodStart": "2026-09-07", "periodEnd": "2026-09-13"}
 
 
 def _seed_transport(user_store, owner_uid, bookings):
+    """Delivered transport bookings — under direct-connect these must NOT
+    accrue a transport settlement bucket (fares settle directly between
+    farmer and transporter)."""
     for i, fare in enumerate(bookings):
         vehicle_id = f"veh-{owner_uid}"
         user_store[f"vehicles/{vehicle_id}"] = {"id": vehicle_id, "ownerId": owner_uid}
@@ -17,20 +20,39 @@ def _seed_transport(user_store, owner_uid, bookings):
         }
 
 
-async def test_job_aggregates_transport_fares(client, user_store):
+def _seed_broker(user_store, broker_uid, deals):
+    for i, gross in enumerate(deals):
+        user_store[f"broker_deals/deal-{broker_uid}-{i}"] = {
+            "id": f"deal-{broker_uid}-{i}",
+            "brokerId": broker_uid,
+            "status": "completed",
+            "grossAmount": gross,
+            "createdAt": "2026-09-08T10:00:00+00:00",
+        }
+
+
+async def test_job_ignores_transport_fares_under_direct_connect(client, user_store):
     _seed_transport(user_store, "uid-t1", [800, 1200])
     resp = await client.post("/v1/jobs/settlements/run", json=PERIOD)
     assert resp.status_code == 200
+    assert resp.json()["created"] == 0
+    assert not any(k.startswith("settlements/st_transport_") for k in user_store)
+
+
+async def test_job_aggregates_broker_gross(client, user_store):
+    _seed_broker(user_store, "uid-b1", [800, 1200])
+    resp = await client.post("/v1/jobs/settlements/run", json=PERIOD)
+    assert resp.status_code == 200
     assert resp.json()["created"] == 1
-    doc = user_store["settlements/st_transport_uid-t1_2026-09-07"]
+    doc = user_store["settlements/st_broker_uid-b1_2026-09-07"]
     assert doc["grossRupees"] == 2000
-    assert doc["commissionRupees"] == 200
-    assert doc["netRupees"] == 1800
+    assert doc["commissionRupees"] == 40  # brokerPct 2
+    assert doc["netRupees"] == 1960
     assert doc["status"] == "pending"
 
 
 async def test_job_idempotent_rerun(client, user_store):
-    _seed_transport(user_store, "uid-t1", [800, 1200])
+    _seed_broker(user_store, "uid-b1", [800, 1200])
     await client.post("/v1/jobs/settlements/run", json=PERIOD)
     resp = await client.post("/v1/jobs/settlements/run", json=PERIOD)
     assert resp.status_code == 200
@@ -57,50 +79,48 @@ async def test_cron_secret_required(client, user_store, monkeypatch):
 
 
 async def test_persona_scoping(client, user_store):
-    _seed_transport(user_store, "uid-t1", [800])
-    _seed_transport(user_store, "uid-t2", [1200])
+    _seed_broker(user_store, "uid-b1", [800])
+    _seed_broker(user_store, "uid-b2", [1200])
     await client.post("/v1/jobs/settlements/run", json=PERIOD)
-    token_t1 = seed_user(user_store, uid="uid-t1", active_profile="transport")
-    resp = await client.get("/v1/transport/settlements", headers=auth(token_t1))
+    token_b1 = seed_user(user_store, uid="uid-b1", active_profile="broker")
+    resp = await client.get("/v1/broker/settlements", headers=auth(token_b1))
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 1
-    assert body["data"][0]["entityId"] == "uid-t1"
+    assert body["data"][0]["entityId"] == "uid-b1"
     token_farmer = seed_user(user_store, uid="uid-f1", active_profile="farmer")
-    resp = await client.get("/v1/transport/settlements", headers=auth(token_farmer))
+    resp = await client.get("/v1/broker/settlements", headers=auth(token_farmer))
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN_ROLE"
 
 
 async def test_pending_recomputed_approved_untouched(client, user_store):
-    _seed_transport(user_store, "uid-a1", [800])
-    _seed_transport(user_store, "uid-b1", [1200])
+    _seed_broker(user_store, "uid-a1", [800])
+    _seed_broker(user_store, "uid-b1", [1200])
     await client.post("/v1/jobs/settlements/run", json=PERIOD)
-    approved_key = "settlements/st_transport_uid-a1_2026-09-07"
+    approved_key = "settlements/st_broker_uid-a1_2026-09-07"
     user_store[approved_key]["status"] = "approved"
-    user_store["vehicles/veh-uid-a1b"] = {"id": "veh-uid-a1b", "ownerId": "uid-a1"}
-    user_store["transport_bookings/b-extra-a"] = {
-        "id": "b-extra-a",
-        "status": "delivered",
-        "fare": 500,
-        "vehicleId": "veh-uid-a1b",
-        "date": "2026-09-09",
+    user_store["broker_deals/deal-extra-a"] = {
+        "id": "deal-extra-a",
+        "brokerId": "uid-a1",
+        "status": "completed",
+        "grossAmount": 500,
+        "createdAt": "2026-09-09T10:00:00+00:00",
     }
-    user_store["vehicles/veh-uid-b1b"] = {"id": "veh-uid-b1b", "ownerId": "uid-b1"}
-    user_store["transport_bookings/b-extra-b"] = {
-        "id": "b-extra-b",
-        "status": "delivered",
-        "fare": 300,
-        "vehicleId": "veh-uid-b1b",
-        "date": "2026-09-09",
+    user_store["broker_deals/deal-extra-b"] = {
+        "id": "deal-extra-b",
+        "brokerId": "uid-b1",
+        "status": "completed",
+        "grossAmount": 300,
+        "createdAt": "2026-09-09T10:00:00+00:00",
     }
     resp = await client.post("/v1/jobs/settlements/run", json=PERIOD)
     assert resp.status_code == 200
     assert user_store[approved_key]["grossRupees"] == 800
     assert user_store[approved_key]["status"] == "approved"
-    pending = user_store["settlements/st_transport_uid-b1_2026-09-07"]
+    pending = user_store["settlements/st_broker_uid-b1_2026-09-07"]
     assert pending["grossRupees"] == 1500
-    assert pending["netRupees"] == 1350
+    assert pending["netRupees"] == 1470
 
 
 async def test_job_aggregates_broker_deal_gross(client, user_store):

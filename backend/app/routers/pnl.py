@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from app.core.cache import cache_get, cache_set
 from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
-from app.data.demo_pnl import DEMO_CROPS
 from app.models.pnl import (
     BreakEvenIn,
     BreakEvenOut,
@@ -83,11 +82,9 @@ async def pnl_summary(uid: str = Depends(_viewer)):
 
 @router.get("/crops")
 async def list_crops(uid: str = Depends(_viewer)):
+    """The user's real crop P&L records. No demo seeding: a new (or freshly
+    wiped) account simply has none, and the frontend shows its empty state."""
     crops = await _crops(uid)
-    if not crops:
-        for demo in DEMO_CROPS:
-            await set_doc(f"users/{uid}/crop_pnl", demo["id"], dict(demo))
-        crops = await _crops(uid)
     return {"data": crops, "page": 1, "pageSize": 20, "total": len(crops)}
 
 

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  Banknote,
   Check,
   Circle,
   Clock,
@@ -13,6 +12,7 @@ import {
   Loader2,
   MapPin,
   MessageCircle,
+  MessageSquare,
   PackageCheck,
   Phone,
   Repeat,
@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { transport, chat, ratings, apiErrorMessage, ApiError } from '../../lib/api';
+import { DIRECT_CONNECT_TERMS_TEXT } from '../../lib/api/transport';
 import type { BookingRoute } from '../../lib/api/transport';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -31,22 +32,6 @@ import { RateUserModal } from '../../components/common/RateUserModal';
 import { RouteMap } from '../../components/common/RouteMap';
 import { formatCurrency, formatDateTime, formatWeight } from '../../lib/utils';
 import type { TransportBooking } from '../../types';
-
-interface RazorpayResponse {
-  razorpay_order_id: string;
-  razorpay_payment_id: string;
-  razorpay_signature: string;
-}
-
-interface RazorpayInstance {
-  open: () => void;
-}
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => RazorpayInstance;
-  }
-}
 
 const asRecord = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -298,67 +283,22 @@ export const TransportBookingDetailView: React.FC = () => {
     }
   };
 
-  // --- fare payment (P0-1): order → Razorpay checkout → verify → escrow held ---
-  const escrowRec = asRecord((booking as unknown as Record<string, unknown> | null)?.escrow);
-  const escrowStatus = firstStr(escrowRec, ['status']);
-  const insuranceRec = asRecord((booking as unknown as Record<string, unknown> | null)?.insurance);
-  const insurancePremiumPaisa = firstNum(insuranceRec, ['premiumPaisa'], booking?.insurancePremiumPaisa ?? 0);
-  const payableRupees = fareRupees + insurancePremiumPaisa / 100;
-  // Backend PAYMENT_CLOSED_STATUSES: cancelled / delivered / breakdown.
-  const paymentClosed = ['cancelled', 'delivered', 'breakdown'].includes(booking?.status ?? '');
-  const escrowHeld = escrowStatus === 'held' || escrowStatus === 'released';
-  const payable = !!booking && !paymentClosed && !escrowHeld;
+  // --- direct-connect: no platform payment — the farmer pays the transporter
+  // directly (fare, advance, unloading, waiting, tolls are settled between
+  // the two parties; Agrovercity only connects them). ---
+  const farmerConfirmedAt = firstStr(
+    asRecord((booking as unknown as Record<string, unknown> | null) ?? {}),
+    ['farmerConfirmedAt']
+  );
 
-  const startRazorpay = (orderId: string, amountPaisa: number, currency: string, keyId: string): Promise<boolean> =>
-    new Promise((resolve) => {
-      const rzp = new window.Razorpay!({
-        key: keyId,
-        order_id: orderId,
-        amount: amountPaisa,
-        currency,
-        name: 'Agrovercity Kisan Setu',
-        description: `Trip fare #${booking?.id ?? ''}`,
-        theme: { color: '#059669' },
-        handler: (resp: RazorpayResponse) => {
-          transport
-            .payBooking(booking!.id, {
-              razorpayOrderId: resp.razorpay_order_id,
-              razorpayPaymentId: resp.razorpay_payment_id,
-              razorpaySignature: resp.razorpay_signature,
-            })
-            .then(() => resolve(true))
-            .catch((err: unknown) => {
-              setError(apiErrorMessage(err));
-              resolve(false);
-            });
-        },
-        modal: { ondismiss: () => resolve(false) },
-      });
-      rzp.open();
-    });
-
-  const handlePayFare = async () => {
+  const handleConfirmDelivery = async () => {
     if (!booking) return;
     setBusy(true);
     setError(null);
     try {
-      const order = asRecord(await transport.payBooking(booking.id, {}));
-      const orderId = firstStr(order, ['orderId']);
-      const amountPaisa = firstNum(order, ['amountPaisa'], 0);
-      const keyId = firstStr(order, ['keyId']);
-      if (!orderId || amountPaisa <= 0) {
-        setError('Could not create the payment order — please retry.');
-        return;
-      }
-      if (!window.Razorpay || !keyId) {
-        setError('Online fare payment is not enabled yet — please pay the transporter directly on delivery.');
-        return;
-      }
-      const paid = await startRazorpay(orderId, amountPaisa, firstStr(order, ['currency'], 'INR'), keyId);
-      if (paid) {
-        setNotice('Payment secured — the fare is held in escrow until delivery.');
-        await load();
-      }
+      await transport.confirmDelivery(booking.id);
+      setNotice('Delivery confirmed — thank you! Your rating helps other farmers.');
+      await load();
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -583,6 +523,22 @@ export const TransportBookingDetailView: React.FC = () => {
                 <Phone className="w-3.5 h-3.5" /> {booking.driverPhone}
               </a>
             )}
+            {booking.contactReveal?.transporter?.whatsappDigits && (
+              <a
+                href={`https://wa.me/${booking.contactReveal.transporter.whatsappDigits}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 text-emerald-700 font-bold hover:underline"
+              >
+                <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+              </a>
+            )}
+            <a
+              href={`/chat?room=${encodeURIComponent(booking.id)}`}
+              className="flex items-center gap-1.5 text-sky-700 font-bold hover:underline"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> Chat
+            </a>
             {booking.vehicleNo && (
               <span className="font-mono bg-white border border-sky-200 px-2 py-0.5 rounded-md">{booking.vehicleNo}</span>
             )}
@@ -595,6 +551,20 @@ export const TransportBookingDetailView: React.FC = () => {
             </div>
           )
         )}
+      </div>
+
+      {/* Direct-connect notice — Agrovercity only connects the parties; the
+          fare is settled directly between farmer and transporter. */}
+      <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-3xl flex items-start gap-3">
+        <ShieldCheck className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <h3 className="font-bold text-sm text-amber-900">Direct connect — pay the transporter directly</h3>
+          <p className="text-[11px] text-amber-800 leading-relaxed">{DIRECT_CONNECT_TERMS_TEXT}</p>
+          <p className="text-[10px] text-amber-700 font-semibold">
+            Agree the final fare, advance, loading/unloading, waiting charges, tolls and delivery
+            timeline directly with the transporter before the vehicle moves.
+          </p>
+        </div>
       </div>
 
       {/* Route map — polyline + pickup/drop pins; degrades to a hint card when the
@@ -780,24 +750,21 @@ export const TransportBookingDetailView: React.FC = () => {
       <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs">
         <h3 className="font-bold text-sm text-slate-900 mb-3">Actions</h3>
         <div className="flex flex-wrap items-center gap-2.5">
-          {escrowHeld && (
-            <span className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              {escrowStatus === 'released'
-                ? 'Fare released to the transporter'
-                : `Fare held in escrow${firstNum(escrowRec, ['amountPaisa'], 0) > 0 ? ` — ${formatCurrency(firstNum(escrowRec, ['amountPaisa'], 0) / 100)}` : ''}`}
-            </span>
-          )}
-
-          {payable && (
+          {booking.status === 'delivered' && !farmerConfirmedAt && (
             <button
-              onClick={handlePayFare}
+              onClick={handleConfirmDelivery}
               disabled={busy}
               className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
             >
-              <Banknote className="w-4 h-4" />
-              Pay Fare {formatCurrency(payableRupees)}
+              <Check className="w-4 h-4" />
+              Confirm Delivery Completed
             </button>
+          )}
+          {booking.status === 'delivered' && farmerConfirmedAt && (
+            <span className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              Delivery confirmed by you
+            </span>
           )}
 
           {booking.transporterId && (

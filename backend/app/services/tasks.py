@@ -25,7 +25,7 @@ COLLECTION = "tasks"
 # notes in missing-features/robust.md §7 until their web UI lands).
 DEEP_LINKS: dict[str, str] = {
     "trade": "/dashboard/p/myOffers",
-    "transport": "/dashboard/p/transport/trips",
+    "transport": "/transporter/trips",
     "purchases": "/dashboard/p/purchases",
     "broker": "/dashboard/p/broker/deals",
     "contracts": "/dashboard/p/contracts",

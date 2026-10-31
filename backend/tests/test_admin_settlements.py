@@ -14,20 +14,19 @@ def _second_admin(user_store, uid="uid-admin2", role="finance_admin"):
     return create_access_token(uid)
 
 
-def _seed_transport(user_store):
-    user_store["transport_bookings/b1"] = {
-        "id": "b1",
-        "status": "delivered",
-        "date": "2026-10-01",
-        "vehicleId": "v1",
-        "fare": 1000,
+def _seed_broker_deals(user_store):
+    user_store["broker_deals/deal-1"] = {
+        "id": "deal-1",
+        "brokerId": "owner-1",
+        "status": "completed",
+        "grossAmount": 1000,
+        "createdAt": "2026-10-02T10:00:00+00:00",
     }
-    user_store["vehicles/v1"] = {"id": "v1", "ownerId": "owner-1", "status": "verified"}
 
 
 async def test_settlement_batch_and_mark_paid(client, user_store):
     admin_token = _seed_admin(user_store)
-    _seed_transport(user_store)
+    _seed_broker_deals(user_store)
     resp = await client.post(
         "/v1/admin/jobs/settlements/run",
         json={"periodStart": "2026-10-01", "periodEnd": "2026-10-07"},
@@ -36,7 +35,7 @@ async def test_settlement_batch_and_mark_paid(client, user_store):
     assert resp.status_code == 200
     assert resp.json()["summary"]["created"] >= 1
 
-    settlement_id = next(k.split("/", 1)[1] for k in user_store if k.startswith("settlements/st_transport"))
+    settlement_id = next(k.split("/", 1)[1] for k in user_store if k.startswith("settlements/st_broker"))
     resp = await client.post(
         f"/v1/admin/settlements/{settlement_id}/mark-paid",
         json={"paymentRef": "RZPX-12345"},

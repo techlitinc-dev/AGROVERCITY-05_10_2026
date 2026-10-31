@@ -15,9 +15,21 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_onboarding_token(user_id: str) -> str:
+    """Restricted, short-lived token for the registration/KYC journey only.
+
+    `type=onboarding` fails `decode_token(token, "access")`, so every
+    protected marketplace endpoint rejects it by construction; only the
+    allow-listed KYC + registration-status endpoints accept it.
+    """
+    exp = datetime.now(timezone.utc) + timedelta(minutes=settings.kyc_onboarding_ttl_minutes)
+    payload = {"sub": user_id, "type": "onboarding", "exp": exp}
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def create_refresh_token(user_id: str, token_type: str = "refresh") -> str:
     exp = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_ttl_days)
-    payload = {"sub": user_id, "type": "refresh", "exp": exp, "jti": uuid.uuid4().hex}
+    payload = {"sub": user_id, "type": token_type, "exp": exp, "jti": uuid.uuid4().hex}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -40,12 +52,12 @@ def decode_token(token: str, expected_type: str) -> str:
 log = logging.getLogger(__name__)
 
 
-def decode_refresh_token(token: str) -> tuple[str, str]:
+def decode_refresh_token(token: str, expected_type: str = "refresh") -> tuple[str, str]:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError:
         raise HTTPException(status_code=401, detail={"code": "INVALID_TOKEN", "message": "invalid or expired token", "fieldErrors": {}})
-    if payload.get("type") != "refresh" or not payload.get("jti"):
+    if payload.get("type") != expected_type or not payload.get("jti"):
         raise HTTPException(status_code=401, detail={"code": "INVALID_TOKEN", "message": "invalid or expired token", "fieldErrors": {}})
     return payload["sub"], payload["jti"]
 

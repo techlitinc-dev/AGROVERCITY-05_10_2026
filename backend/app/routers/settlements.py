@@ -45,11 +45,6 @@ async def _my_settlements(uid: str, role: str) -> dict:
     return {"data": docs, "page": 1, "pageSize": 20, "total": len(docs)}
 
 
-@router.get("/transport/settlements")
-async def transport_settlements(uid: str = Depends(_no_driver_settlements)):
-    return await _my_settlements(uid, "transport")
-
-
 @router.get("/equipment/settlements")
 async def equipment_settlements(uid: str = Depends(_no_driver_settlements)):
     return await _my_settlements(uid, "equipmentRental")

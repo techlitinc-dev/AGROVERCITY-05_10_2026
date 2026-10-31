@@ -15,6 +15,7 @@ import {
   Camera,
   BadgeCheck,
   Handshake,
+  Truck,
 } from 'lucide-react';
 import { lots, users, leads as leadsApi, uploads, apiErrorMessage, readOne, readList } from '../../lib/api';
 import type { Lead } from '../../lib/api';
@@ -146,6 +147,23 @@ export const ProduceLotsView: React.FC = () => {
 
   // Deep-link prefill from the mandi price board: /farmer/lots?create=1&crop=&variety=&price=
   const [searchParams] = useSearchParams();
+  // Deep-link from the transport hub: /farmer/lots?bookTransport=true — surface
+  // the Book Transport action on every eligible lot.
+  const bookTransportMode = searchParams.get('bookTransport') === 'true';
+
+  /** Option B — start transport booking from a produce lot. The transport
+   *  form prefills crop/quantity/pickup and tags the load with sourceLotId
+   *  (the backend validates lot ownership and re-reads the lot's fields). */
+  const goBookTransport = (lot: ProduceLot) => {
+    const params = new URLSearchParams({
+      open: 'lot',
+      sourceLotId: lot.id,
+      crop: lot.crop,
+      qty: String(lot.quantityQuintal),
+      pickup: lot.village || lot.location || '',
+    });
+    navigate(`/farmer/transport?${params.toString()}`);
+  };
   useEffect(() => {
     if (searchParams.get('create') !== '1') return;
     const crop = searchParams.get('crop');
@@ -402,6 +420,16 @@ export const ProduceLotsView: React.FC = () => {
         </div>
       )}
 
+      {bookTransportMode && (
+        <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs font-semibold text-sky-800 flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <Truck className="w-4 h-4" />
+            Pick a lot and tap “Book Transport” — the transport form opens with crop, quantity and pickup village prefilled.
+          </span>
+          <button onClick={() => navigate('/farmer/lots')} className="font-bold hover:underline">Exit</button>
+        </div>
+      )}
+
       {/* Section 1: Active Lots Grid */}
       <div className="space-y-3">
         <h3 className="font-bold text-sm text-slate-900">My Listed Produce Lots ({lotsList.length})</h3>
@@ -482,6 +510,20 @@ export const ProduceLotsView: React.FC = () => {
                         className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-sky-600 text-white hover:bg-sky-700 transition-all disabled:opacity-50"
                       >
                         Mark Sold
+                      </button>
+                    )}
+                    {(lot.status === 'open' || lot.status === 'negotiating') && (
+                      <button
+                        onClick={() => goBookTransport(lot)}
+                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg flex items-center gap-1 transition-all ${
+                          bookTransportMode
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700 animate-pulse'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                        title="Book transport for this lot"
+                      >
+                        <Truck className="w-3 h-3" />
+                        Book Transport
                       </button>
                     )}
                     {(lot.status === 'pending_review' || lot.status === 'rejected') && (

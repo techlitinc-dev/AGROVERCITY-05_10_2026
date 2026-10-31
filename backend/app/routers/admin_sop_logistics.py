@@ -152,7 +152,7 @@ async def intervene_transport_booking_status(
                         type="chat_unlocked",
                         title="Chat unlocked / चैट खुली",
                         body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — coordinate the pickup in-app",
-                        deepLink=f"/dashboard/p/transport/trips/{booking_id}/chat",
+                        deepLink=f"/chat?room={booking_id}",
                     )
     elif body.status == "enRoute":
         if booking.get("userId"):
@@ -161,7 +161,7 @@ async def intervene_transport_booking_status(
                 type="trip_enroute",
                 title="Vehicle en route / गाड़ी निकली",
                 body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {booking.get('vehicleNo') or 'vehicle'} is heading to pickup",
-                deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+                deepLink=f"/farmer/transport/{booking_id}",
             )
     elif body.status == "delivered":
         if body.podPhotos and body.receiverName and body.receiverName.strip():
@@ -184,7 +184,7 @@ async def intervene_transport_booking_status(
                 type="trip_delivered",
                 title="Delivered / डिलीवर हुआ",
                 body="Proof of delivery filed — inspect and rate your transporter",
-                deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+                deepLink=f"/farmer/transport/{booking_id}",
             )
     elif body.status == "cancelled":
         booking["cancellationReason"] = detail_reason
@@ -197,7 +197,11 @@ async def intervene_transport_booking_status(
                 type="booking_cancelled",
                 title="Booking cancelled by admin / बुकिंग एडमिन द्वारा रद्द",
                 body=f"{booking.get('commodity') or booking.get('vehicleType', 'Trip')} — {detail_reason}",
-                deepLink=f"/dashboard/p/transport/trips/{booking_id}",
+                deepLink=(
+                    f"/transporter/trips/{booking_id}"
+                    if party == booking.get("transporterId")
+                    else f"/farmer/transport/{booking_id}"
+                ),
             )
 
     booking["status"] = body.status

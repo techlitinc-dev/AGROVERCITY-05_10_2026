@@ -8,7 +8,7 @@ TEMPLATE_BODY = {
     "pickupLocation": "Pimpalgaon, Nashik",
     "dropLocation": "Vashi APMC, Navi Mumbai",
     "crop": "Red Onion",
-    "quantityQuintals": 40,
+    "quantityQuintals": 20,
     "preferredVehicleType": "Tractor Trolley",
     "targetFare": 2500,
     "repeatWeekday": 1,
@@ -59,13 +59,13 @@ async def test_repeat_creates_open_load_and_counts_uses(client, user_store):
 
     repeated = await client.post(
         f"/v1/transport/load-templates/{template['id']}/repeat",
-        json={"pickupDate": "2026-10-13", "targetFare": 2700},
+        json={"pickupDate": "2026-11-13", "targetFare": 2700},
         headers=_auth(token),
     )
     assert repeated.status_code == 201
     load = repeated.json()
     assert load["status"] == "open"
-    assert load["pickupDate"] == "2026-10-13"
+    assert load["pickupDate"] == "2026-11-13"
     assert load["targetFare"] == 2700  # seasonal override
     assert load["templateId"] == template["id"]
     assert load["crop"] == "Red Onion"
@@ -77,7 +77,7 @@ async def test_repeat_creates_open_load_and_counts_uses(client, user_store):
     # default fare comes back when not overridden
     again = await client.post(
         f"/v1/transport/load-templates/{template['id']}/repeat",
-        json={"pickupDate": "2026-10-20"},
+        json={"pickupDate": "2026-11-20"},
         headers=_auth(token),
     )
     assert again.status_code == 201
@@ -99,7 +99,7 @@ async def test_repeat_guards(client, user_store):
     other = _other_transporter_token(user_store)
     resp = await client.post(
         f"/v1/transport/load-templates/{template['id']}/repeat",
-        json={"pickupDate": "2026-10-13"},
+        json={"pickupDate": "2026-11-13"},
         headers=_auth(other),
     )
     assert resp.status_code == 404  # template belongs to uid-1, hidden from uid-2

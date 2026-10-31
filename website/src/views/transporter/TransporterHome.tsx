@@ -10,7 +10,6 @@ import {
   X,
   Check,
   Inbox,
-  Wallet,
   TrendingUp,
   Calculator,
   FileText,
@@ -18,18 +17,18 @@ import {
   ShieldAlert,
   CalendarDays,
   User,
-  FileCheck,
   Star,
   Megaphone,
-  Sparkles,
-  Bot,
+  Wrench,
   BookOpen,
   Lock,
   Phone,
   MessageSquare,
   ShieldCheck,
+  Handshake,
 } from 'lucide-react';
 import { transport, apiErrorMessage } from '../../lib/api';
+import { DIRECT_CONNECT_TERMS_TEXT } from '../../lib/api/transport';
 import { isMpinError } from '../../lib/api/leads';
 import { StatCard } from '../../components/common/StatCard';
 import { ModalSheet } from '../../components/common/ModalSheet';
@@ -52,14 +51,12 @@ const TAB_FOR_PATH: Record<string, TabId> = {
  *  (the `vehicle_catalog` rate card) — no hardcoded fleet list. */
 
 const QUICK_LINKS = [
-  { to: '/transporter/profile', label: 'Profile', icon: User },
-  { to: '/transporter/bookings', label: 'My Bookings', icon: FileCheck },
+  { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
+  { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
   { to: '/transporter/ratings', label: 'Ratings & Reviews', icon: Star },
   { to: '/transporter/ads', label: 'My Advertisements', icon: Megaphone },
-  { to: '/transporter/ai', label: 'AI Analysis', icon: Sparkles },
-  { to: '/transporter/chatbot', label: 'Chatbot', icon: Bot },
   { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
-  { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
+  { to: '/transporter/profile', label: 'Profile', icon: User },
 ];
 
 const bookingCrop = (b: TransportBooking): string => b.commodity || b.cargoCrop || 'Cargo';
@@ -80,8 +77,6 @@ export const TransporterHome: React.FC = () => {
   const [fareTrends, setFareTrends] = useState<Rec[]>([]);
   const [bookings, setBookings] = useState<TransportBooking[]>([]);
   const [acceptedTrips, setAcceptedTrips] = useState<TransportBooking[]>([]);
-  const [settlements, setSettlements] = useState<Rec[]>([]);
-  const [wallet, setWallet] = useState<Rec>({});
   const [vehicles, setVehicles] = useState<TransportVehicle[]>([]);
   // Rate card from GET /transport/vehicles — drives the fare-estimator dropdown.
   const [catalog, setCatalog] = useState<VehicleCatalogEntry[]>([]);
@@ -97,10 +92,10 @@ export const TransporterHome: React.FC = () => {
   const [bidTerms, setBidTerms] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
   const [bidBusy, setBidBusy] = useState(false);
+  const [busyBidId, setBusyBidId] = useState<string | null>(null);
   const [mpinKey, setMpinKey] = useState(0);
   const [fareForm, setFareForm] = useState({ vehicleType: '', distanceKm: 100 });
   const [fareResult, setFareResult] = useState<Rec | null>(null);
-  const [invoice, setInvoice] = useState<Rec | null>(null);
   const [biltyFor, setBiltyFor] = useState<TransportBooking | null>(null);
   const [biltyData, setBiltyData] = useState<Rec | null>(null);
 
@@ -108,27 +103,24 @@ export const TransporterHome: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [d, a, w, v] = await Promise.all([
+      const [d, a, v] = await Promise.all([
         transport.dashboard(),
         transport.analytics().catch(() => ({})),
-        transport.wallet().catch(() => ({})),
         transport.myVehicles().catch(() => [] as TransportVehicle[]),
       ]);
       setDashboard(asRec(d));
       setAnalytics(asRec(a));
-      setWallet(asRec(w));
       setVehicles(v);
     } catch {
       setDashboard({});
       setAnalytics({});
     }
     try {
-      const [l, m, f, b, s, accepted, mine, cat] = await Promise.all([
+      const [l, m, f, b, accepted, mine, cat] = await Promise.all([
         transport.loads(),
         transport.matchedLoads().catch(() => [] as unknown[]),
         transport.fareTrends().catch(() => [] as unknown[]),
         transport.bookings(),
-        transport.settlements().catch(() => [] as unknown[]),
         transport.bookings({ status: 'accepted' }).catch(() => [] as TransportBooking[]),
         transport.myLoadBids().catch(() => [] as unknown[]),
         transport.vehicles().catch(() => [] as unknown[]),
@@ -137,7 +129,6 @@ export const TransporterHome: React.FC = () => {
       setMatched(asArr(m).map(asRec));
       setFareTrends(asArr(f).map(asRec));
       setBookings(b);
-      setSettlements(asArr(s).map(asRec));
       setAcceptedTrips(accepted);
       setMyBids(asArr(mine).map(asRec));
       const catalogRows = asArr(cat) as unknown as VehicleCatalogEntry[];
@@ -217,6 +208,25 @@ export const TransporterHome: React.FC = () => {
     }
   };
 
+  /** Withdraw a pending application — the load slot frees up and the farmer
+   *  is notified; the transporter can quote again later. */
+  const handleWithdrawBid = async (loadRec: Rec, bid: Rec) => {
+    const loadId = str(loadRec.id, '');
+    const bidId = str(bid.id, '');
+    if (!loadId || !bidId) return;
+    if (!window.confirm('Withdraw this application? You can apply again later.')) return;
+    setBusyBidId(bidId);
+    setError(null);
+    try {
+      await transport.withdrawBid(loadId, bidId);
+      await load();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setBusyBidId(null);
+    }
+  };
+
   /** Compact phone/WhatsApp pair shown once the farmer accepts my application. */
   const ContactButtons: React.FC<{ contact: Rec; phoneLabel: string }> = ({ contact, phoneLabel }) => {
     const phoneDigits = str(contact.phoneDigits, '');
@@ -254,14 +264,6 @@ export const TransporterHome: React.FC = () => {
     }
   };
 
-  const openInvoice = async (bookingId: string) => {
-    try {
-      setInvoice(asRec(await transport.commissionInvoice(bookingId)));
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    }
-  };
-
   const openBilty = async (b: TransportBooking) => {
     setBiltyFor(b);
     try {
@@ -277,7 +279,6 @@ export const TransporterHome: React.FC = () => {
 
   const todayTrips = asArr(dashboard.todayTrips);
   const docExpiries = asArr(dashboard.documentExpiries);
-  const walletBalance = firstNum(wallet, ['balancePaisa'], 0) / 100;
 
   // Trip calendar: accepted bookings grouped by scheduled/pickup date over the next 7 days.
   const weekDays = useMemo(() => {
@@ -311,7 +312,7 @@ export const TransporterHome: React.FC = () => {
             Transporter Logistics Cockpit (FT Desk)
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Freight load auction board, trip execution, digital bilty, and net settlements
+            Freight load auction board, trip execution, digital bilty — fares settle directly with the farmer
           </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
@@ -357,7 +358,7 @@ export const TransporterHome: React.FC = () => {
         </div>
       )}
 
-      {/* KPI Cards (transport.dashboard + analytics + wallet) */}
+      {/* KPI Cards (transport.dashboard + analytics) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard
           title="Today's Trips"
@@ -376,15 +377,15 @@ export const TransporterHome: React.FC = () => {
         <StatCard
           title="Gross Revenue"
           value={formatCurrency(firstNum(analytics, ['totalGrossRevenue', 'grossRevenue', 'revenue'], 0))}
-          subtitle={`Est. net ${formatCurrency(firstNum(analytics, ['estimatedNetProfit'], 0))} after fuel + 10% commission`}
+          subtitle={`Est. net ${formatCurrency(firstNum(analytics, ['estimatedNetProfit'], 0))} after fuel — paid directly by farmers, no commission`}
           icon={DollarSign}
           colorScheme="amber"
         />
         <StatCard
-          title="Wallet Balance"
-          value={formatCurrency(walletBalance)}
-          subtitle={`Week earnings ${formatCurrency(firstNum(dashboard, ['earningsWeekPaisa'], 0) / 100)}`}
-          icon={Wallet}
+          title="Week Earnings"
+          value={formatCurrency(firstNum(dashboard, ['earningsWeekPaisa'], 0) / 100)}
+          subtitle="Collected directly from farmers — Agrovercity takes no commission"
+          icon={Handshake}
           colorScheme="purple"
         />
       </div>
@@ -461,7 +462,7 @@ export const TransporterHome: React.FC = () => {
           { id: 'loads', label: 'Load Board (Auction)' },
           { id: 'trips', label: 'Active Trips' },
           { id: 'bilty', label: 'Bilty Generator' },
-          { id: 'settlements', label: 'P&L / Settlements' },
+          { id: 'settlements', label: 'Trip P&L' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -665,12 +666,30 @@ export const TransporterHome: React.FC = () => {
                           Open Trip
                         </Link>
                       ) : myBid ? (
-                        <button
-                          disabled
-                          className="px-5 py-2.5 rounded-2xl bg-slate-100 text-slate-400 font-bold text-xs cursor-not-allowed"
-                        >
-                          Applied — awaiting farmer
-                        </button>
+                        str(myBid.status, 'pending') === 'pending' ? (
+                          <div className="flex flex-col items-start sm:items-end gap-1">
+                            <button
+                              disabled
+                              className="px-5 py-2.5 rounded-2xl bg-slate-100 text-slate-400 font-bold text-xs cursor-not-allowed"
+                            >
+                              Applied — awaiting farmer
+                            </button>
+                            <button
+                              onClick={() => void handleWithdrawBid(load, myBid)}
+                              disabled={busyBidId === str(myBid.id, '')}
+                              className="text-[10px] font-bold text-rose-600 hover:underline disabled:opacity-50"
+                            >
+                              {busyBidId === str(myBid.id, '') ? 'Withdrawing…' : 'Withdraw application'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            disabled
+                            className="px-5 py-2.5 rounded-2xl bg-slate-100 text-slate-400 font-bold text-xs cursor-not-allowed"
+                          >
+                            Application {str(myBid.status, 'reviewed')}
+                          </button>
+                        )
                       ) : freeVehicles.length === 0 ? (
                         <div className="flex flex-col items-start sm:items-end gap-1">
                           <button
@@ -769,21 +788,23 @@ export const TransporterHome: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 4: Settlements */}
+      {/* Tab 4: Trip P&L (direct-connect record-keeping — no settlements) */}
       {activeTab === 'settlements' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs">
-              <p className="text-[10px] uppercase font-bold text-slate-400">Wallet Balance</p>
-              <p className="text-xl font-black text-emerald-700">{formatCurrency(walletBalance)}</p>
+              <p className="text-[10px] uppercase font-bold text-slate-400">Trips Completed</p>
+              <p className="text-xl font-black text-slate-900">{completedBookings.length}</p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs">
-              <p className="text-[10px] uppercase font-bold text-slate-400">TDS Deducted (194-O)</p>
-              <p className="text-xl font-black text-slate-900">{formatCurrency(firstNum(asRec(wallet.tds), ['tdsDeductedPaisa'], 0) / 100)}</p>
+              <p className="text-[10px] uppercase font-bold text-slate-400">Gross Revenue</p>
+              <p className="text-xl font-black text-emerald-700">
+                {formatCurrency(completedBookings.reduce((sum, b) => sum + bookingFare(b), 0))}
+              </p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs">
-              <p className="text-[10px] uppercase font-bold text-slate-400">Settlements</p>
-              <p className="text-xl font-black text-slate-900">{settlements.length}</p>
+              <p className="text-[10px] uppercase font-bold text-slate-400">Platform Commission</p>
+              <p className="text-xl font-black text-slate-900">₹0</p>
             </div>
             <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs">
               <p className="text-[10px] uppercase font-bold text-slate-400">Est. Net Profit</p>
@@ -791,65 +812,43 @@ export const TransporterHome: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-900">Settlements & Platform Deductions (10%)</h3>
-            <Link to="/transporter/wallet" className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1">
-              <Wallet className="w-3.5 h-3.5" /> Wallet & Payouts
-            </Link>
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              <strong>Direct connect.</strong> {DIRECT_CONNECT_TERMS_TEXT} Collect the fare,
+              advance and any waiting charges directly from the farmer — Agrovercity never holds
+              trip money and takes no commission.
+            </p>
           </div>
-          {settlements.length === 0 && !loading ? (
+
+          <h3 className="font-bold text-sm text-slate-900">Completed Trips — Fare Record</h3>
+          {completedBookings.length === 0 && !loading ? (
             <div className="p-8 bg-white rounded-3xl border border-dashed border-slate-300 text-center text-xs text-slate-500">
-              No settlements yet. Settlements are generated after trip completion.
+              No completed trips yet — fares you collect directly will be listed here for your records.
             </div>
           ) : (
             <div className="space-y-3">
-              {settlements.map((s) => {
-                const sourceIds = Array.isArray(s.sourceIds) ? (s.sourceIds as unknown[]) : [];
-                const firstBookingId = sourceIds.length > 0 ? str(sourceIds[0]) : str(s.bookingId ?? s.booking_id, '');
-                const gross = firstNum(s, ['grossRupees', 'gross', 'grossAmount', 'fare'], 0);
-                const fee = firstNum(s, ['commissionRupees', 'commission', 'platformFee', 'fee'], 0);
-                const net = firstNum(s, ['netRupees', 'net', 'netAmount', 'payout'], gross - fee);
-                return (
-                  <div key={str(s.id) || JSON.stringify(s).slice(0, 24)} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <p className="font-bold text-sm text-slate-900">
-                          {firstStr(s, ['periodStart', 'reference', 'label'], 'Settlement')}
-                          {firstStr(s, ['periodEnd'], '') !== '—' ? ` → ${firstStr(s, ['periodEnd'])}` : ''}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {sourceIds.length > 0 ? `${sourceIds.length} trip(s)` : fmtDate(s.createdAt ?? s.settledAt)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={str(s.status, 'pending')} />
-                        {firstBookingId && (
-                          <button
-                            onClick={() => openInvoice(firstBookingId)}
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs"
-                          >
-                            Commission Invoice
-                          </button>
-                        )}
-                      </div>
+              {completedBookings.map((b) => (
+                <div key={b.id} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-sm text-slate-900">
+                        {bookingCrop(b)} · {b.vehicleNo || b.vehicleType || 'Vehicle'}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {bookingPickup(b)} → {bookingDrop(b)} · {b.date || '—'}
+                      </p>
                     </div>
-                    <div className="grid grid-cols-3 gap-3 mt-3 text-xs">
-                      <div className="p-3 bg-slate-50 rounded-2xl">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold">Gross</span>
-                        <p className="font-bold text-slate-900">{formatCurrency(gross)}</p>
-                      </div>
-                      <div className="p-3 bg-slate-50 rounded-2xl">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold">Platform Fee</span>
-                        <p className="font-bold text-rose-700">-{formatCurrency(fee)}</p>
-                      </div>
-                      <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
-                        <span className="text-emerald-600 text-[10px] uppercase font-bold">Net Payout</span>
-                        <p className="font-bold text-emerald-800">{formatCurrency(net)}</p>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-emerald-700">{formatCurrency(bookingFare(b))}</span>
+                      <StatusBadge status={b.status} />
                     </div>
                   </div>
-                );
-              })}
+                  <p className="text-[10px] text-slate-400 mt-2">
+                    Fare collected directly from the farmer · platform fee ₹0
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -935,18 +934,18 @@ export const TransporterHome: React.FC = () => {
               />
             </div>
 
-            <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+            <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50 border border-amber-200 cursor-pointer">
               <input
                 type="checkbox"
                 checked={bidTerms}
                 onChange={(e) => setBidTerms(e.target.checked)}
                 className="mt-0.5 w-4 h-4 accent-emerald-600"
               />
-              <span className="text-[11px] text-slate-600 leading-relaxed">
-                I accept the platform <strong>terms &amp; conditions</strong> and confirm the selected
-                vehicle is available for the pickup date. My contact stays hidden until the farmer
-                accepts this application; on acceptance both sides' phone &amp; WhatsApp are shared to
-                coordinate pickup directly. Agrovercity only connects the two parties.
+              <span className="text-[11px] text-amber-800 leading-relaxed">
+                <strong>Direct-connect terms (required).</strong> {DIRECT_CONNECT_TERMS_TEXT} I
+                confirm the selected vehicle is available for the pickup date. My contact stays
+                hidden until the farmer accepts this application; on acceptance both sides' phone
+                &amp; WhatsApp are shared to coordinate pickup directly.
               </span>
             </label>
 
@@ -999,22 +998,6 @@ export const TransporterHome: React.FC = () => {
                 Verifying &amp; submitting application…
               </div>
             )}
-          </div>
-        )}
-      </ModalSheet>
-
-      {/* Commission invoice modal */}
-      <ModalSheet isOpen={!!invoice} onClose={() => setInvoice(null)} title="Commission Invoice" maxWidth="sm">
-        {invoice && (
-          <div className="space-y-2">
-            {Object.entries(invoice).map(([k, v]) => (
-              <div key={k} className="flex justify-between p-3 bg-slate-50 rounded-2xl text-xs">
-                <span className="text-slate-500 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
-                <span className="font-bold text-slate-900 text-right">
-                  {typeof v === 'number' ? formatCurrency(v) : typeof v === 'string' ? v : JSON.stringify(v)}
-                </span>
-              </div>
-            ))}
           </div>
         )}
       </ModalSheet>

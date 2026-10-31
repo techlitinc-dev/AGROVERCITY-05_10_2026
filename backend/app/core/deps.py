@@ -26,6 +26,18 @@ async def current_user_id(
     return decode_token(authorization[len("Bearer "):], "access")
 
 
+async def onboarding_user_id(
+    authorization: str | None = Header(None),
+) -> str:
+    """Restricted registration/KYC token: accepts ONLY short-lived onboarding
+    tokens. Full access tokens are rejected here — the allow-listed KYC and
+    registration-status endpoints are the entire surface a registering user
+    gets before verification completes."""
+    if not authorization or not authorization.startswith("Bearer "):
+        _error(401, "MISSING_TOKEN", "missing or malformed Authorization header")
+    return decode_token(authorization[len("Bearer "):], "onboarding")
+
+
 async def get_partner(x_api_key: str | None = Header(None, alias="X-API-Key")) -> dict:
     """Authenticate a partner request via the `X-API-Key` header (WS-03)."""
     from app.services.partner_keys import verify_key
@@ -98,6 +110,21 @@ async def admin_user(authorization: str | None = Header(None)) -> dict:
         raise
     except Exception:
         _error(401, "INVALID_TOKEN", "invalid or revoked admin token")
+
+
+async def get_current_superadmin(
+    claims: dict = Depends(admin_user),
+    x_admin_role: str | None = Header(None, alias="X-Admin-Role"),
+) -> dict:
+    """Enforces Superadmin role (role == 'SUPERADMIN' or 'superadmin').
+    Rejects non-superadmin callers with 403 Forbidden.
+    """
+    role = str(claims.get("role") or claims.get("adminRole") or "").strip().lower()
+    if role not in ("superadmin", "super_admin"):
+        _error(403, "SUPERADMIN_REQUIRED", "Superadmin privileges required for this action")
+    if x_admin_role and x_admin_role.lower() not in ("superadmin", "super_admin"):
+        _error(403, "FORBIDDEN_ADMIN_ROLE", "X-Admin-Role must be superadmin")
+    return claims
 
 
 def admin_action(action: str):

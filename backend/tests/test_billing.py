@@ -54,32 +54,37 @@ async def test_free_tier_blocks_over_limit_and_upgrade_unlocks(client, user_stor
     assert blocked.json()["error"]["limit"] == 5
 
 
-async def test_transport_vehicle_limit_enforced(client, user_store):
+async def test_transport_fleet_unlimited_on_all_tiers(client, user_store):
+    """Direct-connect: fleet size is not paywalled — Free and Pro both allow
+    unlimited vehicles (the old caps were 1 and 5)."""
     await seed_plans()
     token = seed_user(user_store, uid="uid-tr", active_profile="transport")
     headers = auth(token)
 
-    # robust.md §6.3: Free = 1 vehicle, commission-only
     resp = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
     assert resp.status_code == 201
 
-    blocked = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
-    assert blocked.status_code == 402
-    assert blocked.json()["error"]["code"] == "ENTITLEMENT_EXCEEDED"
-    assert blocked.json()["error"]["limit"] == 1
+    # well past the old Free cap of 1 — still no 402
+    for i in range(3):
+        extra = await client.post(
+            "/v1/transport/vehicles",
+            json={**VEHICLE_BODY, "registrationNo": f"MH15 BB 000{i}"},
+            headers=headers,
+        )
+        assert extra.status_code == 201
 
     subscribed = await client.post(
         "/v1/billing/subscribe", json={"planId": "transport_pro"}, headers=headers
     )
     assert subscribed.status_code == 201
-    # Pro = fleet of 5
-    for _ in range(4):
-        resp = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
+    # well past the old Pro cap of 5 — still no 402
+    for i in range(6):
+        resp = await client.post(
+            "/v1/transport/vehicles",
+            json={**VEHICLE_BODY, "registrationNo": f"MH15 CC 000{i}"},
+            headers=headers,
+        )
         assert resp.status_code == 201
-
-    blocked = await client.post("/v1/transport/vehicles", json=VEHICLE_BODY, headers=headers)
-    assert blocked.status_code == 402
-    assert blocked.json()["error"]["limit"] == 5
 
 
 async def test_subscription_status_from_webhook(client, user_store, monkeypatch):

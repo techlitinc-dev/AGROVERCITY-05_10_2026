@@ -7,10 +7,10 @@ ADMIN_HEADERS = {
     "X-Audit-Reason": "test reason",
 }
 
-DISPUTE_BODY = {
+REPORT_BODY = {
+    "kind": "damage",
     "photos": ["https://storage.example/damage/1.jpg"],
-    "claimPaisa": 12500,
-    "notes": "crate damage at drop",
+    "note": "crate damage at drop",
 }
 
 
@@ -29,42 +29,43 @@ async def _accepted_booking(client, user_store):
     return token, booking
 
 
-async def test_damage_dispute_create_and_list(client, user_store):
+async def test_trip_report_create_and_list(client, user_store):
     token, booking = await _accepted_booking(client, user_store)
 
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/damage-disputes",
-        json=DISPUTE_BODY,
+        f"/v1/transport/bookings/{booking['id']}/reports",
+        json=REPORT_BODY,
         headers=_auth(token),
     )
     assert resp.status_code == 201
-    dispute = resp.json()
-    assert dispute["status"] == "open"
-    assert dispute["bookingId"] == booking["id"]
-    assert dispute["claimPaisa"] == DISPUTE_BODY["claimPaisa"]
-    assert dispute["createdBy"]
+    report = resp.json()
+    assert report["status"] == "open"
+    assert report["bookingId"] == booking["id"]
+    assert report["kind"] == "damage"
+    assert "claimPaisa" not in report  # direct-connect: no claim amounts
+    assert report["createdBy"]
 
     listed = await client.get(
-        f"/v1/transport/bookings/{booking['id']}/damage-disputes", headers=_auth(token)
+        f"/v1/transport/bookings/{booking['id']}/reports", headers=_auth(token)
     )
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
-    assert listed.json()["data"][0]["id"] == dispute["id"]
+    assert listed.json()["data"][0]["id"] == report["id"]
 
 
-async def test_damage_dispute_resolve_transition(client, user_store):
+async def test_trip_report_resolve_transition(client, user_store):
     token, booking = await _accepted_booking(client, user_store)
-    dispute = (
+    report = (
         await client.post(
-            f"/v1/transport/bookings/{booking['id']}/damage-disputes",
-            json=DISPUTE_BODY,
+            f"/v1/transport/bookings/{booking['id']}/reports",
+            json=REPORT_BODY,
             headers=_auth(token),
         )
     ).json()
 
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/damage-disputes/{dispute['id']}/resolve",
-        json={"resolution": "claim approved, settled via payout adjustment"},
+        f"/v1/transport/bookings/{booking['id']}/reports/{report['id']}/resolve",
+        json={"resolution": "support case closed — parties advised to settle directly"},
         headers=ADMIN_HEADERS,
     )
     assert resp.status_code == 200
@@ -73,26 +74,26 @@ async def test_damage_dispute_resolve_transition(client, user_store):
     assert resolved["resolvedBy"]
 
     again = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/damage-disputes/{dispute['id']}/resolve",
+        f"/v1/transport/bookings/{booking['id']}/reports/{report['id']}/resolve",
         json={"resolution": "try again"},
         headers=ADMIN_HEADERS,
     )
     assert again.status_code == 409
-    assert again.json()["error"]["code"] == "DISPUTE_NOT_OPEN"
+    assert again.json()["error"]["code"] == "REPORT_NOT_OPEN"
 
 
-async def test_damage_dispute_resolve_requires_admin_headers(client, user_store):
+async def test_trip_report_resolve_requires_admin_headers(client, user_store):
     token, booking = await _accepted_booking(client, user_store)
-    dispute = (
+    report = (
         await client.post(
-            f"/v1/transport/bookings/{booking['id']}/damage-disputes",
-            json=DISPUTE_BODY,
+            f"/v1/transport/bookings/{booking['id']}/reports",
+            json=REPORT_BODY,
             headers=_auth(token),
         )
     ).json()
 
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/damage-disputes/{dispute['id']}/resolve",
+        f"/v1/transport/bookings/{booking['id']}/reports/{report['id']}/resolve",
         json={"resolution": "no reason given"},
         headers={"Authorization": "Bearer admin-token"},
     )

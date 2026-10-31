@@ -93,3 +93,27 @@ class BiometricLoginRequest(BaseModel):
     deviceKey: str
     signature: str
 
+
+class RegistrationProfileRequest(BaseModel):
+    """Step 2 of the registration journey (basic profile). Accepted only with
+    the restricted onboarding token. ``personas`` (multi-select, first entry =
+    primary) supersedes the single ``persona`` field when provided."""
+
+    name: str
+    persona: str = "farmer"
+    personas: list[str] | None = None
+    state: str = "Maharashtra"
+    district: str = "Nashik"
+    village: str = ""
+    language: str = "en"
+    farmSizeAcres: float | None = None
+    mpin: str | None = None
+
+
+class RegistrationCompleteRequest(BaseModel):
+    """Step 7 — server-controlled completion. The backend verifies every
+    precondition; the frontend can never set kycStatus/registrationStatus
+    directly."""
+
+    sessionId: str
+

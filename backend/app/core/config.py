@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "AGROVERCITY API"
     env: str = Field(default="dev", validation_alias=AliasChoices("APP_ENV", "ENV"))
     firebase_service_account_path: str = "secrets/firebase-service-account.json"
-    firebase_project_id: str = "agrovercity-dev"
+    firebase_project_id: str = "agrovercity-bafec"
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
@@ -17,6 +17,28 @@ class Settings(BaseSettings):
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
     bank_verify_provider: str = "stub"
+    # Identity verification (KYC) provider: "mock" serves the internal mock
+    # DigiLocker screen (default, dev/no-SSL testing servers); "sandbox" drives
+    # the real DigiLocker consent flow through the Sandbox.co.in KYC API
+    # (OAuth-style redirect, document pull, Aadhaar XML storage).
+    kyc_provider: str = "mock"
+    # Restricted onboarding token TTL — the registration/KYC journey only.
+    kyc_onboarding_ttl_minutes: int = 30
+    # Sandbox.co.in KYC API credentials (https://console.sandbox.co.in). Empty
+    # = sandbox provider unavailable. The API base selects the environment:
+    # production https://api.sandbox.co.in, test https://test-api.sandbox.co.in
+    sandbox_api_key: str = ""
+    sandbox_api_secret: str = ""
+    sandbox_api_base_url: str = "https://api.sandbox.co.in"
+    sandbox_api_version: str = "1.0"
+    # HTTP timeout for Sandbox API calls (seconds).
+    sandbox_api_timeout_seconds: int = 20
+    # Public HTTPS base of THIS backend — Sandbox redirects the user's browser
+    # here after DigiLocker consent ({base}/v1/kyc/sessions/oauth/callback).
+    # Must be publicly reachable over HTTPS for the real flow to complete.
+    sandbox_api_redirect_base: str = ""
+    # Public base URL of the web app — KYC authorization/callback URLs point here.
+    web_app_base_url: str = "http://localhost:5173"
     # OTP SMS delivery. Empty = no provider wired → /auth/otp/send runs in dev
     # mode and surfaces `devOtp` in the response (non-prod environments only).
     sms_provider: str = ""

@@ -24,7 +24,7 @@ import {
 
 /**
  * SOP-10 — Disputes Desk & Land Arbitration.
- * Unified dispute inbox (trade / transport / escrow) with ruling + structured
+ * Unified dispute inbox (trade / transport reports / escrow) with ruling + structured
  * settlement, land-lease desk (agreement inspection and arbitrated lease
  * termination), and the pickup-exception monitor: grace-window config plus
  * bookings stuck past their scheduled pickup slot.

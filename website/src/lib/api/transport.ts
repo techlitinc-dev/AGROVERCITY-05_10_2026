@@ -9,6 +9,16 @@ export interface BookingRouteBounds {
   east: number;
 }
 
+/** Direct-connect terms (version dc-1.0) — shown at every connection moment:
+ * posting a load, applying on a load, and the farmer's pre-reveal
+ * confirmation. Must match DIRECT_CONNECT_TERMS_TEXT in the backend. */
+export const DIRECT_CONNECT_TERMS_TEXT =
+  'Agrovercity only connects farmers and transporters. It does not collect or ' +
+  'guarantee trip payments and is not a party to their transport arrangement. ' +
+  'Fare, payment, loading, cargo condition, delivery, loss, and disputes are ' +
+  'solely between the farmer and transporter. Verify the other party, vehicle, ' +
+  'documents, and commercial terms before proceeding.';
+
 /** Route payload from GET /transport/bookings/{id}/route (may 404 BOOKING_NOT_FOUND / 422 GEO_REQUIRED). */
 export interface BookingRoute {
   bookingId: string;
@@ -22,7 +32,10 @@ export interface BookingRoute {
   coordsKey?: string;
 }
 
-/** Transport namespace — bookings, vehicles, loads/bids, trips, wallet & payouts. */
+/** Transport namespace — bookings, vehicles, loads/bids, trips, fleet & POD.
+ *  Direct-connect model: the platform holds no trip money, so there are no
+ *  escrow/wallet/payout calls here — fares are settled directly between the
+ *  farmer and the transporter. */
 export const transport = {
   // --- discovery ---
   /** GET /transport/vehicles — vehicle rate card from the `vehicle_catalog`
@@ -34,6 +47,12 @@ export const transport = {
   /** GET /transport/nearby-vehicles */
   nearbyVehicles: (params?: Record<string, unknown>): Promise<TransportVehicle[]> =>
     readList<TransportVehicle>('/transport/nearby-vehicles', { params }),
+
+  /** GET /transport/directory — Option C discovery: verified available
+   *  transporter vehicles without a geo anchor. Contact details are never
+   *  included; they unlock only after a confirmed booking. */
+  directory: (params?: Record<string, unknown>): Promise<Record<string, unknown>[]> =>
+    readList<Record<string, unknown>>('/transport/directory', { params }),
 
   /** POST /transport/fare-estimate */
   fareEstimate: (payload: Record<string, unknown>): Promise<unknown> =>
@@ -72,9 +91,19 @@ export const transport = {
   bilty: (bookingId: string): Promise<unknown> => readOne<unknown>(`/transport/bookings/${bookingId}/bilty`),
 
   // --- transporter ops ---
-  /** POST /transport/bookings/{id}/accept */
-  acceptBooking: (bookingId: string): Promise<TransportBooking> =>
-    post<TransportBooking>(`/transport/bookings/${bookingId}/accept`),
+  /** POST /transport/bookings/{id}/accept — open-board bookings accept with no
+   *  body; direct requests (Option C) require termsAccepted + MPIN (verified
+   *  by the backend when the account has an MPIN on file). */
+  acceptBooking: (
+    bookingId: string,
+    opts?: { vehicleId?: string; vehicleNo?: string; termsAccepted?: boolean; mpin?: string }
+  ): Promise<TransportBooking> =>
+    post<TransportBooking>(`/transport/bookings/${bookingId}/accept`, {
+      ...(opts?.vehicleId ? { vehicleId: opts.vehicleId } : {}),
+      ...(opts?.vehicleNo ? { vehicleNo: opts.vehicleNo } : {}),
+      ...(opts?.termsAccepted ? { termsAccepted: true } : {}),
+      ...(opts?.mpin ? { mpin: opts.mpin } : {}),
+    }),
 
   /** POST /transport/bookings/{id}/reject */
   rejectBooking: (bookingId: string, reason?: string): Promise<TransportBooking> =>
@@ -162,10 +191,6 @@ export const transport = {
   rateFarmer: (bookingId: string, body: Record<string, unknown>): Promise<unknown> =>
     post<unknown>(`/transport/bookings/${bookingId}/rate-farmer`, body),
 
-  /** GET /transport/bookings/{id}/commission-invoice */
-  commissionInvoice: (bookingId: string): Promise<unknown> =>
-    readOne<unknown>(`/transport/bookings/${bookingId}/commission-invoice`),
-
   /** GET /transport/trips/{id}/return-loads */
   returnLoads: (tripId: string): Promise<unknown[]> =>
     readList<unknown[]>(`/transport/trips/${tripId}/return-loads`),
@@ -186,8 +211,19 @@ export const transport = {
   /** GET /transport/loads/matched */
   matchedLoads: (): Promise<unknown[]> => readList<unknown[]>('/transport/loads/matched'),
 
-  /** POST /transport/loads */
+  /** GET /transport/loads/{id} — single load; contact fields are present only
+   *  for the load owner. */
+  load: (loadId: string): Promise<unknown> => readOne<unknown>(`/transport/loads/${loadId}`),
+
+  /** POST /transport/loads — Option A: post a requirement to the board.
+   *  Option B adds sourceLotId (server validates lot ownership and
+   *  ground-truths crop/quantity/pickup from the lot doc). */
   createLoad: (payload: Record<string, unknown>): Promise<unknown> => post<unknown>('/transport/loads', payload),
+
+  /** POST /transport/loads/{id}/cancel — farmer cancels an open requirement;
+   *  pending bidders are released. Direct requests are bookings, not loads. */
+  cancelLoad: (loadId: string, reason: string): Promise<unknown> =>
+    post<unknown>(`/transport/loads/${loadId}/cancel`, { reason }),
 
   /** POST /transport/loads/{id}/bid — direct-connect apply: quoted fare +
    * vehicle + termsAccepted + MPIN. Contact stays hidden until the load
@@ -202,9 +238,16 @@ export const transport = {
   counterBid: (loadId: string, bidId: string, payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>(`/transport/loads/${loadId}/bids/${bidId}/counter`, payload),
 
-  /** POST /transport/loads/{id}/accept-bid */
-  acceptBid: (loadId: string, bidId: string): Promise<unknown> =>
-    post<unknown>(`/transport/loads/${loadId}/accept-bid`, { bidId }),
+  /** POST /transport/loads/{id}/accept-bid — farmer selects an application;
+   *  the farmer's direct-connect terms confirmation + MPIN unlock both
+   *  parties' contact details. */
+  acceptBid: (loadId: string, bidId: string, termsAccepted: boolean, mpin?: string): Promise<unknown> =>
+    post<unknown>(`/transport/loads/${loadId}/accept-bid`, { bidId, termsAccepted, ...(mpin ? { mpin } : {}) }),
+
+  /** POST /transport/loads/{id}/bids/{bidId}/withdraw — transporter pulls a
+   *  pending application; the load owner is notified. */
+  withdrawBid: (loadId: string, bidId: string): Promise<unknown> =>
+    post<unknown>(`/transport/loads/${loadId}/bids/${bidId}/withdraw`),
 
   // --- vehicles management ---
   /** GET /transport/vehicles/my */
@@ -270,29 +313,12 @@ export const transport = {
       ...body,
     }),
 
-  // --- profile, wallet, payouts, settlements ---
   /** GET /transport/profile */
   profile: (): Promise<unknown> => readOne<unknown>('/transport/profile'),
 
   /** PUT /transport/profile */
   updateProfile: (updates: Record<string, unknown>): Promise<unknown> =>
     put<unknown>('/transport/profile', updates),
-
-  /** GET /transport/wallet */
-  wallet: (): Promise<unknown> => readOne<unknown>('/transport/wallet'),
-
-  /** POST /transport/payouts */
-  payout: (payload: Record<string, unknown>): Promise<unknown> => post<unknown>('/transport/payouts', payload),
-
-  /** GET /transport/payouts — the caller's payout history, newest first. */
-  payouts: (): Promise<unknown[]> => readList<unknown[]>('/transport/payouts'),
-
-  /** GET /transport/settlements */
-  settlements: (params?: Record<string, unknown>): Promise<unknown[]> =>
-    readList<unknown[]>('/transport/settlements', { params }),
-
-  /** GET /transport/ledger/mine */
-  ledger: (): Promise<unknown[]> => readList<unknown[]>('/transport/ledger/mine'),
 
   /** GET /transport/dashboard */
   dashboard: (): Promise<unknown> => readOne<unknown>('/transport/dashboard'),
@@ -339,25 +365,20 @@ export const transport = {
   sharedBooking: (token: string): Promise<TransportBooking> =>
     readOne<TransportBooking>(`/transport/shared/${token}`),
 
-  // --- disputes ---
-  /** POST /transport/bookings/{id}/damage-disputes */
-  openDamageDispute: (bookingId: string, body: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>(`/transport/bookings/${bookingId}/damage-disputes`, body),
+  // --- trip reports (support cases — direct-connect, no funds held) ---
+  /** POST /transport/bookings/{id}/reports */
+  openReport: (bookingId: string, body: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/transport/bookings/${bookingId}/reports`, body),
 
-  /** GET /transport/bookings/{id}/damage-disputes */
-  damageDisputes: (bookingId: string): Promise<unknown[]> =>
-    readList<unknown[]>(`/transport/bookings/${bookingId}/damage-disputes`),
+  /** GET /transport/bookings/{id}/reports */
+  reports: (bookingId: string): Promise<unknown[]> =>
+    readList<unknown[]>(`/transport/bookings/${bookingId}/reports`),
 
-  /** POST /transport/bookings/{id}/damage-disputes/{disputeId}/resolve */
-  resolveDamageDispute: (bookingId: string, disputeId: string, body: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>(`/transport/bookings/${bookingId}/damage-disputes/${disputeId}/resolve`, body),
+  /** POST /transport/bookings/{id}/reports/{reportId}/resolve */
+  resolveReport: (bookingId: string, reportId: string, body: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/transport/bookings/${bookingId}/reports/${reportId}/resolve`, body),
 
-  // --- payments & escrow ---
-  /** POST /transport/bookings/{id}/payments */
-  payBooking: (bookingId: string, payload: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>(`/transport/bookings/${bookingId}/payments`, payload),
-
-  /** POST /transport/bookings/{id}/escrow/release */
-  releaseEscrow: (bookingId: string): Promise<unknown> =>
-    post<unknown>(`/transport/bookings/${bookingId}/escrow/release`),
+  /** POST /transport/bookings/{id}/confirm-delivery — farmer close-out. */
+  confirmDelivery: (bookingId: string): Promise<unknown> =>
+    post<unknown>(`/transport/bookings/${bookingId}/confirm-delivery`),
 };

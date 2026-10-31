@@ -77,12 +77,13 @@ async def test_load_insurance_carries_into_auction_booking(client, user_store):
                 "pickupLocation": "Pimplas, Nashik",
                 "dropLocation": "Vashi APMC",
                 "crop": "Onion",
-                "quantityQuintals": 20,
+                "quantityQuintals": 12,
                 "preferredVehicleType": "Bolero Maxi",
-                "pickupDate": "2026-10-09",
+                "pickupDate": "2026-11-09",
                 "targetFare": 9000,
                 "declaredValuePaisa": 2000000,
                 "insuranceOptIn": True,
+                "termsAccepted": True,
             },
             headers=_auth(token),
         )
@@ -98,7 +99,8 @@ async def test_load_insurance_carries_into_auction_booking(client, user_store):
         )
     ).json()
     accepted = await client.post(
-        f"/v1/transport/loads/{load['id']}/accept-bid?bidId={bid['id']}",
+        f"/v1/transport/loads/{load['id']}/accept-bid",
+        json={"bidId": bid["id"], "termsAccepted": True, "mpin": "1234"},
         headers=_auth(token),
     )
     booking = accepted.json()["booking"]
@@ -126,24 +128,27 @@ async def test_template_insurance_carries_into_repeat(client, user_store):
     ).json()
     repeated = await client.post(
         f"/v1/transport/load-templates/{template['id']}/repeat",
-        json={"pickupDate": "2026-10-15"},
+        json={"pickupDate": "2026-11-15"},
         headers=_auth(token),
     )
     assert repeated.status_code == 201
     assert repeated.json()["insurance"]["coveragePaisa"] == 8000000
 
 
-async def test_insured_damage_dispute_auto_claims(client, user_store):
+async def test_insured_trip_report_does_not_auto_claim(client, user_store):
+    """Direct-connect: a report on an insured trip is a support case only —
+    the platform holds no funds and files no insurance claim."""
     token, booking = await _delivered_insured(client, user_store)
     resp = await client.post(
-        f"/v1/transport/bookings/{booking['id']}/damage-disputes",
-        json={"photos": ["https://storage.example/dmg/1.jpg"], "claimPaisa": 25000},
+        f"/v1/transport/bookings/{booking['id']}/reports",
+        json={"kind": "damage", "photos": ["https://storage.example/dmg/1.jpg"], "note": "crate crushed"},
         headers=_auth(token),
     )
     assert resp.status_code == 201
-    dispute = resp.json()
-    assert dispute["insuranceClaim"] is True
-    assert dispute["coveragePaisaAtClaim"] == 1000000
+    report = resp.json()
+    assert report["kind"] == "damage"
+    assert "insuranceClaim" not in report
+    assert "claimPaisa" not in report
 
 
 async def test_bilty_shows_insurance(client, user_store):

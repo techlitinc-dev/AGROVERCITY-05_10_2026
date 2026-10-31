@@ -92,6 +92,7 @@ async def _fleet(client, user_store):
         registrationNo="MH15 NR 0009",
         homeLocation={"lat": CENTER_LAT, "lng": CENTER_LNG},
         availableNow=True,
+        fitnessExpiry="2020-01-01",  # expired doc — the only remaining document gate
     )
     return token, custom, catalog_vehicle, idle, unverified
 
@@ -126,7 +127,7 @@ async def test_nearby_vehicles_lists_only_eligible_with_custom_fares(client, use
     assert custom["id"] in ids
     assert catalog_vehicle["id"] in ids
     assert idle["id"] not in ids  # unavailable
-    assert unverified["id"] not in ids  # owner KYC gate not passed
+    assert unverified["id"] not in ids  # expired fitness doc — the only remaining document gate
     assert body["total"] == len(body["data"]) == 2
 
     entries = {v["vehicleId"]: v for v in body["data"]}
@@ -138,7 +139,10 @@ async def test_nearby_vehicles_lists_only_eligible_with_custom_fares(client, use
     )
     assert custom_entry["regNo"] == "MH15 NR 0001"
     assert custom_entry["capacityKg"] == 1500
-    assert custom_entry["driver"] == {"name": "Kailas Driver", "phone": "+919800000010"}
+    # direct-connect privacy: the driver name shows, the phone stays hidden
+    # until a booking is confirmed
+    assert custom_entry["driver"] == {"name": "Kailas Driver"}
+    assert "phone" not in custom_entry["driver"]
     assert custom_entry["rating"] == 4.6
     assert custom_entry["availableNow"] is True
     assert custom_entry["chatContext"] == {"type": "vehicle", "id": custom["id"]}
@@ -323,7 +327,7 @@ async def test_instant_booking_accepted_with_chat_notifications_and_replay(clien
     owner_notes = _notifications(user_store, "instant_booking")
     assert len(owner_notes) == 1
     assert owner_notes[0]["userId"] == "uid-1"
-    assert owner_notes[0]["data"]["deepLink"] == f"/dashboard/p/transport/trips/{booking['id']}"
+    assert owner_notes[0]["data"]["deepLink"] == f"/transporter/trips/{booking['id']}"
     farmer_notes = _notifications(user_store, "booking_confirmed")
     assert any(n["userId"] == "uid-farmer" for n in farmer_notes)
 
@@ -397,11 +401,11 @@ async def test_urgent_load_notifies_nearby_verified_owners_once(client, user_sto
     assert urgent_load["urgent"] is True
 
     # uid-1 owns two eligible vehicles (custom + catalog) but is pinged once;
-    # the idle vehicle and the unverified stranger are skipped.
+    # the idle vehicle and the expired-doc stranger are skipped.
     notes = _notifications(user_store, "urgent_load_nearby")
     assert len(notes) == 1
     assert notes[0]["userId"] == "uid-1"
-    assert notes[0]["data"]["deepLink"] == "/dashboard/p/transport/loads"
+    assert notes[0]["data"]["deepLink"] == "/transporter/loads"
 
     # a plain load pings nobody...
     plain = await client.post("/v1/transport/loads", json=LOAD_BODY, headers=_auth(farmer))

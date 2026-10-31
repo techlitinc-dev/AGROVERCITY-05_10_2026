@@ -43,6 +43,71 @@ import {
 } from '../types/entities';
 import { AdminUser } from '../types/auth';
 
+export interface PaymentTransactionsSummary {
+  wallet_balance_inr: number;
+  escrow_locked_inr: number;
+  lifetime_credit_inr: number;
+  lifetime_debit_inr: number;
+  pending_settlements_count: number;
+  failed_transactions_count: number;
+  udhaar_net_balance_inr: number;
+  verified_bank_accounts_count: number;
+}
+
+export interface RatingsReviewsSummary {
+  avg_rating_received: number;
+  total_reviews_received: number;
+  total_reviews_given: number;
+  trust_score: number;
+  flagged_reviews_count: number;
+  pending_rating_prompts_count: number;
+}
+
+export interface SavedFollowingSummary {
+  following_count: number;
+  followers_count: number;
+  favorite_transporters_count: number;
+  wishlist_items_count: number;
+  saved_searches_count: number;
+  active_price_alerts_count: number;
+  active_product_alerts_count: number;
+}
+
+export interface ReferEarnSummary {
+  referral_code: string;
+  referred_by_user_id?: string;
+  total_invites_sent: number;
+  converted_referrals_count: number;
+  pending_referrals_count: number;
+  total_coins_earned: number;
+  fraud_flagged_count: number;
+}
+
+export interface DocumentVaultSummary {
+  total_documents: number;
+  total_storage_bytes: number;
+  verified_docs_count: number;
+  pending_verification_count: number;
+  rejected_docs_count: number;
+  high_risk_tamper_flags: number;
+}
+
+export interface FarmerCommonFiveFeatures360 {
+  user_id: string;
+  full_name: string;
+  phone: string;
+  district?: string;
+  state?: string;
+  kyc_status: string;
+  account_status: string;
+  payments: PaymentTransactionsSummary;
+  ratings: RatingsReviewsSummary;
+  saved_following: SavedFollowingSummary;
+  referrals: ReferEarnSummary;
+  document_vault: DocumentVaultSummary;
+  recent_activities: any[];
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/v1';
 
 class ApiService {
@@ -917,6 +982,321 @@ class ApiService {
     } catch {
       return [];
     }
+  }
+
+  // Superadmin User 360 & Governance (Phase 3)
+  async fetchUsers(params: any = {}): Promise<any> {
+    try {
+      const res = await this.client.get('/admin/users', { params });
+      return res.data;
+    } catch {
+      return { users: [], total: 0 };
+    }
+  }
+
+  async fetchUser360(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/users/${encodeURIComponent(userId)}/summary`);
+    return res.data;
+  }
+
+  async fetchUserActivities(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/users/${encodeURIComponent(userId)}/activities`, { params });
+    return res.data;
+  }
+
+  async fetchUserContent(userId: string, entityType: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/users/${encodeURIComponent(userId)}/content/${entityType}`, { params });
+    return res.data;
+  }
+
+  async overrideUserKyc(userId: string, payload: any): Promise<any> {
+    const res = await this.client.put(
+      `/admin/users/${encodeURIComponent(userId)}/kyc`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.remarks || 'Admin KYC Override' } }
+    );
+    return res.data;
+  }
+
+  // Superadmin Farmer 360° & Governance (farmer_management_module_instructions.md)
+  async fetchFarmers(params: any = {}): Promise<any> {
+    try {
+      const res = await this.client.get('/admin/farmers', { params });
+      return res.data;
+    } catch {
+      return { farmers: [], total: 0 };
+    }
+  }
+
+  async fetchFarmerStats(range: string = 'all'): Promise<any> {
+    const res = await this.client.get('/admin/farmers/stats', { params: { range } });
+    return res.data;
+  }
+
+  async fetchFarmer360(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/summary`);
+    return res.data;
+  }
+
+  async fetchFarmerLandRecords(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/land-records`);
+    return res.data;
+  }
+
+  async verifyFarmerLandRecord(userId: string, docId: string, payload: any): Promise<any> {
+    const res = await this.client.put(
+      `/admin/farmers/${encodeURIComponent(userId)}/land-records/${encodeURIComponent(docId)}/verify`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.remarks || 'Admin land KYC verification' } }
+    );
+    return res.data;
+  }
+
+  async updateFarmerProfile(userId: string, payload: any): Promise<any> {
+    const res = await this.client.patch(
+      `/admin/farmers/${encodeURIComponent(userId)}/profile`,
+      payload,
+      { headers: { 'X-Audit-Reason': 'Admin updated farmer profile' } }
+    );
+    return res.data;
+  }
+
+  async fetchFarmerLots(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/lots`, { params });
+    return res.data;
+  }
+
+  async takedownFarmerLot(userId: string, lotId: string, reason: string): Promise<any> {
+    const res = await this.client.delete(
+      `/admin/farmers/${encodeURIComponent(userId)}/lots/${encodeURIComponent(lotId)}`,
+      {
+        params: { reason },
+        headers: { 'X-Audit-Reason': reason },
+      }
+    );
+    return res.data;
+  }
+
+  async fetchFarmerOrders(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/orders`, { params });
+    return res.data;
+  }
+
+  async fetchFarmerDiary(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/diary`, { params });
+    return res.data;
+  }
+
+  async fetchFarmerAdvisory(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/advisory`, { params });
+    return res.data;
+  }
+
+  async fetchFarmerActivities(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/activities`, { params });
+    return res.data;
+  }
+
+  async updateFarmerStatus(userId: string, payload: any): Promise<any> {
+    const res = await this.client.post(
+      `/admin/farmers/${encodeURIComponent(userId)}/status`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.reason || 'Admin status change' } }
+    );
+    return res.data;
+  }
+
+  async impersonateFarmer(userId: string): Promise<any> {
+    const res = await this.client.post(
+      `/admin/farmers/${encodeURIComponent(userId)}/impersonate`,
+      {},
+      { headers: { 'X-Audit-Reason': 'Superadmin farmer impersonation' } }
+    );
+    return res.data;
+  }
+
+  // =========================================================================
+  // Superadmin Farmer Common Features Suite Specification (5 Core Modules)
+  // =========================================================================
+
+  async getFarmerCommon5Summary(userId: string): Promise<FarmerCommonFiveFeatures360> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/common-5-summary`);
+    return res.data;
+  }
+
+  // 1. Payment & Transactions
+  async getFarmerPaymentsOverview(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/payments/overview`, { params });
+    return res.data;
+  }
+
+  async getFarmerTransactions(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/payments/transactions`, { params });
+    return res.data;
+  }
+
+  async getFarmerSettlements(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/payments/settlements`, { params });
+    return res.data;
+  }
+
+  async getFarmerBankAccounts(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/payments/bank-accounts`);
+    return res.data;
+  }
+
+  async verifyFarmerBankAccount(userId: string, accountId: string, payload: any): Promise<any> {
+    const res = await this.client.post(
+      `/admin/farmers/${encodeURIComponent(userId)}/payments/bank-accounts/${encodeURIComponent(accountId)}/verify`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.admin_note || 'Verify bank account' } }
+    );
+    return res.data;
+  }
+
+  async reconcileFarmerPayment(userId: string, payload: any): Promise<any> {
+    const res = await this.client.post(
+      `/admin/farmers/${encodeURIComponent(userId)}/payments/reconcile`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.reason || 'Reconcile payment' } }
+    );
+    return res.data;
+  }
+
+  // 2. Ratings & Reviews
+  async getFarmerRatingsOverview(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/ratings/overview`);
+    return res.data;
+  }
+
+  async getFarmerRatingsList(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/ratings/list`, { params });
+    return res.data;
+  }
+
+  async getFarmerRatingPrompts(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/ratings/prompts`, { params });
+    return res.data;
+  }
+
+  async moderateFarmerRating(userId: string, reviewId: string, payload: any): Promise<any> {
+    const res = await this.client.patch(
+      `/admin/farmers/${encodeURIComponent(userId)}/ratings/${encodeURIComponent(reviewId)}/moderate`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.reason || 'Moderate review' } }
+    );
+    return res.data;
+  }
+
+  async deleteFarmerRating(userId: string, reviewId: string, reason: string = 'Violates platform policies'): Promise<any> {
+    const res = await this.client.delete(
+      `/admin/farmers/${encodeURIComponent(userId)}/ratings/${encodeURIComponent(reviewId)}`,
+      {
+        params: { reason },
+        headers: { 'X-Audit-Reason': reason },
+      }
+    );
+    return res.data;
+  }
+
+  // 3. Saved & Following
+  async getFarmerSavedFollowingOverview(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/saved-following/overview`);
+    return res.data;
+  }
+
+  async getFarmerConnections(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/saved-following/connections`, { params });
+    return res.data;
+  }
+
+  async getFarmerWishlist(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/saved-following/wishlist`, { params });
+    return res.data;
+  }
+
+  async getFarmerSearchesAndAlerts(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/saved-following/searches-and-alerts`, { params });
+    return res.data;
+  }
+
+  async deleteFarmerSavedItem(userId: string, category: string, itemId: string, reason: string = 'Admin cleanup'): Promise<any> {
+    const res = await this.client.delete(
+      `/admin/farmers/${encodeURIComponent(userId)}/saved-following/${encodeURIComponent(category)}/${encodeURIComponent(itemId)}`,
+      {
+        params: { reason },
+        headers: { 'X-Audit-Reason': reason },
+      }
+    );
+    return res.data;
+  }
+
+  // 4. Refer & Earn
+  async getFarmerReferralsOverview(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/referrals/overview`);
+    return res.data;
+  }
+
+  async getFarmerReferralInvitees(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/referrals/invitees`, { params });
+    return res.data;
+  }
+
+  async getFarmerReferralLedger(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/referrals/rewards-ledger`, { params });
+    return res.data;
+  }
+
+  async actionFarmerReferral(userId: string, referralId: string, payload: any): Promise<any> {
+    const res = await this.client.post(
+      `/admin/farmers/${encodeURIComponent(userId)}/referrals/${encodeURIComponent(referralId)}/action`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.reason || 'Referral moderation action' } }
+    );
+    return res.data;
+  }
+
+  async updateReferralCampaignRules(payload: any): Promise<any> {
+    const res = await this.client.put(
+      `/admin/farmer-modules/referrals/campaign-rules`,
+      payload,
+      { headers: { 'X-Audit-Reason': 'Update referral campaign rules' } }
+    );
+    return res.data;
+  }
+
+  // 5. Document Vault
+  async getFarmerVaultOverview(userId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/vault/overview`);
+    return res.data;
+  }
+
+  async getFarmerVaultDocuments(userId: string, params: any = {}): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/vault/documents`, { params });
+    return res.data;
+  }
+
+  async getFarmerVaultDocActivity(userId: string, docId: string): Promise<any> {
+    const res = await this.client.get(`/admin/farmers/${encodeURIComponent(userId)}/vault/documents/${encodeURIComponent(docId)}/activity`);
+    return res.data;
+  }
+
+  async verifyFarmerVaultDocument(userId: string, docId: string, payload: any): Promise<any> {
+    const res = await this.client.put(
+      `/admin/farmers/${encodeURIComponent(userId)}/vault/documents/${encodeURIComponent(docId)}/verify`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.notes || payload.rejection_reason || 'Verify vault document' } }
+    );
+    return res.data;
+  }
+
+  async uploadFarmerVaultDocument(userId: string, payload: any): Promise<any> {
+    const res = await this.client.post(
+      `/admin/farmers/${encodeURIComponent(userId)}/vault/documents`,
+      payload,
+      { headers: { 'X-Audit-Reason': payload.notes || 'Upload official vault document' } }
+    );
+    return res.data;
   }
 }
 

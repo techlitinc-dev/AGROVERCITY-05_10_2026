@@ -168,10 +168,10 @@ async def test_omni_user_as_transporter(client, user_store):
     assert veh_resp.status_code == 201
     assert veh_resp.json()["registrationNo"] == "MH-15-EG-8822"
 
-    # 2. View Transporter Settlements
+    # 2. Transport settlements are gone under direct-connect (fares settle
+    #    directly between farmer and transporter) — the endpoint 404s.
     settle_resp = await client.get("/v1/transport/settlements", headers=auth(token))
-    assert settle_resp.status_code == 200
-    assert "data" in settle_resp.json()
+    assert settle_resp.status_code == 404
 
 
 @pytest.mark.asyncio

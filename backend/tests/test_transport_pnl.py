@@ -19,7 +19,9 @@ async def _accepted_trip(client, user_store, fare_overrides=None):
     return token, booking
 
 
-async def test_trip_pnl_commission_matches_default_config(client, user_store):
+async def test_trip_pnl_has_no_platform_commission(client, user_store):
+    """Direct-connect: the trip P&L is fare − expenses; the platform takes no
+    commission, regardless of the settlements config."""
     token, booking = await _accepted_trip(client, user_store)
     await client.post(
         f"/v1/transport/bookings/{booking['id']}/expenses",
@@ -34,12 +36,13 @@ async def test_trip_pnl_commission_matches_default_config(client, user_store):
     pnl = resp.json()
     assert pnl["grossFare"] == 1000
     assert pnl["totalExpenses"] == 200
-    # default platform_config/settlements.transportPct = 10
-    assert pnl["platformCommission"] == 100
-    assert pnl["netProfit"] == 700
+    assert pnl["platformCommission"] == 0
+    assert pnl["netProfit"] == 800
 
 
-async def test_trip_pnl_commission_tracks_config_change(client, user_store):
+async def test_trip_pnl_ignores_settlements_config_change(client, user_store):
+    """A settlements-config commission change must not leak into the trip
+    P&L — transport is no longer in the commission model at all."""
     user_store["platform_config/settlements"] = {
         "transportPct": 12,
         "equipmentRentalPct": 12,
@@ -52,16 +55,14 @@ async def test_trip_pnl_commission_tracks_config_change(client, user_store):
     )
     assert resp.status_code == 200
     pnl = resp.json()
-    assert pnl["platformCommission"] == 120
-    assert pnl["netProfit"] == 880
+    assert pnl["platformCommission"] == 0
+    assert pnl["netProfit"] == 1000
 
 
-async def test_commission_invoice_returns_pdf(client, user_store):
+async def test_commission_invoice_endpoint_removed(client, user_store):
     token, booking = await _accepted_trip(client, user_store)
 
     resp = await client.get(
         f"/v1/transport/bookings/{booking['id']}/commission-invoice", headers=_auth(token)
     )
-    assert resp.status_code == 200
-    assert resp.headers["content-type"] == "application/pdf"
-    assert resp.content.startswith(b"%PDF")
+    assert resp.status_code == 404

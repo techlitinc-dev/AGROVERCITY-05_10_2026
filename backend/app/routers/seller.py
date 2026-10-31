@@ -605,7 +605,7 @@ async def procurement_receipt(payment_id: str, uid: str = Depends(_farmer_user))
 @router.get("/settlements")
 async def seller_settlements(ctx: tuple = Depends(_seller_user)):
     """V11: this vyapari's weekly settlement lines (role "seller" in the
-    settlements ledger) — same envelope as GET /transport/settlements."""
+    settlements ledger) — same envelope as GET /equipment/settlements."""
     _, uid = ctx
     docs = await query(
         "settlements", [("role", "==", "seller"), ("entityId", "==", uid)], limit=1000

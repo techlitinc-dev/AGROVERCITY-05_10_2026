@@ -28,7 +28,7 @@ import {
   BookOpen,
   Heart,
 } from 'lucide-react';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useI18nStore, SUPPORTED_LANGUAGES } from '../../lib/i18n';
@@ -52,16 +52,19 @@ export const Navbar: React.FC = () => {
   const [womenSettings, setWomenSettings] = useState<Record<string, unknown>>({});
 
   // Load the real inbox once after login so the bell badge reflects unread count.
+  // Skipped for registration-incomplete sessions: the restricted onboarding
+  // token is rejected by protected endpoints by design.
+  const restricted = isRestrictedRegistration(user);
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !restricted) {
       void refreshNotifications();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, restricted]);
 
   // Women-mode toggle mirrors the mall home boost: persisted via user settings.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || restricted) return;
     let mounted = true;
     users
       .getSettings()
@@ -74,7 +77,7 @@ export const Navbar: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, restricted]);
 
   const handleToggleWomenMode = async () => {
     const next = !womenMode;
@@ -175,8 +178,10 @@ export const Navbar: React.FC = () => {
           </Link>
         </div>
 
-        {/* Persona Switcher & Direct Dashboard Link */}
-        {isAuthenticated && (
+        {/* Persona Switcher & Direct Dashboard Link — hidden while registration
+        is incomplete: switching personas hits protected activation APIs that
+        reject the onboarding token by design. */}
+        {isAuthenticated && !restricted && (
           <div className="flex items-center gap-2">
             <Link
               to={`/${activePersona || 'farmer'}`}
@@ -302,8 +307,8 @@ export const Navbar: React.FC = () => {
             )}
           </div>
 
-          {/* Women-Mode Toggle (Mahila Gruh Udyog boost) */}
-          {isAuthenticated && (
+          {/* Women-Mode Toggle (Mahila Gruh Udyog boost) — settings writes need a full token */}
+          {isAuthenticated && !restricted && (
             <button
               onClick={() => void handleToggleWomenMode()}
               aria-pressed={womenMode}
@@ -403,9 +408,18 @@ export const Navbar: React.FC = () => {
                       <p className="text-[11px] text-slate-500 font-mono">+91 {user.phone}</p>
                       <div className="mt-1 flex items-center gap-1.5">
                         <Shield className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-[10px] font-semibold text-emerald-700 capitalize">
-                          {user.kycStatus} KYC
-                        </span>
+                        {user.kycStatus === 'verified' ? (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                            Verified
+                            {user.verificationMode === 'mock' && (
+                              <span className="text-amber-600 font-bold">(Test)</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-500 capitalize">
+                            {user.kycStatus} KYC
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -483,13 +497,15 @@ export const Navbar: React.FC = () => {
                       <Landmark className="w-4 h-4 text-slate-400" /> Bank Accounts
                     </Link>
 
-                    <Link
-                      to="/kyc"
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
-                    >
-                      <FileCheck2 className="w-4 h-4 text-slate-400" /> KYC Verification
-                    </Link>
+                    {!restricted && (
+                      <Link
+                        to="/kyc"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
+                      >
+                        <FileCheck2 className="w-4 h-4 text-slate-400" /> KYC Verification
+                      </Link>
+                    )}
 
                     <Link
                       to="/support"

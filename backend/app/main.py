@@ -30,6 +30,7 @@ from app.routers import (
     admin_sop_chatbot,
     admin_sop_economy,
     admin_sop_farm,
+    admin_sop_farmers,
     admin_sop_finance,
     admin_sop_logistics,
     admin_sop_org,
@@ -113,6 +114,7 @@ from app.routers import (
     ratings,
     reference,
     referrals,
+    registration,
     resale,
     saved_searches,
     schemes,
@@ -237,6 +239,7 @@ app.include_router(land.router, prefix="/v1")
 app.include_router(land_ops.router, prefix="/v1")
 app.include_router(bank_accounts.router, prefix="/v1")
 app.include_router(kyc.router, prefix="/v1")
+app.include_router(registration.router, prefix="/v1")
 app.include_router(billing.router, prefix="/v1")
 app.include_router(billing.admin_router, prefix="/v1")
 app.include_router(jobs.router, prefix="/v1")
@@ -285,7 +288,13 @@ app.include_router(ai_power.router, prefix="/v1")
 # SOP superadmin console routers (docs/superadmin-instructions) — mounted after
 # admin/admin_console so their static routes win over the SOP wildcard routes
 # (e.g. /admin/content/news over /admin/content/{collection}).
-app.include_router(admin_sop_users.router, prefix="/v1")
+app.include_router(admin_sop_users.legacy_sop_router, prefix="/v1")
+app.include_router(admin_sop_users.router, prefix="/api/v1/admin/users", tags=["Superadmin - Users"])
+app.include_router(admin_sop_users.router, prefix="/v1/admin/users", tags=["Superadmin - Users"])
+app.include_router(admin_sop_farmers.router, prefix="/api/v1/admin/farmers", tags=["Superadmin - Farmers"])
+app.include_router(admin_sop_farmers.router, prefix="/v1/admin/farmers", tags=["Superadmin - Farmers"])
+app.include_router(admin_sop_farmers.modules_router, prefix="/api/v1/admin/farmer-modules", tags=["Superadmin - Farmer Modules"])
+app.include_router(admin_sop_farmers.modules_router, prefix="/v1/admin/farmer-modules", tags=["Superadmin - Farmer Modules"])
 app.include_router(admin_sop_trade.router, prefix="/v1")
 app.include_router(admin_sop_logistics.router, prefix="/v1")
 app.include_router(admin_sop_farm.router, prefix="/v1")

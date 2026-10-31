@@ -62,6 +62,14 @@ class CreateBookingRequest(BaseModel):
     weightQuintals: float | None = None
     packaging: str | None = None
     notes: str | None = None
+    # Option C — direct request: pre-assign the booking to one specific
+    # transporter. The booking is created in `requested` state and only that
+    # transporter can accept/decline it; contact details unlock on acceptance.
+    transporterId: str | None = None
+    # Direct-connect posting: the farmer must accept the platform terms
+    # (Agrovercity only connects the parties; fare/payment are settled
+    # directly) before the request is sent to the transporter.
+    termsAccepted: bool = False
 
 
 class UpdateBookingRequest(BaseModel):
@@ -79,6 +87,10 @@ class AcceptBookingRequest(BaseModel):
     vehicleNo: str | None = None
     driverName: str | None = None
     driverPhone: str | None = None
+    # Direct-connect confirmation at acceptance: the transporter re-confirms
+    # the terms and verifies their MPIN before the farmer's contact unlocks.
+    termsAccepted: bool = False
+    mpin: str | None = None
 
 
 class RejectBookingRequest(BaseModel):
@@ -182,27 +194,38 @@ class TransportProfileUpdate(BaseModel):
 class OpenLoadCreateRequest(BaseModel):
     pickupLocation: str
     dropLocation: str
-    crop: str
-    quantityQuintals: float
+    crop: str | None = None
+    quantityQuintals: float | None = None
     packaging: str = "Gunny Bags"  # "Gunny Bags", "Plastic Crates", "Wooden Boxes", "Bulk"
     perishable: bool = False
-    preferredVehicleType: str = "Tata Ace"
+    # None / "Any" = any suitable vehicle — the load board shows it to every
+    # eligible transporter regardless of fleet type. A specific type is a
+    # preference, not a hard restriction on bids.
+    preferredVehicleType: str | None = None
     pickupDate: str
     pickupTime: str | None = None  # FT-1: ISO datetime slot for the pickup
     # FT-6 transit insurance on the load's declared goods value.
     declaredValuePaisa: int | None = Field(default=None, gt=0)
     insuranceOptIn: bool = False
-    targetFare: float
+    targetFare: float = Field(gt=0)
     notes: str | None = None
     # Urgent load: pinned first on the load board and pushed to verified
     # vehicles near the pickup point when geo coordinates are present.
     urgent: bool = False
     pickupLat: float | None = None
     pickupLng: float | None = None
+    # Option B — book transport for a produce lot: the lot is validated and its
+    # crop/quantity/pickup are taken from the server-side lot doc (client-sent
+    # copies of those fields are ignored when sourceLotId is supplied).
+    sourceLotId: str | None = None
+    # Direct-connect posting: the farmer must accept the platform terms
+    # (Agrovercity only connects the parties; fare/payment are settled
+    # directly) before the demand is published.
+    termsAccepted: bool = False
 
 
 class LoadBidRequest(BaseModel):
-    quotedFare: float
+    quotedFare: float = Field(gt=0)
     vehicleId: str | None = None
     vehicleNo: str | None = None
     estimatedPickupTime: str | None = None
@@ -211,6 +234,16 @@ class LoadBidRequest(BaseModel):
     # transporter accepts the platform terms and verifies their MPIN before the
     # application is recorded; contact details stay hidden until the load owner
     # accepts the bid.
+    termsAccepted: bool = False
+    mpin: str | None = None
+
+
+class AcceptLoadBidRequest(BaseModel):
+    """Farmer selects a transporter's application. The farmer re-confirms the
+    direct-connect terms and verifies their MPIN here — this is the pre-reveal
+    checkpoint at which both sides' contact details unlock."""
+
+    bidId: str
     termsAccepted: bool = False
     mpin: str | None = None
 
@@ -300,17 +333,6 @@ class LoadTemplateRepeatRequest(BaseModel):
     targetFare: float | None = None  # seasonal override
 
 
-class BookingPaymentRequest(BaseModel):
-    """P0-1 fare payment. An empty body (or only amountPaisa) creates a
-    Razorpay order for the fare; supplying the razorpay* fields verifies the
-    captured payment, which funds the trip escrow."""
-
-    amountPaisa: int | None = Field(default=None, gt=0)
-    razorpayOrderId: str | None = None
-    razorpayPaymentId: str | None = None
-    razorpaySignature: str | None = None
-
-
 class StopIn(BaseModel):
     """P2-36 multi-drop stop (F15 milk-run)."""
 
@@ -342,9 +364,15 @@ class BreakdownRequest(BaseModel):
     completedDistanceKm: float | None = Field(default=None, ge=0)
 
 
-class TransportPayoutRequest(BaseModel):
-    """P0-1 wallet payout to the verified bank account. MPIN-gated like the
-    other high-risk money movements (contract accept, equipment payout)."""
+class TripReportRequest(BaseModel):
+    """Direct-connect trip report / support case (damage, payment issue,
+    behaviour, other). The platform holds no funds, so a report records the
+    issue for support follow-up — there is no claim amount and no refund."""
 
-    mpin: str = Field(min_length=4, max_length=4)
-    amountPaisa: int | None = Field(default=None, gt=0)  # default: full balance
+    kind: str = "damage"  # "damage" | "payment" | "behaviour" | "other"
+    note: str = Field(min_length=3, max_length=1000)
+    photos: list[str] = []
+
+
+class TripReportResolveRequest(BaseModel):
+    resolution: str = Field(min_length=3, max_length=500)

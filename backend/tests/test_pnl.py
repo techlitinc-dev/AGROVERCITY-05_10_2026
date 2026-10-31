@@ -32,19 +32,33 @@ async def test_summary_empty_user_zeros(client, user_store):
     assert resp.json() == {"grossIncome": 0, "productionCost": 0, "netProfit": 0}
 
 
-async def test_crops_seeds_demo_on_first_read(client, user_store):
+async def test_crops_empty_for_new_user(client, user_store):
+    """No demo seeding: a fresh account has zero crop P&L records and the
+    frontend shows its empty state."""
     token = seed_user(user_store)
     resp = await client.get("/v1/pnl/crops", headers=auth(token))
     assert resp.status_code == 200
     body = resp.json()
-    assert body["total"] == 2
-    names = {c["name"] for c in body["data"]}
-    assert any("Wheat" in n for n in names)
-    assert any("Onion" in n for n in names)
+    assert body["total"] == 0
+    assert body["data"] == []
+    assert user_store.get("users/uid-1/crop_pnl/crop-wheat") is None
 
 
 async def test_add_expense_recomputes(client, user_store):
     token = seed_user(user_store)
+    user_store["users/uid-1/crop_pnl/crop-wheat"] = {
+        "id": "crop-wheat",
+        "name": "Wheat",
+        "season": "Rabi 2025-26",
+        "area": 2.0,
+        "yieldQuintals": 44,
+        "marketAvgRate": 2475,
+        "grossRevenue": 108900,
+        "totalExpenses": 6400,
+        "netProfit": 102500,
+        "roiPercent": 1604.7,
+        "expensesBreakdown": [{"category": "Certified Seeds", "amount": 6400}],
+    }
     resp = await client.get("/v1/pnl/crops", headers=auth(token))
     wheat = next(c for c in resp.json()["data"] if "Wheat" in c["name"])
     resp = await client.post(

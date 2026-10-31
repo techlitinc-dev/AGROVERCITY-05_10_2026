@@ -108,3 +108,34 @@ export const auth = {
   /** GET /auth/sessions */
   sessions: () => post<unknown[]>('/auth/sessions'),
 };
+
+export interface RegistrationProfilePayload {
+  name: string;
+  persona?: string;
+  /** Multi-select personas; the first entry is stored as the primary profile. */
+  personas?: string[];
+  state?: string;
+  district?: string;
+  village?: string;
+  language?: string;
+  farmSizeAcres?: number;
+  /** Optional on resume — an existing MPIN is kept when omitted. Never stored in browser storage. */
+  mpin?: string;
+}
+
+/** Registration journey endpoints (restricted onboarding token only). */
+export const registration = {
+  /** Step 2 — submit basic profile; moves registrationStatus to pendingKyc. */
+  submitProfile: (payload: RegistrationProfilePayload): Promise<{ user: UserProfile }> =>
+    post<{ user: UserProfile }>('/auth/registration/profile', payload),
+
+  /**
+   * Step 7 — server-controlled completion. The backend re-verifies every
+   * precondition and only then sets registrationStatus=completed and returns
+   * the FULL session tokens. The frontend can never set kyc/registration
+   * fields directly. Longer timeout: post-completion dashboard seeding can
+   * exceed the default 10s client timeout.
+   */
+  complete: (sessionId: string): Promise<OtpVerifyResult> =>
+    post<OtpVerifyResult>('/auth/registration/complete', { sessionId }, { timeout: 45000 }),
+};
