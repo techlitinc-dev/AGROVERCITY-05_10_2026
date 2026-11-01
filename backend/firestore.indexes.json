@@ -1,0 +1,76 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "milk_clients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vendorId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vendorId", "order": "ASCENDING" },
+        { "fieldPath": "deliveryDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientId", "order": "ASCENDING" },
+        { "fieldPath": "deliveryDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_rate_rules",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vendorId", "order": "ASCENDING" },
+        { "fieldPath": "productId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_bills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vendorId", "order": "ASCENDING" },
+        { "fieldPath": "periodStart", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_bills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientId", "order": "ASCENDING" },
+        { "fieldPath": "periodStart", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_bills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shareTokenHash", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vendorId", "order": "ASCENDING" },
+        { "fieldPath": "paymentDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "milk_payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientId", "order": "ASCENDING" },
+        { "fieldPath": "paymentDate", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

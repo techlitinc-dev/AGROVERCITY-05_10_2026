@@ -12,20 +12,11 @@ import {
   ArrowLeft,
   MessageCircle,
   Layers,
+  Globe,
 } from 'lucide-react';
-import { courses, uploads, put, del, apiErrorMessage } from '../../lib/api';
+import { courses, uploads, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
-import { formatCurrency } from '../../lib/utils';
-import { asRec, nameOf, numOf, recArr, strOf } from './helpers';
-
-// lib `courses.update/updateModule/removeModule/remove` post to routes that only
-// accept PUT/DELETE — call the exported helpers directly (API gap, lib left as-is).
-const putCourse = (courseId: string, updates: Record<string, unknown>): Promise<unknown> =>
-  put<unknown>(`/courses/${courseId}`, updates);
-const putModule = (courseId: string, moduleId: string, body: Record<string, unknown>): Promise<unknown> =>
-  put<unknown>(`/courses/${courseId}/modules/${moduleId}`, body);
-const delModule = (courseId: string, moduleId: string): Promise<unknown> =>
-  del<unknown>(`/courses/${courseId}/modules/${moduleId}`);
+import { asRec, boolOf, nameOf, numOf, recArr, strOf } from './helpers';
 
 interface LessonDraft {
   id: string;
@@ -57,7 +48,9 @@ export const CourseBuilderPage: React.FC = () => {
     level: 'beginner',
     language: 'hi',
     mode: 'hybrid',
+    accessType: 'free',
     priceRupees: 0,
+    priceNotes: '',
     thumbnailUrl: '',
     whatYouWillLearn: '',
     requirements: '',
@@ -87,7 +80,14 @@ export const CourseBuilderPage: React.FC = () => {
       ]);
       const rec = asRec(c);
       setCourse(rec);
-      setQuestions(recArr(q));
+      // Unanswered first — an answered question has at least one instructor answer.
+      const all = recArr(q);
+      all.sort((a, b) => {
+        const aAnswered = recArr(a.answers).some((x) => boolOf(asRec(x).isInstructor));
+        const bAnswered = recArr(b.answers).some((x) => boolOf(asRec(x).isInstructor));
+        return Number(aAnswered) - Number(bAnswered);
+      });
+      setQuestions(all);
       setForm({
         title: strOf(rec.title),
         subtitle: strOf(rec.subtitle),
@@ -96,7 +96,9 @@ export const CourseBuilderPage: React.FC = () => {
         level: strOf(rec.level, 'beginner') || 'beginner',
         language: strOf(rec.language, 'hi') || 'hi',
         mode: strOf(rec.mode, 'hybrid') || 'hybrid',
+        accessType: strOf(rec.accessType) || (numOf(rec.priceRupees) > 0 ? 'paid' : 'free'),
         priceRupees: numOf(rec.priceRupees),
+        priceNotes: strOf(rec.priceNotes),
         thumbnailUrl: strOf(rec.thumbnailUrl),
         whatYouWillLearn: recArr(rec.whatYouWillLearn).map((x) => strOf(x)).join('\n'),
         requirements: recArr(rec.requirements).map((x) => strOf(x)).join('\n'),
@@ -119,8 +121,13 @@ export const CourseBuilderPage: React.FC = () => {
     setError(null);
     setNotice(null);
     try {
+      const accessType = form.accessType;
+      const priceRupees = accessType === 'paid' ? Number(form.priceRupees) : 0;
+      if (accessType === 'paid' && priceRupees <= 0) {
+        throw new Error('Paid courses need a listed price greater than ₹0.');
+      }
       const updated = asRec(
-        await putCourse(courseId, {
+        await courses.update(courseId, {
           title: form.title,
           subtitle: form.subtitle,
           description: form.description,
@@ -128,7 +135,9 @@ export const CourseBuilderPage: React.FC = () => {
           level: form.level,
           language: form.language,
           mode: form.mode,
-          priceRupees: Number(form.priceRupees),
+          accessType,
+          priceRupees,
+          priceNotes: accessType === 'paid' ? form.priceNotes : '',
           thumbnailUrl: form.thumbnailUrl || undefined,
           whatYouWillLearn: form.whatYouWillLearn.split('\n').map((s) => s.trim()).filter(Boolean),
           requirements: form.requirements.split('\n').map((s) => s.trim()).filter(Boolean),
@@ -136,6 +145,23 @@ export const CourseBuilderPage: React.FC = () => {
       );
       setCourse(updated);
       setNotice('Course details saved.');
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Submit for review / publish / unpublish / archive — the backend keeps
+   *  enrolments and progress intact and preserves stable lesson ids. */
+  const setStatus = async (status: string, label: string) => {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = asRec(await courses.update(courseId, { status }));
+      setCourse(updated);
+      setNotice(`Course ${label}.`);
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -205,7 +231,7 @@ export const CourseBuilderPage: React.FC = () => {
         })),
       };
       if (editingMod) {
-        await putModule(courseId, strOf(editingMod.id), payload);
+        await courses.updateModule(courseId, strOf(editingMod.id), payload);
       } else {
         await courses.addModule(courseId, payload);
       }
@@ -223,7 +249,7 @@ export const CourseBuilderPage: React.FC = () => {
     if (!window.confirm(`Delete module “${nameOf(m)}”?`)) return;
     setError(null);
     try {
-      await delModule(courseId, strOf(m.id));
+      await courses.removeModule(courseId, strOf(m.id));
       setNotice('Module deleted.');
       await reload();
     } catch (err) {
@@ -266,9 +292,51 @@ export const CourseBuilderPage: React.FC = () => {
             Course Builder
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            {strOf(course?.title)} • {numOf(course?.priceRupees) === 0 ? 'Free' : formatCurrency(numOf(course?.priceRupees))} •{' '}
-            <span className="capitalize">{strOf(course?.status, 'draft')}</span>
+            {strOf(course?.title)} •{' '}
+            {strOf(course?.accessType) === 'paid'
+              ? `${strOf(course?.currency, 'INR') || 'INR'} ${numOf(course?.priceRupees).toLocaleString('en-IN')} (paid — learner pays you directly)`
+              : 'Free — instant enrolment'}{' '}
+            • <span className="capitalize">{strOf(course?.status, 'draft')}</span>
+            {strOf(course?.lastUpdatedAt) && (
+              <span className="text-slate-400"> • updated {strOf(course?.lastUpdatedAt).slice(0, 10)}</span>
+            )}
           </p>
+        </div>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          {strOf(course?.status) === 'published' ? (
+            <>
+              <button
+                onClick={() => setStatus('unpublished', 'unpublished (enrolments & progress preserved)')}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50 font-bold text-[11px]"
+              >
+                Unpublish
+              </button>
+              <button
+                onClick={() => setStatus('archived', 'archived')}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-500 hover:bg-slate-50 font-bold text-[11px]"
+              >
+                Archive
+              </button>
+            </>
+          ) : strOf(course?.status) === 'unpublished' ? (
+            <button
+              onClick={() => setStatus('published', 'published')}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-[11px]"
+            >
+              Publish
+            </button>
+          ) : (
+            <button
+              onClick={() => setStatus('pendingReview', 'submitted for review')}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-[11px]"
+            >
+              Submit for Review
+            </button>
+          )}
         </div>
         <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto overflow-x-auto no-scrollbar">
           {(
@@ -347,9 +415,52 @@ export const CourseBuilderPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className={labelCls}>Price (₹, 0 = free)</label>
-              <input type="number" min="0" step="1" value={form.priceRupees} onChange={(e) => setForm({ ...form, priceRupees: Number(e.target.value) })} className={inputCls} />
+              <label className={labelCls}>Access</label>
+              <select
+                value={form.accessType}
+                onChange={(e) => setForm({ ...form, accessType: e.target.value })}
+                className={`${inputCls} bg-white`}
+              >
+                <option value="free">Free — instant enrolment</option>
+                <option value="paid">Paid — learner pays you directly</option>
+              </select>
             </div>
+            {form.accessType === 'paid' ? (
+              <div>
+                <label className={labelCls}>Listed price (INR)</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={form.priceRupees || ''}
+                  onChange={(e) => setForm({ ...form, priceRupees: Number(e.target.value) })}
+                  className={inputCls}
+                  required
+                />
+              </div>
+            ) : (
+              <div>
+                <label className={labelCls}>Price</label>
+                <input type="text" value="Free (₹0)" disabled className={`${inputCls} bg-slate-50 text-slate-400`} />
+              </div>
+            )}
+            {form.accessType === 'paid' && (
+              <div className="col-span-2">
+                <label className={labelCls}>Price / enrolment notes (shown to learners)</label>
+                <input
+                  type="text"
+                  value={form.priceNotes}
+                  onChange={(e) => setForm({ ...form, priceNotes: e.target.value })}
+                  className={inputCls}
+                  placeholder="e.g. Includes one field visit; group discounts available"
+                  maxLength={500}
+                />
+                <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                  <Globe className="w-3 h-3" />
+                  Payment happens outside Agrovercity — you grant access manually after receiving it.
+                </p>
+              </div>
+            )}
             <div className="col-span-2">
               <label className={labelCls}>What learners will gain (one per line)</label>
               <textarea value={form.whatYouWillLearn} onChange={(e) => setForm({ ...form, whatYouWillLearn: e.target.value })} rows={3} className={inputCls} />

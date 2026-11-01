@@ -250,7 +250,7 @@ export const LandingPage: React.FC = () => {
       desc: 'Global RFQ tenders, Phytosanitary and APEDA certificates, refrigerated container tracking, and LC trade finance.',
       icon: '🚢',
       route: '/exporter',
-      features: ['APEDA & Phytosanitary Vault', 'Letter of Credit (LC) Financing', 'Reefer Container Telematics', 'FPO Bulk Forward Contracts'],
+      features: ['APEDA & Phytosanitary Vault', 'Letter of Credit (LC) Financing', 'Reefer Container Telematics', 'Bulk Institutional Forward Contracts'],
       stat: '₹480 Cr+ Forex Volume',
     },
     {
@@ -265,28 +265,6 @@ export const LandingPage: React.FC = () => {
       stat: '850+ Corporate Buyers',
     },
     {
-      id: 'broker',
-      title: 'Mandi Dalal / Broker',
-      hindiTitle: 'मंडी आढ़तिया / दलाल',
-      category: 'trade',
-      desc: 'Matchmaking deal desk, farmer and buyer pipelines, and automated commission ledger with instant UPI disbursement.',
-      icon: '🤝',
-      route: '/broker',
-      features: ['Lot ↔ Demand Auto Matcher', 'Commission Passbook (0.5%–2%)', 'Contract Dispute Mediation', 'Live Trade Pipeline'],
-      stat: '3,400+ Mandi Brokers',
-    },
-    {
-      id: 'dairyManager',
-      title: 'Dairy Collection Manager',
-      hindiTitle: 'दुग्ध डेयरी प्रबंधक',
-      category: 'dairy',
-      desc: 'FAT & SNF computerized milk testing with dynamic chart pricing, member passbooks, and automated payout batches.',
-      icon: '🥛',
-      route: '/dairy',
-      features: ['Automated FAT/SNF Rate Chart', 'Morning/Evening Collection Slip', 'Member DBT Payout Batches', 'BMC Chiller Temperature'],
-      stat: '3.2M Litres Daily Tracked',
-    },
-    {
       id: 'milkSeller',
       title: 'Milk Vendor / Doodh Vala',
       hindiTitle: 'दूध विक्रेता / हॉकर',
@@ -296,28 +274,6 @@ export const LandingPage: React.FC = () => {
       route: '/milkSeller',
       features: ['Daily Customer Punch Sheet', 'Monthly Automated Invoices', 'WhatsApp Billing Reminders', 'Morning Route Organizer'],
       stat: '120k+ Urban Households',
-    },
-    {
-      id: 'vet',
-      title: 'Veterinary Doctor & Specialist',
-      hindiTitle: 'पशु चिकित्सक एवं विशेषज्ञ',
-      category: 'dairy',
-      desc: 'Livestock health records, tele-consultation queue, mass vaccination campaigns, and clinical consultation ledger.',
-      icon: '🩺',
-      route: '/vet',
-      features: ['Digital Cattle Health Passport', 'FMD & Brucellosis Campaigns', 'Tele-Consultation Video Queue', 'Vaccination Audit Trail'],
-      stat: '1,800+ Certified Vets',
-    },
-    {
-      id: 'fpoManager',
-      title: 'FPO & Cooperative Leader',
-      hindiTitle: 'एफपीओ एवं सहकारी संस्था',
-      category: 'producers',
-      desc: 'Collective produce pooling batches, custom hiring machinery centers, bulk MSP trading, and input bulk buying.',
-      icon: '🌾',
-      route: '/fpoManager',
-      features: ['Produce Aggregation Pools', 'Shared Machinery Center', 'Direct Institutional Tenders', 'Member Dividend Ledger'],
-      stat: '640+ Federated FPOs',
     },
     {
       id: 'womenShg',
@@ -340,28 +296,6 @@ export const LandingPage: React.FC = () => {
       route: '/instructor',
       features: ['Course Video Studio Builder', 'Live Doubt Clearing Batches', 'Govt Recognized Certificates', 'Instructor Royalty Payouts'],
       stat: '450+ Master Courses',
-    },
-    {
-      id: 'bankManager',
-      title: 'Agri Bank Loan Manager',
-      hindiTitle: 'बैंक कृषि ऋण प्रबंधक',
-      category: 'fintech',
-      desc: 'Underwrite KCC and agri-term loans, 7/12 land appraisal, CIBIL sync, and digital disbursal tracking.',
-      icon: '🏦',
-      route: '/bank',
-      features: ['7/12 Automated Land Appraisal', 'CIBIL & Agronomic Scoring', 'KCC Limit Recommendation', 'Direct DBT Disbursal'],
-      stat: '₹220 Cr+ Loans Processed',
-    },
-    {
-      id: 'insuranceProvider',
-      title: 'Crop Insurance Desk (PMFBY)',
-      hindiTitle: 'फसल बीमा डेस्क',
-      category: 'fintech',
-      desc: 'Process PMFBY crop loss claims, assign satellite & ground surveyors, and trigger automated loss DBT payouts.',
-      icon: '📑',
-      route: '/insurance',
-      features: ['Satellite NDVI Loss Analysis', 'Surveyor Geotagged Roster', 'Automated Claim Adjudication', 'Direct Farmer Bank Credit'],
-      stat: '94.2% Settlement Rate',
     },
     {
       id: 'coldStorageProvider',
@@ -395,17 +329,6 @@ export const LandingPage: React.FC = () => {
       route: '/customer',
       features: ['100% Farm-Traceable Produce', 'Subscription Milk & Veg Baskets', 'Kisan Coins Cashbacks', 'Doorstep Delivery Tracking'],
       stat: '350k+ Happy Families',
-    },
-    {
-      id: 'superadmin',
-      title: 'Superadmin Master Console',
-      hindiTitle: 'मुख्य प्रशासनिक नियंत्रण',
-      category: 'fintech',
-      desc: 'All 27 standard operating procedure (SOP) operational consoles, fraud queues, price approvals, and platform governance.',
-      icon: '⚡',
-      route: '/admin',
-      features: ['SOP 01 to SOP 27 Audits', 'Escrow Bank Liquidity Monitor', 'Real-time Fraud & KYC Queues', 'Sovereign Compliance Vault'],
-      stat: '27 SOPs Automated',
     },
   ];
 
@@ -555,7 +478,7 @@ export const LandingPage: React.FC = () => {
             {/* Subtitle */}
             <p className="text-base sm:text-xl text-emerald-100/80 leading-relaxed max-w-3xl mx-auto font-medium">
               From Soil to Supermarket, Dairy to Cargo Port. A unified digital ecosystem uniting
-              <strong className="text-white font-bold"> Farmers, Landlords, Transporters, Agri Vyaparis, Dairies, Banks, and Institutional Buyers </strong>
+              <strong className="text-white font-bold"> Farmers, Landlords, Transporters, Agri Vyaparis, Dairies, and Institutional Buyers </strong>
               with live mandi discovery, 100% escrow guaranteed trade, smart logistics, and 24x7 AI agronomy.
             </p>
 
@@ -896,7 +819,7 @@ export const LandingPage: React.FC = () => {
             </h2>
             <p className="text-sm text-slate-600 leading-relaxed">
               Agrovercity is not a single app — it is a complete operating system offering state-machine workflows,
-              role-gated tools, and compliance engines for all 20 participants in India's agricultural economy.
+              role-gated tools, and compliance engines for 13 participants in India's agricultural economy.
             </p>
           </div>
 
@@ -904,11 +827,11 @@ export const LandingPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center justify-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs text-xs font-bold w-full sm:w-auto">
               {[
-                { id: 'all', label: 'All 20 Personas (सभी)' },
+                { id: 'all', label: 'All 13 Personas (सभी)' },
                 { id: 'producers', label: 'Producers & Land (4)' },
-                { id: 'trade', label: 'Trade & Logistics (5)' },
-                { id: 'dairy', label: 'Dairy & Vets (4)' },
-                { id: 'fintech', label: 'Fintech & Public (7)' },
+                { id: 'trade', label: 'Trade & Logistics (4)' },
+                { id: 'dairy', label: 'Dairy & Livestock (2)' },
+                { id: 'fintech', label: 'Fintech & Public (3)' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1246,16 +1169,6 @@ export const LandingPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              <div className="pt-2">
-                <Link
-                  to="/dairy"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 text-white font-bold text-xs hover:bg-amber-700 shadow-xs"
-                >
-                  <span>Launch Dairy Console</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
             </div>
 
             {/* Dairy & Gaushala Live Calculator Visual */}
@@ -1333,10 +1246,10 @@ export const LandingPage: React.FC = () => {
 
               <div className="pt-2">
                 <Link
-                  to="/bank"
+                  to="/farmer/loans"
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-xs"
                 >
-                  <span>Explore Bank & Insurance Console</span>
+                  <span>Explore Kisan Credit & PMFBY Insurance</span>
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
@@ -1999,20 +1912,6 @@ export const LandingPage: React.FC = () => {
               APEDA Trade Verified
             </span>
           </div>
-
-          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-3 hover-lift">
-            <div className="w-10 h-10 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-700">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <h4 className="font-extrabold text-base text-slate-900">Superadmin Governance (SOP 01-27)</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Strict 27 standard operating procedure consoles covering transaction fraud analysis,
-              dispute resolution arbitration, and financial nodal audit trails.
-            </p>
-            <span className="inline-block text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
-              27 Platform SOPs Active
-            </span>
-          </div>
         </div>
       </section>
 
@@ -2218,7 +2117,6 @@ export const LandingPage: React.FC = () => {
               <ul className="space-y-2">
                 <li><Link to="/farmer" className="hover:text-emerald-400 transition-colors">Kisan / Farmer</Link></li>
                 <li><Link to="/landlord" className="hover:text-emerald-400 transition-colors">Farm Landlord</Link></li>
-                <li><Link to="/fpoManager" className="hover:text-emerald-400 transition-colors">FPO & Cooperatives</Link></li>
                 <li><Link to="/equipment" className="hover:text-emerald-400 transition-colors">Custom Machinery (CHC)</Link></li>
                 <li><Link to="/womenShg" className="hover:text-emerald-400 transition-colors">Mahila Gruh Udyog</Link></li>
               </ul>
@@ -2231,7 +2129,6 @@ export const LandingPage: React.FC = () => {
                 <li><Link to="/transporter" className="hover:text-emerald-400 transition-colors">Freight Transporter</Link></li>
                 <li><Link to="/seller" className="hover:text-emerald-400 transition-colors">Agri Vyapari / POS</Link></li>
                 <li><Link to="/directbuyer" className="hover:text-emerald-400 transition-colors">Direct Institutional Buyer</Link></li>
-                <li><Link to="/broker" className="hover:text-emerald-400 transition-colors">Mandi Dalal / Broker</Link></li>
                 <li><Link to="/exporter" className="hover:text-emerald-400 transition-colors">International Exporter</Link></li>
               </ul>
             </div>
@@ -2240,9 +2137,7 @@ export const LandingPage: React.FC = () => {
             <div className="space-y-3">
               <h4 className="font-bold uppercase tracking-wider text-slate-200 text-[11px]">Dairy & Livestock</h4>
               <ul className="space-y-2">
-                <li><Link to="/dairy" className="hover:text-emerald-400 transition-colors">Dairy Milk Desk</Link></li>
                 <li><Link to="/milkSeller" className="hover:text-emerald-400 transition-colors">Milk Vendor / Doodhwala</Link></li>
-                <li><Link to="/vet" className="hover:text-emerald-400 transition-colors">Veterinary Doctor</Link></li>
                 <li><Link to="/gaushalaManager" className="hover:text-emerald-400 transition-colors">Gaushala Sanctuary</Link></li>
                 <li><Link to="/coldStorageProvider" className="hover:text-emerald-400 transition-colors">Cold Storage & e-NWR</Link></li>
               </ul>
@@ -2252,11 +2147,8 @@ export const LandingPage: React.FC = () => {
             <div className="space-y-3">
               <h4 className="font-bold uppercase tracking-wider text-slate-200 text-[11px]">Fintech & Ops</h4>
               <ul className="space-y-2">
-                <li><Link to="/bank" className="hover:text-emerald-400 transition-colors">KCC Agri Bank Manager</Link></li>
-                <li><Link to="/insurance" className="hover:text-emerald-400 transition-colors">PMFBY Crop Insurance</Link></li>
                 <li><Link to="/instructor" className="hover:text-emerald-400 transition-colors">Gurukul Academy Studio</Link></li>
                 <li><Link to="/customer" className="hover:text-emerald-400 transition-colors">Krishi Mall Consumer</Link></li>
-                <li><Link to="/admin" className="hover:text-emerald-400 transition-colors">Superadmin (SOP 01-27)</Link></li>
               </ul>
             </div>
           </div>

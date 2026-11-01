@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     sandbox_api_redirect_base: str = ""
     # Public base URL of the web app — KYC authorization/callback URLs point here.
     web_app_base_url: str = "http://localhost:5173"
+    # Public base URL used for customer-facing links (milk-vendor bill share
+    # links). Falls back to web_app_base_url when empty. Production must be
+    # HTTPS so shared bill links travel encrypted.
+    public_web_url: str = ""
+    # Milk-vendor secure customer bill links: days until a share link expires
+    # (0 = links never expire; bills stay reachable until revised/cancelled or
+    # the link is regenerated).
+    milk_vendor_share_link_ttl_days: int = 0
     # OTP SMS delivery. Empty = no provider wired → /auth/otp/send runs in dev
     # mode and surfaces `devOtp` in the response (non-prod environments only).
     sms_provider: str = ""

@@ -144,22 +144,80 @@ export interface ProduceLot {
   offersCount: number;
 }
 
+export type DemandSupplyType = 'oneTime' | 'recurring';
+export type DemandFrequency = 'oneTime' | 'weekly' | 'fortnightly' | 'monthly';
+export type DemandStatus =
+  | 'draft'
+  | 'open'
+  | 'paused'
+  | 'applicationsReceived'
+  | 'closed'
+  | 'fulfilled';
+
+export interface BuyerSummary {
+  buyerId: string;
+  name: string;
+  companyName: string;
+  buyerType: string;
+  /** Legacy browse flag — identity verification only. */
+  verified?: boolean;
+  identityVerified?: boolean;
+  businessVerified?: boolean;
+  capacityPerMonth?: number;
+  capacityPerDay?: number;
+  serviceRadiusKm?: number;
+  district?: string;
+  state?: string;
+  ratingAvg?: number | null;
+  ratingCount?: number;
+}
+
 export interface BuyerDemand {
   id: string;
   buyerId: string;
   buyerName: string;
   companyName: string;
+  buyerCompany?: string;
   crop: string;
   variety?: string;
-  requiredQuantityQuintal: number;
-  maxPricePerQuintal: number;
+  quantity: number;
+  unit?: string;
+  /** Legacy aliases kept for older screens. */
+  requiredQuantityQuintal?: number;
+  maxPrice: number;
+  maxPricePerQuintal?: number;
+  qualityGrade?: 'A' | 'B' | 'C';
+  qualitySpecs?: string;
+  packaging?: string;
   deliveryLocation: string;
   state: string;
-  district: string;
-  qualitySpecs: string;
-  status: 'open' | 'fulfilled' | 'closed';
-  validUntil: string;
+  district?: string;
+  neededBy?: string;
+  validUntil?: string;
+  frequency?: DemandFrequency;
+  supplyType?: DemandSupplyType;
+  quantityPerDelivery?: number;
+  startDate?: string;
+  endDate?: string;
+  deliveryMode?: 'delivery' | 'collection';
+  transportArrangement?: string;
+  packagingRequirements?: string;
+  labellingRequirements?: string;
+  partialAllowed?: boolean;
+  multipleFarmersAllowed?: boolean;
+  targetPrice?: number;
+  targetUnit?: string;
+  samplingRequirements?: string;
+  qualityConditions?: string;
+  gradeNotes?: string;
+  notes?: string;
+  audience?: string;
+  status: DemandStatus;
+  offersCount?: number;
+  applicationsCount?: number;
   createdAt: string;
+  buyerSummary?: BuyerSummary;
+  match?: { cropMatch: boolean; locationMatch: boolean };
 }
 
 export interface TradeOffer {
@@ -625,7 +683,7 @@ export interface CourseItem {
   id: string;
   title: string;
   instructorName: string;
-  category: 'Modern Farming' | 'Organic Agriculture' | 'Dairy Tech' | 'Hydroponics' | 'Agri-Business';
+  category: 'Modern Farming' | 'Organic Agriculture' | 'Dairy Tech' | 'Hydroponics' | 'Agri-Business' | string;
   durationHours: number;
   lessonsCount: number;
   enrolledStudents: number;
@@ -634,6 +692,41 @@ export interface CourseItem {
   isFree: boolean;
   thumbnailUrl: string;
   description: string;
+  // --- Farmer–Instructor workflow fields ---
+  priceRupees?: number;
+  currency?: string;
+  accessType?: 'free' | 'paid' | 'manualOffPlatform' | string;
+  hasAccess?: boolean;
+  isPurchased?: boolean;
+  learningStatus?: 'notStarted' | 'inProgress' | 'completed' | string;
+  instructorId?: string;
+  instructorIdentityVerified?: boolean;
+  instructorExpertiseVerified?: boolean;
+  instructorCredentials?: { type: string; verifiedAt?: string }[];
+  lessonCount?: number;
+  durationMinutes?: number;
+  modules?: {
+    id: string;
+    title: string;
+    order: number;
+    lessons: {
+      id: string;
+      title: string;
+      kind: string;
+      durationMinutes: number;
+      order: number;
+      isPreviewFree?: boolean;
+      mediaUrl?: string | null;
+    }[];
+  }[];
+  access?: {
+    accessType?: string | null;
+    accessStatus?: string;
+    learningStatus?: string;
+    progressPercent?: number;
+    isCompleted?: boolean;
+    isRevoked?: boolean;
+  };
 }
 
 export interface AppNotification {

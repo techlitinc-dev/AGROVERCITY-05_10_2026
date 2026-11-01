@@ -11,7 +11,6 @@ import {
   UserRound,
   Shield,
   LogOut,
-  Sparkles,
   Settings,
   CreditCard,
   Landmark,
@@ -98,20 +97,13 @@ export const Navbar: React.FC = () => {
     { id: 'equipmentOwner', label: 'Equipment Owner (यंत्र मालिक)', icon: '🚜' },
     { id: 'exporter', label: 'International Exporter (अंतर्राष्ट्रीय निर्यातक)', icon: '🚢' },
     { id: 'directBuyer', label: 'Industrial Buyer (थोक खरीदार)', icon: '🏢' },
-    { id: 'broker', label: 'Agri Broker / Dalal (दलाल)', icon: '🤝' },
-    { id: 'dairyManager', label: 'Dairy Manager (दुग्ध डेयरी)', icon: '🥛' },
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
-    { id: 'vet', label: 'Veterinary Doctor (पशु चिकित्सक)', icon: '🩺' },
-    { id: 'fpoManager', label: 'FPO / Cooperative Manager (एफपीओ प्रबंधक)', icon: '🌾' },
     { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG (महिला गृह उद्योग)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
     { id: 'nursery', label: 'Plant Nursery (पौधघर / नर्सरी)', icon: '🌱' },
-    { id: 'bankManager', label: 'Bank Manager (ऋण प्रबंधक)', icon: '🏦' },
-    { id: 'insuranceProvider', label: 'Insurance Provider (बीमा डेस्क)', icon: '📑' },
     { id: 'coldStorageProvider', label: 'Cold Storage (शीतगृह)', icon: '❄️' },
     { id: 'gaushalaManager', label: 'Gaushala Sanctuary (गौशाला)', icon: '🐄' },
     { id: 'customer', label: 'E-Market Customer (उपभोक्ता)', icon: '🛍️' },
-    { id: 'superadmin', label: 'Superadmin Console (SOP 01-27)', icon: '⚡' },
   ];
 
   const handleSelectPersona = (p: PersonaType) => {
@@ -214,7 +206,7 @@ export const Navbar: React.FC = () => {
                 />
                 <div className="absolute left-1/2 sm:left-0 -translate-x-1/2 sm:translate-x-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-40 max-h-96 overflow-y-auto animate-in fade-in duration-150">
                   <div className="px-4 py-2 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Switch Active Persona (15 Roles)
+                    Switch Active Persona (14 Roles)
                   </div>
                   {visiblePersonaOptions.map((opt) => (
                     <button
@@ -513,14 +505,6 @@ export const Navbar: React.FC = () => {
                       className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
                     >
                       <LifeBuoy className="w-4 h-4 text-slate-400" /> Help & Support
-                    </Link>
-
-                    <Link
-                      to="/admin"
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-500" /> Superadmin Console
                     </Link>
 
                     <button

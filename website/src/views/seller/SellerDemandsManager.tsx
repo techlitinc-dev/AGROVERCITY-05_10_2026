@@ -126,7 +126,7 @@ export const SellerDemandsManager: React.FC = () => {
         variety: dmVariety.trim(),
         quantity: dmQuantity,
         unit: 'quintal',
-        qualityGrade: dmGrade,
+        qualityGrade: dmGrade as 'A' | 'B' | 'C',
         maxPrice: dmMaxPrice || 0,
         deliveryLocation: dmLocation.trim(),
         neededBy: dmNeededBy,
@@ -319,7 +319,7 @@ export const SellerDemandsManager: React.FC = () => {
                                   </span>
                                 )}
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize border-slate-200 bg-white text-slate-600">
-                                  {a.status === 'sold' ? 'deal completed' : a.status}
+                                  {a.status === 'dealDone' ? 'deal completed' : a.status}
                                 </span>
                               </div>
                               <p className="text-slate-600 mt-0.5">
@@ -329,7 +329,7 @@ export const SellerDemandsManager: React.FC = () => {
                               <p className="text-[10px] text-slate-400">{formatDateTime(a.createdAt)}</p>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              {a.status !== 'dismissed' && a.status !== 'sold' ? (
+                              {a.status !== 'dismissed' && a.status !== 'dealDone' ? (
                                 <>
                                   <button
                                     onClick={() => openUnlock(a)}

@@ -9,7 +9,10 @@ import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
 import { isPersonaEnabled } from '../../lib/personas';
 import type { PersonaType } from '../../types';
 
-/** First path segment → the persona whose pages live under it. */
+/** First path segment → the persona whose pages live under it.
+ * v2 prefixes (route removed for v1): broker, vet/vets, fpo/fpoManager,
+ * bank/bankManager, insurance/insuranceProvider, admin/superadmin,
+ * dairy/dairyManager. */
 const PERSONA_ROUTE_PREFIXES: Record<string, PersonaType> = {
   farmer: 'farmer',
   landlord: 'landlord',
@@ -21,36 +24,23 @@ const PERSONA_ROUTE_PREFIXES: Record<string, PersonaType> = {
   exporter: 'exporter',
   directbuyer: 'directBuyer',
   directBuyer: 'directBuyer',
-  broker: 'broker',
-  dairy: 'dairyManager',
-  dairyManager: 'dairyManager',
   milkSeller: 'milkSeller',
-  vet: 'vet',
-  vets: 'vet',
   gaushala: 'gaushalaManager',
   gaushalaManager: 'gaushalaManager',
-  fpo: 'fpoManager',
-  fpoManager: 'fpoManager',
   women: 'womenShg',
   womenShg: 'womenShg',
   gruhUdyog: 'womenShg',
   instructor: 'instructor',
-  bank: 'bankManager',
-  bankManager: 'bankManager',
-  insurance: 'insuranceProvider',
-  insuranceProvider: 'insuranceProvider',
   coldStorageProvider: 'coldStorageProvider',
   nursery: 'nursery',
   customer: 'customer',
-  admin: 'superadmin',
-  superadmin: 'superadmin',
 };
 
 /** Routes anyone may view without an active session. */
 const PUBLIC_PATHS = new Set(['/', '/landing', '/legal', '/login', '/register', '/onboarding']);
 
 const isPublicPath = (pathname: string): boolean =>
-  PUBLIC_PATHS.has(pathname) || pathname.startsWith('/track/');
+  PUBLIC_PATHS.has(pathname) || pathname.startsWith('/track/') || pathname.startsWith('/public/');
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
@@ -62,7 +52,8 @@ export const AppShell: React.FC = () => {
     location.pathname === '/login' ||
     location.pathname === '/register' ||
     location.pathname === '/onboarding' ||
-    location.pathname.startsWith('/track/');
+    location.pathname.startsWith('/track/') ||
+    location.pathname.startsWith('/public/');
 
   // Auth gate: persona pages need a session — bounce to /login remembering
   // where the user was headed so login can return them there.

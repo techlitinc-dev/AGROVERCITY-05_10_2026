@@ -1,16 +1,6 @@
 import React, { lazy } from 'react';
 import { Route } from 'react-router-dom';
 
-const BankManagerDeskView = lazy(() => import('./BankManagerDeskView').then((m) => ({ default: m.BankManagerDeskView })));
-const LoanUnderwritingView = lazy(() => import('./LoanUnderwritingView').then((m) => ({ default: m.LoanUnderwritingView })));
-const RepaymentLedgerView = lazy(() => import('./RepaymentLedgerView').then((m) => ({ default: m.RepaymentLedgerView })));
-const CreditAuditView = lazy(() => import('./CreditAuditView').then((m) => ({ default: m.CreditAuditView })));
-const InsuranceClaimsDeskView = lazy(() => import('./InsuranceClaimsDeskView').then((m) => ({ default: m.InsuranceClaimsDeskView })));
-const ClaimDetailView = lazy(() => import('./ClaimDetailView').then((m) => ({ default: m.ClaimDetailView })));
-const PolicyUnderwritingView = lazy(() => import('./PolicyUnderwritingView').then((m) => ({ default: m.PolicyUnderwritingView })));
-const RateCardManager = lazy(() => import('./RateCardManager').then((m) => ({ default: m.RateCardManager })));
-const SurveyorRosterView = lazy(() => import('./SurveyorRosterView').then((m) => ({ default: m.SurveyorRosterView })));
-
 // --- Cold storage provider console (§20 provider surface) ---
 const ColdStorageProviderConsole = lazy(() =>
   import('./coldstorage/ColdStorageProviderConsole').then((m) => ({ default: m.ColdStorageProviderConsole }))
@@ -21,27 +11,10 @@ const BookingDetailView = lazy(() => import('./coldstorage/BookingDetailView').t
 const RentFeesView = lazy(() => import('./coldstorage/RentFeesView').then((m) => ({ default: m.RentFeesView })));
 const ReceiptLookupView = lazy(() => import('./coldstorage/ReceiptLookupView').then((m) => ({ default: m.ReceiptLookupView })));
 
-/** 10. Financial Institutions — bank manager + insurance provider desks + cold storage provider console. */
+/** 10. Post-harvest warehousing — cold storage provider console.
+ * v2: bank manager desk (/bank*) and insurance provider desk (/insurance*) return here. */
 export const FinanceRouteElements = () => (
   <>
-    {/* Bank manager */}
-    <Route path="/bankManager" element={<BankManagerDeskView />} />
-    <Route path="/bank" element={<BankManagerDeskView />} />
-    <Route path="/bank/appraisals" element={<BankManagerDeskView />} />
-    <Route path="/bank/portfolio" element={<BankManagerDeskView />} />
-    <Route path="/bank/applications/:id" element={<LoanUnderwritingView />} />
-    <Route path="/bank/repayments" element={<RepaymentLedgerView />} />
-    <Route path="/bank/audit" element={<CreditAuditView />} />
-
-    {/* Insurance provider */}
-    <Route path="/insuranceProvider" element={<InsuranceClaimsDeskView />} />
-    <Route path="/insurance" element={<InsuranceClaimsDeskView />} />
-    <Route path="/insurance/dbt" element={<InsuranceClaimsDeskView />} />
-    <Route path="/insurance/claims/:id" element={<ClaimDetailView />} />
-    <Route path="/insurance/policies" element={<PolicyUnderwritingView />} />
-    <Route path="/insurance/rates" element={<RateCardManager />} />
-    <Route path="/insurance/surveyors" element={<SurveyorRosterView />} />
-
     {/* Cold storage provider */}
     <Route path="/coldStorageProvider" element={<ColdStorageProviderConsole />} />
     <Route path="/coldStorageProvider/facilities" element={<FacilitiesManager />} />

@@ -14,8 +14,32 @@ class DemandCreate(BaseModel):
     packaging: str = ""
     deliveryLocation: str = ""
     neededBy: str = ""
-    frequency: Literal["oneTime", "weekly", "monthly"] = "oneTime"
+    frequency: Literal["oneTime", "weekly", "fortnightly", "monthly"] = "oneTime"
     notes: str = ""
+    # ---- Industrial sourcing requirement (one-time / recurring) ----
+    # `frequency` doubles as the supply type: oneTime = one-time requirement,
+    # weekly/fortnightly/monthly = recurring sourcing interest (never creates
+    # recurring orders/invoices/deliveries/payments automatically). When left
+    # out, the supply type is derived from `frequency` (legacy clients).
+    supplyType: Literal["oneTime", "recurring"] | None = None
+    quantityPerDelivery: float | None = Field(default=None, gt=0)
+    startDate: str = ""  # YYYY-MM-DD (recurring)
+    endDate: str = ""  # YYYY-MM-DD (recurring, optional)
+    deliveryMode: Literal["delivery", "collection"] = "delivery"
+    district: str = ""
+    transportArrangement: str = ""
+    packagingRequirements: str = ""
+    labellingRequirements: str = ""
+    # Sensible defaults keep posting easy: partial + multi-farmer allowed.
+    partialAllowed: bool = True
+    multipleFarmersAllowed: bool = True
+    targetPrice: int = Field(default=0, ge=0)
+    targetUnit: str = ""
+    samplingRequirements: str = ""
+    qualityConditions: str = ""
+    gradeNotes: str = ""
+    audience: str = "industrialBuyer"
+    status: Literal["draft", "open"] = "open"
 
 
 class DemandUpdate(BaseModel):
@@ -28,8 +52,25 @@ class DemandUpdate(BaseModel):
     packaging: str | None = None
     deliveryLocation: str | None = None
     neededBy: str | None = None
-    frequency: Literal["oneTime", "weekly", "monthly"] | None = None
+    frequency: Literal["oneTime", "weekly", "fortnightly", "monthly"] | None = None
     notes: str | None = None
+    supplyType: Literal["oneTime", "recurring"] | None = None
+    quantityPerDelivery: float | None = Field(default=None, gt=0)
+    startDate: str | None = None
+    endDate: str | None = None
+    deliveryMode: Literal["delivery", "collection"] | None = None
+    district: str | None = None
+    transportArrangement: str | None = None
+    packagingRequirements: str | None = None
+    labellingRequirements: str | None = None
+    partialAllowed: bool | None = None
+    multipleFarmersAllowed: bool | None = None
+    targetPrice: int | None = Field(default=None, ge=0)
+    targetUnit: str | None = None
+    samplingRequirements: str | None = None
+    qualityConditions: str | None = None
+    gradeNotes: str | None = None
+    status: Literal["draft", "open"] | None = None
 
 
 class OfferCreate(BaseModel):
@@ -130,6 +171,19 @@ class RateIn(BaseModel):
 
 class SavedFarmerIn(BaseModel):
     farmerId: str
+
+
+class LeadOutcomeIn(BaseModel):
+    """User-reported outcome on a direct connection — never creates payment,
+    purchase, invoice, delivery, or settlement objects."""
+
+    outcome: Literal["still_in_contact", "deal_done_offline", "did_not_happen", "withdrawn"]
+    finalQuantity: float | None = Field(default=None, gt=0)
+    finalUnit: str = ""
+    finalPrice: int | None = Field(default=None, gt=0)
+    finalPriceUnit: str = ""
+    supplyStartDate: str = ""  # YYYY-MM-DD
+    arrangementType: Literal["oneTime", "recurring"] | None = None
 
 
 class StandingOrderCreate(BaseModel):

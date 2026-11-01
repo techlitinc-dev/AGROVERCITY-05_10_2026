@@ -24,6 +24,7 @@ from app.models.teachers import (
     TeacherCredentialUploadIn,
     TeacherProfileUpdateIn,
 )
+from app.services import course_access
 from app.services.users import get_user
 
 router = APIRouter(prefix="/teachers", tags=["teachers"])
@@ -117,7 +118,7 @@ async def list_all_teacher_students(
         _error(403, "NOT_INSTRUCTOR", "only instructors can manage students")
 
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
-    purchases = [p for p in purchases if p.get("status") == "paid"]
+    purchases = [p for p in purchases if course_access.is_granted(p)]
 
     if courseId:
         purchases = [p for p in purchases if p.get("courseId") == courseId]
@@ -131,7 +132,7 @@ async def list_all_teacher_students(
             or needle in p.get("courseTitle", "").lower()
         ]
 
-    purchases.sort(key=lambda p: p.get("paidAt", "") or p.get("createdAt", ""), reverse=True)
+    purchases.sort(key=lambda p: p.get("paidAt", "") or p.get("grantedAt", "") or p.get("createdAt", ""), reverse=True)
 
     students = []
     for p in purchases:
@@ -142,10 +143,13 @@ async def list_all_teacher_students(
             "studentPhone": p.get("studentPhone") or "",
             "courseId": p.get("courseId"),
             "courseTitle": p.get("courseTitle") or "Course",
-            "enrolledAt": p.get("paidAt") or p.get("createdAt"),
+            "enrolledAt": p.get("grantedAt") or p.get("paidAt") or p.get("createdAt"),
             "progressPercent": p.get("progressPercent", 0),
             "isCompleted": p.get("isCompleted", False),
             "certificateId": p.get("certificateId"),
+            "accessType": p.get("accessType"),
+            "accessStatus": p.get("accessStatus") or "granted",
+            "learningStatus": course_access.learning_status(p),
             "amountPaidRupees": p.get("amountRupees", 0),
             "coinsRedeemed": p.get("coinsRedeemed", 0),
         })
@@ -167,7 +171,7 @@ async def issue_student_certificate(
 ):
     pid = f"{student_id}_{course_id}"
     purchase = await get_doc("course_purchases", pid)
-    if purchase is None or purchase.get("status") != "paid":
+    if purchase is None or not course_access.is_granted(purchase):
         _error(404, "ENROLLMENT_NOT_FOUND", "student enrollment not found")
 
     if purchase.get("instructorId") != user["id"] and not user.get("isAdmin"):
@@ -256,12 +260,12 @@ async def get_teacher_analytics(user: dict = Depends(_user)):
         purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
         return {
             "coursesCount": len(courses),
-            "studentsCount": sum(1 for p in purchases if p.get("status") == "paid"),
+            "studentsCount": sum(1 for p in purchases if course_access.is_granted(p)),
         }
 
     courses = await query("courses", [("instructorId", "==", user["id"])], limit=500)
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
-    paid_purchases = [p for p in purchases if p.get("status") == "paid"]
+    paid_purchases = [p for p in purchases if course_access.is_granted(p)]
 
     total_revenue = sum(float(c.get("instructorEarningsRupees", 0)) for c in courses)
     total_sales = len(paid_purchases)
@@ -805,11 +809,23 @@ async def teacher_home(user: dict = Depends(_user)):
     ]
     others.sort(key=lambda c: (c.get("ratingAverage", 0), c.get("salesCount", 0)), reverse=True)
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
-    paid = [p for p in purchases if p.get("status") == "paid"]
+    granted = [p for p in purchases if course_access.is_granted(p)]
+    contact_requests = await query("course_contact_requests", [("instructorId", "==", user["id"])], limit=500)
+    unanswered_questions = 0
+    for c in courses:
+        for q in await query(f"courses/{c['id']}/questions", [], limit=100):
+            if not any(a.get("isInstructor") for a in (q.get("answers") or [])):
+                unanswered_questions += 1
+    upcoming_sessions = [
+        s for s in await query("batch_sessions", [("instructorId", "==", user["id"])], limit=500)
+        if s.get("status") == "scheduled" and (s.get("startsAt") or "") >= _now()
+    ]
     ratings = [c.get("ratingAverage") for c in published if c.get("ratingCount", 0) > 0]
     unread = len(
         [n for n in await query("notifications", [("userId", "==", user["id"])], limit=1000) if not n.get("read")]
     )
+    badges = await course_access.badge_map([user["id"]])
+    my_badge = badges.get(user["id"]) or {}
     return {
         "profile": {
             "instructorId": user["id"],
@@ -822,6 +838,11 @@ async def teacher_home(user: dict = Depends(_user)):
             "letters": letters,
             "isVerified": bool(profile.get("isVerified")),
         },
+        "verification": {
+            "identityVerified": bool(my_badge.get("identity")),
+            "expertiseVerified": bool(my_badge.get("expertise")),
+            "kycCaseStatus": (case or {}).get("status"),
+        },
         "latestCourse": courses[0] if courses else None,
         "allCourses": courses,
         "ratedCourses": rated,
@@ -830,8 +851,15 @@ async def teacher_home(user: dict = Depends(_user)):
         "stats": {
             "totalCourses": len(courses),
             "publishedCourses": len(published),
-            "totalStudents": len(paid),
-            "completedStudents": sum(1 for p in paid if p.get("isCompleted")),
+            "totalStudents": len(granted),
+            "totalEnrolments": len(granted),
+            "completedStudents": sum(1 for p in granted if p.get("isCompleted")),
+            "newContactRequests": sum(
+                1 for r in contact_requests
+                if r.get("status") == "contacted"
+            ),
+            "unansweredQuestions": unanswered_questions,
+            "upcomingSessions": len(upcoming_sessions),
             "totalEarningsRupees": round(
                 sum(float(c.get("instructorEarningsRupees", 0)) for c in courses), 2
             ),
@@ -1007,7 +1035,7 @@ async def teacher_student_detail(student_id: str, user: dict = Depends(_user)):
     they bought from this instructor with the learning record."""
     _is_instructor_or_404(user)
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
-    purchases = [p for p in purchases if p.get("userId") == student_id and p.get("status") == "paid"]
+    purchases = [p for p in purchases if p.get("userId") == student_id and course_access.is_granted(p)]
     if not purchases:
         _error(404, "STUDENT_NOT_FOUND", "no enrolled student with this id")
     student = await get_user(student_id) or {}
@@ -1060,7 +1088,7 @@ async def open_student_chat(body: dict, user: dict = Depends(_user)):
         _error(400, "SELF_CHAT", "cannot open a chat with yourself")
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
     purchase = next(
-        (p for p in purchases if p.get("userId") == student_id and p.get("status") == "paid"), None
+        (p for p in purchases if p.get("userId") == student_id and course_access.is_granted(p)), None
     )
     if purchase is None:
         _error(403, "CHAT_LOCKED_FOR_ENROLLMENT", "chat unlocks only with enrolled students")
@@ -1084,7 +1112,7 @@ async def list_student_chat_rooms(user: dict = Depends(_user)):
     the course the chat belongs to, and unread state — one row per student."""
     _is_instructor_or_404(user)
     purchases = await query("course_purchases", [("instructorId", "==", user["id"])], limit=1000)
-    enrolled = {p.get("userId"): p for p in purchases if p.get("status") == "paid"}
+    enrolled = {p.get("userId"): p for p in purchases if course_access.is_granted(p)}
     rooms = await query("chat_rooms", [("buyerId", "==", user["id"])], limit=500)
     rooms += await query("chat_rooms", [("farmerId", "==", user["id"])], limit=500)
     seen: dict[str, dict] = {}

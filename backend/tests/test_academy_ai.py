@@ -469,39 +469,39 @@ async def test_all_features_log_ai_decisions_with_cost_and_confidence(
 
 
 async def test_decisions_outcome_hooks_recorded_for_recommendation_and_grade(
-    client, user_store, rec_cache, razorpay
+    client, user_store, rec_cache
 ):
-    """A purchase of a recommended course and an instructor-confirmed grade each
-    write their `ai_outcomes` linkage (task 6.13)."""
+    """A paid-course grant of a recommended course and an instructor-confirmed
+    grade each write their `ai_outcomes` linkage (task 6.13)."""
+    from app.core.security import hash_mpin
+
     instructor = seed_user(user_store, uid="teacher-ai", active_profile="instructor")
     farmer = seed_user(user_store, uid="uid-farmer", crops=["Pest Management"])
+    user_store["users/uid-farmer"]["mpinHash"] = hash_mpin("1234")
     _seed_course(user_store, "crs-next", category="Pest Management", sales=50)
     user_store["courses/crs-next"]["priceRupees"] = 1000
+    user_store["courses/crs-next"]["instructorId"] = "teacher-ai"
 
     # Recommendations load first so crs-next is cached as a recommended id.
     rec = await client.get("/v1/courses/recommendations", headers=auth(farmer))
     assert rec.status_code == 200
     assert "crs-next" in [row["courseId"] for row in rec.json()["data"]]
 
-    enroll = await client.post(
-        "/v1/courses/crs-next/enroll",
-        json={"useCoins": False, "coinsToRedeem": 0},
+    # Paid course: contact request → instructor manual grant.
+    contact = await client.post(
+        "/v1/courses/crs-next/contact-requests",
+        json={"termsAccepted": True, "mpin": "1234"},
         headers=auth(farmer),
     )
-    assert enroll.status_code == 200
-    order_id = enroll.json()["paymentOrderId"]
-    assert order_id
-    payment_id = "pay_rec_1"
-    verify = await client.post(
-        "/v1/courses/purchases/verify",
-        json={
-            "razorpayOrderId": order_id,
-            "razorpayPaymentId": payment_id,
-            "razorpaySignature": rzp_signature(order_id, payment_id),
-        },
-        headers=auth(farmer),
+    assert contact.status_code == 201
+    queue = await client.get("/v1/instructor/enrollment-requests", headers=auth(instructor))
+    request_id = queue.json()["data"][0]["requestId"]
+    grant = await client.post(
+        f"/v1/instructor/enrollment-requests/{request_id}/grant",
+        json={"paymentReceivedAck": True},
+        headers=auth(instructor),
     )
-    assert verify.status_code == 200
+    assert grant.status_code == 200
     assert _outcome_docs(user_store, "purchase_after_recommendation")
 
     # An instructor-confirmed grade for an assignment carrying an AI suggestion.

@@ -6,6 +6,10 @@ export const directBuyer = {
   /** GET /direct-buyer/profile */
   profile: (): Promise<unknown> => readOne<unknown>('/direct-buyer/profile'),
 
+  /** GET /direct-buyer/verification — own identity/business badge state. */
+  verification: (): Promise<{ identityVerified?: boolean; businessVerified?: boolean; kycStatus?: string }> =>
+    readOne('/direct-buyer/verification'),
+
   /** GET /direct-buyer/dashboard */
   dashboard: (): Promise<unknown> => readOne<unknown>('/direct-buyer/dashboard'),
 

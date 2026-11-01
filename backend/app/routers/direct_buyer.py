@@ -11,6 +11,7 @@ from app.routers.analytics import last_12_months, month_key
 from app.routers.users import require_role
 from app.services.reports import build_direct_buyer_statement_pdf
 from app.services.users import get_user
+from app.services.verification import is_identity_verified
 
 router = APIRouter(prefix="/direct-buyer", tags=["direct-buyer"])
 
@@ -45,6 +46,24 @@ def _mandi_modal(crop: str, mandi_docs: list[dict]) -> int | None:
     if not matches:
         return None
     return round(sum(d.get("modalPrice", 0) for d in matches) / len(matches))
+
+
+@router.get("/verification")
+async def buyer_verification(ctx: tuple = Depends(_direct_buyer)):
+    """The signed-in buyer's own verification state — distinct identity and
+    business badges (spec §13), both server-derived."""
+    user, uid = ctx
+    cases = await query("kyc_cases", [("userId", "==", uid)], limit=50)
+    business_verified = any(
+        c.get("persona") == "directBuyer" and c.get("status") == "verified" for c in cases
+    )
+    identity_verified = await is_identity_verified(user)
+    return {
+        "identityVerified": identity_verified,
+        "businessVerified": business_verified,
+        "kycStatus": user.get("kycStatus", ""),
+        "vyapariVerified": bool(user.get("vyapariVerified")),
+    }
 
 
 @router.get("/profile")

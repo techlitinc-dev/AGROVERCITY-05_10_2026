@@ -37,7 +37,8 @@ def razorpay(monkeypatch):
 
     monkeypatch.setattr("app.routers.orders.create_razorpay_order", fake_create_order)
     monkeypatch.setattr("app.routers.orders.refund_razorpay_payment", fake_refund)
-    monkeypatch.setattr("app.routers.courses.create_razorpay_order", fake_create_order)
+    # The online checkout was removed from the course journey — the courses
+    # router no longer imports the Razorpay order helper.
     yield
 
 

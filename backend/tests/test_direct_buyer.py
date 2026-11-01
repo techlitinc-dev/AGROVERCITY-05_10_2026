@@ -306,7 +306,7 @@ async def test_feed_matches_demand_crops_and_saved_farmers(client, user_store):
     _seed_user(user_store, "uid-f3", "Kisan Yadav")
     resp = await client.post(
         "/v1/demands",
-        json={"crop": "Tomato", "quantity": 10, "maxPrice": 2500},
+        json={"crop": "Tomato", "quantity": 10, "maxPrice": 2500, "deliveryLocation": "Nashik APMC"},
         headers=_auth(token),
     )
     assert resp.status_code == 201

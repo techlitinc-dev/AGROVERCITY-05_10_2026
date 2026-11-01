@@ -1,10 +1,10 @@
-import { post, readList, readOne } from './http';
+import { del, post, put, readList, readOne } from './http';
 import type { CourseItem } from '../../types';
 
 /**
  * DEV-only fallback for GET /courses/my-learning (readOne mock — used by the
  * http helpers only when `import.meta.env.DEV`). Shaped like the real backend
- * envelope `{data, total}` plus the optional `sessions` learner surface.
+ * envelope `{data, total}` plus the grouped learner sections.
  */
 const MOCK_MY_LEARNING: Record<string, unknown> = {
   data: [
@@ -17,7 +17,11 @@ const MOCK_MY_LEARNING: Record<string, unknown> = {
       progressPercent: 45,
       isCompleted: false,
       isPurchased: true,
-      purchasedAt: '2026-10-02T09:30:00+00:00',
+      hasAccess: true,
+      accessType: 'free',
+      accessStatus: 'granted',
+      learningStatus: 'inProgress',
+      enrolledAt: '2026-10-02T09:30:00+00:00',
     },
     {
       id: 'crs_demo_2',
@@ -28,11 +32,21 @@ const MOCK_MY_LEARNING: Record<string, unknown> = {
       progressPercent: 100,
       isCompleted: true,
       isPurchased: true,
+      hasAccess: true,
+      accessType: 'manualOffPlatform',
+      accessStatus: 'granted',
+      learningStatus: 'completed',
       certificateId: 'CERT-GS-DEMO-AB12CD',
-      purchasedAt: '2026-09-18T11:00:00+00:00',
+      enrolledAt: '2026-09-18T11:00:00+00:00',
     },
   ],
   total: 2,
+  continueLearning: [],
+  freeCourses: [],
+  paidCourses: [],
+  awaitingAccess: [],
+  completedCourses: [],
+  savedCourses: [],
   sessions: [
     {
       id: 'ses_demo_1',
@@ -62,28 +76,44 @@ export const courses = {
     readList<unknown[]>(`/courses/${courseId}/curriculum`),
 
   // --- enroll & learn ---
-  /** POST /courses/{id}/enroll */
+  /**
+   * POST /courses/{id}/enroll — instant FREE-course enrolment. No MPIN, no
+   * contact unlock, no payment, no instructor approval. Idempotent. Paid
+   * courses return 409 PAID_COURSE_CONTACT_REQUIRED — use requestContact.
+   */
   enroll: (courseId: string, payload: Record<string, unknown> = {}): Promise<unknown> =>
     post<unknown>(`/courses/${courseId}/enroll`, payload),
 
-  /** POST /courses/{id}/purchase */
-  purchase: (courseId: string, payload: Record<string, unknown> = {}): Promise<unknown> =>
-    post<unknown>(`/courses/${courseId}/purchase`, payload),
+  /**
+   * POST /courses/{id}/contact-requests — paid-course "Contact Instructor to
+   * Enroll". Requires verified learner + instructor KYC, terms acceptance and
+   * the learner's MPIN. Unlocks both parties' contact details, opens the one
+   * chat room for the connection and notifies the instructor. Never creates a
+   * payment or course access.
+   */
+  requestContact: (
+    courseId: string,
+    payload: { termsAccepted: boolean; termsVersion?: string; mpin: string },
+  ): Promise<unknown> => post<unknown>(`/courses/${courseId}/contact-requests`, payload),
 
-  /** POST /courses/purchases/verify */
-  verifyPurchase: (payload: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>('/courses/purchases/verify', payload),
+  /** GET /courses/{id}/contact-requests/mine — learner's own request state. */
+  myContactRequest: (courseId: string): Promise<Record<string, unknown>> =>
+    readOne<Record<string, unknown>>(`/courses/${courseId}/contact-requests/mine`),
 
-  /** GET /courses/purchased/list */
+  /** GET /courses/purchased/list — backward-compatible flat access list. */
   purchased: (): Promise<unknown[]> => readList<unknown[]>('/courses/purchased/list'),
 
   /**
-   * GET /courses/my-learning — full payload (courses + optional learner
-   * surface fields such as `sessions`), so the My Learning view can read
-   * sections beyond the course list when the backend provides them.
+   * GET /courses/my-learning — grouped learner surface: continueLearning,
+   * freeCourses, paidCourses (access granted), awaitingAccess, completedCourses,
+   * savedCourses, sessions. Plus the flat `data`/`total` for older clients.
    */
   myLearning: (): Promise<Record<string, unknown>> =>
     readOne<Record<string, unknown>>('/courses/my-learning', { mock: MOCK_MY_LEARNING }),
+
+  /** GET /courses/my-questions — every question the learner asked, with the
+   *  answered/unanswered state and instructor answers. */
+  myQuestions: (): Promise<unknown[]> => readList<unknown[]>('/courses/my-questions'),
 
   /** GET /courses/{id}/learn */
   learn: (courseId: string): Promise<unknown> => readOne<unknown>(`/courses/${courseId}/learn`),
@@ -135,11 +165,15 @@ export const courses = {
 
   /** PUT /courses/{id} */
   update: (courseId: string, updates: Record<string, unknown>): Promise<CourseItem> =>
-    post<CourseItem>(`/courses/${courseId}`, updates),
+    put<CourseItem>(`/courses/${courseId}`, updates),
+
+  /** POST /courses/{id}/duplicate */
+  duplicate: (courseId: string): Promise<CourseItem> =>
+    post<CourseItem>(`/courses/${courseId}/duplicate`),
 
   /** DELETE /courses/{id} */
   remove: (courseId: string): Promise<{ success: boolean }> =>
-    post<{ success: boolean }>(`/courses/${courseId}`),
+    del<{ success: boolean }>(`/courses/${courseId}`),
 
   /** POST /courses/{id}/modules */
   addModule: (courseId: string, payload: Record<string, unknown>): Promise<unknown> =>
@@ -147,11 +181,11 @@ export const courses = {
 
   /** PUT /courses/{id}/modules/{moduleId} */
   updateModule: (courseId: string, moduleId: string, updates: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>(`/courses/${courseId}/modules/${moduleId}`, updates),
+    put<unknown>(`/courses/${courseId}/modules/${moduleId}`, updates),
 
   /** DELETE /courses/{id}/modules/{moduleId} */
   removeModule: (courseId: string, moduleId: string): Promise<{ success: boolean }> =>
-    post<{ success: boolean }>(`/courses/${courseId}/modules/${moduleId}`),
+    del<{ success: boolean }>(`/courses/${courseId}/modules/${moduleId}`),
 
   /** POST /courses/{id}/assignments */
   addAssignment: (courseId: string, payload: Record<string, unknown>): Promise<unknown> =>
@@ -173,20 +207,15 @@ export const courses = {
   sendEnquiry: (courseId: string, payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>(`/courses/${courseId}/enquiries`, payload),
 
-  // --- purchase support ---
-  /** GET /courses/purchases/{id}/contract */
-  purchaseContract: (purchaseId: string): Promise<unknown> =>
-    readOne<unknown>(`/courses/purchases/${purchaseId}/contract`),
-
-  /** POST /courses/purchases/{id}/cancel */
-  cancelPurchase: (purchaseId: string, reason?: string): Promise<unknown> =>
-    post<unknown>(`/courses/purchases/${purchaseId}/cancel`, reason ? { reason } : {}),
-
-  /** POST /courses/purchases/{id}/disputes */
-  disputePurchase: (purchaseId: string, payload: Record<string, unknown>): Promise<unknown> =>
-    post<unknown>(`/courses/purchases/${purchaseId}/disputes`, payload),
-
-  /** POST /courses/{id}/chat */
-  courseChat: (courseId: string, payload: Record<string, unknown>): Promise<unknown> =>
+  /** POST /courses/{id}/chat — open the 1:1 instructor chat (enrolled learners
+   *  or learners with an active paid-course contact connection). */
+  courseChat: (courseId: string, payload: Record<string, unknown> = {}): Promise<unknown> =>
     post<unknown>(`/courses/${courseId}/chat`, payload),
+
+  // --- saved courses ---
+  /** POST /courses/{id}/save */
+  save: (courseId: string): Promise<unknown> => post<unknown>(`/courses/${courseId}/save`),
+
+  /** DELETE /courses/{id}/save */
+  unsave: (courseId: string): Promise<unknown> => del<unknown>(`/courses/${courseId}/save`),
 };

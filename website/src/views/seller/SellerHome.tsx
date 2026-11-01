@@ -57,7 +57,7 @@ export const SellerHome: React.FC = () => {
   const verified = me.kycStatus === 'verified' || Boolean(me.vyapariVerified);
   const activeRequirements = myDemands.filter((d) => d.status === 'open');
   const applications = leads.filter((l) => l.source === 'demand');
-  const newApplications = applications.filter((l) => l.status === 'new');
+  const newApplications = applications.filter((l) => l.status === 'submitted');
   const recentConnections = leads.slice(0, 5);
 
   return (
@@ -195,7 +195,7 @@ export const SellerHome: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize border-slate-200 bg-slate-50 text-slate-600 shrink-0">
-                  {lead.status === 'sold' ? 'deal completed' : lead.status}
+                  {lead.status === 'dealDone' ? 'deal completed' : lead.status}
                 </span>
               </Link>
             ))}

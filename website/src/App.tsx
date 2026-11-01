@@ -11,8 +11,6 @@ import { TransporterRouteElements } from './views/transporter/routes';
 import { SellerRouteElements } from './views/seller/routes';
 import { EquipmentRouteElements } from './views/equipment/routes';
 import { DirectBuyerRouteElements } from './views/directbuyer/routes';
-import { BrokerRouteElements } from './views/broker/routes';
-import { DairyRouteElements } from './views/dairy/routes';
 import { LivestockRouteElements } from './views/livestock/routes';
 import { AcademyRouteElements } from './views/academy/routes';
 import { FinanceRouteElements } from './views/finance/routes';
@@ -20,7 +18,6 @@ import { MallRouteElements } from './views/mall/routes';
 import { CommunityRouteElements } from './views/community/routes';
 import { WomenRouteElements } from './views/women/routes';
 import { SharedRouteElements } from './views/shared/routes';
-import { AdminRouteElements } from './views/admin/routes';
 import { ExporterRouteElements } from './views/exporter/routes';
 import { MilkSellerRouteElements } from './views/milkseller/routes';
 import { NurseryRouteElements } from './views/nursery/routes';
@@ -46,8 +43,6 @@ export const App: React.FC = () => {
           {EquipmentRouteElements()}
           {ExporterRouteElements()}
           {DirectBuyerRouteElements()}
-          {BrokerRouteElements()}
-          {DairyRouteElements()}
           {MilkSellerRouteElements()}
           {NurseryRouteElements()}
           {LivestockRouteElements()}
@@ -57,7 +52,6 @@ export const App: React.FC = () => {
           {CommunityRouteElements()}
           {WomenRouteElements()}
           {SharedRouteElements()}
-          {AdminRouteElements()}
 
           {/* Catch-all redirect */}
           <Route path="*" element={<Navigate to="/" replace />} />

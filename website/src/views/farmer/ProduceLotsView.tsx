@@ -72,7 +72,7 @@ const CROP_VARIETIES: [string, string[]][] = [
   ['cauliflower', ['Pusa Katki', 'Phule Gauri', 'Him Palam']]
 ];
 
-type LeadFilter = 'all' | 'new' | 'contacted' | 'sold';
+type LeadFilter = 'all' | 'submitted' | 'contacted' | 'dealDone';
 
 export const ProduceLotsView: React.FC = () => {
   const navigate = useNavigate();
@@ -359,7 +359,7 @@ export const ProduceLotsView: React.FC = () => {
     try {
       const updated = await leadsApi.updateLeadStatus(lead.id, status, finalRate);
       setLeadList((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-      if (status === 'sold') {
+      if (status === 'dealDone') {
         setNotice(`Deal with ${lead.buyerContact?.name ?? 'buyer'} recorded — lot marked sold.`);
         await reload();
       } else if (status === 'dismissed') {
@@ -379,7 +379,7 @@ export const ProduceLotsView: React.FC = () => {
 
   const confirmLeadSold = async () => {
     if (!soldLead) return;
-    await setLeadStatus(soldLead, 'sold', soldRate || undefined);
+    await setLeadStatus(soldLead, 'dealDone', soldRate || undefined);
     setSoldLead(null);
   };
 
@@ -590,7 +590,7 @@ export const ProduceLotsView: React.FC = () => {
             </p>
           </div>
           <div className="flex bg-slate-100 p-1 rounded-2xl self-start overflow-x-auto">
-            {(['all', 'new', 'contacted', 'sold'] as LeadFilter[]).map((f) => (
+            {(['all', 'submitted', 'contacted', 'dealDone'] as LeadFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setLeadFilter(f)}
@@ -629,9 +629,9 @@ export const ProduceLotsView: React.FC = () => {
                     )}
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize ${
-                        lead.status === 'new'
+                        lead.status === 'submitted'
                           ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                          : lead.status === 'sold'
+                          : lead.status === 'dealDone'
                             ? 'text-slate-600 bg-slate-100 border-slate-200'
                             : 'text-amber-700 bg-amber-50 border-amber-200'
                       }`}
@@ -657,7 +657,7 @@ export const ProduceLotsView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 self-end md:self-center flex-wrap">
-                  {lead.status !== 'sold' && lead.chatRoomId && (
+                  {lead.status !== 'dealDone' && lead.chatRoomId && (
                     <>
                       <button
                         onClick={() => navigate(`/chat?room=${encodeURIComponent(lead.chatRoomId!)}`)}
@@ -688,7 +688,7 @@ export const ProduceLotsView: React.FC = () => {
                       )}
                     </>
                   )}
-                  {lead.status === 'new' && (
+                  {lead.status === 'submitted' && (
                     <button
                       onClick={() => setLeadStatus(lead, 'contacted')}
                       disabled={busyId === lead.id}
@@ -706,7 +706,7 @@ export const ProduceLotsView: React.FC = () => {
                       Mark Sold
                     </button>
                   )}
-                  {lead.status !== 'sold' && (
+                  {lead.status !== 'dealDone' && (
                     <button
                       onClick={() => setLeadStatus(lead, 'dismissed')}
                       disabled={busyId === lead.id}
@@ -715,7 +715,7 @@ export const ProduceLotsView: React.FC = () => {
                       Dismiss
                     </button>
                   )}
-                  {lead.status === 'sold' && (
+                  {lead.status === 'dealDone' && (
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1">
                       <Check className="w-4 h-4" /> Deal Done
                     </span>

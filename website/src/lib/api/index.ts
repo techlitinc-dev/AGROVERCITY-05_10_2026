@@ -84,6 +84,8 @@ export { directBuyer } from './directBuyer';
 export { broker } from './broker';
 export { dairy } from './dairy';
 export { milkSeller } from './milkSeller';
+export { milkVendor } from './milkVendor';
+export type { VendorBill, VendorClient, VendorDelivery, VendorProduct, VendorProfile } from './milkVendor';
 export { livestock } from './livestock';
 export { courses } from './courses';
 export { teachers } from './teachers';

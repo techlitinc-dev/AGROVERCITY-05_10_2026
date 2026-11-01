@@ -192,6 +192,7 @@ async def test_farmer_applies_with_valid_quantity_and_price(client, user_store):
             "pricePerUnit": 4500,
             "quantity": 20,
             "message": "Grade A",
+            "availableDate": "2026-11-10",
             "termsAccepted": True,
         },
         headers=_auth(farmer_token),
@@ -199,7 +200,7 @@ async def test_farmer_applies_with_valid_quantity_and_price(client, user_store):
     assert resp.status_code == 201
     lead = resp.json()["lead"]
     assert lead["source"] == "demand"
-    assert lead["status"] == "new"
+    assert lead["status"] == "submitted"
     assert lead["pricePerUnit"] == 4500
 
 
@@ -207,7 +208,10 @@ async def test_duplicate_application_prevented(client, user_store):
     buyer_token = (await _register_buyer(client)).json()["accessToken"]
     demand = (await _create_demand(client, buyer_token, crop="Soybean")).json()
     farmer_token = _seeded_user(user_store, "uid-f1", "Ram Patel")
-    body = {"demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20, "termsAccepted": True}
+    body = {
+        "demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20,
+        "availableDate": "2026-11-10", "termsAccepted": True,
+    }
 
     first = await client.post("/v1/leads", json=body, headers=_auth(farmer_token))
     assert first.status_code == 201
@@ -224,7 +228,10 @@ async def test_vyapari_reviews_only_own_applications(client, user_store):
     farmer_token = _seeded_user(user_store, "uid-f1", "Ram Patel")
     await client.post(
         "/v1/leads",
-        json={"demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20, "termsAccepted": True},
+        json={
+            "demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20,
+            "availableDate": "2026-11-10", "termsAccepted": True,
+        },
         headers=_auth(farmer_token),
     )
     mine = await client.get(
@@ -252,7 +259,10 @@ async def test_vyapari_contact_unlock_on_application_requires_terms_and_mpin(cli
     farmer_token = _seeded_user(user_store, "uid-f1", "Ram Patel")
     applied = await client.post(
         "/v1/leads",
-        json={"demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20, "termsAccepted": True},
+        json={
+            "demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20,
+            "availableDate": "2026-11-10", "termsAccepted": True,
+        },
         headers=_auth(farmer_token),
     )
     lead_id = applied.json()["lead"]["id"]
@@ -295,7 +305,10 @@ async def test_non_participant_cannot_unlock_or_view_contact(client, user_store)
     farmer_token = _seeded_user(user_store, "uid-f1", "Ram Patel")
     applied = await client.post(
         "/v1/leads",
-        json={"demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20, "termsAccepted": True},
+        json={
+            "demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20,
+            "availableDate": "2026-11-10", "termsAccepted": True,
+        },
         headers=_auth(farmer_token),
     )
     lead_id = applied.json()["lead"]["id"]
@@ -315,7 +328,10 @@ async def test_closed_requirement_blocks_new_applications(client, user_store):
     buyer_token = (await _register_buyer(client)).json()["accessToken"]
     demand = (await _create_demand(client, buyer_token, crop="Soybean")).json()
     farmer_token = _seeded_user(user_store, "uid-f1", "Ram Patel")
-    apply_body = {"demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20, "termsAccepted": True}
+    apply_body = {
+        "demandId": demand["id"], "pricePerUnit": 4500, "quantity": 20,
+        "availableDate": "2026-11-10", "termsAccepted": True,
+    }
     applied = await client.post("/v1/leads", json=apply_body, headers=_auth(farmer_token))
     assert applied.status_code == 201
 

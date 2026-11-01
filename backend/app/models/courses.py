@@ -71,7 +71,12 @@ class CourseCreateIn(BaseModel):
     level: CourseLevel = CourseLevel.beginner
     language: str = "hi"
     category: str = Field(default="General", max_length=60)
+    # free → priceRupees must be 0; paid → priceRupees must be > 0. When left
+    # out the access type is derived from the price (0 = free).
+    accessType: Literal["free", "paid"] | None = None
     priceRupees: float = Field(default=0, ge=0)
+    currency: str = Field(default="INR", min_length=3, max_length=8)
+    priceNotes: str = Field(default="", max_length=500)
     originalPriceRupees: float = Field(default=0, ge=0)
     coinsDiscountAllowed: int = Field(default=0, ge=0)
     thumbnailUrl: str | None = None
@@ -98,7 +103,10 @@ class CourseUpdateIn(BaseModel):
     level: CourseLevel | None = None
     language: str | None = None
     category: str | None = None
+    accessType: Literal["free", "paid"] | None = None
     priceRupees: float | None = Field(default=None, ge=0)
+    currency: str | None = None
+    priceNotes: str | None = None
     originalPriceRupees: float | None = Field(default=None, ge=0)
     coinsDiscountAllowed: int | None = Field(default=None, ge=0)
     thumbnailUrl: str | None = None
@@ -124,8 +132,35 @@ class CoursePurchaseVerifyIn(BaseModel):
 
 
 class CourseEnrollIn(BaseModel):
+    # Retained for API compatibility. Coins are no longer part of the course
+    # journey (gamification was removed from this workflow) — the flags are
+    # accepted and ignored on free enrolment.
     useCoins: bool = False
     coinsToRedeem: int = 0
+
+
+class CourseContactRequestIn(BaseModel):
+    """Paid-course "Contact Instructor to Enroll" request.
+
+    Requires verified learner + instructor KYC, explicit terms acceptance and
+    the learner's MPIN. The MPIN itself is verified and never stored.
+    """
+    termsAccepted: bool = False
+    termsVersion: str = Field(default="", max_length=40)
+    mpin: str = Field(min_length=4, max_length=4)
+
+
+class GrantCourseAccessIn(BaseModel):
+    """Instructor's manual, off-platform access grant. `paymentReceivedAck`
+    records the instructor's acknowledgement that the learner paid them
+    directly — it is never platform payment verification."""
+    paymentReceivedAck: bool = False
+    externalPaymentRef: str = Field(default="", max_length=120)
+    instructorNote: str = Field(default="", max_length=500)
+
+
+class RevokeCourseAccessIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class LessonProgressIn(BaseModel):
@@ -139,6 +174,7 @@ class CourseReviewIn(BaseModel):
 
 class CourseQuestionIn(BaseModel):
     question: str = Field(min_length=4, max_length=1000)
+    lessonId: str | None = Field(default=None, max_length=80)
 
 
 class CourseAnswerIn(BaseModel):

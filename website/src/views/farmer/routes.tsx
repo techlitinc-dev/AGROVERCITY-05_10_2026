@@ -5,6 +5,7 @@ const FarmerHome = lazy(() => import('./FarmerHome').then((m) => ({ default: m.F
 const MandiPricesView = lazy(() => import('./MandiPricesView').then((m) => ({ default: m.MandiPricesView })));
 const ProduceLotsView = lazy(() => import('./ProduceLotsView').then((m) => ({ default: m.ProduceLotsView })));
 const BuyerDemandsView = lazy(() => import('./BuyerDemandsView').then((m) => ({ default: m.BuyerDemandsView })));
+const MyIndustrialApplicationsView = lazy(() => import('./MyIndustrialApplicationsView').then((m) => ({ default: m.MyIndustrialApplicationsView })));
 const TransportBookingView = lazy(() => import('./TransportBookingView').then((m) => ({ default: m.TransportBookingView })));
 const TransportBookingDetailView = lazy(() => import('./TransportBookingDetailView').then((m) => ({ default: m.TransportBookingDetailView })));
 const FarmDiaryView = lazy(() => import('./FarmDiaryView').then((m) => ({ default: m.FarmDiaryView })));
@@ -43,6 +44,8 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/lots" element={<ProduceLotsView />} />
     <Route path="/farmer/land" element={<FarmlandView />} />
     <Route path="/farmer/demands" element={<BuyerDemandsView />} />
+    <Route path="/farmer/industrial" element={<BuyerDemandsView />} />
+    <Route path="/farmer/industrial/applications" element={<MyIndustrialApplicationsView />} />
     <Route path="/farmer/connections" element={<MyConnectionsView persona="farmer" />} />
     <Route path="/farmer/transport" element={<TransportBookingView />} />
     <Route path="/farmer/transport/:id" element={<TransportBookingDetailView />} />

@@ -7,11 +7,11 @@ const AgriNewsChannelsView = lazy(() => import('./AgriNewsChannelsView').then((m
 const KisanCoinsView = lazy(() => import('./KisanCoinsView').then((m) => ({ default: m.KisanCoinsView })));
 const WomenGruhUdyogView = lazy(() => import('./WomenGruhUdyogView').then((m) => ({ default: m.WomenGruhUdyogView })));
 const ColdStorageView = lazy(() => import('./ColdStorageView').then((m) => ({ default: m.ColdStorageView })));
-const FpoHubView = lazy(() => import('./FpoHubView').then((m) => ({ default: m.FpoHubView })));
 const TreePlantationView = lazy(() => import('./TreePlantationView').then((m) => ({ default: m.TreePlantationView })));
 const CarbonFootprintView = lazy(() => import('./CarbonFootprintView').then((m) => ({ default: m.CarbonFootprintView })));
 
-/** 12. Community, Verticals & AI Tools */
+/** 12. Community, Verticals & AI Tools.
+ * v2: the FPO hub (/fpoManager, /fpo/*) moves back here from the community domain. */
 export const CommunityRouteElements = () => (
   <>
     <Route path="/community/ai" element={<AiAgronomistView />} />
@@ -20,16 +20,10 @@ export const CommunityRouteElements = () => (
     <Route path="/community/coins" element={<KisanCoinsView />} />
     <Route path="/community/women" element={<WomenGruhUdyogView />} />
     <Route path="/community/cold" element={<ColdStorageView />} />
-    <Route path="/community/fpo" element={<FpoHubView />} />
     <Route path="/community/trees" element={<TreePlantationView />} />
     <Route path="/community/carbon" element={<CarbonFootprintView />} />
 
     {/* Dedicated Persona Aliases */}
-    <Route path="/fpoManager" element={<FpoHubView />} />
-    <Route path="/fpo/pools" element={<FpoHubView />} />
-    <Route path="/fpo/machinery" element={<FpoHubView />} />
-    <Route path="/fpo/directory" element={<FpoHubView />} />
-
     <Route path="/womenShg" element={<WomenGruhUdyogView />} />
     <Route path="/womenShg/products" element={<WomenGruhUdyogView />} />
     <Route path="/womenShg/batches" element={<WomenGruhUdyogView />} />

@@ -156,12 +156,16 @@ def instructor_required_specialization_docs(case: dict) -> list[str]:
 
 def verified_credential_types(case: dict | None) -> list[dict]:
     """Verified credential docs as `{type, verifiedAt}` for course-detail badges
-    (task 2.31). Empty when the case is missing or has no verified credential."""
+    (task 2.31). Covers both specialization credentials (DGCA degree,
+    trainer empanelment) and reviewed teacher career letters (experience
+    letter, qualification certificate) — empty when nothing was actually
+    reviewed; upload alone or identity KYC never counts."""
     if not case:
         return []
+    badge_doc_types = tuple(set(INSTRUCTOR_CREDENTIAL_DOCS) | set(TEACHER_LETTER_DOCS))
     out: list[dict] = []
     for doc in case.get("docs") or []:
-        if doc.get("status") == "verified" and doc.get("type") in INSTRUCTOR_CREDENTIAL_DOCS:
+        if doc.get("status") == "verified" and doc.get("type") in badge_doc_types:
             out.append({"type": doc.get("type"), "verifiedAt": doc.get("reviewedAt")})
     return out
 

@@ -41,20 +41,13 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'equipmentOwner', title: 'Equipment Owner', category: 'Machinery Services', icon: '🚜' },
   { id: 'exporter', title: 'Agri Exporter', category: 'Global Trade & Export', icon: '🚢' },
   { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', category: 'Daily Milk Delivery', icon: '🫗' },
-  { id: 'vet', title: 'Veterinary Doctor', category: 'Livestock Healthcare', icon: '🩺' },
-  { id: 'fpoManager', title: 'FPO / Cooperative Leader', category: 'Collective Aggregation', icon: '🌾' },
   { id: 'womenShg', title: 'Mahila Gruh Udyog & SHG', category: 'Cottage Industry', icon: '🪔' },
   { id: 'directBuyer', title: 'Industrial Buyer', category: 'B2B Procurement', icon: '🏢' },
-  { id: 'broker', title: 'Agri Broker / Dalal', category: 'Trade Matchmaking', icon: '🤝' },
-  { id: 'dairyManager', title: 'Dudh Dairy Manager', category: 'Livestock & Milk', icon: '🥛' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
-  { id: 'bankManager', title: 'Bank Loan Manager', category: 'Fintech & Credit', icon: '🏦' },
-  { id: 'insuranceProvider', title: 'Crop Insurance Desk', category: 'Risk Mitigation', icon: '📑' },
   { id: 'coldStorageProvider', title: 'Cold Storage Owner', category: 'Post-Harvest Warehousing', icon: '❄️' },
   { id: 'gaushalaManager', title: 'Gaushala & Sanctuary', category: 'Cattle Welfare & 80G', icon: '🐄' },
   { id: 'nursery', title: 'Plant Nursery', category: 'Horticulture & Saplings', icon: '🌱' },
   { id: 'customer', title: 'E-Market Customer', category: 'Consumer Shopping', icon: '🛍️' },
-  { id: 'superadmin', title: 'Superadmin Platform Ops', category: 'System Governance', icon: '⚡' },
 ];
 
 export const ProfileSwitchPage: React.FC = () => {

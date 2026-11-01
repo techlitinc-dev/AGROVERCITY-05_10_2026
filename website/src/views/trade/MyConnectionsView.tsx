@@ -5,33 +5,32 @@ import { getMyLeads, updateLeadStatus, type Lead, type LeadContact } from '../..
 import { users, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency, formatDateTime } from '../../lib/utils';
+import { DIRECT_CONNECT_TERMS as DIRECT_CONNECT_TERMS_BASE, LEAD_STATUS_LABEL } from './directConnect';
 
-/** Direct-connect terms (spec §8) — identical wording in both journeys. */
-export const DIRECT_CONNECT_TERMS =
-  'Agrovercity only connects farmers and Agri Vyaparis. Final price, produce quality, payment, pickup, delivery, and any disputes are handled directly between the parties. Agrovercity does not hold payments and does not guarantee the deal, produce quality, payment, pickup, or delivery. After confirmation, my contact details will be shared with the other party and their contact details will be shared with me.';
+/** Direct-connect terms (spec §8/§10) — identical wording in every journey. */
+export const DIRECT_CONNECT_TERMS = DIRECT_CONNECT_TERMS_BASE;
 
 interface Props {
   persona: 'farmer' | 'seller';
 }
 
-const OUTCOME_LABEL: Record<string, string> = {
-  new: 'New',
-  contacted: 'In contact',
-  sold: 'Deal completed',
-  dismissed: 'Did not happen',
-};
+const OUTCOME_LABEL: Record<string, string> = LEAD_STATUS_LABEL;
 
 const OUTCOME_CLS: Record<string, string> = {
+  submitted: 'text-emerald-700 bg-emerald-50 border-emerald-200',
   new: 'text-emerald-700 bg-emerald-50 border-emerald-200',
   contacted: 'text-amber-700 bg-amber-50 border-amber-200',
+  dealDone: 'text-sky-700 bg-sky-50 border-sky-200',
   sold: 'text-sky-700 bg-sky-50 border-sky-200',
   dismissed: 'text-slate-500 bg-slate-100 border-slate-200',
+  withdrawn: 'text-slate-500 bg-slate-100 border-slate-200',
+  rejected: 'text-slate-500 bg-slate-100 border-slate-200',
 };
 
-/** Spec outcome choices → existing backend lead statuses. */
+/** Spec outcome choices → backend lead statuses. */
 type OutcomeChoice = 'dealDone' | 'didNotHappen' | 'stillInContact';
 const OUTCOME_TO_STATUS: Record<OutcomeChoice, Lead['status']> = {
-  dealDone: 'sold',
+  dealDone: 'dealDone',
   didNotHappen: 'dismissed',
   stillInContact: 'contacted',
 };
@@ -89,7 +88,7 @@ export const MyConnectionsView: React.FC<Props> = ({ persona }) => {
   const openOutcome = (lead: Lead) => {
     setOutcomeLead(lead);
     setOutcomeChoice(
-      lead.status === 'sold' ? 'dealDone' : lead.status === 'dismissed' ? 'didNotHappen' : 'stillInContact'
+      lead.status === 'dealDone' ? 'dealDone' : lead.status === 'dismissed' ? 'didNotHappen' : 'stillInContact'
     );
     setFinalRate(lead.finalRate ?? lead.expectedRate ?? lead.pricePerUnit ?? 0);
   };

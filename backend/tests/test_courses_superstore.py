@@ -184,7 +184,8 @@ async def test_reviews_and_questions(client, user_store):
     assert reviews_list.json()["total"] == 1
     assert reviews_list.json()["data"][0]["rating"] == 5
 
-    # Ask question
+    # Ask question (enrolled learners only)
+    await client.post(f"/v1/courses/{course_id}/enroll", json={"useCoins": False}, headers=auth(farmer))
     q_resp = await client.post(
         f"/v1/courses/{course_id}/questions",
         json={"question": "What is the ideal pH for strawberry hydroponics?"},

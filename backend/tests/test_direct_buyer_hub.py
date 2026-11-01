@@ -199,7 +199,7 @@ async def test_farmer_home_daily_buyers_recent_purchases_posts(client, user_stor
     assert resp.status_code == 201
     # buyer posts a demand matching my crop today
     resp = await client.post(
-        "/v1/demands", json={"crop": "Tomato", "quantity": 10, "maxPrice": 2500},
+        "/v1/demands", json={"crop": "Tomato", "quantity": 10, "maxPrice": 2500, "deliveryLocation": "Nashik APMC"},
         headers=_auth(create_access_token("uid-b1")),
     )
     assert resp.status_code == 201
@@ -232,7 +232,7 @@ async def test_buyer_dashboard(client, user_store):
     _seed(user_store, "uid-f1", "Ram Patel")
     resp = await client.post(
         "/v1/demands",
-        json={"crop": "Tomato", "quantity": 10, "maxPrice": 2500, "neededBy": _today()},
+        json={"crop": "Tomato", "quantity": 10, "maxPrice": 2500, "neededBy": _today(), "deliveryLocation": "Nashik APMC"},
         headers=_auth(buyer_token),
     )
     assert resp.status_code == 201

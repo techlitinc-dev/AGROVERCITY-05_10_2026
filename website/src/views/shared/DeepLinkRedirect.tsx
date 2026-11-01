@@ -29,8 +29,6 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
     case 'womenShg':
     case 'gruhUdyog':
       return '/womenShg';
-    case 'fpo':
-      return '/fpoManager';
     case 'myContracts':
     case 'contracts':
       // Farmer supply-contracts page was removed; buyers keep their contract desk.
@@ -53,9 +51,6 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
     case 'farmer':
       // farmer/deals/{id} has no dedicated page yet — land on the farmer home.
       return '/farmer';
-    case 'broker':
-      if (seg[1] === 'deals') return seg[2] ? `/broker/deals/${seg[2]}` : '/broker/deals';
-      return '/broker';
     case 'seller':
       if (seg[1] === 'orders') return '/seller/orders';
       if (seg[1] && seg[1].startsWith('export')) return '/exporter/rfqs';
@@ -72,8 +67,6 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
       return '/instructor/home';
     case 'equipment':
       return '/equipment';
-    case 'dairy':
-      return '/dairyManager';
     case 'mall':
     case 'marketplace':
       return '/mall';

@@ -96,28 +96,6 @@ const DEMO_PERSONAS: DemoPersonaPreset[] = [
     feature: 'Bulk Direct Contracts & Escrow Deposit',
   },
   {
-    id: 'dairyManager',
-    title: 'Dairy Collection Manager',
-    name: 'Amrit Dairy Hub',
-    phone: '9876501234',
-    icon: '🥛',
-    badge: 'FAT/SNF Pricing',
-    location: 'Anand, GJ',
-    category: 'finance',
-    feature: 'BMC Rate Charts & Milk Settlements',
-  },
-  {
-    id: 'bankManager',
-    title: 'KCC Bank Loan Manager',
-    name: 'SBI Agri Credit Desk',
-    phone: '9823456789',
-    icon: '🏦',
-    badge: '7/12 Underwriting',
-    location: 'Pune, MH',
-    category: 'finance',
-    feature: 'KCC Fast Approvals & Digital Collateral',
-  },
-  {
     id: 'coldStorageProvider',
     title: 'Cold Storage Operator',
     name: 'Shree Cold Chain Logistics',
@@ -127,17 +105,6 @@ const DEMO_PERSONAS: DemoPersonaPreset[] = [
     location: 'Indore, MP',
     category: 'logistics',
     feature: 'Chamber Booking & Multi-Zone Telemetry',
-  },
-  {
-    id: 'fpoManager',
-    title: 'FPO Director / Lead',
-    name: 'Sahyadri Kisan Producer Co',
-    phone: '9765432100',
-    icon: '🤝',
-    badge: 'FPO Aggregation',
-    location: 'Nashik, MH',
-    category: 'producers',
-    feature: 'Collective Input Buying & Mandi Bulk Lot',
   },
 ];
 
@@ -753,11 +720,10 @@ export const LoginPage: React.FC = () => {
                 {/* Role Category Filters */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
                   {[
-                    { id: 'all', label: 'All Roles (8)' },
-                    { id: 'producers', label: '🌾 Farmers & FPOs' },
+                    { id: 'all', label: 'All Roles (5)' },
+                    { id: 'producers', label: '🌾 Farmers & Producers' },
                     { id: 'trade', label: '🏪 Traders & Buyers' },
                     { id: 'logistics', label: '🚚 Freight & Cold' },
-                    { id: 'finance', label: '🏦 Banks & Dairy' },
                   ].map((cat) => (
                     <button
                       key={cat.id}

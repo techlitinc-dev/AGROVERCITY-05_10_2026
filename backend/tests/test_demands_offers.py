@@ -3,7 +3,14 @@ from app.services.tokens import create_access_token
 from tests.test_direct_buyer import _lot, _register_buyer, _seed_user
 from tests.test_users import _auth
 
-DEMAND_BODY = {"crop": "Tomato", "variety": "Hybrid", "quantity": 20, "maxPrice": 2200, "qualityGrade": "A"}
+DEMAND_BODY = {
+    "crop": "Tomato",
+    "variety": "Hybrid",
+    "quantity": 20,
+    "maxPrice": 2200,
+    "qualityGrade": "A",
+    "deliveryLocation": "Nashik APMC Yard",
+}
 
 
 async def _buyer_token(client):
@@ -28,6 +35,46 @@ async def test_create_demand(client):
     assert body["buyerCompany"] == "Shree Traders"
     assert body["state"] == "Maharashtra"
     assert body["frequency"] == "weekly"
+
+
+async def test_create_recurring_demand_requires_schedule(client):
+    token = await _buyer_token(client)
+    ok = await _create_demand(
+        client,
+        token,
+        supplyType="recurring",
+        frequency="weekly",
+        quantityPerDelivery=5,
+        startDate="2026-11-10",
+        deliveryLocation="Nashik APMC",
+    )
+    assert ok.status_code == 201
+    body = ok.json()
+    assert body["supplyType"] == "recurring"
+    assert body["quantityPerDelivery"] == 5
+    assert body["startDate"] == "2026-11-10"
+
+    missing_qty = await _create_demand(
+        client,
+        token,
+        supplyType="recurring",
+        frequency="weekly",
+        startDate="2026-11-10",
+        deliveryLocation="Nashik APMC",
+    )
+    assert missing_qty.status_code == 422
+    assert missing_qty.json()["error"]["code"] == "INVALID_RECURRING_SCHEDULE"
+
+    past_start = await _create_demand(
+        client,
+        token,
+        supplyType="recurring",
+        frequency="weekly",
+        quantityPerDelivery=5,
+        startDate="2026-01-01",
+        deliveryLocation="Nashik APMC",
+    )
+    assert past_start.status_code == 422
 
 
 async def test_list_demands_public_open_only_with_filters(client, user_store):

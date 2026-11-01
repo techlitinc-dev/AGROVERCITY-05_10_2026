@@ -101,21 +101,20 @@ export const ALL_PERSONAS: { id: PersonaType; label: string; icon: string }[] = 
   { id: 'equipmentOwner', label: 'Equipment Owner', icon: '🚜' },
   { id: 'exporter', label: 'Agri Exporter', icon: '🚢' },
   { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala', icon: '🫗' },
-  { id: 'vet', label: 'Veterinary Doctor', icon: '🩺' },
-  { id: 'fpoManager', label: 'FPO / Cooperative Leader', icon: '🌾' },
   { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG', icon: '🪔' },
   { id: 'directBuyer', label: 'Industrial Buyer', icon: '🏢' },
-  { id: 'broker', label: 'Agri Broker / Dalal', icon: '🤝' },
-  { id: 'dairyManager', label: 'Dudh Dairy Manager', icon: '🥛' },
   { id: 'instructor', label: 'Gurukul Instructor', icon: '🎓' },
-  { id: 'bankManager', label: 'Bank Loan Manager', icon: '🏦' },
-  { id: 'insuranceProvider', label: 'Crop Insurance Desk', icon: '📑' },
   { id: 'coldStorageProvider', label: 'Cold Storage Owner', icon: '❄️' },
   { id: 'gaushalaManager', label: 'Gaushala & Sanctuary', icon: '🐄' },
   { id: 'nursery', label: 'Plant Nursery', icon: '🌱' },
   { id: 'customer', label: 'E-Market Customer', icon: '🛍️' },
-  { id: 'superadmin', label: 'Superadmin Platform Ops', icon: '⚡' },
 ];
+
+// v2 personas (UI removed for v1, backend contract unchanged):
+// broker — Agri Broker / Dalal; vet — Veterinary Doctor; fpoManager — FPO /
+// Cooperative Leader; bankManager — Bank Loan Manager; insuranceProvider —
+// Crop Insurance Desk; superadmin — Superadmin Platform Ops; dairyManager —
+// Dudh Dairy Manager (milk collection console).
 
 /**
  * A persona is enabled unless the user explicitly hid it. Hiding is a display

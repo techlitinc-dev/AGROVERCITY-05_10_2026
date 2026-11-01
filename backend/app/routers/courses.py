@@ -1,36 +1,36 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
+from app.core.security import verify_mpin
 from app.models.courses import (
     AssignmentCreateIn,
     AssignmentSubmissionIn,
     BatchSessionCreateIn,
+    CourseContactRequestIn,
     CourseCreateIn,
     CourseEnquiryCreateIn,
     CourseEnrollIn,
-    CourseLesson,
     CourseModule,
     CoursePurchaseVerifyIn,
     CourseQuestionIn,
     CourseAnswerIn,
     CourseReviewIn,
     CourseUpdateIn,
+    GrantCourseAccessIn,
     LessonProgressIn,
     PurchaseCancelIn,
     PurchaseDisputeIn,
+    RevokeCourseAccessIn,
     SessionCheckInIn,
 )
-from app.services import idempotency
-from app.services.coins import InsufficientCoins, spend_coins
-from app.services.payments import (
-    create_razorpay_order,
-    refund_razorpay_payment,
-    verify_razorpay_signature,
-)
+from app.services import course_access, idempotency
+# Legacy course bookings (old checkout records) still support cancellation with
+# gateway refunds; new off-platform access records never reach that code path.
+from app.services.payments import refund_razorpay_payment
 from app.services.academy_tasks import emit_learner_discovery_tasks
 from app.services.rating_prompts import open_rating_prompt
 from app.services.tasks import emit_task
@@ -38,9 +38,18 @@ from app.services.users import get_user
 
 router = APIRouter(tags=["courses"])
 
-# Platform commission on paid course sales, in percent. Recorded on every
-# purchase so the settlements module can clear instructor payouts.
+# Retained for legacy records only: the platform commission that was recorded
+# on old checkout purchases so the settlements module could clear instructor
+# payouts. The online checkout itself was removed from the course journey —
+# paid courses now settle directly between learner and instructor, outside
+# Agrovercity. The settlements module keeps reading legacy `status == "paid"`
+# records; no new record carries these fields.
 DEFAULT_COMMISSION_PERCENT = 10.0
+
+# Direct-payment / contact-sharing terms (single source of truth for the
+# backend; the frontend renders the same wording).
+TERMS_VERSION = course_access.TERMS_VERSION
+TERMS_TEXT = course_access.TERMS_TEXT
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -113,11 +122,50 @@ def _purchase_id(user_id: str, course_id: str) -> str:
     return f"{user_id}_{course_id}"
 
 
+def _request_id(user_id: str, course_id: str) -> str:
+    return f"{user_id}_{course_id}"
+
+
+async def _access_record(user_id: str, course_id: str) -> dict | None:
+    """The learner's course access + progress record (new model), or a legacy
+    checkout record. None when the learner has no record at all."""
+    return await get_doc("course_purchases", _purchase_id(user_id, course_id))
+
+
 async def _paid_purchase(user_id: str, course_id: str) -> dict | None:
-    purchase = await get_doc("course_purchases", _purchase_id(user_id, course_id))
-    if purchase is not None and purchase.get("status") == "paid":
-        return purchase
+    """Backward-compatible alias: a record that currently grants access."""
+    record = await _access_record(user_id, course_id)
+    if record is not None and course_access.is_granted(record):
+        return record
     return None
+
+
+async def _require_access(course: dict, user: dict) -> dict:
+    """The learner must hold granted (non-revoked) access to the course."""
+    is_owner = course["instructorId"] == user["id"]
+    record = await _access_record(user["id"], course["id"])
+    if is_owner:
+        return record or {}
+    if record is not None and course_access.is_revoked(record):
+        _error(403, "ACCESS_REVOKED", "your access to this course was revoked by the instructor")
+    if record is None or not course_access.is_granted(record):
+        _error(403, "NOT_ENROLLED", "enrol in the course to access the classroom")
+    return record
+
+
+def _course_is_free(course: dict) -> bool:
+    return float(course.get("priceRupees") or 0) == 0
+
+
+def _validate_access_pricing(access_type: str | None, price: float) -> str:
+    """Resolve and validate free/paid pricing. Returns the resolved accessType."""
+    if access_type is None:
+        return "free" if price == 0 else "paid"
+    if access_type == "free" and price != 0:
+        _error(422, "INVALID_PRICING", "free courses must have a price of 0", {"priceRupees": "must be 0 for free courses"})
+    if access_type == "paid" and price <= 0:
+        _error(422, "INVALID_PRICING", "paid courses must have a price greater than 0", {"priceRupees": "must be greater than 0 for paid courses"})
+    return access_type
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +192,9 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
     now = _now()
     initial_status = "published" if body.autoPublish else "pendingReview"
 
+    access_type = _validate_access_pricing(body.accessType, float(body.priceRupees))
+    price = float(body.priceRupees)
+
     modules_data = [m.model_dump() for m in body.modules]
 
     doc = {
@@ -159,8 +210,11 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
         "level": body.level.value if hasattr(body.level, "value") else str(body.level),
         "language": body.language,
         "category": body.category,
-        "priceRupees": float(body.priceRupees),
-        "originalPriceRupees": float(body.originalPriceRupees or (body.priceRupees * 2 if body.priceRupees > 0 else 0)),
+        "accessType": access_type,
+        "priceRupees": price,
+        "currency": body.currency or "INR",
+        "priceNotes": body.priceNotes or "",
+        "originalPriceRupees": float(body.originalPriceRupees or (price * 2 if price > 0 else 0)),
         "coinsDiscountAllowed": int(body.coinsDiscountAllowed),
         "thumbnailUrl": body.thumbnailUrl,
         "mediaUrl": body.mediaUrl,
@@ -189,6 +243,7 @@ async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
         "commissionRupees": 0.0,
         "createdAt": now,
         "updatedAt": now,
+        "lastUpdatedAt": now,
     }
     await set_doc("courses", course_id, doc)
     return doc
@@ -209,21 +264,80 @@ async def update_course(course_id: str, body: CourseUpdateIn, user: dict = Depen
     if course["status"] == "published" and body.status is None:
         _error(409, "ALREADY_PUBLISHED", "published courses cannot be edited; unpublish first")
 
+    # Free/paid pricing stays consistent on edits.
+    next_access_type = body.accessType or course.get("accessType") or ("free" if float(course.get("priceRupees") or 0) == 0 else "paid")
+    next_price = float(body.priceRupees) if body.priceRupees is not None else float(course.get("priceRupees") or 0)
+    resolved_type = _validate_access_pricing(next_access_type, next_price)
+
+    modules_changed = body.modules is not None
     fields = body.model_dump(exclude_none=True)
     for key, value in fields.items():
         if hasattr(value, "value"):
             course[key] = value.value
         else:
             course[key] = value
+    course["accessType"] = resolved_type
 
     # Any edit after a rejection or draft sends the course back through review if status not explicitly given
     if body.status is None:
         course["status"] = "pendingReview"
         course["rejectedReason"] = None
 
-    course["updatedAt"] = _now()
+    now = _now()
+    course["updatedAt"] = now
+    course["lastUpdatedAt"] = now
     await set_doc("courses", course_id, course)
+
+    # Meaningful content update on a published course: notify enrolled learners
+    # (curriculum changes only — never on cosmetic edits, never duplicate).
+    if modules_changed and course.get("status") == "published":
+        from app.services.notify import notify_user
+
+        learners = await query("course_purchases", [("courseId", "==", course_id)], limit=500)
+        for record in learners:
+            if not course_access.is_granted(record):
+                continue
+            await notify_user(
+                record.get("userId"),
+                type="course_content_updated",
+                title="Course content updated / पाठ्यक्रम अपडेट",
+                body=f"New material was added to {course.get('title') or 'a course you are learning'}.",
+                deepLink=f"/dashboard/p/courses/{course_id}/learn",
+            )
     return course
+
+
+@router.post("/courses/{course_id}/duplicate", status_code=201)
+async def duplicate_course(course_id: str, user: dict = Depends(_user)):
+    """Copy one of the instructor's own courses into a new draft (lessons keep
+    their ids inside the new course doc; the course itself gets a fresh id)."""
+    course = await _require_course(course_id)
+    if course["instructorId"] != user["id"]:
+        _error(403, "FORBIDDEN", "not your course")
+    new_id = uuid.uuid4().hex[:16]
+    now = _now()
+    doc = dict(course)
+    doc.update(
+        {
+            "id": new_id,
+            "title": f"{course.get('title') or 'Course'} (Copy)",
+            "status": "draft",
+            "moderationStatus": "pending_review",
+            "rejectedReason": None,
+            "isFeatured": False,
+            "isBestseller": False,
+            "salesCount": 0,
+            "ratingSum": 0,
+            "ratingCount": 0,
+            "instructorEarningsRupees": 0.0,
+            "commissionRupees": 0.0,
+            "createdAt": now,
+            "updatedAt": now,
+            "lastUpdatedAt": now,
+        }
+    )
+    await set_doc("courses", new_id, doc)
+    return doc
 
 
 @router.delete("/courses/{course_id}", status_code=204)
@@ -289,45 +403,234 @@ async def list_courses(
         reverse=True,
     )
 
-    purchased_ids = {
-        p["courseId"] for p in await query("course_purchases", [("userId", "==", user["id"])], limit=1000)
-        if p.get("status") == "paid"
-    }
+    my_records = await query("course_purchases", [("userId", "==", user["id"])], limit=1000)
+    access_ids = {r["courseId"] for r in my_records if course_access.is_granted(r)}
+    saved_ids = {s["courseId"] for s in await query("saved_courses", [("userId", "==", user["id"])], limit=500)}
+    badges = await course_access.badge_map([d["instructorId"] for d in docs])
+
     for doc in docs:
-        doc["isPurchased"] = doc["id"] in purchased_ids
-        doc.pop("rejectedReason", None)
+        is_entitled = doc["id"] in access_ids
+        doc["hasAccess"] = is_entitled
+        # Legacy flag name kept for older clients; it now means "access granted".
+        doc["isPurchased"] = is_entitled
+        doc["isSaved"] = doc["id"] in saved_ids
+        badge = badges.get(doc["instructorId"]) or {}
+        doc["instructorIdentityVerified"] = bool(badge.get("identity"))
+        # Expertise badge only after an actual qualification/experience review.
+        doc["instructorExpertiseVerified"] = bool(badge.get("expertise"))
+        doc["lessonCount"] = _lesson_count(doc.get("modules") or [])
+        doc["durationMinutes"] = _duration_minutes(doc.get("modules") or [])
+        public = course_access.strip_internal_fields(doc)
+        public["modules"] = _sanitize_modules_for_public(doc.get("modules") or [], is_entitled)
+        doc.clear()
+        doc.update(public)
 
     return _envelope(docs, page, pageSize)
 
 
 @router.get("/courses/purchased/list")
 async def my_library(user: dict = Depends(_user)):
-    purchases = await query(
+    """Every course the learner can currently access (free enrolments and
+    instructor-granted paid access), newest first. Kept for backward
+    compatibility — the richer grouping lives in /courses/my-learning."""
+    records = await query(
         "course_purchases", [("userId", "==", user["id"])], limit=500
     )
-    purchases = [p for p in purchases if p.get("status") == "paid"]
-    purchases.sort(key=lambda p: p.get("paidAt", ""), reverse=True)
+    records = [r for r in records if course_access.is_granted(r)]
+    records.sort(key=lambda r: r.get("grantedAt") or r.get("paidAt") or r.get("createdAt", ""), reverse=True)
     courses = []
-    for purchase in purchases:
-        course = await get_doc("courses", purchase["courseId"])
+    for record in records:
+        course = await get_doc("courses", record["courseId"])
         if course is None:
             continue
         doc = _public(course, is_entitled=True)
         doc["isPurchased"] = True
-        doc["purchasedAt"] = purchase.get("paidAt")
-        doc["progressPercent"] = purchase.get("progressPercent", 0)
-        doc["isCompleted"] = purchase.get("isCompleted", False)
-        doc["certificateId"] = purchase.get("certificateId")
+        doc["hasAccess"] = True
+        doc["accessType"] = record.get("accessType")
+        doc["accessStatus"] = record.get("accessStatus") or "granted"
+        doc["learningStatus"] = course_access.learning_status(record)
+        doc["purchasedAt"] = record.get("paidAt")
+        doc["enrolledAt"] = record.get("grantedAt") or record.get("paidAt")
+        doc["progressPercent"] = record.get("progressPercent", 0)
+        doc["isCompleted"] = record.get("isCompleted", False)
+        doc["certificateId"] = record.get("certificateId")
         courses.append(doc)
     return {"data": courses, "total": len(courses)}
 
 
+def _learning_entry(course: dict, record: dict) -> dict:
+    return {
+        "id": course["id"],
+        "courseId": course["id"],
+        "title": course.get("title") or "",
+        "instructorId": course.get("instructorId"),
+        "instructorName": course.get("instructorName") or "",
+        "thumbnailUrl": course.get("thumbnailUrl") or "",
+        "accessType": record.get("accessType"),
+        "accessStatus": record.get("accessStatus") or "granted",
+        "learningStatus": course_access.learning_status(record),
+        "progressPercent": record.get("progressPercent", 0),
+        "isCompleted": bool(record.get("isCompleted")),
+        "certificateId": record.get("certificateId"),
+        "priceRupees": course.get("priceRupees", 0),
+        "currency": course.get("currency") or "INR",
+        "enrolledAt": record.get("grantedAt") or record.get("paidAt"),
+        "lastAccessedAt": record.get("lastAccessedAt"),
+    }
+
+
+async def _my_sessions(user_id: str) -> list[dict]:
+    """Upcoming batch sessions for the learner's active courses (best effort —
+    sessions stay visible even when the batch doc is gone)."""
+    records = await query("course_purchases", [("userId", "==", user_id)], limit=500)
+    course_ids = {r["courseId"] for r in records if course_access.is_granted(r)}
+    sessions = await query("batch_sessions", [], limit=1000)
+    upcoming = [
+        s for s in sessions
+        if s.get("courseId") in course_ids and s.get("status") == "scheduled"
+    ]
+    upcoming.sort(key=lambda s: s.get("startsAt") or "")
+    return upcoming[:20]
+
+
 @router.get("/courses/my-learning")
 async def my_learning(user: dict = Depends(_user)):
-    result = await my_library(user)
+    """Grouped learner surface:
+
+    continueLearning / freeCourses / paidCourses (access granted) /
+    awaitingAccess (contact unlocked, instructor has not granted yet) /
+    completedCourses / savedCourses. Access states are described with
+    instructor-granted language only — never payment-verification language.
+    """
+    records = await query("course_purchases", [("userId", "==", user["id"])], limit=500)
+    granted = [r for r in records if course_access.is_granted(r)]
+    granted.sort(key=lambda r: r.get("lastAccessedAt") or r.get("grantedAt") or r.get("createdAt", ""), reverse=True)
+
+    entries: list[dict] = []
+    for record in granted:
+        course = await get_doc("courses", record["courseId"])
+        if course is None:
+            continue
+        entries.append(_learning_entry(course, record))
+
+    requests = await query("course_contact_requests", [("learnerId", "==", user["id"])], limit=500)
+    awaiting: list[dict] = []
+    for req in requests:
+        if req.get("status") != course_access.REQUEST_STATUS_CONTACTED:
+            continue
+        access = await _access_record(user["id"], req["courseId"])
+        if access is not None and course_access.is_granted(access):
+            continue  # already granted — lives in the paidCourses section
+        course = await get_doc("courses", req["courseId"])
+        if course is None or course.get("status") != "published":
+            continue
+        awaiting.append(
+            {
+                **_learning_entry(course, access or {"courseId": req["courseId"]}),
+                "accessStatus": "awaitingGrant",
+                "requestId": req["id"],
+                "priceRupees": req.get("priceRupees"),
+                "currency": req.get("currency") or "INR",
+                "requestedAt": req.get("createdAt"),
+                "instructorName": course.get("instructorName") or "",
+            }
+        )
+    awaiting.sort(key=lambda r: r.get("requestedAt") or "", reverse=True)
+
+    saved = await query("saved_courses", [("userId", "==", user["id"])], limit=200)
+    saved_entries: list[dict] = []
+    for row in saved:
+        course = await get_doc("courses", row["courseId"])
+        if course is None or course.get("status") != "published":
+            continue
+        saved_entries.append(
+            {
+                "id": course["id"],
+                "courseId": course["id"],
+                "title": course.get("title") or "",
+                "instructorName": course.get("instructorName") or "",
+                "thumbnailUrl": course.get("thumbnailUrl") or "",
+                "priceRupees": course.get("priceRupees", 0),
+                "currency": course.get("currency") or "INR",
+                "savedAt": row.get("createdAt"),
+            }
+        )
+
+    completed = [e for e in entries if e["isCompleted"]]
+    in_progress = [e for e in entries if not e["isCompleted"]]
+    free_entries = [e for e in entries if (e.get("accessType") or "free") == "free"]
+    paid_entries = [e for e in entries if e.get("accessType") == "manualOffPlatform"]
+
     # WS-01 task 1.26: emit deterministic learner discovery tasks.
     await emit_learner_discovery_tasks(user["id"])
-    return result
+
+    return {
+        # Flat list kept for older clients (was "my library").
+        "data": entries,
+        "total": len(entries),
+        "continueLearning": in_progress,
+        "freeCourses": free_entries,
+        "paidCourses": paid_entries,
+        "awaitingAccess": awaiting,
+        "completedCourses": completed,
+        "savedCourses": saved_entries,
+        "sessions": await _my_sessions(user["id"]),
+    }
+
+
+@router.get("/courses/my-questions")
+async def my_questions(user: dict = Depends(_user)):
+    """Every question the learner asked, across courses, with the
+    answered/unanswered state and the instructor's answers."""
+    my_courses = await query("course_purchases", [("userId", "==", user["id"])], limit=500)
+    course_ids = {r["courseId"] for r in my_courses}
+    questions: list[dict] = []
+    for course_id in course_ids:
+        for q in await query(f"courses/{course_id}/questions", [], limit=100):
+            if q.get("userId") != user["id"]:
+                continue
+            course = await get_doc("courses", course_id) or {}
+            questions.append(
+                {
+                    "id": q.get("id"),
+                    "courseId": course_id,
+                    "courseTitle": course.get("title") or "",
+                    "lessonId": q.get("lessonId"),
+                    "question": q.get("question"),
+                    "answers": q.get("answers") or [],
+                    "isAnswered": any(a.get("isInstructor") for a in (q.get("answers") or [])),
+                    "createdAt": q.get("createdAt"),
+                }
+            )
+    questions.sort(key=lambda q: q.get("createdAt") or "", reverse=True)
+    return {"data": questions, "total": len(questions)}
+
+
+# ---------------------------------------------------------------------------
+# Saved courses (learner bookmarking)
+# ---------------------------------------------------------------------------
+@router.post("/courses/{course_id}/save", status_code=201)
+async def save_course(course_id: str, user: dict = Depends(_user)):
+    course = await _require_course(course_id)
+    if course.get("status") != "published":
+        _error(404, "COURSE_NOT_FOUND", "course not found")
+    doc_id = f"{user['id']}_{course_id}"
+    existing = await get_doc("saved_courses", doc_id)
+    if existing is not None:
+        return {**existing, "alreadySaved": True}
+    doc = {
+        "id": doc_id,
+        "userId": user["id"],
+        "courseId": course_id,
+        "createdAt": _now(),
+    }
+    await set_doc("saved_courses", doc_id, doc)
+    return doc
+
+
+@router.delete("/courses/{course_id}/save", status_code=204)
+async def unsave_course(course_id: str, user: dict = Depends(_user)):
+    await delete_doc("saved_courses", f"{user['id']}_{course_id}")
 
 
 # WS-06 task 6.4 — per-farmer course relevance (M20 `courses.recommend.v1`).
@@ -349,19 +652,37 @@ async def get_course(course_id: str, user: dict = Depends(_user)):
     if course["status"] != "published" and not is_owner:
         _error(404, "COURSE_NOT_FOUND", "course not found")
 
-    is_purchased = await _paid_purchase(user["id"], course_id) is not None
-    is_entitled = is_owner or is_purchased
+    record = await _access_record(user["id"], course_id)
+    has_access = is_owner or (record is not None and course_access.is_granted(record))
+    is_revoked = not is_owner and record is not None and course_access.is_revoked(record)
 
-    doc = dict(course) if is_owner else _public(course, is_entitled=is_entitled)
-    doc["isPurchased"] = is_purchased
+    if is_owner:
+        doc = dict(course)
+    else:
+        doc = course_access.strip_internal_fields(course)
+        doc = _public(doc, is_entitled=has_access and not is_revoked)
+    doc["hasAccess"] = has_access and not is_revoked
+    # Legacy flag name kept for older clients.
+    doc["isPurchased"] = has_access and not is_revoked
     doc["isOwner"] = is_owner
-    if is_entitled:
+    doc["access"] = {
+        **course_access.access_summary(record),
+        "isRevoked": is_revoked,
+    }
+    if has_access and not is_revoked:
         doc["mediaUrl"] = course.get("mediaUrl")
     else:
         doc.pop("mediaUrl", None)
 
-    # WS-02 task 2.31: verified instructor credentials for the course-detail
-    # badge slots (WS-01 tasks 1.10/1.11). type + verifiedAt only — no PII.
+    # Server-derived verification badges: identity = unified KYC approved;
+    # expertise = qualification/experience documents actually reviewed.
+    badges = await course_access.badge_map([course["instructorId"]])
+    badge = badges.get(course["instructorId"]) or {}
+    doc["instructorIdentityVerified"] = bool(badge.get("identity"))
+    doc["instructorExpertiseVerified"] = bool(badge.get("expertise"))
+
+    # Verified instructor credentials for the course-detail badge slots
+    # (type + verifiedAt only — no PII, no private documents).
     from app.services.kyc import latest_instructor_case, verified_credential_types
 
     doc["instructorCredentials"] = verified_credential_types(
@@ -371,83 +692,25 @@ async def get_course(course_id: str, user: dict = Depends(_user)):
     return doc
 
 
+# ---------------------------------------------------------------------------
+# Enrolment & paid-course contact (online checkout was removed from the course
+# journey — paid courses settle directly between learner and instructor)
+# ---------------------------------------------------------------------------
+_REMOVED_CHECKOUT_MESSAGE = (
+    "Online checkout for courses has been removed. Free courses enrol instantly; "
+    "for paid courses, contact the instructor directly — payment happens outside "
+    "Agrovercity and the instructor grants access manually."
+)
+
+
 @router.post("/courses/{course_id}/purchase")
-async def purchase_course(
-    course_id: str,
-    user: dict = Depends(_user),
-    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
-):
-    scope = f"courses.purchase.{user['id']}.{course_id}"
-    stored = await idempotency.replay(scope, idempotency_key)
-    if stored is not None:
-        return stored
+async def purchase_course_removed(course_id: str, user: dict = Depends(_user)):
+    _error(410, "ONLINE_CHECKOUT_REMOVED", _REMOVED_CHECKOUT_MESSAGE)
 
-    course = await _require_course(course_id)
-    if course["status"] != "published":
-        _error(404, "COURSE_NOT_FOUND", "course not found")
-    if course["instructorId"] == user["id"]:
-        _error(409, "OWN_COURSE", "instructors cannot buy their own course")
 
-    pid = _purchase_id(user["id"], course_id)
-    existing = await get_doc("course_purchases", pid)
-    if existing is not None and existing.get("status") == "paid":
-        response = {"purchased": True, "courseId": course_id}
-    else:
-        price = float(course.get("priceRupees") or 0)
-        if price == 0:
-            purchase = {
-                "id": pid,
-                "userId": user["id"],
-                "studentName": user.get("name") or "Student",
-                "studentPhone": user.get("phone") or "",
-                "courseId": course_id,
-                "courseTitle": course.get("title") or "",
-                "instructorId": course["instructorId"],
-                "amountRupees": 0,
-                "commissionPercent": 0.0,
-                "status": "paid",
-                "progressPercent": 0,
-                "completedLessonIds": [],
-                "isCompleted": False,
-                "certificateId": None,
-                "createdAt": _now(),
-                "paidAt": _now(),
-            }
-            await set_doc("course_purchases", pid, purchase)
-            course["salesCount"] = course.get("salesCount", 0) + 1
-            await set_doc("courses", course_id, course)
-            response = {"purchased": True, "courseId": course_id}
-        else:
-            order = create_razorpay_order(int(price * 100), f"course-{course_id}-{user['id'][:8]}")
-            purchase = {
-                "id": pid,
-                "userId": user["id"],
-                "studentName": user.get("name") or "Student",
-                "studentPhone": user.get("phone") or "",
-                "courseId": course_id,
-                "courseTitle": course.get("title") or "",
-                "instructorId": course["instructorId"],
-                "amountRupees": price,
-                "commissionPercent": DEFAULT_COMMISSION_PERCENT,
-                "status": "awaiting_payment",
-                "razorpayOrderId": order["id"],
-                "progressPercent": 0,
-                "completedLessonIds": [],
-                "isCompleted": False,
-                "certificateId": None,
-                "createdAt": _now(),
-            }
-            await set_doc("course_purchases", pid, purchase)
-            response = {
-                "purchased": False,
-                "paymentOrderId": order["id"],
-                "amountDue": price,
-                "courseId": course_id,
-            }
-
-    if idempotency_key:
-        await idempotency.store(scope, idempotency_key, response)
-    return response
+@router.post("/courses/purchases/verify")
+async def verify_purchase_removed(body: CoursePurchaseVerifyIn, user: dict = Depends(_user)):
+    _error(410, "ONLINE_CHECKOUT_REMOVED", _REMOVED_CHECKOUT_MESSAGE)
 
 
 @router.post("/courses/{course_id}/enroll")
@@ -457,6 +720,13 @@ async def enroll_course(
     user: dict = Depends(_user),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
+    """Instant free-course enrolment.
+
+    No MPIN, no contact unlock, no payment, no instructor approval. Idempotent:
+    repeated calls return the same enrolment and never touch existing progress.
+    Paid courses cannot be enrolled through this endpoint — the learner must
+    contact the instructor (see /courses/{id}/contact-requests).
+    """
     scope = f"courses.enroll.{user['id']}.{course_id}"
     stored = await idempotency.replay(scope, idempotency_key)
     if stored is not None:
@@ -466,141 +736,198 @@ async def enroll_course(
     if course["status"] != "published":
         _error(404, "COURSE_NOT_FOUND", "course not found")
     if course["instructorId"] == user["id"]:
-        _error(409, "OWN_COURSE", "instructors cannot buy their own course")
+        _error(409, "OWN_COURSE", "instructors cannot enrol in their own course")
+
+    if not _course_is_free(course):
+        _error(
+            409,
+            "PAID_COURSE_CONTACT_REQUIRED",
+            "this is a paid course — contact the instructor to enrol. Payment happens "
+            "outside Agrovercity and the instructor grants access after receiving it.",
+        )
 
     pid = _purchase_id(user["id"], course_id)
     existing = await get_doc("course_purchases", pid)
-    if existing is not None and existing.get("status") == "paid":
-        response = {"enrolled": True, "courseId": course_id, "alreadyEnrolled": True}
+    already = existing is not None and course_access.is_granted(existing)
+    if already:
+        response = {
+            "enrolled": True,
+            "alreadyEnrolled": True,
+            "courseId": course_id,
+            "accessType": existing.get("accessType") or "free",
+            "accessStatus": existing.get("accessStatus") or "granted",
+            "learningStatus": course_access.learning_status(existing),
+        }
     else:
-        fee = float(course.get("priceRupees") or 0)
-        coins_allowed = int(course.get("coinsDiscountAllowed") or 0)
-        coins_to_redeem = body.coinsToRedeem if body.useCoins else 0
-
-        if body.useCoins and coins_to_redeem > 0:
-            # X11: redemption is capped at min(instructor allowance, fee, % of order).
-            # The %-of-order ceiling (default 50) is config-driven.
-            cfg = await get_doc("platform_config", "gamification") or {}
-            pct = int(cfg.get("redemptionMaxPctOfOrder", 50))
-            pct_cap = int(fee) * pct // 100
-            max_redeemable = min(coins_allowed, int(fee), pct_cap)
-            if coins_to_redeem > max_redeemable:
-                _error(422, "INVALID_COIN_AMOUNT", f"maximum coin redemption is {max_redeemable}")
-            try:
-                await spend_coins(user["id"], coins_to_redeem, "course_enroll", course_id)
-            except InsufficientCoins:
-                _error(409, "INSUFFICIENT_COINS", "not enough AgriCoins")
-
-        remaining_due = max(0.0, fee - coins_to_redeem)
-
-        if remaining_due == 0:
-            purchase = {
-                "id": pid,
-                "userId": user["id"],
-                "studentName": user.get("name") or "Student",
-                "studentPhone": user.get("phone") or "",
-                "courseId": course_id,
-                "courseTitle": course.get("title") or "",
-                "instructorId": course["instructorId"],
-                "amountRupees": 0,
-                "coinsRedeemed": coins_to_redeem,
-                "commissionPercent": 0.0,
-                "status": "paid",
-                "progressPercent": 0,
-                "completedLessonIds": [],
-                "isCompleted": False,
-                "certificateId": None,
-                "createdAt": _now(),
-                "paidAt": _now(),
-            }
-            await set_doc("course_purchases", pid, purchase)
-            course["salesCount"] = course.get("salesCount", 0) + 1
-            await set_doc("courses", course_id, course)
-            response = {"enrolled": True, "courseId": course_id, "amountPaid": 0}
-        else:
-            order = create_razorpay_order(int(remaining_due * 100), f"course-{course_id}-{user['id'][:8]}")
-            purchase = {
-                "id": pid,
-                "userId": user["id"],
-                "studentName": user.get("name") or "Student",
-                "studentPhone": user.get("phone") or "",
-                "courseId": course_id,
-                "courseTitle": course.get("title") or "",
-                "instructorId": course["instructorId"],
-                "amountRupees": remaining_due,
-                "coinsRedeemed": coins_to_redeem,
-                "commissionPercent": DEFAULT_COMMISSION_PERCENT,
-                "status": "awaiting_payment",
-                "razorpayOrderId": order["id"],
-                "progressPercent": 0,
-                "completedLessonIds": [],
-                "isCompleted": False,
-                "certificateId": None,
-                "createdAt": _now(),
-            }
-            await set_doc("course_purchases", pid, purchase)
-            response = {
-                "enrolled": False,
-                "paymentOrderId": order["id"],
-                "amountDue": remaining_due,
-                "courseId": course_id,
-            }
+        record = course_access.new_access_doc(
+            user=user, course=course, access_type=course_access.ACCESS_TYPE_FREE
+        )
+        # enrolment timestamp doubles as the progress anchor
+        await set_doc("course_purchases", pid, record)
+        course["salesCount"] = course.get("salesCount", 0) + 1
+        course["lastUpdatedAt"] = _now()
+        await set_doc("courses", course_id, course)
+        response = {
+            "enrolled": True,
+            "alreadyEnrolled": False,
+            "courseId": course_id,
+            "accessType": course_access.ACCESS_TYPE_FREE,
+            "accessStatus": course_access.ACCESS_STATUS_GRANTED,
+            "learningStatus": course_access.LEARNING_NOT_STARTED,
+        }
 
     if idempotency_key:
         await idempotency.store(scope, idempotency_key, response)
     return response
 
 
-@router.post("/courses/purchases/verify")
-async def verify_purchase(body: CoursePurchaseVerifyIn, user: dict = Depends(_user)):
-    matches = await query(
-        "course_purchases", [("razorpayOrderId", "==", body.razorpayOrderId)], limit=1
-    )
-    purchase = matches[0] if matches else None
-    if purchase is None:
-        _error(404, "PURCHASE_NOT_FOUND", "no purchase awaiting payment for this order")
-    if purchase["userId"] != user["id"]:
-        _error(403, "FORBIDDEN", "not your purchase")
-    if purchase.get("status") == "paid":
-        return {"purchased": True, "courseId": purchase["courseId"]}
-    if not verify_razorpay_signature(
-        body.razorpayOrderId, body.razorpayPaymentId, body.razorpaySignature
-    ):
-        _error(400, "PAYMENT_VERIFICATION_FAILED", "razorpay signature mismatch")
+# ---------------------------------------------------------------------------
+# Paid-course contact requests ("Contact Instructor to Enroll")
+# ---------------------------------------------------------------------------
+def _contact_snapshot(user: dict) -> dict:
+    return {
+        "name": user.get("name") or "Instructor",
+        "phone": user.get("phone") or "",
+        "whatsapp": user.get("whatsapp") or user.get("whatsappNumber") or user.get("phone") or "",
+    }
 
-    purchase["status"] = "paid"
-    purchase["razorpayPaymentId"] = body.razorpayPaymentId
-    purchase["paidAt"] = _now()
-    await set_doc("course_purchases", purchase["id"], purchase)
 
-    course = await _require_course(purchase["courseId"])
-    course["salesCount"] = course.get("salesCount", 0) + 1
-    commission_pct = float(purchase.get("commissionPercent") or 0)
-    commission = round(purchase["amountRupees"] * commission_pct / 100, 2)
-    course["commissionRupees"] = round(course.get("commissionRupees", 0) + commission, 2)
-    course["instructorEarningsRupees"] = round(
-        course.get("instructorEarningsRupees", 0) + purchase["amountRupees"] - commission, 2
-    )
-    await set_doc("courses", course["id"], course)
+async def _active_contact_request(user_id: str, course_id: str) -> dict | None:
+    req = await get_doc("course_contact_requests", _request_id(user_id, course_id))
+    if req is not None and req.get("status") == course_access.REQUEST_STATUS_CONTACTED:
+        return req
+    return None
 
-    # WS-06 task 6.13: outcome hook — was this purchase led by a recommendation?
-    from app.services import academy_ai
 
-    await academy_ai.record_purchase_outcome_if_recommended(user["id"], course["id"])
+@router.post("/courses/{course_id}/contact-requests", status_code=201)
+async def create_contact_request(
+    course_id: str,
+    body: CourseContactRequestIn,
+    user: dict = Depends(_user),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+):
+    """Learner → instructor contact unlock for a PAID course.
 
-    # Booking confirmation: generate the e-contract (fee + curriculum scope +
-    # refund policy) and notify the instructor of the new booking.
-    contract = await _contract_for_purchase(purchase)
+    Gates, in order: authenticated learner → published paid course (not own) →
+    verified learner KYC → verified instructor KYC → terms acceptance → MPIN.
+    Creates (or returns) exactly one request per learner+course, snapshots the
+    listed price/currency, unlocks both parties' contact details, opens the one
+    chat room for the connection and notifies the instructor. Never creates a
+    payment, order, invoice, escrow, subscription — or course access.
+    """
+    scope = f"courses.contact.{user['id']}.{course_id}"
+    stored = await idempotency.replay(scope, idempotency_key)
+    if stored is not None:
+        return stored
+
+    course = await _require_course(course_id)
+    if course["status"] != "published":
+        _error(404, "COURSE_NOT_FOUND", "course not found")
+    if course["instructorId"] == user["id"]:
+        _error(409, "OWN_COURSE", "instructors cannot contact themselves")
+    if _course_is_free(course):
+        _error(409, "FREE_COURSE_INSTANT_ENROL", "free courses enrol instantly — no contact request needed")
+
+    from app.services.verification import is_identity_verified
+
+    if not await is_identity_verified(user):
+        _error(403, "KYC_REQUIRED", "complete identity KYC before contacting an instructor")
+    instructor = await get_user(course["instructorId"]) or {}
+    if not await is_identity_verified(instructor):
+        _error(403, "INSTRUCTOR_KYC_REQUIRED", "the instructor has not completed identity KYC")
+
+    if not body.termsAccepted:
+        _error(422, "TERMS_NOT_ACCEPTED", "accept the direct-payment terms to continue", {"termsAccepted": "required"})
+    if not user.get("mpinHash"):
+        _error(409, "MPIN_NOT_SET", "set your MPIN before sharing contact details")
+    if not verify_mpin(body.mpin, user["mpinHash"]):
+        _error(401, "WRONG_MPIN", "incorrect MPIN")
+
+    req_id = _request_id(user["id"], course_id)
+    existing = await get_doc("course_contact_requests", req_id)
+    now = _now()
+    if existing is not None and existing.get("status") == course_access.REQUEST_STATUS_CONTACTED:
+        response = {
+            "request": existing,
+            "alreadyExists": True,
+            "instructorContact": _contact_snapshot(instructor),
+            "chatRoomId": existing.get("chatRoomId"),
+        }
+        if idempotency_key:
+            await idempotency.store(scope, idempotency_key, response)
+        return response
+
+    from app.services.chat import ensure_direct_room
     from app.services.notify import notify_user
 
-    await notify_user(
-        purchase["instructorId"],
-        type="course_booking",
-        title="New course booking / नया बुकिंग",
-        body=f"{purchase.get('studentName') or user.get('name')} enrolled in {purchase.get('courseTitle') or course.get('title')} (₹{purchase.get('amountRupees', 0)})",
-        deepLink=f"/dashboard/p/instructor/courses/{course['id']}/students",
+    room = await ensure_direct_room(
+        course["instructorId"],
+        instructor.get("name", ""),
+        user["id"],
+        user.get("name", ""),
+        crop=course.get("title", ""),
     )
-    return {"purchased": True, "courseId": course["id"], "contractNo": contract["contractNo"]}
+    price = float(course.get("priceRupees") or 0)
+    doc = {
+        "id": req_id,
+        "courseId": course_id,
+        "courseTitle": course.get("title") or "",
+        "instructorId": course["instructorId"],
+        "learnerId": user["id"],
+        "learnerName": user.get("name") or "Learner",
+        "status": course_access.REQUEST_STATUS_CONTACTED,
+        "priceRupees": price,
+        "currency": course.get("currency") or "INR",
+        "termsVersion": body.termsVersion or TERMS_VERSION,
+        "termsAcceptedAt": now,
+        "termsText": TERMS_TEXT,
+        # MPIN metadata only — the MPIN itself is never logged or stored.
+        "mpinVerified": True,
+        "mpinVerifiedAt": now,
+        "contactRevealedAt": now,
+        "chatRoomId": room["id"],
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    await set_doc("course_contact_requests", req_id, doc)
+
+    # The learner's contact is shared with the instructor through this
+    # notification payload context — the instructor sees it in the request row.
+    await notify_user(
+        course["instructorId"],
+        type="course_contact_request",
+        title="New paid-course contact request / नया संपर्क अनुरोध",
+        body=f"{doc['learnerName']} wants to enrol in {doc['courseTitle']} "
+        f"(listed ₹{price:g}). Contact details are now unlocked both ways.",
+        deepLink="/instructor/enrollment-requests",
+    )
+    response = {
+        "request": doc,
+        "alreadyExists": False,
+        "instructorContact": _contact_snapshot(instructor),
+        "chatRoomId": room["id"],
+    }
+    if idempotency_key:
+        await idempotency.store(scope, idempotency_key, response)
+    return response
+
+
+@router.get("/courses/{course_id}/contact-requests/mine")
+async def my_contact_request(course_id: str, user: dict = Depends(_user)):
+    """The learner's own request state for a course, plus the unlocked
+    instructor contact when the connection is active. Private contact details
+    are never part of public course payloads — only this participant-only
+    endpoint returns them."""
+    course = await _require_course(course_id)
+    req = await get_doc("course_contact_requests", _request_id(user["id"], course_id))
+    if req is None:
+        return {"request": None, "status": "notRequested"}
+    out = {"request": req, "status": req.get("status")}
+    if req.get("status") == course_access.REQUEST_STATUS_CONTACTED:
+        instructor = await get_user(course["instructorId"]) or {}
+        out["instructorContact"] = _contact_snapshot(instructor)
+        out["chatRoomId"] = req.get("chatRoomId")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -609,26 +936,22 @@ async def verify_purchase(body: CoursePurchaseVerifyIn, user: dict = Depends(_us
 @router.get("/courses/{course_id}/learn")
 async def get_course_learning(course_id: str, user: dict = Depends(_user)):
     course = await _require_course(course_id)
-    is_owner = course["instructorId"] == user["id"]
-    purchase = await _paid_purchase(user["id"], course_id)
+    record = await _require_access(course, user)
 
-    if not is_owner and purchase is None:
-        _error(403, "NOT_ENROLLED", "please enroll in the course to access the classroom")
-
-    progress_data = purchase or {
-        "completedLessonIds": [],
-        "progressPercent": 0,
-        "isCompleted": False,
-        "certificateId": None,
-    }
-
-    # All mediaUrls are unlocked in learn mode
+    # All mediaUrls are unlocked in learn mode — _require_access guarantees the
+    # learner holds granted (non-revoked) access, so protected media can never
+    # be fetched before grant or after revocation.
     doc = dict(course)
+    doc["access"] = {
+        **course_access.access_summary(record),
+        "isRevoked": course_access.is_revoked(record),
+    }
     doc["userProgress"] = {
-        "completedLessonIds": progress_data.get("completedLessonIds", []),
-        "progressPercent": progress_data.get("progressPercent", 0),
-        "isCompleted": progress_data.get("isCompleted", False),
-        "certificateId": progress_data.get("certificateId"),
+        "completedLessonIds": record.get("completedLessonIds", []),
+        "progressPercent": record.get("progressPercent", 0),
+        "isCompleted": record.get("isCompleted", False),
+        "learningStatus": course_access.learning_status(record),
+        "certificateId": record.get("certificateId"),
         "lastAccessedAt": _now(),
     }
     return doc
@@ -642,12 +965,15 @@ async def update_lesson_progress(
     user: dict = Depends(_user),
 ):
     course = await _require_course(course_id)
+    is_owner = course["instructorId"] == user["id"]
     pid = _purchase_id(user["id"], course_id)
     purchase = await get_doc("course_purchases", pid)
-    is_owner = course["instructorId"] == user["id"]
 
-    if not is_owner and (purchase is None or purchase.get("status") != "paid"):
-        _error(403, "NOT_ENROLLED", "not enrolled in this course")
+    if not is_owner:
+        if purchase is None or not course_access.is_granted(purchase):
+            _error(403, "NOT_ENROLLED", "not enrolled in this course")
+        if course_access.is_revoked(purchase):
+            _error(403, "ACCESS_REVOKED", "your access to this course was revoked by the instructor")
 
     if purchase is None and is_owner:
         # Create virtual enrollment record for instructor preview
@@ -696,6 +1022,9 @@ async def update_lesson_progress(
     purchase["progressPercent"] = pct
     purchase["isCompleted"] = is_completed
     purchase["certificateId"] = certificate_id
+    purchase["learningStatus"] = course_access.LEARNING_COMPLETED if is_completed else (
+        course_access.LEARNING_IN_PROGRESS if pct > 0 else course_access.LEARNING_NOT_STARTED
+    )
     purchase["lastAccessedAt"] = _now()
     if is_completed and not purchase.get("completedAt"):
         purchase["completedAt"] = _now()
@@ -821,7 +1150,18 @@ async def list_course_reviews(course_id: str, user: dict = Depends(_user)):
 # ---------------------------------------------------------------------------
 @router.post("/courses/{course_id}/questions", status_code=201)
 async def ask_course_question(course_id: str, body: CourseQuestionIn, user: dict = Depends(_user)):
-    await _require_course(course_id)
+    course = await _require_course(course_id)
+    # Only authorized learners ask course questions: the instructor, learners
+    # with granted access, or a learner with an active paid-course contact.
+    is_owner = course["instructorId"] == user["id"]
+    if not is_owner:
+        record = await _access_record(user["id"], course_id)
+        request = await get_doc("course_contact_requests", _request_id(user["id"], course_id))
+        authorized = (record is not None and course_access.is_granted(record)) or (
+            request is not None and request.get("status") == course_access.REQUEST_STATUS_CONTACTED
+        )
+        if not authorized:
+            _error(403, "NOT_AUTHORIZED", "enrol in the course or contact the instructor to ask questions")
     q_id = uuid.uuid4().hex[:12]
     now = _now()
     doc = {
@@ -830,10 +1170,21 @@ async def ask_course_question(course_id: str, body: CourseQuestionIn, user: dict
         "userId": user["id"],
         "userName": user.get("name") or "Student",
         "question": body.question,
+        "lessonId": body.lessonId,
         "answers": [],
         "createdAt": now,
     }
     await set_doc(f"courses/{course_id}/questions", q_id, doc)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        course["instructorId"],
+        type="course_question",
+        title="New course question / नया प्रश्न",
+        body=f"{doc['userName']} asked in {course.get('title') or 'your course'}",
+        deepLink=f"/instructor/courses/{course_id}/edit",
+    )
     return doc
 
 
@@ -868,6 +1219,17 @@ async def answer_course_question(
     }
     question.setdefault("answers", []).append(ans_doc)
     await set_doc(f"courses/{course_id}/questions", question_id, question)
+
+    if is_instructor:
+        from app.services.notify import notify_user
+
+        await notify_user(
+            question.get("userId"),
+            type="course_question_answered",
+            title="Your question was answered / प्रश्न का उत्तर",
+            body=f"The instructor answered your question in {course.get('title') or 'the course'}.",
+            deepLink=f"/dashboard/p/courses/{course_id}/learn",
+        )
     return ans_doc
 
 
@@ -1045,14 +1407,20 @@ async def course_progress(course_id: str, user: dict = Depends(_user)):
 
 @router.post("/courses/{course_id}/chat")
 async def open_course_instructor_chat(course_id: str, user: dict = Depends(_user)):
-    """1:1 doubt-solving chat with the course instructor. The window unlocks
-    only after purchasing the course (403 NOT_ENROLLED before that)."""
+    """1:1 doubt-solving chat with the course instructor. Unlocks for learners
+    with granted course access (free or instructor-granted) and for paid-course
+    learners with an active contact connection — including after a revocation,
+    since contact history and chats are never deleted."""
     course = await _require_course(course_id)
     if course["instructorId"] == user["id"]:
         _error(400, "OWN_COURSE", "this is your own course")
-    purchase = await _paid_purchase(user["id"], course_id)
-    if purchase is None:
-        _error(403, "NOT_ENROLLED", "chat with the instructor unlocks after purchasing the course")
+    record = await _access_record(user["id"], course_id)
+    has_connection = record is not None and course_access.is_granted(record)
+    request = await get_doc("course_contact_requests", _request_id(user["id"], course_id))
+    if request is not None and request.get("status") == course_access.REQUEST_STATUS_CONTACTED:
+        has_connection = True
+    if not has_connection:
+        _error(403, "NOT_ENROLLED", "chat with the instructor unlocks after you enrol or contact them")
     from app.services.chat import ensure_direct_room
 
     instructor = await get_user(course["instructorId"]) or {}
@@ -1067,7 +1435,8 @@ async def open_course_instructor_chat(course_id: str, user: dict = Depends(_user
         "roomId": room["id"],
         "courseId": course_id,
         "instructorId": course["instructorId"],
-        "unlockedByPurchaseId": purchase["id"],
+        "unlockedByPurchaseId": record["id"] if record is not None else None,
+        "unlockedByRequestId": (request or {}).get("id"),
     }
 
 
@@ -1357,7 +1726,7 @@ async def submit_assignment(assignment_id: str, body: AssignmentSubmissionIn, us
     if assignment is None:
         _error(404, "ASSIGNMENT_NOT_FOUND", "assignment not found")
     purchase = await get_doc("course_purchases", _purchase_id(user["id"], assignment["courseId"]))
-    if purchase is None or purchase.get("status") != "paid":
+    if purchase is None or not course_access.is_granted(purchase):
         _error(403, "NOT_ENROLLED", "only enrolled students can submit assignments")
 
     max_photos = int(assignment.get("maxPhotos") or 3)
@@ -1409,7 +1778,7 @@ async def check_in_session(session_id: str, body: SessionCheckInIn, user: dict =
     batch = await get_doc("course_batches", session.get("batchId") or "")
     member_ids = (batch or {}).get("memberIds") or []
     purchase = await get_doc("course_purchases", _purchase_id(user["id"], session["courseId"]))
-    enrolled = purchase is not None and purchase.get("status") == "paid"
+    enrolled = purchase is not None and course_access.is_granted(purchase)
     if user["id"] not in member_ids and not enrolled:
         _error(403, "NOT_BATCH_MEMBER", "you are not enrolled in this batch")
 
@@ -1441,6 +1810,9 @@ async def check_in_session(session_id: str, body: SessionCheckInIn, user: dict =
 
 # ---------------------------------------------------------------------------
 # Instructor settlement view (spec T14) — reads the weekly payout cron output.
+# LEGACY: only old checkout purchases feed settlements. Off-platform paid
+# courses settle directly between learner and instructor; this view is kept
+# solely for compatibility with those legacy records.
 # ---------------------------------------------------------------------------
 @router.get("/instructor/settlements")
 async def instructor_settlements(user: dict = Depends(_user)):
@@ -1480,4 +1852,343 @@ async def instructor_settlements(user: dict = Depends(_user)):
             "commissionRupees": sum(r["commissionRupees"] for r in rows),
             "netRupees": sum(r["netRupees"] for r in rows),
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Instructor Enrollment Requests & manual course access
+# (paid courses settle off-platform; the instructor grants access by hand)
+# ---------------------------------------------------------------------------
+def _require_instructor(user: dict) -> None:
+    if not _is_instructor(user):
+        _error(403, "NOT_INSTRUCTOR", "only instructors can manage course access")
+
+
+@router.get("/instructor/enrollment-requests")
+async def instructor_enrollment_requests(
+    status: str | None = Query(default=None),
+    user: dict = Depends(_user),
+):
+    """Paid-course contact requests across all of the instructor's courses:
+    learner + identity badge, course, price/currency at contact time, request
+    date, unlocked learner contact (Call/WhatsApp/Chat), current access status.
+    Instructor-only — private contact details never appear elsewhere."""
+    _require_instructor(user)
+    requests = await query("course_contact_requests", [("instructorId", "==", user["id"])], limit=500)
+    requests.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+    badges = await course_access.badge_map([r["learnerId"] for r in requests])
+    rows = []
+    for req in requests:
+        if status and req.get("status") != status:
+            continue
+        course = await get_doc("courses", req["courseId"]) or {}
+        record = await _access_record(req["learnerId"], req["courseId"])
+        learner = await get_user(req["learnerId"]) or {}
+        access_status = "none"
+        if record is not None:
+            if course_access.is_revoked(record):
+                access_status = "accessRevoked"
+            elif course_access.is_granted(record):
+                access_status = "accessGranted"
+        rows.append(
+            {
+                "requestId": req["id"],
+                "courseId": req["courseId"],
+                "courseTitle": req.get("courseTitle") or course.get("title") or "",
+                "courseStatus": course.get("status"),
+                "learnerId": req["learnerId"],
+                "learnerName": req.get("learnerName") or learner.get("name") or "Learner",
+                "learnerIdentityVerified": bool((badges.get(req["learnerId"]) or {}).get("identity")),
+                "learnerContact": _contact_snapshot(learner),
+                "priceRupees": req.get("priceRupees"),
+                "currency": req.get("currency") or "INR",
+                "requestStatus": req.get("status"),
+                "accessStatus": access_status,
+                "accessType": (record or {}).get("accessType"),
+                "requestedAt": req.get("createdAt"),
+                "contactRevealedAt": req.get("contactRevealedAt"),
+                "chatRoomId": req.get("chatRoomId"),
+            }
+        )
+    pending = sum(1 for r in rows if r["requestStatus"] == "contacted" and r["accessStatus"] == "none")
+    return {"data": rows, "total": len(rows), "pendingCount": pending}
+
+
+@router.post("/instructor/enrollment-requests/{request_id}/grant")
+async def grant_course_access(
+    request_id: str,
+    body: GrantCourseAccessIn,
+    user: dict = Depends(_user),
+):
+    """Manual, off-platform access grant from an existing learner request.
+
+    Idempotent: re-granting an already-granted learner returns the same record;
+    re-granting after a revocation restores the SAME learning record (progress,
+    completion and certificate history preserved). Records the instructor's
+    acknowledgement that external payment was received — this is never platform
+    payment verification. Private ref/note fields stay instructor-only.
+    """
+    _require_instructor(user)
+    req = await get_doc("course_contact_requests", request_id)
+    if req is None:
+        _error(404, "REQUEST_NOT_FOUND", "contact request not found")
+    if req.get("instructorId") != user["id"]:
+        _error(403, "FORBIDDEN", "not your course request")
+    course = await _require_course(req["courseId"])
+    if course["instructorId"] != user["id"]:
+        _error(403, "FORBIDDEN", "not your course")
+    if course.get("status") != "published" or _course_is_free(course):
+        _error(409, "NOT_PUBLISHED_PAID", "access can only be granted on a published paid course")
+    if req.get("status") != course_access.REQUEST_STATUS_CONTACTED:
+        _error(409, "REQUEST_NOT_ELIGIBLE", f"request status is {req.get('status')}")
+
+    learner = await get_user(req["learnerId"])
+    if learner is None:
+        _error(404, "LEARNER_NOT_FOUND", "learner not found")
+
+    if not body.paymentReceivedAck:
+        _error(
+            422,
+            "ACK_REQUIRED",
+            "confirm that you received the course payment directly from the learner",
+            {"paymentReceivedAck": "required"},
+        )
+
+    pid = _purchase_id(req["learnerId"], req["courseId"])
+    record = await get_doc("course_purchases", pid)
+    if record is not None and course_access.is_granted(record) and not course_access.is_revoked(record):
+        return {
+            "granted": True,
+            "alreadyGranted": True,
+            "access": course_access.access_summary(record),
+            "studentId": req["learnerId"],
+            "courseId": req["courseId"],
+        }
+
+    now = _now()
+    was_revoked = record is not None and course_access.is_revoked(record)
+    if record is None:
+        record = course_access.new_access_doc(
+            user=learner,
+            course=course,
+            access_type=course_access.ACCESS_TYPE_MANUAL,
+            request_id=req["id"],
+            price_at_contact=float(req.get("priceRupees") or course.get("priceRupees") or 0),
+            currency=req.get("currency") or "INR",
+        )
+    else:
+        # Restore the SAME record — progress/completion/certificate survive.
+        record["accessType"] = course_access.ACCESS_TYPE_MANUAL
+        record["accessStatus"] = course_access.ACCESS_STATUS_GRANTED
+        record["requestId"] = req["id"]
+        record["priceAtContactRupees"] = float(req.get("priceRupees") or course.get("priceRupees") or 0)
+        record["currency"] = req.get("currency") or "INR"
+        record["grantedBy"] = user["id"]
+        record["grantedAt"] = now
+        if was_revoked:
+            record["reGrantedAt"] = now
+            record.setdefault("accessHistory", []).append(
+                {"action": "reGranted", "by": user["id"], "at": now}
+            )
+    # Instructor-private fields — never platform-verified payment evidence.
+    record["paymentReceivedAck"] = True
+    record["paymentReceivedAckAt"] = now
+    if body.externalPaymentRef:
+        record["externalPaymentRef"] = body.externalPaymentRef
+    if body.instructorNote:
+        record["instructorNote"] = body.instructorNote
+    record.setdefault("accessHistory", []).append(
+        {"action": "granted", "by": user["id"], "at": now}
+    )
+    record["updatedAt"] = now
+    await set_doc("course_purchases", pid, record)
+
+    from app.services import academy_ai
+
+    # Outcome hook — was this grant led by a recommendation?
+    await academy_ai.record_purchase_outcome_if_recommended(req["learnerId"], req["courseId"])
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        req["learnerId"],
+        type="course_access_granted",
+        title="Course access granted / पहुँच प्रदान की गई",
+        body=f"{user.get('name') or 'Your instructor'} granted you access to {course.get('title') or 'the course'}. Start learning!",
+        deepLink=f"/dashboard/p/courses/{req['courseId']}/learn",
+    )
+    return {
+        "granted": True,
+        "alreadyGranted": False,
+        "restoredAfterRevoke": was_revoked,
+        "access": course_access.access_summary(record),
+        "studentId": req["learnerId"],
+        "courseId": req["courseId"],
+    }
+
+
+@router.post("/instructor/enrollment-requests/{request_id}/dismiss")
+async def dismiss_contact_request(request_id: str, user: dict = Depends(_user)):
+    """Dismiss an eligible (contacted, not yet granted) request the instructor
+    does not want to pursue. Does not delete contact history or the chat."""
+    _require_instructor(user)
+    req = await get_doc("course_contact_requests", request_id)
+    if req is None:
+        _error(404, "REQUEST_NOT_FOUND", "contact request not found")
+    if req.get("instructorId") != user["id"]:
+        _error(403, "FORBIDDEN", "not your course request")
+    if req.get("status") != course_access.REQUEST_STATUS_CONTACTED:
+        _error(409, "REQUEST_NOT_ELIGIBLE", f"request status is {req.get('status')}")
+    record = await _access_record(req["learnerId"], req["courseId"])
+    if record is not None and course_access.is_granted(record):
+        _error(409, "ACCESS_ALREADY_GRANTED", "revoke the granted access instead of dismissing")
+    req["status"] = course_access.REQUEST_STATUS_DISMISSED
+    req["dismissedBy"] = user["id"]
+    req["dismissedAt"] = _now()
+    req["updatedAt"] = req["dismissedAt"]
+    await set_doc("course_contact_requests", request_id, req)
+    return {"requestId": request_id, "status": req["status"]}
+
+
+@router.get("/instructor/courses/{course_id}/learners")
+async def instructor_course_learners(course_id: str, user: dict = Depends(_user)):
+    """Course Learners view: active and revoked learners with learning progress
+    summaries, access type/status and the connection's chat room."""
+    _require_instructor(user)
+    course = await _require_course(course_id)
+    if course["instructorId"] != user["id"]:
+        _error(403, "FORBIDDEN", "not your course")
+    records = await query("course_purchases", [("courseId", "==", course_id)], limit=500)
+    badges = await course_access.badge_map([r["userId"] for r in records])
+    active: list[dict] = []
+    revoked: list[dict] = []
+    for record in records:
+        req = await get_doc("course_contact_requests", record["userId"] + "_" + course_id)
+        row = {
+            "studentId": record["userId"],
+            "studentName": record.get("studentName") or "Learner",
+            "identityVerified": bool((badges.get(record["userId"]) or {}).get("identity")),
+            "accessType": record.get("accessType"),
+            "accessStatus": record.get("accessStatus") or "granted",
+            "learningStatus": course_access.learning_status(record),
+            "progressPercent": record.get("progressPercent", 0),
+            "isCompleted": bool(record.get("isCompleted")),
+            "certificateId": record.get("certificateId"),
+            "grantedAt": record.get("grantedAt") or record.get("paidAt"),
+            "lastAccessedAt": record.get("lastAccessedAt"),
+            "revokedAt": record.get("revokedAt"),
+            "revokeReason": record.get("revokeReason"),
+            "chatRoomId": (req or {}).get("chatRoomId"),
+            "priceAtContactRupees": record.get("priceAtContactRupees"),
+            "currency": record.get("currency") or "INR",
+        }
+        if course_access.is_revoked(record):
+            revoked.append(row)
+        elif course_access.is_granted(record):
+            active.append(row)
+    active.sort(key=lambda r: r.get("grantedAt") or "", reverse=True)
+    revoked.sort(key=lambda r: r.get("revokedAt") or "", reverse=True)
+    return {
+        "courseId": course_id,
+        "active": active,
+        "revoked": revoked,
+        "totalActive": len(active),
+        "totalRevoked": len(revoked),
+    }
+
+
+@router.post("/instructor/courses/{course_id}/learners/{student_id}/revoke")
+async def revoke_course_access(
+    course_id: str,
+    student_id: str,
+    body: RevokeCourseAccessIn,
+    user: dict = Depends(_user),
+):
+    """Revoke a learner's paid-course access with a recorded reason. Blocks
+    content immediately but preserves the learner's progress and history;
+    chats and contact history stay intact; no refund is issued or promised.
+    Free-course access cannot be revoked here (exceptional cases go through
+    moderation), and the same record can be re-granted later."""
+    _require_instructor(user)
+    course = await _require_course(course_id)
+    if course["instructorId"] != user["id"]:
+        _error(403, "FORBIDDEN", "not your course")
+    record = await _access_record(student_id, course_id)
+    if record is None:
+        _error(404, "LEARNER_NOT_FOUND", "no access record for this learner")
+    if record.get("accessType") == course_access.ACCESS_TYPE_FREE:
+        _error(409, "FREE_ACCESS_NOT_REVOCABLE", "free-course access cannot be revoked from here")
+    if not course_access.is_granted(record) or course_access.is_revoked(record):
+        _error(409, "NOT_GRANTED", "access is not currently granted for this learner")
+
+    now = _now()
+    record["accessStatus"] = course_access.ACCESS_STATUS_REVOKED
+    record["revokedBy"] = user["id"]
+    record["revokedAt"] = now
+    record["revokeReason"] = body.reason
+    record.setdefault("accessHistory", []).append(
+        {"action": "revoked", "by": user["id"], "at": now, "reason": body.reason}
+    )
+    record["updatedAt"] = now
+    await set_doc("course_purchases", record["id"], record)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        student_id,
+        type="course_access_revoked",
+        title="Course access revoked / पहुँच रद्द",
+        body=f"Your access to {course.get('title') or 'the course'} was revoked by the instructor. Your progress is preserved — contact your instructor for details.",
+        deepLink="/academy/my-learning",
+    )
+    return {
+        "revoked": True,
+        "studentId": student_id,
+        "courseId": course_id,
+        "accessStatus": course_access.ACCESS_STATUS_REVOKED,
+        "revokedAt": now,
+        "revokeReason": body.reason,
+    }
+
+
+@router.post("/instructor/courses/{course_id}/learners/{student_id}/regrant")
+async def regrant_course_access(course_id: str, student_id: str, user: dict = Depends(_user)):
+    """Re-grant a previously revoked learner — restores the SAME learning
+    record (progress, completion and certificate history preserved)."""
+    _require_instructor(user)
+    course = await _require_course(course_id)
+    if course["instructorId"] != user["id"]:
+        _error(403, "FORBIDDEN", "not your course")
+    record = await _access_record(student_id, course_id)
+    if record is None:
+        _error(404, "LEARNER_NOT_FOUND", "no access record for this learner")
+    if not course_access.is_revoked(record):
+        _error(409, "NOT_REVOKED", "this learner's access is not revoked")
+
+    now = _now()
+    record["accessStatus"] = course_access.ACCESS_STATUS_GRANTED
+    record["grantedBy"] = user["id"]
+    record["grantedAt"] = now
+    record["reGrantedAt"] = now
+    record.setdefault("accessHistory", []).append(
+        {"action": "reGranted", "by": user["id"], "at": now}
+    )
+    record["updatedAt"] = now
+    await set_doc("course_purchases", record["id"], record)
+
+    from app.services.notify import notify_user
+
+    await notify_user(
+        student_id,
+        type="course_access_granted",
+        title="Course access re-granted / पहुँच पुनः प्रदान",
+        body=f"Your access to {course.get('title') or 'the course'} was re-granted by the instructor. Continue learning!",
+        deepLink=f"/dashboard/p/courses/{course_id}/learn",
+    )
+    return {
+        "granted": True,
+        "restored": True,
+        "studentId": student_id,
+        "courseId": course_id,
+        "access": course_access.access_summary(record),
     }

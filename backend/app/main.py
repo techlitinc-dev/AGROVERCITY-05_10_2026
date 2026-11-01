@@ -99,6 +99,7 @@ from app.routers import (
     mandi,
     marketplace,
     milk_seller,
+    milk_vendor,
     notifications,
     nursery,
     orders,
@@ -231,6 +232,8 @@ app.include_router(exporter.router, prefix="/v1")
 app.include_router(dairy_manager.router, prefix="/v1")
 app.include_router(dairy_hub.router, prefix="/v1")
 app.include_router(milk_seller.router, prefix="/v1")
+app.include_router(milk_vendor.router, prefix="/v1")
+app.include_router(milk_vendor.public_router, prefix="/v1")
 app.include_router(wishlist.router, prefix="/v1")
 app.include_router(coupons.router, prefix="/v1")
 app.include_router(analytics.router, prefix="/v1")

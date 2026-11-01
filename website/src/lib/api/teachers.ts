@@ -158,18 +158,34 @@ export const teachers = {
   /** GET /teachers/chat/rooms */
   chatRooms: (): Promise<unknown[]> => readList<unknown[]>('/teachers/chat/rooms'),
 
-  // --- money & feedback ---
-  /** GET /teachers/earnings */
-  earnings: (): Promise<unknown> => readOne<unknown>('/teachers/earnings'),
+  // --- enrolment requests & manual course access ---
+  /** GET /instructor/enrollment-requests — paid-course contact requests with
+   *  learner identity badges, price at contact time and current access status. */
+  enrollmentRequests: (): Promise<Record<string, unknown>> =>
+    readOne<Record<string, unknown>>('/instructor/enrollment-requests'),
 
-  /** GET /teachers/payments/history */
-  paymentHistory: (): Promise<unknown[]> => readList<unknown[]>('/teachers/payments/history'),
+  /** POST /instructor/enrollment-requests/{id}/grant — manual, off-platform
+   *  access grant (idempotent; restores after revocation with progress kept). */
+  grantAccess: (requestId: string, payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/instructor/enrollment-requests/${requestId}/grant`, payload),
 
-  /** GET /teachers/commission-structure */
-  commissionStructure: (): Promise<unknown> => readOne<unknown>('/teachers/commission-structure'),
+  /** POST /instructor/enrollment-requests/{id}/dismiss — dismiss an eligible request. */
+  dismissRequest: (requestId: string): Promise<unknown> =>
+    post<unknown>(`/instructor/enrollment-requests/${requestId}/dismiss`),
 
-  /** GET /instructor/settlements */
-  settlements: (): Promise<unknown[]> => readList<unknown[]>('/instructor/settlements'),
+  /** GET /instructor/courses/{id}/learners — active + revoked learners with progress. */
+  courseLearners: (courseId: string): Promise<Record<string, unknown>> =>
+    readOne<Record<string, unknown>>(`/instructor/courses/${courseId}/learners`),
+
+  /** POST /instructor/courses/{id}/learners/{studentId}/revoke — block content,
+   *  preserve progress, keep chat/contact history, never refund. */
+  revokeAccess: (courseId: string, studentId: string, reason: string): Promise<unknown> =>
+    post<unknown>(`/instructor/courses/${courseId}/learners/${studentId}/revoke`, { reason }),
+
+  /** POST /instructor/courses/{id}/learners/{studentId}/regrant — restore the
+   *  SAME learning record after a revocation. */
+  regrantAccess: (courseId: string, studentId: string): Promise<unknown> =>
+    post<unknown>(`/instructor/courses/${courseId}/learners/${studentId}/regrant`),
 
   /** GET /teachers/analytics */
   analytics: (): Promise<unknown> => readOne<unknown>('/teachers/analytics'),

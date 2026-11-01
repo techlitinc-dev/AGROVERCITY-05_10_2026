@@ -2,6 +2,10 @@ import React, { lazy } from 'react';
 import { Route } from 'react-router-dom';
 
 const DirectBuyerHome = lazy(() => import('./DirectBuyerHome').then((m) => ({ default: m.DirectBuyerHome })));
+const PostRequirementPage = lazy(() => import('./PostRequirementPage').then((m) => ({ default: m.PostRequirementPage })));
+const MyRequirementsPage = lazy(() => import('./MyRequirementsPage').then((m) => ({ default: m.MyRequirementsPage })));
+const BuyerApplicationsPage = lazy(() => import('./BuyerApplicationsPage').then((m) => ({ default: m.BuyerApplicationsPage })));
+const BuyerSuppliersPage = lazy(() => import('./BuyerSuppliersPage').then((m) => ({ default: m.BuyerSuppliersPage })));
 const BuyerContractDesk = lazy(() => import('./BuyerContractDesk').then((m) => ({ default: m.BuyerContractDesk })));
 const BuyerIntelPage = lazy(() => import('./BuyerIntelPage').then((m) => ({ default: m.BuyerIntelPage })));
 const OfferInboxPage = lazy(() => import('./OfferInboxPage').then((m) => ({ default: m.OfferInboxPage })));
@@ -13,9 +17,10 @@ const BuyerTeamPage = lazy(() => import('./BuyerTeamPage').then((m) => ({ defaul
 const BuyerOrgSetupPage = lazy(() => import('./BuyerOrgSetupPage').then((m) => ({ default: m.BuyerOrgSetupPage })));
 
 /**
- * 6. Direct Buyer Console. `/directbuyer/contracts` renders the buyer-owned
- * BuyerContractDesk (the old farmer BuyerContractsView borrow is replaced
- * here without touching the farmer folder).
+ * 6. Direct Buyer Console — the simplified Farmer ⇄ Industrial Buyer sourcing
+ * workflow routes (home / post / requirements / applications / suppliers) plus
+ * the legacy pages retained for compatibility (contracts, offers, standing
+ * orders, analytics, team, org, purchases).
  */
 export const DirectBuyerRouteElements = () => (
   <>
@@ -23,6 +28,11 @@ export const DirectBuyerRouteElements = () => (
     <Route path="/directbuyer" element={<DirectBuyerHome />} />
     <Route path="/directbuyer/demands" element={<DirectBuyerHome />} />
     <Route path="/directbuyer/qc" element={<DirectBuyerHome />} />
+    <Route path="/directbuyer/requirements" element={<MyRequirementsPage />} />
+    <Route path="/directbuyer/requirements/new" element={<PostRequirementPage />} />
+    <Route path="/directbuyer/applications" element={<BuyerApplicationsPage />} />
+    <Route path="/directbuyer/suppliers" element={<BuyerSuppliersPage />} />
+    {/* Legacy compatibility routes — not part of the active sourcing workflow. */}
     <Route path="/directbuyer/contracts" element={<BuyerContractDesk />} />
     <Route path="/directbuyer/intel" element={<BuyerIntelPage />} />
     <Route path="/directbuyer/offers" element={<OfferInboxPage />} />

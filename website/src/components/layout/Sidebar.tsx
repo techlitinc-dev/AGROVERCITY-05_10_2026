@@ -31,7 +31,6 @@ import {
   Ship,
   Calendar,
   Stethoscope,
-  Syringe,
   Snowflake,
   Boxes,
   Heart,
@@ -56,6 +55,8 @@ import {
   BadgeCheck,
   Globe2,
   Plus,
+  CalendarCheck,
+  Settings,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../lib/utils';
@@ -73,7 +74,8 @@ export const Sidebar: React.FC = () => {
             title: 'Trade — Buy & Sell',
             items: [
               { to: '/farmer/lots', label: 'My Produce / माझे उत्पादन', icon: Package },
-              { to: '/farmer/demands', label: 'Buyer Requirements / खरेदी मागण्या', icon: Layers },
+              { to: '/farmer/demands', label: 'Industrial Requirements / उद्योग मागण्या', icon: Layers },
+              { to: '/farmer/industrial/applications', label: 'My Industrial Applications', icon: FileText },
               { to: '/farmer/land', label: 'Lease Farm Land / शेतजमीन भाड्याने', icon: Mountain },
               { to: '/farmer/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
               { to: '/farmer/export', label: 'Export Opportunities / निर्यात संधी', icon: Globe2 },
@@ -203,27 +205,22 @@ export const Sidebar: React.FC = () => {
       case 'milkSeller':
         return [
           {
-            title: 'Milk Vendor Desk',
+            title: 'Milk Vendor (Doodhwala)',
             items: [
-              { to: '/milkSeller', label: 'Daily Delivery Punch-Sheet', icon: Milk },
+              { to: '/milkSeller/vendor', label: 'Today', icon: CalendarCheck },
+              { to: '/milkSeller/vendor/clients', label: 'Clients', icon: Users },
+              { to: '/milkSeller/vendor/bills', label: 'Bills & Payments', icon: FileText },
+              { to: '/milkSeller/vendor/rates', label: 'Milk & Rates', icon: Milk },
+              { to: '/milkSeller/vendor/settings', label: 'Settings', icon: Settings },
+            ],
+          },
+          {
+            title: 'Legacy Punch-Sheet',
+            items: [
+              { to: '/milkSeller', label: 'Daily Delivery Punch-Sheet', icon: ClipboardList },
               { to: '/milkSeller/clients', label: 'Customer Passbooks', icon: Users },
               { to: '/milkSeller/bills', label: 'Monthly Billing & Pay', icon: DollarSign },
               { to: '/milkSeller/analytics', label: 'Delivery Analytics', icon: TrendingUp },
-            ],
-          },
-        ];
-
-      case 'vet':
-        return [
-          {
-            title: 'Veterinary Workspace',
-            items: [
-              { to: '/vet', label: 'Clinical Cockpit', icon: LayoutDashboard },
-              { to: '/vet/appointments', label: 'Appointments Queue', icon: Calendar },
-              { to: '/vet/schedule', label: 'Weekly Schedule Editor', icon: BookOpen },
-              { to: '/vet/campaigns', label: 'Vaccination Drives', icon: Syringe },
-              { to: '/vet/records', label: 'Animal Health History', icon: Stethoscope },
-              { to: '/vet/earnings', label: 'Consultation Ledger & DBT', icon: DollarSign },
             ],
           },
         ];
@@ -287,19 +284,6 @@ export const Sidebar: React.FC = () => {
           },
         ];
 
-      case 'fpoManager':
-        return [
-          {
-            title: 'FPO Collective Console',
-            items: [
-              { to: '/fpoManager', label: 'FPO Cockpit', icon: LayoutDashboard },
-              { to: '/fpo/pools', label: 'Produce Pooling Batches', icon: Layers },
-              { to: '/fpo/machinery', label: 'Custom Hiring Center', icon: Wrench },
-              { to: '/fpo/directory', label: 'Federation Directory', icon: Building2 },
-            ],
-          },
-        ];
-
       case 'womenShg':
         return [
           {
@@ -318,39 +302,14 @@ export const Sidebar: React.FC = () => {
       case 'directBuyer':
         return [
           {
-            title: 'B2B Procurement',
+            title: 'Industrial Sourcing',
             items: [
-              { to: '/directbuyer', label: 'Buyer Dashboard', icon: LayoutDashboard },
-              { to: '/directbuyer/demands', label: 'Bulk Crop Demands', icon: Layers },
-              { to: '/directbuyer/qc', label: 'Produce QC Inspections', icon: Award },
-              { to: '/directbuyer/contracts', label: 'Institutional Contracts', icon: FileText },
-            ],
-          },
-        ];
-
-      case 'broker':
-        return [
-          {
-            title: 'Broker Desk',
-            items: [
-              { to: '/broker', label: 'Deal Desk', icon: LayoutDashboard },
-              { to: '/broker/matchmaker', label: 'Lot ↔ Demand Matcher', icon: HeartHandshake },
-              { to: '/broker/commissions', label: 'Commission Ledger', icon: DollarSign },
-            ],
-          },
-        ];
-
-      case 'dairyManager':
-        return [
-          {
-            title: 'Dudh Dairy & Livestock',
-            items: [
-              { to: '/dairy', label: 'Milk Collection Desk', icon: Milk },
-              { to: '/dairy/members', label: 'Member Passbook', icon: Users },
-              { to: '/dairy/batches', label: 'Payout Batches', icon: DollarSign },
-              { to: '/dairy/rates', label: 'FAT / SNF Rate Chart', icon: TrendingUp },
-              { to: '/dairy/gaushala', label: 'Gaushala & 80G Receipts', icon: Building2 },
-              { to: '/dairy/vets', label: 'VetNet & Vaccinations', icon: ShieldAlert },
+              { to: '/directbuyer', label: 'Home / Dashboard', icon: LayoutDashboard },
+              { to: '/directbuyer/requirements/new', label: 'Post Requirement', icon: Megaphone },
+              { to: '/directbuyer/requirements', label: 'My Requirements', icon: Layers },
+              { to: '/directbuyer/applications', label: 'Applications Received', icon: Inbox },
+              { to: '/directbuyer/suppliers', label: 'My Suppliers', icon: Handshake },
+              { to: '/directbuyer/org', label: 'Business Profile & Verification', icon: Building2 },
             ],
           },
         ];
@@ -363,30 +322,6 @@ export const Sidebar: React.FC = () => {
               { to: '/instructor', label: 'Academy Studio', icon: GraduationCap },
               { to: '/instructor/courses', label: 'Course Builder', icon: BookOpen },
               { to: '/instructor/enquiries', label: 'Batches & Questions', icon: Users },
-            ],
-          },
-        ];
-
-      case 'bankManager':
-        return [
-          {
-            title: 'Credit Underwriting',
-            items: [
-              { to: '/bank', label: 'Loan Underwriting Queue', icon: Landmark },
-              { to: '/bank/appraisals', label: '7/12 & CIBIL Appraisal', icon: FileSpreadsheet },
-              { to: '/bank/portfolio', label: 'Disbursal & Recovery', icon: DollarSign },
-            ],
-          },
-        ];
-
-      case 'insuranceProvider':
-        return [
-          {
-            title: 'PMFBY Desk',
-            items: [
-              { to: '/insurance', label: 'Claims Intimation Queue', icon: ShieldAlert },
-              { to: '/insurance/surveyors', label: 'Surveyor Assignment', icon: Users },
-              { to: '/insurance/dbt', label: 'Loss Assessment & DBT', icon: DollarSign },
             ],
           },
         ];
@@ -430,16 +365,6 @@ export const Sidebar: React.FC = () => {
           },
         ];
 
-      case 'superadmin':
-        return [
-          {
-            title: 'Platform Operations',
-            items: [
-              { to: '/admin', label: 'Master Ops Console (SOP 01-27)', icon: Sparkles },
-            ],
-          },
-        ];
-
       default:
         return [
           {
@@ -465,7 +390,7 @@ export const Sidebar: React.FC = () => {
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.to === `/${activePersona}` || item.to === '/admin'}
+                end={item.to === `/${activePersona}`}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all hover-lift',

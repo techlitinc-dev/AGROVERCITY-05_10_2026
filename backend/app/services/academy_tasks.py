@@ -54,10 +54,10 @@ async def _emit_new_courses(uid: str, user: dict) -> None:
 
 
 async def _emit_live_class(uid: str) -> None:
-    purchases = await query(
-        "course_purchases", [("userId", "==", uid), ("status", "==", "paid")], limit=500
-    )
-    course_ids = {p.get("courseId") for p in purchases if p.get("courseId")}
+    from app.services import course_access
+
+    purchases = await query("course_purchases", [("userId", "==", uid)], limit=500)
+    course_ids = {p.get("courseId") for p in purchases if course_access.is_granted(p)}
     if not course_ids:
         return
     today = _today()

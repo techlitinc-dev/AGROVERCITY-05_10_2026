@@ -10,17 +10,20 @@ import {
   RefreshCw,
   BookOpen,
   Sprout,
+  UserX,
 } from 'lucide-react';
 import { teachers, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { formatDate } from '../../lib/utils';
 import { asRec, nameOf, numOf, recArr, strOf } from './helpers';
 
 /**
- * Instructor students roster — every paid enrollment across courses with
- * progress / completion / certificate state, a per-student full file drawer
- * (teachers.student), certificate issuing and batch-wide announcements.
+ * Instructor students roster — every enrolment across courses (free and
+ * instructor-granted) with progress / completion / certificate state,
+ * per-student file drawer, certificate issuing, batch-wide announcements and
+ * paid-access revoke / re-grant. Access here means "granted by instructor" —
+ * never a platform payment state.
  */
 export const StudentsRosterPage: React.FC = () => {
   const [students, setStudents] = useState<Record<string, unknown>[]>([]);
@@ -38,6 +41,8 @@ export const StudentsRosterPage: React.FC = () => {
   const [announceTitle, setAnnounceTitle] = useState('');
   const [announceText, setAnnounceText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<Record<string, unknown> | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
 
   const reload = async () => {
     setLoading(true);
@@ -96,6 +101,38 @@ export const StudentsRosterPage: React.FC = () => {
     }
   };
 
+  const revokeAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!revokeTarget || revokeReason.trim().length < 3) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await teachers.revokeAccess(strOf(revokeTarget.courseId), strOf(revokeTarget.studentId), revokeReason.trim());
+      setNotice(`Access revoked for ${nameOf(revokeTarget)} — their progress is preserved.`);
+      setRevokeTarget(null);
+      setRevokeReason('');
+      await reload();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const regrantAccess = async (s: Record<string, unknown>) => {
+    if (!window.confirm(`Re-grant course access to ${nameOf(s)}? Their existing progress is preserved.`)) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await teachers.regrantAccess(strOf(s.courseId), strOf(s.studentId));
+      setNotice(`Access re-granted for ${nameOf(s)}.`);
+      await reload();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
+  };
+
   const sendAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!announceFor) return;
@@ -124,7 +161,7 @@ export const StudentsRosterPage: React.FC = () => {
             Students Roster
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Paid enrollments across all your courses — progress, completion & certificates
+            All enrolments across your courses — progress, completion, certificates and access control
           </p>
         </div>
         <button
@@ -176,7 +213,7 @@ export const StudentsRosterPage: React.FC = () => {
         <p className="text-xs text-slate-400">Loading roster…</p>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-3xl border border-dashed border-slate-200 p-10 text-center text-xs text-slate-400">
-          No paid enrollments match these filters.
+          No enrolments match these filters.
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
@@ -188,7 +225,7 @@ export const StudentsRosterPage: React.FC = () => {
                   <th className="py-3 px-3">Course</th>
                   <th className="py-3 px-3">Enrolled</th>
                   <th className="py-3 px-3">Progress</th>
-                  <th className="py-3 px-3">Paid</th>
+                  <th className="py-3 px-3">Access</th>
                   <th className="py-3 px-3">Certificate</th>
                   <th className="py-3 px-5 text-right">Actions</th>
                 </tr>
@@ -214,7 +251,26 @@ export const StudentsRosterPage: React.FC = () => {
                         </div>
                         <span className="text-[10px] text-slate-400">{numOf(s.progressPercent)}%</span>
                       </td>
-                      <td className="py-3 px-3 font-bold text-slate-800">{formatCurrency(numOf(s.amountPaidRupees))}</td>
+                      <td className="py-3 px-3">
+                        {strOf(s.accessType) === 'manualOffPlatform' ? (
+                          strOf(s.accessStatus) === 'revoked' || strOf(s.accessStatus) === 'accessRevoked' ? (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
+                              Revoked
+                            </span>
+                          ) : (
+                            <span
+                              className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-bold"
+                              title="Access granted by instructor after direct payment"
+                            >
+                              Granted by instructor
+                            </span>
+                          )
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold">
+                            Free enrolment
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-3">
                         {certId ? (
                           <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold font-mono">
@@ -242,6 +298,27 @@ export const StudentsRosterPage: React.FC = () => {
                               <Award className="w-4 h-4" />
                             </button>
                           )}
+                          {strOf(s.accessType) === 'manualOffPlatform' &&
+                            (strOf(s.accessStatus) === 'revoked' || strOf(s.accessStatus) === 'accessRevoked' ? (
+                              <button
+                                onClick={() => regrantAccess(s)}
+                                className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                                title="Re-grant access (progress preserved)"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setRevokeTarget(s);
+                                  setRevokeReason('');
+                                }}
+                                className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50"
+                                title="Revoke access (progress preserved, no refund)"
+                              >
+                                <UserX className="w-4 h-4" />
+                              </button>
+                            ))}
                           <button
                             onClick={() => {
                               setAnnounceFor(s);
@@ -327,6 +404,41 @@ export const StudentsRosterPage: React.FC = () => {
             )}
           </div>
         )}
+      </ModalSheet>
+
+      {/* Revoke-access modal */}
+      <ModalSheet
+        isOpen={Boolean(revokeTarget)}
+        onClose={() => setRevokeTarget(null)}
+        title={revokeTarget ? `Revoke access — ${nameOf(revokeTarget)}` : undefined}
+        description={
+          revokeTarget
+            ? `${strOf(revokeTarget.courseTitle)} — the learner's progress and history are preserved; chats and contact history stay intact. No refund is issued through Agrovercity.`
+            : undefined
+        }
+        maxWidth="md"
+      >
+        <form onSubmit={revokeAccess} className="space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Reason *</label>
+            <textarea
+              value={revokeReason}
+              onChange={(e) => setRevokeReason(e.target.value)}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              rows={3}
+              placeholder="e.g. Fee not honoured after repeated reminders"
+              minLength={3}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving || revokeReason.trim().length < 3}
+            className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white font-bold text-xs shadow-md"
+          >
+            {saving ? 'Revoking…' : 'Revoke Course Access'}
+          </button>
+        </form>
       </ModalSheet>
 
       {/* Announcement modal */}

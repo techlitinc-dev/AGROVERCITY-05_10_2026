@@ -1,12 +1,13 @@
-"""WS-01 learner-side 'Krishi Academy' backend tests (phase-04).
-
-Covers purchase + verify, duplicate-verify no-op, the public certificate
-verification contract, and the catalog pagination envelope. Coin-cap tests are
-appended by later WS-01 tasks.
+"""WS-01 learner-side 'Krishi Academy' backend tests (phase-04), updated for
+the Farmer–Instructor workflow: instant free enrolment (no MPIN/contact/payment)
+and paid courses via contact request → instructor manual grant. Covers the
+public certificate verification contract and the catalog pagination envelope.
+Coin-award cap tests stay (coins still exist platform-wide); coin redemption
+was removed from the course journey.
 """
 from tests.test_diary import auth, seed_user
 from tests.test_admin import _seed_admin, admin_headers
-from tests.test_orders import razorpay, rzp_signature  # noqa: F401
+from app.core.security import hash_mpin
 
 from app.services.coins import award_coins
 
@@ -45,15 +46,13 @@ async def _publish(client, user_store, course_id):
     assert resp.status_code == 200
 
 
-def _verify_body(order_id, payment_id="pay_test_1"):
-    return {
-        "razorpayOrderId": order_id,
-        "razorpayPaymentId": payment_id,
-        "razorpaySignature": rzp_signature(order_id, payment_id),
-    }
+def _learner_with_mpin(user_store, uid="uid-farmer", **overrides):
+    token = seed_user(user_store, uid=uid, **overrides)
+    user_store[f"users/{uid}"]["mpinHash"] = hash_mpin("1234")
+    return token
 
 
-async def test_free_course_enroll_marks_paid_and_learn_opens(client, user_store):
+async def test_free_course_enroll_grants_access_and_learn_opens(client, user_store):
     instructor = _instructor_token(user_store)
     farmer = seed_user(user_store, uid="uid-farmer")
     course = (await _create(client, instructor, priceRupees=0)).json()
@@ -66,65 +65,84 @@ async def test_free_course_enroll_marks_paid_and_learn_opens(client, user_store)
     )
     assert enroll.status_code == 200
     assert enroll.json()["enrolled"] is True
-    assert user_store[f"course_purchases/uid-farmer_{course['id']}"]["status"] == "paid"
+    assert enroll.json()["accessType"] == "free"
+    assert enroll.json()["accessStatus"] == "granted"
+    assert enroll.json()["learningStatus"] == "notStarted"
+    record = user_store[f"course_purchases/uid-farmer_{course['id']}"]
+    assert record["accessType"] == "free"
+    assert record["accessStatus"] == "granted"
+    assert "status" not in record  # no payment status on new records
 
     learn = await client.get(f"/v1/courses/{course['id']}/learn", headers=auth(farmer))
     assert learn.status_code == 200
     assert "userProgress" in learn.json()
 
 
-async def test_paid_enroll_verify_and_duplicate_verify_noop(client, user_store, razorpay):
+async def test_paid_contact_grant_and_duplicate_grant_noop(client, user_store):
     instructor = _instructor_token(user_store)
-    farmer = seed_user(user_store, uid="uid-farmer")
+    farmer = _learner_with_mpin(user_store)
     course = (await _create(client, instructor)).json()
     await _publish(client, user_store, course["id"])
 
+    # Paid courses cannot be enrolled directly…
     enroll = await client.post(
-        f"/v1/courses/{course['id']}/enroll",
-        json={"useCoins": False, "coinsToRedeem": 0},
+        f"/v1/courses/{course['id']}/enroll", json={}, headers=auth(farmer)
+    )
+    assert enroll.status_code == 409
+    assert enroll.json()["error"]["code"] == "PAID_COURSE_CONTACT_REQUIRED"
+
+    # …the learner contacts the instructor (KYC + terms + MPIN)…
+    contact = await client.post(
+        f"/v1/courses/{course['id']}/contact-requests",
+        json={"termsAccepted": True, "mpin": "1234"},
         headers=auth(farmer),
     )
-    assert enroll.status_code == 200
-    assert enroll.json()["enrolled"] is False
-    order_id = enroll.json()["paymentOrderId"]
-    assert order_id
+    assert contact.status_code == 201
 
-    verify = await client.post(
-        "/v1/courses/purchases/verify",
-        json=_verify_body(order_id),
+    # …and repeated contact returns the SAME request and chat room
+    again = await client.post(
+        f"/v1/courses/{course['id']}/contact-requests",
+        json={"termsAccepted": True, "mpin": "1234"},
         headers=auth(farmer),
     )
-    assert verify.status_code == 200
-    assert verify.json()["purchased"] is True
-    assert user_store[f"course_purchases/uid-farmer_{course['id']}"]["status"] == "paid"
+    assert again.status_code in (200, 201)
+    assert again.json()["alreadyExists"] is True
+    assert again.json()["request"]["id"] == contact.json()["request"]["id"]
+    assert again.json()["chatRoomId"] == contact.json()["chatRoomId"]
+    rooms = [k for k in user_store if k.startswith("chat_rooms/")]
+    assert len(rooms) == 1
 
-    # Duplicate verify is a no-op — salesCount must not increment twice.
-    reverify = await client.post(
-        "/v1/courses/purchases/verify",
-        json=_verify_body(order_id),
-        headers=auth(farmer),
+    # …then the instructor grants access — duplicate grants are no-ops.
+    queue = await client.get("/v1/instructor/enrollment-requests", headers=auth(instructor))
+    request_id = queue.json()["data"][0]["requestId"]
+    grant = await client.post(
+        f"/v1/instructor/enrollment-requests/{request_id}/grant",
+        json={"paymentReceivedAck": True},
+        headers=auth(instructor),
     )
-    assert reverify.status_code == 200
-    assert reverify.json()["purchased"] is True
-    assert user_store[f"courses/{course['id']}"]["salesCount"] == 1
+    assert grant.json()["granted"] is True
+    re_grant = await client.post(
+        f"/v1/instructor/enrollment-requests/{request_id}/grant",
+        json={"paymentReceivedAck": True},
+        headers=auth(instructor),
+    )
+    assert re_grant.json()["alreadyGranted"] is True
+    record = user_store[f"course_purchases/uid-farmer_{course['id']}"]
+    assert record["accessStatus"] == "granted"
+    assert record["accessType"] == "manualOffPlatform"
+    # grants never create payment fields
+    assert "amountRupees" not in record
+    assert "razorpayOrderId" not in record
 
 
-async def test_public_certificate_verify_contract(client, user_store, razorpay):
+async def test_public_certificate_verify_contract(client, user_store):
     instructor = _instructor_token(user_store)
     farmer = seed_user(user_store, uid="uid-farmer")
-    course = (await _create(client, instructor)).json()
+    course = (await _create(client, instructor, priceRupees=0)).json()
     await _publish(client, user_store, course["id"])
 
-    enroll = await client.post(
-        f"/v1/courses/{course['id']}/enroll",
-        json={"useCoins": False, "coinsToRedeem": 0},
-        headers=auth(farmer),
-    )
-    order_id = enroll.json()["paymentOrderId"]
     await client.post(
-        "/v1/courses/purchases/verify",
-        json=_verify_body(order_id),
-        headers=auth(farmer),
+        f"/v1/courses/{course['id']}/enroll", json={}, headers=auth(farmer)
     )
 
     progress = await client.post(
@@ -184,31 +202,24 @@ async def test_daily_earn_cap_caps_and_drops_awards(client, user_store):
     assert user_store["users/uid-cap-2"]["agriCoins"] == 200
 
 
-async def test_over_50_percent_coin_redemption_rejected(client, user_store):
+async def test_course_enrol_ignores_coin_flags(client, user_store):
+    """Coins/gamification were removed from the course journey: the legacy
+    useCoins fields are accepted for API compatibility but never spend coins."""
     instructor = _instructor_token(user_store)
     farmer = seed_user(user_store, uid="uid-farmer", agriCoins=1000)
-    course = (
-        await _create(client, instructor, priceRupees=1000, coinsDiscountAllowed=800)
-    ).json()
+    course = (await _create(client, instructor, priceRupees=0)).json()
     await _publish(client, user_store, course["id"])
 
-    # 600 > 50% of a ₹1000 fee (500) → rejected with the standard envelope.
-    over = await client.post(
+    resp = await client.post(
         f"/v1/courses/{course['id']}/enroll",
         json={"useCoins": True, "coinsToRedeem": 600},
         headers=auth(farmer),
     )
-    assert over.status_code == 422
-    assert over.json()["error"]["code"] == "INVALID_COIN_AMOUNT"
-
-    # Exactly 50% is allowed and leaves a payable remainder.
-    ok = await client.post(
-        f"/v1/courses/{course['id']}/enroll",
-        json={"useCoins": True, "coinsToRedeem": 500},
-        headers=auth(farmer),
-    )
-    assert ok.status_code == 200
-    assert ok.json()["enrolled"] is False
+    assert resp.status_code == 200
+    assert resp.json()["enrolled"] is True
+    assert user_store["users/uid-farmer"]["agriCoins"] == 1000
+    ledger = [k for k in user_store if k.startswith("users/uid-farmer/coin_ledger/")]
+    assert ledger == []
 
 
 async def test_my_learning_emits_learner_discovery_tasks(client, user_store):

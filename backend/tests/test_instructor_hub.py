@@ -509,7 +509,9 @@ async def test_course_progress_enrolled_only(client, user_store):
 # ---------------- e-contract on booking confirmation ----------------
 
 
-async def test_e_contract_generated_on_confirmation(client, user_store, razorpay):  # noqa: F811
+async def test_e_contract_generated_on_confirmation(client, user_store):  # noqa: F811
+    """LEGACY checkout bookings still resolve their e-contract. New off-platform
+    grants do not use contracts; this endpoint is retained for old records."""
     instructor = seed_user(
         user_store, uid="uid-t1", active_profile="instructor",
         linkedProfiles=["farmer", "instructor"], name="Guru Shinde",
@@ -521,41 +523,33 @@ async def test_e_contract_generated_on_confirmation(client, user_store, razorpay
         "policy": {"windowDays": 7, "terms": "Full refund within 7 days of booking"},
     }
 
-    resp = await client.post(f"/v1/courses/{course_id}/purchase", headers=auth(farmer))
-    assert resp.status_code == 200
-    order_id = resp.json()["paymentOrderId"]
-
-    # contract not available before confirmation
     pid = f"uid-f1_{course_id}"
+    # contract not available before the booking is confirmed
+    user_store[f"course_purchases/{pid}"] = {
+        "id": pid,
+        "userId": "uid-f1",
+        "studentName": "Ram Patil",
+        "courseId": course_id,
+        "courseTitle": "Tomato Protection Masterclass",
+        "instructorId": "uid-t1",
+        "amountRupees": 1000,
+        "commissionPercent": 10.0,
+        "status": "awaiting_payment",
+        "createdAt": "2026-10-10T00:00:00+00:00",
+    }
     resp = await client.get(f"/v1/courses/purchases/{pid}/contract", headers=auth(farmer))
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "BOOKING_NOT_CONFIRMED"
 
-    payment_id = "pay_test_1"
-    resp = await client.post(
-        "/v1/courses/purchases/verify",
-        json={
-            "razorpayOrderId": order_id,
-            "razorpayPaymentId": payment_id,
-            "razorpaySignature": rzp_signature(order_id, payment_id),
-        },
-        headers=auth(farmer),
-    )
-    assert resp.status_code == 200
-    assert resp.json()["purchased"] is True
-    contract_no = resp.json()["contractNo"]
-    assert contract_no.startswith("CTC-")
-
-    # instructor got the new-booking notification
-    notes = _notifications_for(user_store, "uid-t1", "course_booking")
-    assert len(notes) == 1
-    assert "Ram Patil" in notes[0]["body"]
+    # confirm the legacy booking (as the removed checkout verify used to)
+    user_store[f"course_purchases/{pid}"]["status"] = "paid"
+    user_store[f"course_purchases/{pid}"]["paidAt"] = "2026-10-10T01:00:00+00:00"
 
     # the e-contract payload
     resp = await client.get(f"/v1/courses/purchases/{pid}/contract", headers=auth(farmer))
     assert resp.status_code == 200
     contract = resp.json()
-    assert contract["contractNo"] == contract_no
+    assert contract["contractNo"].startswith("CTC-")
     assert contract["status"] == "active"
     assert contract["student"]["name"] == "Ram Patil"
     assert contract["instructor"]["name"] == "Guru Shinde"

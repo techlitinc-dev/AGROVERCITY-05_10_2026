@@ -371,7 +371,7 @@ async def test_vyapari_market_day_roleplay(client, user_store, monkeypatch):
     assert resp.status_code == 200
     resp = await client.post(
         "/v1/demands",
-        json={"crop": "Soybean", "quantity": 100, "maxPrice": 4700},
+        json={"crop": "Soybean", "quantity": 100, "maxPrice": 4700, "deliveryLocation": "Pune APMC"},
         headers=auth(vijay),
     )
     assert resp.status_code == 201

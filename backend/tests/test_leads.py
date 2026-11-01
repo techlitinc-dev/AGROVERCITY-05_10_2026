@@ -42,7 +42,7 @@ async def test_create_lead_reveals_contacts_both_ways(client, user_store):
     assert resp.status_code == 201
     body = resp.json()
     lead = body["lead"]
-    assert lead["status"] == "new"
+    assert lead["status"] == "submitted"
     assert lead["lotId"] == lot["id"]
     assert lead["lotCrop"] == "Tomato"
     assert lead["farmerId"] == "uid-1"
@@ -280,6 +280,7 @@ APPLY_BODY = {
     "pricePerUnit": 4600,
     "quantity": 25,
     "message": "Grade A cleaned, 50kg gunny bags",
+    "availableDate": "2026-11-10",
     "termsAccepted": True,
     "mpin": "1234",
 }
@@ -303,7 +304,7 @@ async def test_farmer_applies_on_demand_creates_lead(client, user_store):
 
     resp = await client.post(
         "/v1/leads",
-        json={**APPLY_BODY, "demandId": demand["id"]},
+        json={**APPLY_BODY, "demandId": demand["id"], "availableDate": "2026-11-10"},
         headers=_auth(farmer_token),
     )
     assert resp.status_code == 201
@@ -317,10 +318,11 @@ async def test_farmer_applies_on_demand_creates_lead(client, user_store):
     assert lead["message"] == "Grade A cleaned, 50kg gunny bags"
     assert lead["farmerId"] == "uid-f1"
     assert lead["buyerId"] == "uid-1"
-    # Farmer's contact snapshot is revealed to the buyer, buyer's to the farmer.
-    assert lead["farmerContact"]["name"] == "Ram"
-    assert lead["farmerContact"]["phone"] == "+919876543210"
-    assert lead["buyerContact"]["fullName"]
+    assert lead["status"] == "submitted"
+    # Contacts stay hidden until the buyer unlocks the connection.
+    assert lead["farmerContact"] is None
+    assert lead["buyerContact"] is None
+    assert lead["contactRevealedAt"] is None
     # Direct chat room opened with the lead context line.
     assert body["chatRoomId"].startswith("dm_")
     msgs = [v for k, v in user_store.items() if k.startswith(f"chat_rooms/{body['chatRoomId']}/messages/")]
@@ -329,6 +331,10 @@ async def test_farmer_applies_on_demand_creates_lead(client, user_store):
     # Buyer notified.
     notifs = [v for k, v in user_store.items() if k.startswith("notifications/")]
     assert any(n.get("type") == "farmer_lead_received" for n in notifs)
+    # The requirement moved to applicationsReceived but stays open for more.
+    demand_doc = user_store[f"demands/{demand['id']}"]
+    assert demand_doc["status"] == "applicationsReceived"
+    assert demand_doc["applicationsCount"] == 1
 
     # Buyer desk: the application shows as a farmer lead; lot-source filter hides it.
     sent = await client.get("/v1/leads/mine?filter=sent&source=demand", headers=_auth(buyer_token))
@@ -336,8 +342,25 @@ async def test_farmer_applies_on_demand_creates_lead(client, user_store):
     rows = sent.json()["data"]
     assert len(rows) == 1
     assert rows[0]["id"] == lead["id"]
+    # Contacts are still hidden on the buyer desk before unlock.
+    assert rows[0]["farmerContact"] is None
     lot_view = await client.get("/v1/leads/mine?filter=sent&source=lot", headers=_auth(buyer_token))
     assert lot_view.json()["data"] == []
+
+    # Buyer unlocks the connection (terms + MPIN on file) → both parties'
+    # contacts are revealed.
+    unlocked = await client.post(
+        f"/v1/leads/{lead['id']}/unlock", json={"termsAccepted": True, "mpin": "1234"}, headers=_auth(buyer_token)
+    )
+    assert unlocked.status_code == 200
+    assert unlocked.json()["status"] == "contacted"
+    assert unlocked.json()["farmerContact"]["name"] == "Ram"
+    assert unlocked.json()["farmerContact"]["phone"] == "+919876543210"
+    assert unlocked.json()["buyerContact"]["fullName"]
+    # The farmer now sees the buyer's contact too.
+    received = await client.get("/v1/leads/mine?filter=received&source=demand", headers=_auth(farmer_token))
+    frow = received.json()["data"][0]
+    assert frow["buyerContact"]["fullName"]
 
 
 async def test_demand_apply_requires_terms_and_mpin(client, user_store):

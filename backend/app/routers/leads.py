@@ -5,15 +5,20 @@ terms and verifies their MPIN; the platform records a lead, opens a direct chat
 room between the two parties, and reveals both sides' contact details (phone +
 WhatsApp).
 
-Demand leads (source="demand"): a farmer applies on an institutional buyer's
-posted demand ("Industry Buyer Demands") with a price/quantity quote, accepts
-the platform terms and verifies their MPIN; the same lead + chat + contact
-reveal happens, and the buyer sees the application as a Farmer Lead on their
-procurement desk.
+Demand leads (source="demand"): the industrial-sourcing application. A farmer
+applies on a buyer's posted requirement ("Industrial Buyer Requirements") with
+quantity, price, availability and supply basis, and acknowledges the
+contact-sharing terms (+ MPIN step-up when the account has one). The
+application lands on the buyer's desk with contacts HIDDEN. When the buyer
+chooses "Contact Farmer" they accept the terms and verify their MPIN; the
+application is marked contacted, contact details unlock for both parties, one
+chat room is opened and both parties are notified.
 
-The deal itself — price, payment, pickup, quality — is finalized directly
-between the parties, off the platform. Agrovercity connects; it is not a
-transaction counterparty.
+The deal itself — sampling, final quantity/price, payment, pickup, quality,
+delivery, invoices, supply agreements, disputes — is finalized directly between
+the parties, off the platform. Agrovercity connects; it is not a transaction
+counterparty and never creates purchase orders, supply contracts, invoices or
+payments from this flow.
 """
 from datetime import datetime, timezone
 from typing import Literal
@@ -26,6 +31,7 @@ from app.core.db import get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.core.ratelimit import hit
 from app.core.security import verify_mpin
+from app.models.direct import LeadOutcomeIn
 from app.routers.users import require_role
 from app.services.chat import ensure_direct_room
 from app.services.notify import notify_user
@@ -35,11 +41,15 @@ from app.services.verification import is_identity_verified
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
-LIVE_LEAD_STATUSES = ("new", "contacted")
+# Live (non-terminal) lead statuses. Stored canonical + legacy values.
+LIVE_LEAD_STATUSES = ("submitted", "contacted", "new")
+TERMINAL_LEAD_STATUSES = ("dealDone", "dismissed", "withdrawn", "rejected", "sold")
 # Demand-sourced leads: the farmer applies on a buyer's posted demand
 # ("Industry Buyer Demands"), the buyer sees them as Farmer Leads.
 LEAD_SOURCE_LOT = "lot"
 LEAD_SOURCE_DEMAND = "demand"
+
+SUPPLY_BASES = ("farmGate", "buyerCollection", "deliveryToBuyer")
 
 # Direct-connect terms acknowledgement (spec §8). Versioned so future wording
 # changes can tell old acceptances apart.
@@ -55,6 +65,17 @@ def _error(status_code: int, code: str, message: str, field_errors: dict | None 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _today():
+    return datetime.now(timezone.utc).date()
+
+
+def _parse_date(value: str, field: str):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        _error(422, "VALIDATION_ERROR", "invalid date", {field: "must be YYYY-MM-DD"})
 
 
 def _digits(phone: str | None) -> str | None:
@@ -76,6 +97,23 @@ def _contact_of(user: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Status mapping (spec §11): stored canonical statuses going forward; legacy
+# records (`new`/`sold`) are normalised on read. No destructive migration.
+# ---------------------------------------------------------------------------
+
+_STATUS_READ_MAP = {"new": "submitted", "sold": "dealDone"}
+_STATUS_WRITE_MAP = {"new": "submitted", "sold": "dealDone"}
+
+
+def _public_status(status: str | None) -> str:
+    return _STATUS_READ_MAP.get(status or "", status or "")
+
+
+def _canonical_status(status: str) -> str:
+    return _STATUS_WRITE_MAP.get(status, status)
+
+
 class LeadCreate(BaseModel):
     lotId: str | None = None
     demandId: str | None = None
@@ -85,10 +123,24 @@ class LeadCreate(BaseModel):
     message: str = ""
     termsAccepted: bool = False
     mpin: str | None = None
+    # ---- Industrial sourcing application fields (demandId) ----
+    supplyBasis: Literal["farmGate", "buyerCollection", "deliveryToBuyer"] = "farmGate"
+    availableDate: str = ""  # YYYY-MM-DD available/harvest date
+    supplyLocation: str = ""
+    canRecur: bool | None = None  # required when the requirement is recurring
+    availabilityNote: str = ""
+    sourceLotId: str | None = None  # existing produce lot for prefill/reference
+    qualityDetails: str = ""
+    photos: list[str] = Field(default_factory=list)
+    packagingCapability: str = ""
+    certifications: list[str] = Field(default_factory=list)
 
 
 class LeadStatusUpdate(BaseModel):
-    status: Literal["new", "contacted", "sold", "dismissed"]
+    status: Literal[
+        "new", "submitted", "contacted", "sold", "dealDone",
+        "dismissed", "withdrawn", "rejected",
+    ]
     finalRate: int | None = None
 
 
@@ -100,12 +152,22 @@ async def _blocked(a: str, b: str) -> bool:
     return False
 
 
-def _with_contacts(lead: dict) -> dict:
-    return {
-        **lead,
-        "farmerContact": lead.get("farmerContact"),
-        "buyerContact": lead.get("buyerContact"),
-    }
+def _contacts_unlocked(lead: dict) -> bool:
+    """Contact details are visible only after the connection is unlocked
+    (buyer contact-unlock) or on legacy records revealed before gating."""
+    return bool(lead.get("contactRevealedAt"))
+
+
+def _with_contacts(lead: dict, viewer_id: str | None = None) -> dict:
+    """Viewer-scoped serialization: application statuses are normalised for
+    display and BOTH parties' contact details stay hidden until the connection
+    is unlocked. The raw stored doc keeps the snapshots for the reveal moment.
+    """
+    public = {**lead, "status": _public_status(lead.get("status"))}
+    if not _contacts_unlocked(lead):
+        public["farmerContact"] = None
+        public["buyerContact"] = None
+    return public
 
 
 @router.post("", status_code=201)
@@ -149,7 +211,7 @@ async def _create_lot_lead(body: LeadCreate, user: dict, uid: str, response: Res
         # Idempotent revisit — the connection already exists and both parties
         # already hold each other's contact.
         response.status_code = 200
-        return {"lead": _with_contacts(live), "chatRoomId": live.get("chatRoomId")}
+        return {"lead": _with_contacts(live, uid), "chatRoomId": live.get("chatRoomId")}
 
     farmer = await get_user(lot["farmerId"]) or {}
     if not await is_identity_verified(farmer):
@@ -236,18 +298,25 @@ async def _create_lot_lead(body: LeadCreate, user: dict, uid: str, response: Res
         deep_link=module_deep_link("trade"),
         source_id=doc["id"],
     )
-    return {"lead": _with_contacts(doc), "chatRoomId": room["id"]}
+    return {"lead": _with_contacts(doc, uid), "chatRoomId": room["id"]}
+
+
+def _derive_supply_type(demand: dict) -> str:
+    if demand.get("supplyType") in ("oneTime", "recurring"):
+        return demand["supplyType"]
+    return "recurring" if demand.get("frequency") in ("weekly", "fortnightly", "monthly") else "oneTime"
 
 
 async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: Response):
-    """Farmer applies on a buyer's posted demand — T&C + MPIN, contact shared."""
+    """Farmer applies on a buyer's posted requirement — quote + availability +
+    supply basis + T&C (+ MPIN). Contacts stay hidden until the buyer unlocks."""
     require_role(user, "farmer", "seller")
     demand = await get_doc("demands", body.demandId)
     if demand is None:
         _error(404, "DEMAND_NOT_FOUND", "demand not found")
     if demand.get("buyerId") == uid:
         _error(403, "OWN_DEMAND", "cannot apply on your own demand")
-    if demand.get("status") != "open":
+    if demand.get("status") not in ("open", "applicationsReceived"):
         _error(409, "DEMAND_CLOSED", "demand is closed for applications")
     if body.pricePerUnit is None or body.quantity is None:
         _error(
@@ -256,6 +325,29 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
             "invalid application",
             {"pricePerUnit": "required", "quantity": "required"},
         )
+    if not body.availableDate:
+        _error(422, "VALIDATION_ERROR", "invalid application", {"availableDate": "required"})
+    if _parse_date(body.availableDate, "availableDate") < _today():
+        _error(422, "VALIDATION_ERROR", "invalid date", {"availableDate": "must not be in the past"})
+    if body.supplyBasis not in SUPPLY_BASES:
+        _error(422, "VALIDATION_ERROR", "invalid supply basis", {"supplyBasis": "farmGate | buyerCollection | deliveryToBuyer"})
+    # Partial-quantity rule: below the full requirement only when allowed.
+    if float(body.quantity) < float(demand.get("quantity") or 0) and demand.get("partialAllowed") is False:
+        _error(422, "PARTIAL_NOT_ALLOWED", "this requirement needs the full quantity — partial supply is not allowed")
+    # Recurring requirements: the farmer must say whether they can support
+    # recurring supply (sourcing interest only — no orders are generated).
+    if _derive_supply_type(demand) == "recurring" and body.canRecur is None:
+        _error(422, "RECURRING_ANSWER_REQUIRED", "state whether you can support recurring supply", {"canRecur": "required"})
+    # Existing-lot prefill/reference: ownership is verified server-side and
+    # ownership-sensitive lot data is never trusted from the client.
+    source_lot = None
+    if body.sourceLotId:
+        lot = await get_doc("market_lots", body.sourceLotId)
+        if lot is None:
+            _error(404, "LOT_NOT_FOUND", "source lot not found")
+        if lot.get("farmerId") != uid:
+            _error(403, "NOT_YOUR_LOT", "source lot belongs to another farmer")
+        source_lot = lot
     if not body.termsAccepted:
         _error(422, "TERMS_REQUIRED", "accept the terms & conditions to apply")
     if not await is_identity_verified(user):
@@ -278,12 +370,15 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
     if live is not None:
         # Idempotent re-apply — return the existing application/connection.
         response.status_code = 200
-        return {"lead": _with_contacts(live), "chatRoomId": live.get("chatRoomId")}
+        return {"lead": _with_contacts(live, uid), "chatRoomId": live.get("chatRoomId")}
 
     buyer = await get_user(buyer_id) or {}
     if not await is_identity_verified(buyer):
         _error(403, "COUNTERPARTY_UNVERIFIED", "the buyer has not completed identity verification")
     farmer_verified = await is_identity_verified(user)
+    supply_location = body.supplyLocation or ", ".join(
+        x for x in (user.get("village", ""), user.get("district", "")) if x
+    )
     now = _now()
     doc = {
         "id": f"lead_{uuid4().hex[:12]}",
@@ -293,17 +388,42 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
         "demandVariety": demand.get("variety", ""),
         "pricePerUnit": body.pricePerUnit,
         "quantity": body.quantity,
+        "unit": demand.get("unit", "quintal"),
+        "supplyBasis": body.supplyBasis,
+        "availableDate": body.availableDate,
+        "supplyLocation": supply_location,
+        "canRecur": body.canRecur,
+        "availabilityNote": body.availabilityNote,
+        "sourceLotId": body.sourceLotId,
+        "sourceLot": (
+            {
+                "lotId": source_lot["id"],
+                "crop": source_lot.get("crop", ""),
+                "quantityQuintals": source_lot.get("quantityQuintals") or source_lot.get("quantityQuintal"),
+                "harvestDate": source_lot.get("harvestDate", ""),
+                "photos": source_lot.get("photos") or [],
+                "location": ", ".join(
+                    x for x in (source_lot.get("village", ""), source_lot.get("district", "")) if x
+                ),
+            }
+            if source_lot
+            else None
+        ),
+        "qualityDetails": body.qualityDetails,
+        "photos": body.photos or ((source_lot or {}).get("photos") or []),
+        "packagingCapability": body.packagingCapability,
+        "certifications": body.certifications,
         "message": body.message,
         "farmerId": uid,
         "buyerId": buyer_id,
         "buyerRole": buyer.get("activeProfile", ""),
         "buyerVerified": bool(buyer.get("vyapariVerified")) or await is_identity_verified(buyer),
-        "status": "new",
+        "status": "submitted",
         "termsAccepted": True,
         "termsVersion": TERMS_VERSION,
         "termsAcceptedAt": now,
         "termsAcceptedBy": uid,
-        "contactRevealedAt": now,
+        "contactRevealedAt": None,
         "finalRate": None,
         "farmerContact": {**_contact_of(user), "verified": farmer_verified},
         "buyerContact": {
@@ -324,6 +444,18 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
     doc["chatRoomId"] = room["id"]
     await set_doc("leads", doc["id"], doc)
 
+    # First application flips the requirement to applicationsReceived — it
+    # stays discoverable/open for more (multi-farmer) applications.
+    if demand.get("status") == "open":
+        demand["status"] = "applicationsReceived"
+        demand["applicationsCount"] = (demand.get("applicationsCount") or 0) + 1
+        demand["updatedAt"] = now
+        await set_doc("demands", demand["id"], demand)
+    else:
+        demand["applicationsCount"] = (demand.get("applicationsCount") or 0) + 1
+        demand["updatedAt"] = now
+        await set_doc("demands", demand["id"], demand)
+
     # Context line in the thread so the buyer sees why the room exists.
     farmer_label = doc["farmerContact"]["name"] or "A farmer"
     msg = {
@@ -333,8 +465,8 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
         "fromSide": "farmer",
         "text": (
             f"📋 Farmer Lead: {farmer_label} applied to your "
-            f"{demand.get('crop', 'crop')} demand — {body.quantity} q @ "
-            f"₹{body.pricePerUnit}/q. Contact shared — connect directly."
+            f"{demand.get('crop', 'crop')} requirement — {body.quantity} {doc['unit']} @ "
+            f"₹{body.pricePerUnit}/{doc['unit']} ({body.supplyBasis}, available {body.availableDate})."
         ),
         "imageUrl": None,
         "createdAt": now,
@@ -349,14 +481,14 @@ async def _create_demand_lead(body: LeadCreate, user: dict, uid: str, response: 
     await notify_user(
         buyer_id,
         type="farmer_lead_received",
-        title="New farmer lead / नया किसान लीड",
+        title="New farmer application / नया किसान आवेदन",
         body=(
-            f"{farmer_label} applied to your {demand.get('crop', 'crop')} demand — "
-            f"{body.quantity} q @ ₹{body.pricePerUnit}/q. Contact shared, chat is open"
+            f"{farmer_label} applied to your {demand.get('crop', 'crop')} requirement — "
+            f"{body.quantity} {doc['unit']} @ ₹{body.pricePerUnit}/{doc['unit']}. Review and contact from your desk."
         ),
-        deepLink=f"/chat?room={room['id']}",
+        deepLink="/directbuyer/applications",
     )
-    return {"lead": _with_contacts(doc), "chatRoomId": room["id"]}
+    return {"lead": _with_contacts(doc, uid), "chatRoomId": room["id"]}
 
 
 @router.get("/mine")
@@ -378,13 +510,19 @@ async def list_my_leads(
         # Legacy lot leads predate the source field — treat missing as "lot".
         docs = [d for d in docs if d.get("source", LEAD_SOURCE_LOT) == source]
     if status:
-        docs = [d for d in docs if d.get("status") == status]
+        wanted = {_canonical_status(status), status}
+        docs = [d for d in docs if d.get("status") in wanted]
     else:
         docs = [d for d in docs if d.get("status") != "dismissed"]
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     total = len(docs)
     start = (page - 1) * pageSize
-    return {"data": [_with_contacts(d) for d in docs[start:start + pageSize]], "page": page, "pageSize": pageSize, "total": total}
+    return {
+        "data": [_with_contacts(d, uid) for d in docs[start:start + pageSize]],
+        "page": page,
+        "pageSize": pageSize,
+        "total": total,
+    }
 
 
 class LeadUnlock(BaseModel):
@@ -394,18 +532,40 @@ class LeadUnlock(BaseModel):
 
 @router.post("/{lead_id}/unlock")
 async def unlock_lead_contact(lead_id: str, body: LeadUnlock, uid: str = Depends(current_user_id)):
-    """Protected contact unlock for an EXISTING connection — used when a Vyapari
-    contacts a farmer who applied on their requirement (Journey B step 5), and
-    whenever a participant revisits a connection.
+    """Buyer-side contact unlock ("Contact Farmer") — and participant revisit.
+
+    Verifies (in order): participant, industrial-buyer role + requirement
+    ownership for the buyer side, application eligibility (no unlock on
+    closed/invalid applications), verified KYC for both parties, the
+    direct-connect terms and the caller's MPIN (when one is on file).
 
     Idempotent: repeated unlocks return the same lead with the same contacts;
-    nothing new is created. Requires verified KYC for both parties, the
-    direct-connect terms, and the caller's MPIN (when one is on file).
+    nothing new is created. Atomically marks the application `contacted`,
+    stores consent/audit metadata, unlocks contact details for both
+    participants, opens the (single) chat room and notifies both parties.
+    Accepting contact does NOT accept the quote or create any purchase,
+    purchase order, supply contract, invoice or payment obligation.
     """
     lead = await get_doc("leads", lead_id)
     if lead is None or uid not in (lead.get("farmerId"), lead.get("buyerId")):
         _error(404, "LEAD_NOT_FOUND", "lead not found")
     user = await get_user(uid)
+
+    if uid == lead.get("buyerId") and lead.get("source") == LEAD_SOURCE_DEMAND:
+        # The buyer side must hold an industrial-buyer role and own the
+        # requirement this application belongs to.
+        require_role(user, "directBuyer", "seller", "exporter")
+        demand = await get_doc("demands", lead.get("demandId", ""))
+        if demand is None or demand.get("buyerId") != uid:
+            _error(403, "FORBIDDEN", "you do not own this requirement")
+        if lead.get("status") not in LIVE_LEAD_STATUSES:
+            _error(409, "APPLICATION_NOT_ELIGIBLE", "this application is no longer open for contact")
+    elif uid == lead.get("farmerId") and not _contacts_unlocked(lead):
+        # The applicant may revisit the connection only after the buyer
+        # unlocked it — their own contact details must never be revealed to
+        # themselves before the buyer accepts the connection.
+        _error(409, "NOT_UNLOCKED_YET", "the buyer has not unlocked this connection yet")
+
     if not await is_identity_verified(user):
         _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to unlock contacts")
     other_id = lead.get("buyerId") if uid == lead.get("farmerId") else lead.get("farmerId")
@@ -430,22 +590,30 @@ async def unlock_lead_contact(lead_id: str, body: LeadUnlock, uid: str = Depends
     lead.setdefault("unlocks", [])
     if not any(u.get("by") == uid for u in lead["unlocks"]):
         lead["unlocks"] = [*lead["unlocks"], {"by": uid, "at": now, "termsVersion": lead["termsVersion"]}]
-    if lead.get("status") == "new":
+    if lead.get("status") in ("new", "submitted"):
         lead["status"] = "contacted"
     lead["updatedAt"] = now
     await set_doc("leads", lead_id, lead)
 
-    if first_unlock or lead.get("status") == "contacted":
-        crop = lead.get("lotCrop") or lead.get("demandCrop") or "produce"
-        other_name = ((user.get("name") or "").strip().split(" ") or [""])[0] or "The other party"
+    crop = lead.get("lotCrop") or lead.get("demandCrop") or "produce"
+    caller_name = ((user.get("name") or "").strip().split(" ") or [""])[0] or "The other party"
+    if first_unlock:
+        # Both parties are notified (spec §17) — no phone numbers in payloads.
         await notify_user(
             other_id,
             type="contact_unlocked",
             title="Contact unlocked / संपर्क उघडला",
-            body=f"{other_name} unlocked the contact for your {crop} connection — call, WhatsApp or chat directly.",
+            body=f"{caller_name} unlocked the contact for your {crop} connection — call, WhatsApp or chat directly.",
             deepLink=f"/chat?room={lead['chatRoomId']}" if lead.get("chatRoomId") else "/farmer/connections",
         )
-    return _with_contacts(lead)
+        await notify_user(
+            uid,
+            type="contact_unlocked",
+            title="Contact unlocked / संपर्क उघडला",
+            body=f"Contact details are now shared for your {crop} connection — call, WhatsApp or chat directly.",
+            deepLink=f"/chat?room={lead['chatRoomId']}" if lead.get("chatRoomId") else "/directbuyer/suppliers",
+        )
+    return _with_contacts(lead, uid)
 
 
 @router.patch("/{lead_id}")
@@ -456,7 +624,8 @@ async def update_lead_status(lead_id: str, body: LeadStatusUpdate, uid: str = De
     lead = await get_doc("leads", lead_id)
     if lead is None or uid not in (lead.get("farmerId"), lead.get("buyerId")):
         _error(404, "LEAD_NOT_FOUND", "lead not found")
-    lead["status"] = body.status
+    canonical = _canonical_status(body.status)
+    lead["status"] = canonical
     if body.finalRate is not None:
         if body.finalRate < 0:
             _error(422, "VALIDATION_ERROR", "invalid rate", {"finalRate": "must be 0 or more"})
@@ -466,7 +635,8 @@ async def update_lead_status(lead_id: str, body: LeadStatusUpdate, uid: str = De
 
     other_id = lead.get("buyerId") if uid == lead.get("farmerId") else lead.get("farmerId")
     crop = lead.get("lotCrop") or lead.get("demandCrop") or "produce"
-    if body.status == "sold":
+    other_link = "/directbuyer/suppliers" if other_id == lead.get("buyerId") else "/farmer/connections"
+    if canonical == "dealDone":
         lot = await get_doc("market_lots", lead.get("lotId", ""))
         if lot is not None and lot.get("status") == "open":
             lot["status"] = "sold"
@@ -479,14 +649,79 @@ async def update_lead_status(lead_id: str, body: LeadStatusUpdate, uid: str = De
             type="lead_outcome_updated",
             title="Deal marked completed / सौदा पूर्ण",
             body=f"The {crop} connection was marked 'deal completed' — a user-reported outcome, not a payment record.",
-            deepLink="/seller/connections" if other_id == lead.get("buyerId") else "/farmer/connections",
+            deepLink=other_link,
         )
-    elif body.status == "dismissed":
+    elif canonical == "dismissed":
         await notify_user(
             other_id,
             type="lead_outcome_updated",
             title="Connection closed / संपर्क बंद",
             body=f"The {crop} connection was marked 'did not happen'.",
-            deepLink="/seller/connections" if other_id == lead.get("buyerId") else "/farmer/connections",
+            deepLink=other_link,
         )
-    return _with_contacts(lead)
+    elif canonical == "withdrawn":
+        await notify_user(
+            other_id,
+            type="application_withdrawn",
+            title="Application withdrawn / आवेदन मागे",
+            body=f"The {crop} application was withdrawn.",
+            deepLink=other_link,
+        )
+    return _with_contacts(lead, uid)
+
+
+@router.post("/{lead_id}/outcome")
+async def record_lead_outcome(lead_id: str, body: LeadOutcomeIn, uid: str = Depends(current_user_id)):
+    """User-reported outcome after contact (spec §11) — still in contact /
+    supply arrangement completed offline / did not happen / withdrawn, with
+    optional dealDone details (final quantity, price, supply start, one-time or
+    recurring arrangement). These details are NOT platform-verified payment,
+    quality, contract or delivery evidence, and nothing (purchase order, supply
+    contract, invoice, delivery order, payment, settlement, recurring billing)
+    is created from them."""
+    lead = await get_doc("leads", lead_id)
+    if lead is None or uid not in (lead.get("farmerId"), lead.get("buyerId")):
+        _error(404, "LEAD_NOT_FOUND", "lead not found")
+    if lead.get("status") in ("submitted", "new") and body.outcome == "withdrawn" and uid == lead.get("buyerId"):
+        _error(409, "NOT_CONTACTED", "the application is not in contact yet — dismiss it instead")
+    outcome_status = {
+        "still_in_contact": "contacted",
+        "deal_done_offline": "dealDone",
+        "did_not_happen": "dismissed",
+        "withdrawn": "withdrawn",
+    }[body.outcome]
+    now = _now()
+    lead["status"] = outcome_status
+    if body.outcome == "deal_done_offline":
+        if body.supplyStartDate:
+            _parse_date(body.supplyStartDate, "supplyStartDate")
+        lead["dealDetails"] = {
+            "finalQuantity": body.finalQuantity,
+            "finalUnit": body.finalUnit or lead.get("unit") or "",
+            "finalPrice": body.finalPrice,
+            "finalPriceUnit": body.finalPriceUnit or body.finalUnit or lead.get("unit") or "",
+            "supplyStartDate": body.supplyStartDate,
+            "arrangementType": body.arrangementType,
+            "reportedBy": uid,
+            "at": now,
+        }
+    lead["updatedAt"] = now
+    await set_doc("leads", lead_id, lead)
+
+    other_id = lead.get("buyerId") if uid == lead.get("farmerId") else lead.get("farmerId")
+    crop = lead.get("lotCrop") or lead.get("demandCrop") or "produce"
+    other_link = "/directbuyer/suppliers" if other_id == lead.get("buyerId") else "/farmer/connections"
+    labels = {
+        "still_in_contact": "still in contact",
+        "deal_done_offline": "supply arrangement completed offline (user-reported)",
+        "did_not_happen": "did not happen",
+        "withdrawn": "withdrawn",
+    }
+    await notify_user(
+        other_id,
+        type="lead_outcome_updated",
+        title="Outcome updated / परिणाम अद्यतित",
+        body=f"The {crop} connection outcome was updated: {labels[body.outcome]}.",
+        deepLink=other_link,
+    )
+    return _with_contacts(lead, uid)

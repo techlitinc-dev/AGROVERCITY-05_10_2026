@@ -13,8 +13,6 @@ const PERSONA_LABELS: { id: PersonaType; label: string }[] = [
   { id: 'transporter', label: 'Transporter' },
   { id: 'equipmentOwner', label: 'Equipment Owner' },
   { id: 'directBuyer', label: 'Industrial Buyer' },
-  { id: 'broker', label: 'Agri Broker' },
-  { id: 'dairyManager', label: 'Dairy Manager' },
   { id: 'instructor', label: 'Instructor' },
   { id: 'customer', label: 'E-Market Customer' },
 ];

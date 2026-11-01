@@ -630,21 +630,32 @@ async def feature_course(
 
 @router.get("/courses/report")
 async def courses_report(user: dict = Depends(admin_user)):
+    from app.services import course_access
+
     courses = await query("courses", [], limit=1000)
-    purchases = await query("course_purchases", [("status", "==", "paid")], limit=2000)
+    records = await query("course_purchases", [], limit=2000)
+    enrolments = [p for p in records if course_access.is_granted(p)]
     by_status: dict[str, int] = {}
     for course in courses:
         by_status[course.get("status", "unknown")] = by_status.get(course.get("status", "unknown"), 0) + 1
-    gmv = round(sum(float(p.get("amountRupees") or 0) for p in purchases), 2)
+    # GMV / commission are legacy-checkout metrics: only old records carrying
+    # an amount contribute. Off-platform grants settle directly between the
+    # learner and the instructor and never pass through the platform.
+    legacy = [p for p in enrolments if p.get("amountRupees") is not None]
+    gmv = round(sum(float(p.get("amountRupees") or 0) for p in legacy), 2)
     commission = round(sum(
         float(p.get("amountRupees") or 0) * float(p.get("commissionPercent") or 0) / 100
-        for p in purchases
+        for p in legacy
     ), 2)
+    free_claims = sum(
+        1 for p in enrolments
+        if p.get("accessType") == "free" or (not p.get("accessType") and float(p.get("amountRupees") or 0) == 0)
+    )
     return {
         "totalCourses": len(courses),
         "byStatus": by_status,
-        "totalSales": len(purchases),
-        "freeClaims": sum(1 for p in purchases if float(p.get("amountRupees") or 0) == 0),
+        "totalSales": len(enrolments),
+        "freeClaims": free_claims,
         "grossMerchandiseValueRupees": gmv,
         "platformCommissionRupees": commission,
         "instructorEarningsRupees": round(gmv - commission, 2),
