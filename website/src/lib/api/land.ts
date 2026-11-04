@@ -90,6 +90,30 @@ export const land = {
   createLeaseRequest: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/land/lease-requests', payload),
 
+  // --- land requirements (farmer-posted "I need land" board) ---
+  /** POST /land/requirements — farmer posts the land they need. */
+  createRequirement: (payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>('/land/requirements', payload),
+
+  /** GET /land/requirements/mine — my posted requirements with responses. */
+  myRequirements: (): Promise<unknown[]> => readList<unknown[]>('/land/requirements/mine'),
+
+  /** DELETE /land/requirements/{id} — close my requirement. */
+  closeRequirement: (requirementId: string): Promise<unknown> =>
+    del<unknown>(`/land/requirements/${requirementId}`),
+
+  /** GET /land/requirements/browse — landlord discovery board. */
+  browseRequirements: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readList<unknown[]>('/land/requirements/browse', { params }),
+
+  /** POST /land/requirements/{id}/respond — landlord responds. */
+  respondToRequirement: (requirementId: string, payload: { message: string; termsAccepted: boolean }): Promise<unknown> =>
+    post<unknown>(`/land/requirements/${requirementId}/respond`, payload),
+
+  /** GET /land/requirements/responded — requirements I responded to (landlord side). */
+  myRequirementResponses: (): Promise<unknown[]> =>
+    readList<unknown[]>('/land/requirements/responded'),
+
   /** POST /land/lease-requests/{id}/accept-contact — the direct-connect
    * communication unlock: landlord terms + MPIN, KYC both parties (spec §9/§10).
    * Does NOT finalize a lease or change the listing. */

@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   ChevronRight,
   EyeOff,
+  MapPin,
 } from 'lucide-react';
 import { apiErrorMessage, kyc, ratings, uploads, users } from '../../lib/api';
 import type { PersonaType, UserProfile } from '../../types';
@@ -632,6 +633,23 @@ export const ProfilePage: React.FC = () => {
             <p className="font-bold text-sm text-slate-900">Saved Items</p>
             <p className="text-[11px] text-slate-400">
               {savedCount === null ? 'Mandi rates, trees, articles and ads you bookmarked' : `${formatNumber(savedCount)} saved items`}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-slate-400" />
+      </Link>
+
+      {/* Address book shortcut */}
+      <Link
+        to="/profile/addresses"
+        className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 flex items-center justify-between gap-3 hover:border-emerald-300 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <MapPin className="w-4 h-4 text-emerald-600" />
+          <div>
+            <p className="font-bold text-sm text-slate-900">My Addresses</p>
+            <p className="text-[11px] text-slate-400">
+              Home, Farm, Warehouse and more — reused across every role
             </p>
           </div>
         </div>

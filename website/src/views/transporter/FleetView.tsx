@@ -24,9 +24,12 @@ import type { TransportBooking, TransportVehicle, VehicleCatalogEntry } from '..
 import { asArr, asRec, firstNum, firstStr, fmtDate, str, type Rec } from './utils';
 
 const PERMIT_TYPES = ['State Permit', 'National Permit'];
+/** Select sentinel for a transporter-defined vehicle type that is not on the rate card. */
+const OTHER_TYPE = '__other__';
 
 interface VehicleForm {
   vehicleType: string;
+  customVehicleType: string;
   registrationNo: string;
   capacityTonnes: number;
   permitType: string;
@@ -43,6 +46,7 @@ interface VehicleForm {
 
 const EMPTY_VEHICLE: VehicleForm = {
   vehicleType: '',
+  customVehicleType: '',
   registrationNo: '',
   capacityTonnes: 0,
   permitType: 'State Permit',
@@ -131,8 +135,10 @@ export const FleetView: React.FC = () => {
 
   const openEdit = (v: TransportVehicle) => {
     setEditingVehicle(v);
+    const knownType = catalog.some((t) => t.type === v.vehicleType);
     setVehForm({
-      vehicleType: v.vehicleType,
+      vehicleType: knownType || !v.vehicleType ? v.vehicleType : OTHER_TYPE,
+      customVehicleType: knownType || !v.vehicleType ? '' : v.vehicleType,
       registrationNo: regNo(v),
       capacityTonnes: v.capacityTonnes ?? v.capacityTons ?? 0,
       permitType: v.permitType ?? 'State Permit',
@@ -175,8 +181,11 @@ export const FleetView: React.FC = () => {
 
   const saveVehicle = async (e: React.FormEvent) => {
     e.preventDefault();
+    const vehicleType =
+      vehForm.vehicleType === OTHER_TYPE ? vehForm.customVehicleType.trim() : vehForm.vehicleType;
+    if (!vehicleType) return;
     const payload = {
-      vehicleType: vehForm.vehicleType,
+      vehicleType,
       registrationNo: vehForm.registrationNo,
       capacityTonnes: vehForm.capacityTonnes,
       permitType: vehForm.permitType,
@@ -533,7 +542,18 @@ export const FleetView: React.FC = () => {
                     {t.type}
                   </option>
                 ))}
+                <option value={OTHER_TYPE}>Others…</option>
               </select>
+              {vehForm.vehicleType === OTHER_TYPE && (
+                <input
+                  type="text"
+                  value={vehForm.customVehicleType}
+                  onChange={(e) => setVehForm({ ...vehForm, customVehicleType: e.target.value })}
+                  className="w-full mt-2 px-3 py-2 text-xs rounded-xl border border-slate-300"
+                  placeholder="Type vehicle type, e.g. Tractor Trolley"
+                  required
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Registration No.</label>

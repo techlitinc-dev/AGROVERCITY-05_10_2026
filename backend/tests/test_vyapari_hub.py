@@ -372,6 +372,35 @@ async def test_browse_default_still_hides_pending_and_taken_down(client, user_st
     assert {d["id"] for d in resp.json()["data"]} == {"lot-pending"}
 
 
+async def test_browse_district_state_filter_handles_string_and_dict_location(client, user_store):
+    """Find Produce's 'District / state' box must not 500 when a lot stores
+    location as a plain string — and must match both districts and states."""
+    token = await _farmer_token(client)
+    _seed_lot(user_store, "lot-str-loc", location="Pimpalgaon Baswant, Nashik")
+    _seed_lot(user_store, "lot-dict-loc", location={"village": "Hadapsar", "district": "Pune", "state": "Maharashtra"})
+    _seed_lot(user_store, "lot-mp", location="Indore, Malwa")
+
+    # string location + district needle (regression: used to AttributeError → 500)
+    resp = await client.get("/v1/market/lots/browse", params={"state": "nashik"}, headers=_auth(token))
+    assert resp.status_code == 200
+    assert {d["id"] for d in resp.json()["data"]} == {"lot-str-loc"}
+
+    # dict location + state needle
+    resp = await client.get("/v1/market/lots/browse", params={"state": "maharashtra"}, headers=_auth(token))
+    assert resp.status_code == 200
+    assert {d["id"] for d in resp.json()["data"]} == {"lot-dict-loc"}
+
+    # dict location + district needle
+    resp = await client.get("/v1/market/lots/browse", params={"state": "pune"}, headers=_auth(token))
+    assert resp.status_code == 200
+    assert {d["id"] for d in resp.json()["data"]} == {"lot-dict-loc"}
+
+    # no match → empty, still 200
+    resp = await client.get("/v1/market/lots/browse", params={"state": "kerala"}, headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
+
+
 # ---------------------------------------------------------------------------
 # Task 3 — pickup agents + pickup scheduling + reminder cron
 # ---------------------------------------------------------------------------

@@ -63,7 +63,8 @@ async def test_upload_podcast_audio_accepted(client, monkeypatch):
 
 
 async def test_upload_dev_mode_shim(client):
-    # Unpatched storage: dev mode writes to .local_uploads and returns file:// URLs.
+    # Unpatched storage: dev mode writes to .local_uploads and returns
+    # browser-servable /local-uploads URLs (the dev app mounts the store).
     token = create_access_token("uid-1")
     resp = await client.post(
         "/v1/uploads",
@@ -72,9 +73,16 @@ async def test_upload_dev_mode_shim(client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body[0]["url"].startswith("file://")
+    assert body[0]["url"].startswith("/local-uploads/")
     assert body[0]["url"].endswith(body[0]["storagePath"].split("/")[-1])
     assert body[0]["sizeBytes"] == len(FAKE_PNG)
+
+    # The dev mount actually serves the bytes back.
+    from app.services.storage import _LOCAL_UPLOAD_ROOT
+
+    served = await client.get(body[0]["url"])
+    assert served.status_code == 200
+    assert served.content == _LOCAL_UPLOAD_ROOT.joinpath(body[0]["storagePath"]).read_bytes()
 
 
 async def test_upload_requires_auth(client, monkeypatch):

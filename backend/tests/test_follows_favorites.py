@@ -56,6 +56,34 @@ async def test_follow_unknown_target_404(client, seeded):
     assert resp.json()["error"]["code"] == "NOT_FOUND"
 
 
+async def test_follow_gurukul_teacher_profile(client, seeded):
+    """Instructor directory follows — seeded teachers (inst_*) live in
+    teacher_profiles, not users; following them must not 404."""
+    seeded["teacher_profiles/inst_101"] = {
+        "id": "inst_101",
+        "userId": "inst_101",
+        "name": "Dr. Radheshyam Patel",
+        "headline": "Senior Agronomist",
+        "avatarUrl": "https://example.com/avatar.jpg",
+    }
+    auth = _auth(_token())
+    resp = await client.post("/v1/users/inst_101/follow", headers=auth)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "following"
+
+    resp = await client.get("/v1/users/me/follows", headers=auth)
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    teacher = next(i for i in items if i["userId"] == "inst_101")
+    assert teacher["name"] == "Dr. Radheshyam Patel"
+    assert teacher["persona"] == "teacher"
+    assert teacher["photoUrl"] == "https://example.com/avatar.jpg"
+
+    resp = await client.delete("/v1/users/inst_101/follow", headers=auth)
+    assert resp.status_code == 200
+    assert "follows/uid-1_inst_101" not in seeded
+
+
 async def test_follow_and_unfollow(client, seeded):
     auth = _auth(_token())
     resp = await client.post("/v1/users/uid-2/follow", headers=auth)

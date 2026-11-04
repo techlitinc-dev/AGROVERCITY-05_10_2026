@@ -14,6 +14,8 @@ from app.models.land import (
     LandListingIn,
     LandListingOut,
     LandListingUpdate,
+    LandRequirementIn,
+    LandRequirementRespondIn,
     LeaseIn,
     LeaseOut,
     LeaseRequestIn,
@@ -499,6 +501,14 @@ async def browse_listings(
     """Public farmland discovery (spec §7) — badges in, private fields out,
     batched verification summaries (no N+1)."""
     listings = [l for l in await query("land_listings", [], limit=1000) if l.get("status") == "open"]
+    # Annotate with the caller's existing interest (if any) so the UI can mark
+    # "Interest sent" instead of offering a duplicate request that would 409.
+    mine = await query("lease_requests", [("farmerId", "==", uid)], limit=500)
+    my_status_by_listing = {
+        r["listingId"]: r.get("status", "")
+        for r in mine
+        if r.get("listingId") and r.get("status") in ("pending", "contacted", "countered")
+    }
     if acres is not None:
         listings = [l for l in listings if l.get("areaAcres", 0) >= acres]
     if district:
@@ -536,7 +546,14 @@ async def browse_listings(
     else:
         listings.sort(key=lambda l: l.get("createdAt", ""), reverse=True)
     verified = await verification_map([l.get("landlordId") or "" for l in listings])
-    return _envelope([_public_listing(l, verified) for l in listings])
+    out = []
+    for l in listings:
+        row = _public_listing(l, verified)
+        mine_status = my_status_by_listing.get(l["id"])
+        if mine_status:
+            row["myRequestStatus"] = mine_status
+        out.append(row)
+    return _envelope(out)
 
 
 @router.get("/listings/mine")
@@ -973,6 +990,10 @@ async def my_sent_lease_requests(uid: str = Depends(_farmer)):
     requests = await query("lease_requests", [("farmerId", "==", uid)], limit=500)
     requests.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
     verified = await verification_map([r.get("landlordId") or "" for r in requests])
+    landlords: dict[str, dict] = {}
+    for lid in {r.get("landlordId") or "" for r in requests}:
+        if lid:
+            landlords[lid] = await get_user(lid) or {}
     listings = {l["id"]: l for l in await query("land_listings", [], limit=1000)}
     out = []
     for r in requests:
@@ -982,12 +1003,175 @@ async def my_sent_lease_requests(uid: str = Depends(_farmer)):
         r["listingAreaAcres"] = listing.get("areaAcres")
         r["listingStatus"] = listing.get("status")
         r["landlordVerified"] = verified.get(r.get("landlordId") or "", False)
+        r["landlordName"] = (landlords.get(r.get("landlordId") or "") or {}).get("name", "")
         r["landVerified"] = listing.get("landDocumentsStatus") == "verified"
         if not r.get("contactRevealedAt"):
             r.pop("farmerContact", None)
             r.pop("landlordContact", None)
         out.append(r)
     return {"data": out, "total": len(out)}
+
+
+# ---------------------------------------------------------------------------
+# Land requirements — the farmer-posted "I need land" board. A farmer creates
+# a requirement; landlords browse it and respond with a message. Direct-connect
+# throughout: terms + KYC gate the writes, contacts are shared only via chat.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/requirements", status_code=201)
+async def create_land_requirement(body: LandRequirementIn, uid: str = Depends(_farmer)):
+    """Farmer posts the land they need — landlords discover it via
+    GET /land/requirements/browse and respond directly."""
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to post a land request")
+    farmer = await get_user(uid)
+    if not await is_identity_verified(farmer):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to post a land request")
+    if body.neededFrom:
+        try:
+            date.fromisoformat(body.neededFrom)
+        except ValueError:
+            _error(422, "VALIDATION_ERROR", "neededFrom must be YYYY-MM-DD", {"neededFrom": "invalid date"})
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": f"lrq_{uuid.uuid4().hex[:12]}",
+        "farmerId": uid,
+        "farmerName": farmer.get("name", ""),
+        "farmerVerified": True,
+        "status": "open",
+        "responses": [],
+        "createdAt": now,
+        **body.model_dump(exclude={"termsAccepted"}),
+    }
+    await set_doc("land_requirements", doc["id"], doc)
+    return doc
+
+
+@router.get("/requirements/mine")
+async def my_land_requirements(uid: str = Depends(_farmer)):
+    docs = await query("land_requirements", [("farmerId", "==", uid)], limit=500)
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    # Join landlord names onto responses (public display only).
+    for d in docs:
+        for resp in d.get("responses") or []:
+            landlord = await get_user(resp.get("landlordId", ""))
+            resp["landlordName"] = (landlord or {}).get("name", "")
+            resp["landlordVerified"] = await is_identity_verified(landlord)
+    return {"data": docs, "total": len(docs)}
+
+
+@router.delete("/requirements/{requirement_id}", status_code=204)
+async def close_land_requirement(requirement_id: str, uid: str = Depends(_farmer)):
+    doc = await get_doc("land_requirements", requirement_id)
+    if doc is None or doc.get("farmerId") != uid:
+        _error(404, "NOT_FOUND", "requirement not found")
+    doc["status"] = "closed"
+    doc["closedAt"] = datetime.now(timezone.utc).isoformat()
+    await set_doc("land_requirements", requirement_id, doc)
+    return Response(status_code=204)
+
+
+@router.get("/requirements/browse")
+async def browse_land_requirements(
+    district: str | None = None,
+    state: str | None = None,
+    minAcres: float | None = None,
+    uid: str = Depends(_landlord),
+):
+    """Landlord discovery board — open farmer requirements with public
+    farmer cards (first name + verification badge only)."""
+    docs = await query("land_requirements", [("status", "==", "open")], limit=500)
+    if district:
+        needle = district.strip().lower()
+        docs = [d for d in docs if needle in str(d.get("district") or "").lower()]
+    if state:
+        needle = state.strip().lower()
+        docs = [d for d in docs if needle in str(d.get("state") or "").lower()]
+    if minAcres is not None:
+        docs = [d for d in docs if float(d.get("areaAcres") or 0) >= minAcres]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    farmers = {}
+    for d in docs:
+        fid = d.get("farmerId", "")
+        if fid not in farmers:
+            farmers[fid] = await get_user(fid)
+        d["farmerName"] = ((farmers[fid] or {}).get("name") or "").strip().split(" ")[0]
+        d["farmerVerified"] = await is_identity_verified(farmers[fid])
+    return _envelope(docs)
+
+
+@router.get("/requirements/responded")
+async def my_requirement_responses(uid: str = Depends(_landlord)):
+    """The landlord's side of the farmer-posted board — every requirement they
+    responded to, with the farmer's public card and the chat room."""
+    docs = await query("land_requirements", [], limit=1000)
+    out = []
+    for d in docs:
+        mine = [r for r in d.get("responses") or [] if r.get("landlordId") == uid]
+        if not mine:
+            continue
+        farmer = await get_user(d.get("farmerId", "")) or {}
+        out.append(
+            {
+                **d,
+                "myResponses": mine,
+                "farmerName": ((farmer.get("name") or "").strip().split(" ")[0]) or "Farmer",
+                "farmerVerified": await is_identity_verified(farmer),
+            }
+        )
+    out.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    return {"data": out, "total": len(out)}
+
+
+@router.post("/requirements/{requirement_id}/respond", status_code=201)
+async def respond_to_land_requirement(
+    requirement_id: str,
+    body: LandRequirementRespondIn,
+    uid: str = Depends(_landlord),
+):
+    """Landlord responds to a farmer's land requirement — stored on the doc,
+    the farmer is notified and can open a chat with the landlord."""
+    doc = await get_doc("land_requirements", requirement_id)
+    if doc is None:
+        _error(404, "NOT_FOUND", "requirement not found")
+    if doc.get("status") != "open":
+        _error(409, "REQUIREMENT_CLOSED", "this land request is closed")
+    if doc.get("farmerId") == uid:
+        _error(403, "OWN_REQUIREMENT", "cannot respond to your own request")
+    if not body.termsAccepted:
+        _error(422, "TERMS_REQUIRED", "accept the direct-connect terms to respond")
+    landlord = await get_user(uid)
+    if not await is_identity_verified(landlord):
+        _error(403, "KYC_REQUIRED", "complete identity verification (KYC) to respond")
+    if any(r.get("landlordId") == uid for r in doc.get("responses") or []):
+        _error(409, "ALREADY_RESPONDED", "you already responded to this request")
+    now = datetime.now(timezone.utc).isoformat()
+    response = {
+        "id": f"resp_{uuid.uuid4().hex[:10]}",
+        "landlordId": uid,
+        "message": body.message.strip(),
+        "createdAt": now,
+    }
+    doc.setdefault("responses", []).append(response)
+    farmer = await get_user(doc["farmerId"]) or {}
+    room = await ensure_direct_room(
+        uid,
+        landlord.get("name", ""),
+        doc["farmerId"],
+        farmer.get("name", ""),
+        crop=f"{doc.get('areaAcres', '')} acres · {doc.get('district', '')}",
+    )
+    response["chatRoomId"] = room["id"]
+    await set_doc("land_requirements", requirement_id, doc)
+    await notify_user(
+        doc["farmerId"],
+        type="land_requirement_response",
+        title="Landlord responded to your land request / जमीन मागणीस प्रतिसाद",
+        body=f"{landlord.get('name', 'A landlord')} responded to your request for {doc.get('areaAcres', '')} acres in {doc.get('district', '')}.",
+        deepLink="/farmer/land?tab=requests",
+    )
+    return {"response": response, "chatRoomId": response["chatRoomId"]}
 
 
 @router.post("/lease-requests/{request_id}/accept-contact")

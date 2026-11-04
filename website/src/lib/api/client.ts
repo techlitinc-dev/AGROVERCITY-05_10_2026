@@ -8,7 +8,10 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  // Firestore-backed handlers regularly exceed the old 10s budget on cold
+  // reads (the "timeout of 10000ms exceeded" report) — 30s matches the
+  // slowest real endpoint while per-request overrides still win.
+  timeout: 30000,
 });
 
 apiClient.interceptors.request.use(async (config) => {
@@ -42,6 +45,25 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    // One transparent retry for idempotent GETs that hit a transient network
+    // failure, timeout or 5xx — this is what "auto fetch not working" on
+    // flaky/slow connections looked like from the UI. Writes never retry
+    // here (double-submit risk); they surface their error to the caller.
+    if (
+      originalRequest &&
+      !originalRequest._retried &&
+      (originalRequest.method || 'get').toLowerCase() === 'get'
+    ) {
+      const code = error.code as string | undefined;
+      const status = error.response?.status as number | undefined;
+      const transient =
+        code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'NETWORK_ERROR' || (status !== undefined && status >= 500);
+      if (transient) {
+        originalRequest._retried = true;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        return apiClient(originalRequest);
+      }
+    }
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Restricted onboarding tokens are REJECTED by protected endpoints by
       // design — refreshing cannot fix that (the rotated token is still

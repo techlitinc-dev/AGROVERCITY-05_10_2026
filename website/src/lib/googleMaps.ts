@@ -3,8 +3,8 @@
  * injected on demand (same approach as the Flutter web prototype).
  *
  * `loadGoogleMaps()` is a cached singleton: the first call injects
- * `https://maps.googleapis.com/maps/api/js` with the geometry library and
- * resolves `true` once `window.google.maps` is usable. It resolves `false`
+ * `https://maps.googleapis.com/maps/api/js` with the geometry + places
+ * libraries and resolves `true` once `window.google.maps` is usable. It resolves `false`
  * (never rejects) when `VITE_GOOGLE_MAPS_API_KEY` is empty/unset or the script
  * fails to load or times out — callers render a placeholder in that case.
  */
@@ -55,7 +55,7 @@ async function doLoad(): Promise<boolean> {
     const script = existing ?? document.createElement('script');
     script.id = SCRIPT_ID;
     script.async = true;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey())}&libraries=geometry&loading=async&callback=${CALLBACK_NAME}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey())}&libraries=geometry,places&loading=async&callback=${CALLBACK_NAME}`;
     script.onerror = () => finish(false);
     if (!existing) document.head.appendChild(script);
 

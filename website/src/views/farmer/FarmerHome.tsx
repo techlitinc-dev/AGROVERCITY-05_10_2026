@@ -16,10 +16,10 @@ import {
   Bell,
   Stethoscope,
 } from 'lucide-react';
-import { dashboard, mandi, intelligence, notifications, gamification, apiErrorMessage } from '../../lib/api';
+import { dashboard, demands, mandi, intelligence, notifications, gamification, apiErrorMessage } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { formatCurrency } from '../../lib/utils';
-import type { AppNotification, MandiPrice } from '../../types';
+import type { AppNotification, BuyerDemand, MandiPrice } from '../../types';
 
 const asRecord = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -53,8 +53,23 @@ export const FarmerHome: React.FC = () => {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [urgentTask, setUrgentTask] = useState<Record<string, unknown> | null>(null);
   const [coinBalance, setCoinBalance] = useState<number | null>(null);
+  // Buyer/vyapari requirements matched to this farmer's crops — surfaced on the
+  // dashboard so a posted requirement is visible without opening the feed.
+  const [matchedRequirements, setMatchedRequirements] = useState<BuyerDemand[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    demands
+      .matches()
+      .then((rows) => setMatchedRequirements((rows as BuyerDemand[]).slice(0, 3)))
+      .catch(() =>
+        demands
+          .browse()
+          .then((rows) => setMatchedRequirements((rows as BuyerDemand[]).slice(0, 3)))
+          .catch(() => undefined)
+      );
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -352,6 +367,44 @@ export const FarmerHome: React.FC = () => {
           </div>
         </Link>
       </div>
+
+      {/* Buyer requirements matched to your crops — a vyapari/industrial post
+          shows up here the moment it is published. */}
+      {matchedRequirements.length > 0 && (
+        <div className="bg-white rounded-3xl p-6 border border-emerald-200/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-emerald-600" />
+              <h3 className="font-bold text-sm text-slate-900">Buyers Are Looking For Your Crops</h3>
+            </div>
+            <Link to="/farmer/demands" className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-1">
+              View All <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {matchedRequirements.map((d) => (
+              <Link
+                key={d.id}
+                to="/farmer/demands"
+                className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 hover:border-emerald-400 transition-all space-y-1.5"
+              >
+                <p className="font-extrabold text-sm text-slate-900">{d.crop}</p>
+                <p className="text-[11px] text-slate-600">
+                  {d.quantity} {d.unit || 'q'}
+                  {(d.targetPrice || d.maxPrice) > 0
+                    ? ` · up to ${formatCurrency(d.targetPrice || d.maxPrice)}/${d.targetUnit || d.unit || 'q'}`
+                    : ''}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {d.buyerCompany || d.companyName || d.buyerName || 'Buyer'}
+                  {d.district ? ` · ${d.district}` : ''}
+                  {d.neededBy ? ` · by ${d.neededBy}` : ''}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Two-Column Cockpit: Live Mandi Insights & Daily Tasks */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

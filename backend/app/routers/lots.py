@@ -101,6 +101,19 @@ async def list_lots(
     return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
 
 
+def _lot_region_text(d: dict) -> str:
+    """Lowercased area text for the district/state filter. Lots store location
+    as either a plain string ('Pimpalgaon Baswant, Nashik') or a dict
+    ({village, district, state}) — handle both so the filter never 500s."""
+    parts = [str(d.get("state") or ""), str(d.get("district") or "")]
+    loc = d.get("location")
+    if isinstance(loc, dict):
+        parts.extend(str(loc.get(k) or "") for k in ("village", "district", "state"))
+    elif loc:
+        parts.append(str(loc))
+    return " ".join(parts).lower()
+
+
 @router.get("/lots/browse")
 async def browse_lots(
     crop: str | None = None,
@@ -129,12 +142,8 @@ async def browse_lots(
     if crop:
         docs = [d for d in docs if crop.lower() in d.get("crop", "").lower()]
     if state:
-        docs = [
-            d for d in docs
-            if state.lower() in (
-                (d.get("state") or (d.get("location") or {}).get("state", "")).lower()
-            )
-        ]
+        needle = state.strip().lower()
+        docs = [d for d in docs if needle and needle in _lot_region_text(d)]
     if minRate is not None:
         docs = [d for d in docs if d.get("expectedRate", 0) >= minRate]
     if maxRate is not None:

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { lots, users, leads as leadsApi, uploads, apiErrorMessage, readOne, readList } from '../../lib/api';
 import { isKycError, type Lead } from '../../lib/api/leads';
+import { OTHER_VARIETY, varietyOptionsFor } from '../../lib/cropVarieties';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatWeight, formatDateTime } from '../../lib/utils';
@@ -32,45 +33,10 @@ interface CatalogCrop {
 }
 
 /**
- * Real released crop varieties (ICAR / state agri-university catalogs,
- * Maharashtra-relevant). Used only as typeahead suggestions — farmers can
- * always type a variety that is not listed.
+ * Real released crop varieties — shared catalog (lib/cropVarieties). Used
+ * only as typeahead suggestions — farmers can always type a variety that is
+ * not listed.
  */
-const CROP_VARIETIES: [string, string[]][] = [
-  ['soybean', ['JS 335', 'JS 9560', 'JS 2034', 'JS 93-05', 'NRC 86']],
-  ['wheat', ['Lokwan', 'HD 2967', 'HD 3086', 'GW 322', 'DDK 1029 (Khapli)']],
-  ['cotton', ['Bt Cotton BG-II (RCH 659)', 'Bunny Bt', 'NHH 44', 'PKV Hy-2']],
-  ['onion', ['Nashik Red', 'Agrifound Dark Red', 'Phule Samarth', 'Arka Kalyan']],
-  ['pigeonpea', ['BDN 711', 'BDN 716', 'ASHA (ICPL 87119)']],
-  ['tur', ['BDN 711', 'BDN 716', 'ASHA (ICPL 87119)']],
-  ['chickpea', ['JG 11', 'JAKI 9218', 'Vishal', 'Phule G 0515']],
-  ['maize', ['DHM 117', 'HQPM 1', 'Pratap QPM 1', 'NK 6240']],
-  ['groundnut', ['JL 24', 'TAG 24', 'TG 37A', 'Girnar 3']],
-  ['mustard', ['Pusa Mustard 21', 'Varuna', 'RH 749']],
-  ['rice', ['Basmati (Pusa 1121)', 'IR 64', 'Ratna', 'Swarna MTU 7029']],
-  ['paddy', ['Basmati (Pusa 1121)', 'IR 64', 'Ratna', 'Swarna MTU 7029']],
-  ['sorghum', ['CSH 16', 'CSH 30', 'CSV 216 (Maldandi)']],
-  ['jowar', ['CSH 16', 'CSH 30', 'CSV 216 (Maldandi)']],
-  ['bajra', ['HB 3', 'ICTP 8203', 'Dhanashakti']],
-  ['millet', ['HB 3', 'ICTP 8203', 'Dhanashakti']],
-  ['tomato', ['Pusa Ruby', 'Arka Vikas', 'US 440 Hybrid', 'Phule Raja']],
-  ['potato', ['Kufri Jyoti', 'Kufri Pukhraj', 'Kufri Chipsona']],
-  ['grapes', ['Thompson Seedless', 'Sharad Seedless', 'Flame Seedless']],
-  ['sugarcane', ['Co 86032', 'CoM 0265', 'VSI 434']],
-  ['moong', ['SGC 16 (Samrat)', 'IPM 02-3', 'Kopargaon']],
-  ['green gram', ['SGC 16 (Samrat)', 'IPM 02-3', 'Kopargaon']],
-  ['urad', ['Pant U 31', 'KU 301', 'VBN 5']],
-  ['black gram', ['Pant U 31', 'KU 301', 'VBN 5']],
-  ['chilli', ['Byadgi', 'Guntur Sannam', 'Jwala', 'Phule Jyoti']],
-  ['turmeric', ['Salem', 'Rajapuri', 'Krishna', 'Phule Swarupa']],
-  ['garlic', ['Agrifound White', 'Yamuna Safed', 'Bhima Purple']],
-  ['watermelon', ['Sugar Baby', 'Arka Jyoti', 'Dushyant']],
-  ['banana', ['Grand Naine', 'Robusta', 'Dwarf Cavendish']],
-  ['mango', ['Kesar', 'Alphonso (Hapus)', 'Totapuri', 'Langra']],
-  ['pomegranate', ['Bhagwa', 'Ganesh', 'Arakta']],
-  ['orange', ['Nagpur Mandarin', 'Mosambi (Satgudi)']],
-  ['cauliflower', ['Pusa Katki', 'Phule Gauri', 'Him Palam']]
-];
 
 type LeadFilter = 'all' | 'submitted' | 'contacted' | 'dealDone';
 
@@ -99,6 +65,8 @@ export const ProduceLotsView: React.FC = () => {
   // Lot form state — location defaults come from the farmer's own profile.
   const [newCrop, setNewCrop] = useState('');
   const [newVariety, setNewVariety] = useState('');
+  // Variety picker: a suggestion from the catalog, or "other" with free text.
+  const [varietyChoice, setVarietyChoice] = useState('');
   const [newQuantity, setNewQuantity] = useState<number>(20);
   const [newGrade, setNewGrade] = useState<'A' | 'B' | 'C' | 'Ungraded'>('A');
   const [newPrice, setNewPrice] = useState<number>(0);
@@ -170,7 +138,10 @@ export const ProduceLotsView: React.FC = () => {
     const variety = searchParams.get('variety');
     const price = Number(searchParams.get('price'));
     if (crop) setNewCrop(crop);
-    if (variety) setNewVariety(variety);
+    if (variety) {
+      setNewVariety(variety);
+      setVarietyChoice(crop ? varietyChoiceFor(crop, variety) : variety);
+    }
     if (price > 0) setNewPrice(price);
     setCreateModalOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,14 +168,15 @@ export const ProduceLotsView: React.FC = () => {
   }, [newCrop]);
 
   // Real released varieties matching the typed crop (falls back to empty = free text).
-  const varietyOptions = useMemo(() => {
-    const needle = newCrop.trim().toLowerCase();
-    if (needle.length < 2) return [];
-    for (const [key, list] of CROP_VARIETIES) {
-      if (needle.includes(key)) return list;
-    }
-    return [];
-  }, [newCrop]);
+  const varietyOptions = useMemo(() => varietyOptionsFor(newCrop), [newCrop]);
+
+  /** Map a concrete variety value onto the picker: a listed suggestion, or the
+   *  explicit "other" bucket when the stored variety isn't in the catalog. */
+  const OTHER = OTHER_VARIETY;
+  const varietyChoiceFor = (crop: string, variety: string): string => {
+    if (!variety) return '';
+    return varietyOptionsFor(crop).includes(variety) ? variety : OTHER;
+  };
 
   // MSP: catalog row first, else any mandi row that carries the notified MSP.
   const mspPerQuintal = useMemo(() => {
@@ -227,6 +199,7 @@ export const ProduceLotsView: React.FC = () => {
     setEditingLot(lot);
     setNewCrop(lot.crop);
     setNewVariety(lot.variety);
+    setVarietyChoice(varietyChoiceFor(lot.crop, lot.variety));
     setNewQuantity(lot.quantityQuintal);
     setNewGrade(lot.grade);
     setNewPrice(lot.expectedPricePerQuintal);
@@ -241,6 +214,7 @@ export const ProduceLotsView: React.FC = () => {
     setEditingLot(null);
     setNewCrop('');
     setNewVariety('');
+    setVarietyChoice('');
     setNewQuantity(20);
     setNewGrade('A');
     setNewPrice(0);
@@ -761,20 +735,44 @@ export const ProduceLotsView: React.FC = () => {
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Variety</label>
-              <input
-                type="text"
-                list="lot-variety-options"
-                value={newVariety}
-                onChange={(e) => setNewVariety(e.target.value)}
-                placeholder={varietyOptions.length > 0 ? varietyOptions.join(' / ') : 'e.g. JS 335, Nashik Red'}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                required
-              />
-              <datalist id="lot-variety-options">
-                {varietyOptions.map((v) => (
-                  <option key={v} value={v} />
-                ))}
-              </datalist>
+              {varietyOptions.length > 0 ? (
+                <div className="space-y-2">
+                  <select
+                    value={varietyChoice}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setVarietyChoice(val);
+                      setNewVariety(val === OTHER ? '' : val);
+                    }}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                  >
+                    <option value="">Pick a variety…</option>
+                    {varietyOptions.map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                    <option value={OTHER}>Other (type your own)</option>
+                  </select>
+                  {varietyChoice === OTHER && (
+                    <input
+                      type="text"
+                      value={newVariety}
+                      onChange={(e) => setNewVariety(e.target.value)}
+                      placeholder="Type the variety name"
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-emerald-400 bg-emerald-50/40"
+                      required
+                    />
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={newVariety}
+                  onChange={(e) => setNewVariety(e.target.value)}
+                  placeholder="e.g. JS 335, Nashik Red"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                  required
+                />
+              )}
             </div>
           </div>
 

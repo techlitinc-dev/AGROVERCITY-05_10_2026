@@ -331,6 +331,17 @@ app.include_router(admin_sop_platform.router, prefix="/v1")
 app.include_router(admin_sop_platform.threads_router, prefix="/v1")
 app.include_router(admin_sop_chatbot.router, prefix="/v1")
 
+# Dev mode: serve the local upload store over HTTP so browser <img>/<audio>
+# tags can load what POST /uploads wrote (signed URLs are /local-uploads/...
+# in dev — see services/storage.py).
+if settings.env == "dev":
+    from fastapi.staticfiles import StaticFiles
+
+    from app.services.storage import _LOCAL_UPLOAD_ROOT
+
+    _LOCAL_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    app.mount("/local-uploads", StaticFiles(directory=_LOCAL_UPLOAD_ROOT), name="local-uploads")
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):

@@ -1,10 +1,11 @@
 import React, { lazy } from 'react';
-import { Route } from 'react-router-dom';
+import { Navigate, Route } from 'react-router-dom';
 
 const FarmerHome = lazy(() => import('./FarmerHome').then((m) => ({ default: m.FarmerHome })));
 const MandiPricesView = lazy(() => import('./MandiPricesView').then((m) => ({ default: m.MandiPricesView })));
 const ProduceLotsView = lazy(() => import('./ProduceLotsView').then((m) => ({ default: m.ProduceLotsView })));
 const BuyerDemandsView = lazy(() => import('./BuyerDemandsView').then((m) => ({ default: m.BuyerDemandsView })));
+const AgriExportView = lazy(() => import('./AgriExportView').then((m) => ({ default: m.AgriExportView })));
 const MyIndustrialApplicationsView = lazy(() => import('./MyIndustrialApplicationsView').then((m) => ({ default: m.MyIndustrialApplicationsView })));
 const TransportBookingView = lazy(() => import('./TransportBookingView').then((m) => ({ default: m.TransportBookingView })));
 const TransportBookingDetailView = lazy(() => import('./TransportBookingDetailView').then((m) => ({ default: m.TransportBookingDetailView })));
@@ -23,17 +24,13 @@ const WaterClimateView = lazy(() => import('./WaterClimateView').then((m) => ({ 
 const VaultView = lazy(() => import('./VaultView').then((m) => ({ default: m.VaultView })));
 const ReferralsView = lazy(() => import('./ReferralsView').then((m) => ({ default: m.ReferralsView })));
 const KisanCoinsView = lazy(() => import('../community/KisanCoinsView').then((m) => ({ default: m.KisanCoinsView })));
-const FarmerDairyView = lazy(() => import('./FarmerDairyView').then((m) => ({ default: m.FarmerDairyView })));
 const LivestockHubView = lazy(() => import('./LivestockHubView').then((m) => ({ default: m.LivestockHubView })));
 const MyCropsView = lazy(() => import('./MyCropsView').then((m) => ({ default: m.MyCropsView })));
 const AiCropPlanView = lazy(() => import('./AiCropPlanView').then((m) => ({ default: m.AiCropPlanView })));
 const AiCropDoctorView = lazy(() => import('./AiCropDoctorView').then((m) => ({ default: m.AiCropDoctorView })));
 const MyConnectionsView = lazy(() => import('../trade/MyConnectionsView').then((m) => ({ default: m.MyConnectionsView })));
+const PostToBuyersView = lazy(() => import('./PostToBuyersView').then((m) => ({ default: m.PostToBuyersView })));
 const FarmlandView = lazy(() => import('./FarmlandView').then((m) => ({ default: m.FarmlandView })));
-const ExportOpportunitiesView = lazy(() => import('./ExportOpportunitiesView').then((m) => ({ default: m.ExportOpportunitiesView })));
-const MyExportApplicationsView = lazy(() => import('./MyExportApplicationsView').then((m) => ({ default: m.MyExportApplicationsView })));
-const ExportReadinessView = lazy(() => import('./ExportReadinessView').then((m) => ({ default: m.ExportReadinessView })));
-const ExportConnectionsView = lazy(() => import('../export/ExportConnectionsView').then((m) => ({ default: m.ExportConnectionsView })));
 
 /** 1. Farmer / Kisan Hub (18 journeys) */
 export const FarmerRouteElements = () => (
@@ -45,7 +42,9 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/land" element={<FarmlandView />} />
     <Route path="/farmer/demands" element={<BuyerDemandsView />} />
     <Route path="/farmer/industrial" element={<BuyerDemandsView />} />
-    <Route path="/farmer/industrial/applications" element={<MyIndustrialApplicationsView />} />
+    {/* My Industrial Applications merged into My Industry as a tab. */}
+    <Route path="/farmer/industrial/applications" element={<Navigate to="/farmer/demands?tab=applications" replace />} />
+    <Route path="/farmer/post-to-buyers" element={<PostToBuyersView />} />
     <Route path="/farmer/connections" element={<MyConnectionsView persona="farmer" />} />
     <Route path="/farmer/transport" element={<TransportBookingView />} />
     <Route path="/farmer/transport/:id" element={<TransportBookingDetailView />} />
@@ -64,14 +63,17 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/vault" element={<VaultView />} />
     <Route path="/farmer/referrals" element={<ReferralsView />} />
     <Route path="/farmer/coins" element={<KisanCoinsView />} />
-    <Route path="/farmer/dairy" element={<FarmerDairyView />} />
+    {/* My Milk & Payments is a milk-vendor desk feature — removed from the
+        farmer persona (manual-test finding); the route redirects for compat. */}
+    <Route path="/farmer/dairy" element={<Navigate to="/farmer" replace />} />
     <Route path="/farmer/livestock" element={<LivestockHubView />} />
     <Route path="/farmer/crops" element={<MyCropsView />} />
     <Route path="/farmer/crop-plan" element={<AiCropPlanView />} />
-    {/* Export sourcing — direct-connect with international exporters */}
-    <Route path="/farmer/export" element={<ExportOpportunitiesView />} />
-    <Route path="/farmer/export/applications" element={<MyExportApplicationsView />} />
-    <Route path="/farmer/export/connections" element={<ExportConnectionsView persona="farmer" />} />
-    <Route path="/farmer/export/readiness" element={<ExportReadinessView />} />
+    {/* Export sourcing — merged Agri Export desk (opportunities / applications /
+        connections / readiness live as tabs on /farmer/export) */}
+    <Route path="/farmer/export" element={<AgriExportView />} />
+    <Route path="/farmer/export/applications" element={<Navigate to="/farmer/export?tab=applications" replace />} />
+    <Route path="/farmer/export/connections" element={<Navigate to="/farmer/export?tab=connections" replace />} />
+    <Route path="/farmer/export/readiness" element={<Navigate to="/farmer/export?tab=readiness" replace />} />
   </>
 );

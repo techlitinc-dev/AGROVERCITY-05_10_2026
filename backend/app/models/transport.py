@@ -207,7 +207,9 @@ class OpenLoadCreateRequest(BaseModel):
     # FT-6 transit insurance on the load's declared goods value.
     declaredValuePaisa: int | None = Field(default=None, gt=0)
     insuranceOptIn: bool = False
-    targetFare: float = Field(gt=0)
+    # Optional "willing to pay" anchor — the summary line on the board shows
+    # "fare negotiated via quotes" when absent; bids always carry quoted fares.
+    targetFare: float | None = Field(default=None, gt=0)
     notes: str | None = None
     # Urgent load: pinned first on the load board and pushed to verified
     # vehicles near the pickup point when geo coordinates are present.

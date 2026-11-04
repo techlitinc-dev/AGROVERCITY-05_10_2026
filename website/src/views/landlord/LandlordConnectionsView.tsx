@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Handshake, Star, Flag, RefreshCw, Clock, BadgeCheck, Home } from 'lucide-react';
+import { Handshake, Star, Flag, RefreshCw, Clock, BadgeCheck, Home, Megaphone, MessageSquare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { land, ratings, apiErrorMessage } from '../../lib/api';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { RateUserModal } from '../../components/common/RateUserModal';
@@ -46,8 +47,11 @@ const STATUS_LABEL: Record<string, string> = {
 /** My Connections / Leases — contacted farmers, outcomes, ratings, issues,
  * and the landlord-only "mark leased" action (spec §4/§12/§13). */
 export const LandlordConnectionsView: React.FC = () => {
+  const navigate = useNavigate();
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [listings, setListings] = useState<{ id: string; village: string; status: string }[]>([]);
+  // Farmer-posted requirements this landlord responded to.
+  const [responses, setResponses] = useState<Record<string, unknown>[]>([]);
   const [tab, setTab] = useState<ConnTab>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,10 +66,15 @@ export const LandlordConnectionsView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [rows, mine] = await Promise.all([land.leaseRequests(), land.myListings().catch(() => [])]);
+      const [rows, mine, responded] = await Promise.all([
+        land.leaseRequests(),
+        land.myListings().catch(() => []),
+        land.myRequirementResponses().catch(() => [] as unknown[]),
+      ]);
       const all = rows as unknown as ConnectionRow[];
       all.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       setConnections(all);
+      setResponses(responded as Record<string, unknown>[]);
       setListings(
         ((mine as unknown as { id: string; village: string; status: string }[]) ?? []).map((l) => ({
           id: l.id,
@@ -143,6 +152,52 @@ export const LandlordConnectionsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* My responses to farmer-posted land requirements */}
+      {responses.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+            <Megaphone className="w-4 h-4 text-emerald-600" /> My Responses to Farmer Requests ({responses.length})
+          </h2>
+          {responses.map((q) => {
+            const myResponses = (Array.isArray(q.myResponses) ? q.myResponses : []) as Record<string, unknown>[];
+            const latest = myResponses[myResponses.length - 1] ?? {};
+            return (
+              <div key={String(q.id)} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1.5 max-w-xl">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-sm text-slate-900">
+                      {String(q.farmerName || 'Farmer')} needs {String(q.areaAcres ?? '—')} acres · {String(q.district ?? '')}
+                    </span>
+                    {q.farmerVerified ? (
+                      <span className="text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                        <BadgeCheck className="w-2.5 h-2.5" /> Verified Farmer
+                      </span>
+                    ) : null}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${q.status === 'open' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                      {q.status === 'open' ? 'Request open' : 'Request closed'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    {q.durationMonths ? `${String(q.durationMonths)} months` : ''}
+                    {q.intendedCrop ? ` · ${String(q.intendedCrop)}` : ''}
+                    {q.maxRentPerAcrePerYear ? ` · budget ${formatCurrency(Number(q.maxRentPerAcrePerYear))}/acre/yr` : ''}
+                  </p>
+                  {latest.message ? <p className="text-[11px] text-slate-500 italic">Your reply: “{String(latest.message)}”</p> : null}
+                </div>
+                {latest.chatRoomId ? (
+                  <button
+                    onClick={() => navigate(`/chat?room=${encodeURIComponent(String(latest.chatRoomId))}`)}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 self-start md:self-center"
+                  >
+                    <MessageSquare className="w-3 h-3" /> Chat with farmer
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
         {(

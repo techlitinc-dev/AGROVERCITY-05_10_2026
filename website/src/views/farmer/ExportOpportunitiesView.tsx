@@ -12,7 +12,7 @@ import { VerificationBadges, EXPORT_DIRECT_CONNECT_TERMS, ExportStatusBadge } fr
  * Browse open export requirements and apply with available supply.
  * Contacts stay hidden; identity/export-business badges come from the server.
  */
-export const ExportOpportunitiesView: React.FC = () => {
+export const ExportOpportunitiesView: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [rfqs, setRfqs] = useState<ExportRfq[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -149,16 +149,20 @@ export const ExportOpportunitiesView: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-          <Globe2 className="w-7 h-7 text-emerald-600" />
-          Export Opportunities
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          International exporters post crop requirements. Apply with your available quantity, price,
-          quality, and supply details. When an exporter selects you, contacts unlock after their
-          verification so you can negotiate and settle directly. Agrovercity never holds export
-          payments and is not part of your deal.
-        </p>
+        {!embedded && (
+          <>
+            <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+              <Globe2 className="w-7 h-7 text-emerald-600" />
+              Export Opportunities
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              International exporters post crop requirements. Apply with your available quantity, price,
+              quality, and supply details. When an exporter selects you, contacts unlock after their
+              verification so you can negotiate and settle directly. Agrovercity never holds export
+              payments and is not part of your deal.
+            </p>
+          </>
+        )}
         <div className="flex flex-wrap gap-2 mt-3">
           <input
             type="text"

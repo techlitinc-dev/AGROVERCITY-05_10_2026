@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FileCheck, CheckCircle2, XCircle, Clock, MapPin, User as UserIcon, RefreshCw, BadgeCheck } from 'lucide-react';
+import { FileCheck, CheckCircle2, XCircle, Clock, MapPin, User as UserIcon, RefreshCw, BadgeCheck, Megaphone, Send } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { land, users, apiErrorMessage } from '../../lib/api';
 import { isKycError, isMpinError } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
@@ -30,12 +31,55 @@ interface InterestRow {
  * (terms + MPIN → contact unlock) or decline with a safe reason (spec §9).
  * "Accept Contact Request" never finalizes a lease or marks land leased. */
 export const LandlordRequestsView: React.FC = () => {
+  const navigate = useNavigate();
   const [requests, setRequests] = useState<InterestRow[]>([]);
   const [hasMpin, setHasMpin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Farmers-posted "I need land" board — respond directly.
+  const [board, setBoard] = useState<Record<string, unknown>[]>([]);
+  const [boardLoading, setBoardLoading] = useState(true);
+  const [respondTarget, setRespondTarget] = useState<Record<string, unknown> | null>(null);
+  const [respondMessage, setRespondMessage] = useState('');
+  const [respondTerms, setRespondTerms] = useState(false);
+  const [respondBusy, setRespondBusy] = useState(false);
+
+  const loadBoard = useCallback(async () => {
+    setBoardLoading(true);
+    try {
+      const rows = (await land.browseRequirements()) as unknown as Record<string, unknown>[];
+      setBoard(rows);
+    } catch {
+      setBoard([]);
+    } finally {
+      setBoardLoading(false);
+    }
+  }, []);
+
+  const submitResponse = async () => {
+    if (!respondTarget) return;
+    setRespondBusy(true);
+    setError(null);
+    try {
+      const res = (await land.respondToRequirement(String(respondTarget.id), {
+        message: respondMessage.trim(),
+        termsAccepted: respondTerms,
+      })) as { chatRoomId?: string };
+      setNotice('Response sent — the farmer is notified and a chat window is open.');
+      setRespondTarget(null);
+      setRespondMessage('');
+      setRespondTerms(false);
+      await loadBoard();
+      if (res?.chatRoomId) navigate(`/chat?room=${encodeURIComponent(res.chatRoomId)}`);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setRespondBusy(false);
+    }
+  };
 
   const [acceptTarget, setAcceptTarget] = useState<InterestRow | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -63,7 +107,8 @@ export const LandlordRequestsView: React.FC = () => {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadBoard();
+  }, [load, loadBoard]);
 
   const confirmAccept = async () => {
     if (!acceptTarget) return;
@@ -138,6 +183,60 @@ export const LandlordRequestsView: React.FC = () => {
         </div>
       )}
 
+      {/* Farmers Looking for Land — respond to farmer-posted requirements */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Megaphone className="w-4 h-4 text-emerald-600" />
+          <h2 className="text-sm font-black text-slate-900">Farmers Looking for Land</h2>
+          <span className="text-[10px] font-bold text-slate-400">{boardLoading ? '…' : `${board.length} open`}</span>
+        </div>
+        {boardLoading ? (
+          <div className="py-6 text-center text-xs font-bold text-slate-400 animate-pulse bg-white rounded-3xl border border-slate-200/80">
+            Scanning farmer requests…
+          </div>
+        ) : board.length === 0 ? (
+          <div className="py-6 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No open farmer requests right now — they appear here when a farmer posts the land they need.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {board.map((q) => (
+              <div key={String(q.id)} className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs space-y-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-extrabold text-sm text-slate-900">
+                    {String(q.areaAcres ?? '—')} acres · {String(q.district ?? '')}
+                  </span>
+                  {q.farmerVerified ? (
+                    <span className="text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                      <BadgeCheck className="w-2.5 h-2.5" /> Verified Farmer
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-xs text-slate-600 flex items-center gap-1 flex-wrap">
+                  <UserIcon className="w-3.5 h-3.5 text-slate-400" /> {String(q.farmerName || 'Farmer')}
+                  <Clock className="w-3.5 h-3.5 text-slate-400 ml-1" />
+                  {q.durationMonths ? `${String(q.durationMonths)} months` : ''}
+                  {q.intendedCrop ? ` · ${String(q.intendedCrop)}` : ''}
+                  {q.maxRentPerAcrePerYear ? ` · up to ${formatCurrency(Number(q.maxRentPerAcrePerYear))}/acre/yr` : ''}
+                  {q.neededFrom ? ` · from ${String(q.neededFrom)}` : ''}
+                </p>
+                {q.irrigated === true && (
+                  <p className="text-[10px] text-slate-500 flex items-center gap-1"><MapPin className="w-3 h-3" /> Wants irrigated land</p>
+                )}
+                {q.notes ? <p className="text-[11px] text-slate-500 italic">“{String(q.notes)}”</p> : null}
+                <button
+                  onClick={() => { setRespondTarget(q); setRespondMessage(''); setRespondTerms(false); }}
+                  className="w-full px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center justify-center gap-1.5"
+                >
+                  <Send className="w-3 h-3" /> Respond — I have land
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <h2 className="text-sm font-black text-slate-900 pt-2">Interest Requests</h2>
       {loading ? (
         <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">Loading requests…</div>
       ) : requests.length === 0 ? (
@@ -267,6 +366,51 @@ export const LandlordRequestsView: React.FC = () => {
             </p>
           </div>
         )}
+      </ModalSheet>
+
+      {/* Respond to a farmer-posted land requirement */}
+      <ModalSheet
+        isOpen={Boolean(respondTarget)}
+        onClose={() => setRespondTarget(null)}
+        title="Respond to Land Request"
+        description={
+          respondTarget
+            ? `${String(respondTarget.areaAcres ?? '—')} acres needed in ${String(respondTarget.district ?? '')} · ${String(respondTarget.durationMonths ?? '')} months`
+            : undefined
+        }
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Your message to the farmer *</label>
+            <textarea
+              rows={3}
+              value={respondMessage}
+              onChange={(e) => setRespondMessage(e.target.value)}
+              placeholder="e.g. I have 6 acres with borewell irrigation near Pimpalgaon — available from November."
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+            />
+          </div>
+          <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={respondTerms}
+              onChange={(e) => setRespondTerms(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-emerald-600"
+            />
+            <span className="text-[11px] text-slate-600 leading-relaxed">{LAND_DIRECT_CONNECT_TERMS}</span>
+          </label>
+          <button
+            onClick={() => void submitResponse()}
+            disabled={respondBusy || !respondMessage.trim() || !respondTerms}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+          >
+            {respondBusy ? 'Sending…' : 'Send Response & Open Chat'}
+          </button>
+          <p className="text-[10px] text-slate-400 text-center">
+            The farmer is notified and a chat opens — negotiate rent, inspection and terms directly.
+          </p>
+        </div>
       </ModalSheet>
 
       {/* Decline */}

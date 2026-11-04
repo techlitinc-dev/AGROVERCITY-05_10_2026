@@ -1,15 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MessageCircle,
   Send,
   Users,
   Paperclip,
+  Mic,
+  Square,
+  ArrowLeft,
   MoreVertical,
   Flag,
   Ban,
   ShieldCheck,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { chat, uploads, users, apiErrorMessage } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { cn, formatDateTime } from '../../lib/utils';
@@ -22,6 +25,10 @@ interface Room {
   subtitle: string;
   otherUserId?: string;
   verified?: boolean;
+  /** Counterparty persona bucket (transport / academy / farmer / …) — groups
+   *  the room list so one persona's chats don't merge into another's. */
+  persona?: string;
+  updatedAt?: string;
 }
 
 interface Msg {
@@ -30,11 +37,32 @@ interface Msg {
   sender: string;
   text: string;
   image?: string;
+  audio?: string;
   time: string;
 }
 
+/** Persona bucket → display label (fallbacks for legacy/unknown buckets). */
+const PERSONA_LABEL: Record<string, string> = {
+  transport: 'Transporter',
+  academy: 'Academy / Gurukul',
+  farmer: 'Farmers',
+  farmLandlord: 'Farm Landlords',
+  seller: 'Agri Vyapari',
+  directBuyer: 'Industrial Buyers',
+  exporter: 'Exporters',
+  equipmentRental: 'Equipment Owners',
+  milkVendor: 'Milk Vendors',
+  dairyManager: 'Dairy',
+  instructor: 'Instructors',
+  transporter: 'Transporter',
+  nursery: 'Nursery',
+  broker: 'Brokers',
+};
+const personaLabel = (bucket: string): string => PERSONA_LABEL[bucket] || 'Other chats';
+
 export const ChatPage: React.FC = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoom, setActiveRoom] = useState<string | null>(null);
@@ -42,14 +70,20 @@ export const ChatPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
+  /** Transient popup for incoming messages while the user is elsewhere in the app. */
+  const [popup, setPopup] = useState<{ sender: string; text: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const lastSeenRef = useRef<string>('');
 
   const mapMessages = (rows: unknown[]): Msg[] =>
     asRecords(rows).map((m): Msg => {
@@ -60,9 +94,15 @@ export const ChatPage: React.FC = () => {
         sender: pickStr(m, 'senderName', 'sender') || 'Member',
         text: pickStr(m, 'text', 'body', 'message'),
         image: pickStr(m, 'imageUrl', 'image', 'attachmentUrl'),
+        audio: pickStr(m, 'audioUrl', 'audio', 'voiceUrl'),
         time: pickStr(m, 'timestamp', 'createdAt'),
       };
     });
+
+  const showPopup = (sender: string, text: string) => {
+    setPopup({ sender, text });
+    window.setTimeout(() => setPopup((p) => (p && p.text === text ? null : p)), 5000);
+  };
 
   // Load rooms; honor the ?room= query param as the initial selection.
   useEffect(() => {
@@ -91,6 +131,8 @@ export const ChatPage: React.FC = () => {
             subtitle: pickStr(r, 'lastMessage', 'subtitle', 'context') || 'Chat room',
             otherUserId,
             verified: (r as Record<string, unknown>).counterpartyVerified === true,
+            persona: pickStr(r, 'counterpartyPersona', 'persona') || undefined,
+            updatedAt: pickStr(r, 'lastMessageAt', 'updatedAt', 'createdAt'),
           };
         });
         setRooms(list);
@@ -115,7 +157,8 @@ export const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load messages for the active room.
+  // Load messages for the active room; remember the newest id so the poller
+  // can tell "new message arrived" from the initial load.
   useEffect(() => {
     if (!activeRoom) return;
     let alive = true;
@@ -123,7 +166,9 @@ export const ChatPage: React.FC = () => {
       .messages(activeRoom)
       .then((rows) => {
         if (!alive) return;
-        setMessages(mapMessages(rows));
+        const mapped = mapMessages(rows);
+        setMessages(mapped);
+        lastSeenRef.current = mapped.length > 0 ? mapped[mapped.length - 1].id : '';
       })
       .catch(() => setMessages([]));
     chat.markRead(activeRoom).catch(() => undefined);
@@ -134,6 +179,66 @@ export const ChatPage: React.FC = () => {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoom, user?.id]);
+
+  // Lightweight poll (no websocket in this stack): refresh the open thread and
+  // the room list every 6s; surface an in-app popup when the OTHER party sends
+  // something new — this is the "notification while chatting" the manual pass
+  // flagged as missing.
+  useEffect(() => {
+    if (!activeRoom) return;
+    const t = window.setInterval(() => {
+      chat
+        .messages(activeRoom)
+        .then((rows) => {
+          const mapped = mapMessages(rows);
+          setMessages((prev) => {
+            const fresh = mapped.filter((m) => !prev.some((p) => p.id === m.id));
+            const incoming = fresh.filter((m) => !m.mine);
+            if (incoming.length > 0 && lastSeenRef.current) {
+              const latest = incoming[incoming.length - 1];
+              showPopup(latest.sender, latest.text || (latest.image ? 'Sent a photo' : latest.audio ? 'Sent a voice note' : 'New message'));
+            }
+            if (mapped.length > 0) lastSeenRef.current = mapped[mapped.length - 1].id;
+            return mapped;
+          });
+          chat.markRead(activeRoom).catch(() => undefined);
+        })
+        .catch(() => undefined);
+      chat
+        .rooms()
+        .then((rows) => {
+          const myId = user?.id;
+          setRooms(
+            asRecords(rows).map((r): Room => {
+              const id = pickStr(r, 'id', 'roomId');
+              const farmerId = pickStr(r, 'farmerId');
+              const buyerId = pickStr(r, 'buyerId');
+              const otherUserId =
+                farmerId && buyerId
+                  ? farmerId === myId
+                    ? buyerId
+                    : farmerId
+                  : pickStr(r, 'counterpartyId', 'otherPartyId', 'peerId', 'otherUserId') || undefined;
+              return {
+                id,
+                name:
+                  pickStr(r, 'name', 'title') ||
+                  pickStr(r, 'counterpartyName', 'otherPartyName', 'peerName') ||
+                  `Room ${id.slice(0, 6)}`,
+                subtitle: pickStr(r, 'lastMessage', 'subtitle', 'context') || 'Chat room',
+                otherUserId,
+                verified: (r as Record<string, unknown>).counterpartyVerified === true,
+                persona: pickStr(r, 'counterpartyPersona', 'persona') || undefined,
+                updatedAt: pickStr(r, 'lastMessageAt', 'updatedAt', 'createdAt'),
+              };
+            })
+          );
+        })
+        .catch(() => undefined);
+    }, 6000);
+    return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoom, user?.id]);
 
@@ -184,6 +289,70 @@ export const ChatPage: React.FC = () => {
     }
   };
 
+  const toggleRecording = async () => {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    if (!activeRoom || !navigator.mediaDevices?.getUserMedia) {
+      setNotice('Voice recording is not supported on this device/browser.');
+      return;
+    }
+    setNotice(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        chunksRef.current = [];
+        if (blob.size === 0 || !activeRoom) return;
+        setUploadingImage(true);
+        try {
+          const uploaded = (await uploads.upload(new File([blob], 'voice-note.webm', { type: mimeType }), {
+            purpose: 'chat-voice',
+          })) as { url?: string; fileUrl?: string };
+          const url = uploaded?.url ?? uploaded?.fileUrl ?? '';
+          if (!url) throw new Error('Upload did not return a URL');
+          await chat.send(activeRoom, '', { audioUrl: url });
+          await refreshMessages(activeRoom);
+          setNotice('Voice note sent.');
+        } catch (err) {
+          setNotice(apiErrorMessage(err));
+        } finally {
+          setUploadingImage(false);
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      setNotice('Microphone permission denied — allow mic access to send voice notes.');
+    }
+  };
+
+  // Group rooms by counterparty persona so each persona's conversations live
+  // under their own header instead of one merged list.
+  const groupedRooms = useMemo(() => {
+    const groups = new Map<string, Room[]>();
+    for (const r of rooms) {
+      const bucket = r.persona || 'other';
+      if (!groups.has(bucket)) groups.set(bucket, []);
+      groups.get(bucket)!.push(r);
+    }
+    return [...groups.entries()].map(([persona, list]) => ({
+      persona,
+      label: personaLabel(persona),
+      list: [...list].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')),
+    }));
+  }, [rooms]);
+
   const toggleBlock = async () => {
     if (!activeOtherUserId) return;
     setMenuOpen(false);
@@ -230,18 +399,41 @@ export const ChatPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-          <MessageCircle className="w-7 h-7 text-emerald-600" />
-          Chats
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Trade, transport, and deal conversations across all your personas
-        </p>
+      {/* Transient new-message popup — the in-chat "notification" */}
+      {popup && (
+        <div className="fixed bottom-4 right-4 z-50 w-72 bg-white border border-emerald-200 rounded-2xl shadow-lg p-3 flex items-start gap-2.5 animate-pulse">
+          <MessageCircle className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-slate-900 truncate">{popup.sender}</p>
+            <p className="text-[11px] text-slate-600 truncate">{popup.text}</p>
+          </div>
+          <button onClick={() => setPopup(null)} className="ml-auto text-slate-400 hover:text-slate-700 text-xs font-bold">
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="border-b border-slate-200 pb-4 flex items-center gap-3">
+        <button
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/dashboard'))}
+          className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600"
+          title="Back"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+            <MessageCircle className="w-7 h-7 text-emerald-600" />
+            Chats
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Conversations grouped by persona — trade, transport, land, academy and more
+          </p>
+        </div>
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-col sm:flex-row" style={{ height: '600px' }}>
-        {/* Room list */}
+        {/* Room list — grouped by counterparty persona */}
         <div className="sm:w-72 border-b sm:border-b-0 sm:border-r border-slate-100 overflow-y-auto flex-shrink-0">
           {rooms.length === 0 ? (
             <div className="p-6 text-center">
@@ -251,20 +443,25 @@ export const ChatPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            rooms.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setActiveRoom(r.id)}
-                className={cn(
-                  'w-full px-4 py-3 text-left border-l-4 transition-colors',
-                  activeRoom === r.id
-                    ? 'border-emerald-600 bg-emerald-50/60'
-                    : 'border-transparent hover:bg-slate-50'
-                )}
-              >
-                <p className="text-xs font-bold text-slate-900 truncate">{r.name}</p>
-                <p className="text-[11px] text-slate-400 truncate">{r.subtitle}</p>
-              </button>
+            groupedRooms.map((g) => (
+              <div key={g.persona}>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wide">{g.label}</p>
+                {g.list.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setActiveRoom(r.id)}
+                    className={cn(
+                      'w-full px-4 py-2.5 text-left border-l-4 transition-colors',
+                      activeRoom === r.id
+                        ? 'border-emerald-600 bg-emerald-50/60'
+                        : 'border-transparent hover:bg-slate-50'
+                    )}
+                  >
+                    <p className="text-xs font-bold text-slate-900 truncate">{r.name}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{r.subtitle}</p>
+                  </button>
+                ))}
+              </div>
             ))
           )}
         </div>
@@ -369,7 +566,10 @@ export const ChatPage: React.FC = () => {
                           />
                         </a>
                       )}
-                      {m.text && <p className={cn(m.image && 'mt-1')}>{m.text}</p>}
+                      {m.audio && (
+                        <audio controls src={m.audio} className="max-w-[220px] w-full block mb-1" />
+                      )}
+                      {m.text && <p className={cn((m.image || m.audio) && 'mt-1')}>{m.text}</p>}
                       <span
                         className={cn(
                           'block text-[9px] mt-1 text-right',
@@ -406,11 +606,24 @@ export const ChatPage: React.FC = () => {
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void toggleRecording()}
+                  className={cn(
+                    'p-2.5 border rounded-xl transition-colors',
+                    recording
+                      ? 'bg-rose-50 border-rose-300 text-rose-600 animate-pulse'
+                      : 'border-slate-200 text-slate-500 hover:text-emerald-700 hover:border-emerald-300'
+                  )}
+                  title={recording ? 'Stop recording & send' : 'Record a voice note'}
+                >
+                  {recording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={uploadingImage ? 'Uploading photo…' : 'Type a message…'}
+                  placeholder={recording ? 'Recording… tap the square to stop & send' : uploadingImage ? 'Uploading photo…' : 'Type a message…'}
                   className="flex-1 px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
                 />
                 <button

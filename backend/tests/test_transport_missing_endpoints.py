@@ -116,6 +116,18 @@ async def test_post_load_requires_terms_acceptance(client, user_store):
     assert all(d["termsVersion"] for d in accepted)
 
 
+async def test_post_load_without_target_fare_is_allowed(client, user_store):
+    """The farmer-side form marks Target Fare optional (fare negotiated via
+    quotes) — a missing/omitted fare must not 422 the request."""
+    token = await _token(client)
+    body = {k: v for k, v in LOAD_BODY.items() if k != "targetFare"}
+    resp = await client.post("/v1/transport/loads", json=body, headers=_auth(token))
+    assert resp.status_code == 201
+    load = resp.json()
+    assert load.get("targetFare") is None
+    assert load["status"] == "open"
+
+
 async def test_accept_bid_requires_farmer_terms_confirmation(client, user_store):
     token = await _token(client)
     load = (await client.post("/v1/transport/loads", json=LOAD_BODY, headers=_auth(token))).json()

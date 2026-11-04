@@ -13,6 +13,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { demands, users, apiErrorMessage } from '../../lib/api';
+import { OTHER_VARIETY, varietyOptionsFor } from '../../lib/cropVarieties';
 import {
   getMyLeads,
   updateLeadStatus,
@@ -50,6 +51,8 @@ export const SellerDemandsManager: React.FC = () => {
   const [editingDemand, setEditingDemand] = useState<Record<string, unknown> | null>(null);
   const [dmCrop, setDmCrop] = useState('');
   const [dmVariety, setDmVariety] = useState('');
+  /** Picker value: a catalog variety, or OTHER_VARIETY for free text. */
+  const [dmVarietyChoice, setDmVarietyChoice] = useState('');
   const [dmQuantity, setDmQuantity] = useState(20);
   const [dmMaxPrice, setDmMaxPrice] = useState(0);
   const [dmLocation, setDmLocation] = useState('');
@@ -94,6 +97,7 @@ export const SellerDemandsManager: React.FC = () => {
     setEditingDemand(null);
     setDmCrop('');
     setDmVariety('');
+    setDmVarietyChoice('');
     setDmQuantity(20);
     setDmMaxPrice(0);
     setDmLocation('');
@@ -105,8 +109,13 @@ export const SellerDemandsManager: React.FC = () => {
 
   const openEditModal = (d: Record<string, unknown>) => {
     setEditingDemand(d);
-    setDmCrop(String(d.crop ?? ''));
-    setDmVariety(String(d.variety ?? ''));
+    const crop = String(d.crop ?? '');
+    const variety = String(d.variety ?? '');
+    setDmCrop(crop);
+    setDmVariety(variety);
+    setDmVarietyChoice(
+      variety ? (varietyOptionsFor(crop).includes(variety) ? variety : OTHER_VARIETY) : ''
+    );
     setDmQuantity(Number(d.quantity ?? 20));
     setDmMaxPrice(Number(d.maxPrice ?? 0));
     setDmLocation(String(d.deliveryLocation ?? ''));
@@ -422,7 +431,35 @@ export const SellerDemandsManager: React.FC = () => {
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Variety</label>
-              <input className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" value={dmVariety} onChange={(e) => setDmVariety(e.target.value)} placeholder="Any / optional" />
+              {varietyOptionsFor(dmCrop).length > 0 ? (
+                <div className="space-y-2">
+                  <select
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                    value={dmVarietyChoice}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDmVarietyChoice(val);
+                      setDmVariety(val === OTHER_VARIETY ? '' : val);
+                    }}
+                  >
+                    <option value="">Pick a variety…</option>
+                    {varietyOptionsFor(dmCrop).map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                    <option value={OTHER_VARIETY}>Other (type your own)</option>
+                  </select>
+                  {dmVarietyChoice === OTHER_VARIETY && (
+                    <input
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-emerald-400 bg-emerald-50/40"
+                      value={dmVariety}
+                      onChange={(e) => setDmVariety(e.target.value)}
+                      placeholder="Type the variety name"
+                    />
+                  )}
+                </div>
+              ) : (
+                <input className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" value={dmVariety} onChange={(e) => setDmVariety(e.target.value)} placeholder="Any / optional" />
+              )}
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">

@@ -16,7 +16,8 @@ import {
   Tag,
   Trash2,
 } from 'lucide-react';
-import { apiErrorMessage, customer, gamification, mall } from '../../lib/api';
+import { apiErrorMessage, customer, gamification, mall, addressLabel, type SavedAddress } from '../../lib/api';
+import { AddressPicker } from '../../components/common/AddressPicker';
 import { useCartStore, type ProduceLogisticsMode } from '../../stores/cartStore';
 import { useAuthStore } from '../../stores/authStore';
 import { formatCurrency, formatPaisa } from '../../lib/utils';
@@ -84,7 +85,6 @@ export const CartCheckoutView: React.FC = () => {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [newAddress, setNewAddress] = useState({ label: 'Home', line1: '', village: '', district: '', state: 'Maharashtra', pincode: '' });
-  const [savingAddress, setSavingAddress] = useState(false);
 
   const [coupons, setCoupons] = useState<Array<Record<string, unknown>>>([]);
   const [couponInput, setCouponInput] = useState('');
@@ -297,34 +297,27 @@ export const CartCheckoutView: React.FC = () => {
     }
   };
 
-  const handleSaveAddress = async () => {
-    setSavingAddress(true);
-    try {
-      const created = await mall.addAddress({
-        label: newAddress.label,
-        line1: newAddress.line1,
-        village: newAddress.village,
-        district: newAddress.district,
-        state: newAddress.state,
-        pincode: newAddress.pincode,
-      });
-      const entry: AddressEntry = {
-        id: str((created as Record<string, unknown>).id),
-        label: newAddress.label,
-        line1: newAddress.line1,
-        village: newAddress.village,
-        district: newAddress.district,
-        state: newAddress.state,
-        pincode: newAddress.pincode,
-      };
-      setAddresses((prev) => [...prev, entry]);
-      setSelectedAddressId(entry.id);
-      setShowAddressForm(false);
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    } finally {
-      setSavingAddress(false);
-    }
+  const handlePickedAddress = (saved: SavedAddress) => {
+    const entry: AddressEntry = {
+      id: saved.id,
+      label: addressLabel(saved),
+      line1: saved.line1,
+      village: saved.village,
+      district: saved.district,
+      state: saved.state,
+      pincode: saved.pincode,
+      isDefault: !!saved.isDefault,
+    };
+    setAddresses((prev) => {
+      const exists = prev.some((a) => a.id === entry.id);
+      if (exists) return prev.map((a) => (a.id === entry.id ? entry : a));
+      const next = [...prev, entry];
+      // A newly saved default replaces the previous default in the list too.
+      return entry.isDefault ? next.map((a) => ({ ...a, isDefault: a.id === entry.id })) : next;
+    });
+    setSelectedAddressId(entry.id);
+    setShowAddressForm(false);
+    setNewAddress({ label: saved.label, line1: saved.line1, village: saved.village, district: saved.district, state: saved.state, pincode: saved.pincode });
   };
 
   const startRazorpay = (orderId: string): Promise<boolean> =>
@@ -771,7 +764,12 @@ export const CartCheckoutView: React.FC = () => {
                         : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <span className="font-bold text-slate-800">{addr.label}</span>
+                    <span className="font-bold text-slate-800">
+                      {addr.label}
+                      {addr.isDefault && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[9px] font-bold border border-amber-200">Default</span>
+                      )}
+                    </span>
                     <span className="block text-slate-500 mt-0.5">
                       {addr.line1}, {addr.village}, {addr.district}, {addr.state} - {addr.pincode}
                     </span>
@@ -780,61 +778,23 @@ export const CartCheckoutView: React.FC = () => {
               </div>
             )}
 
-            {(showAddressForm || addresses.length === 0) && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="Label (Home / Farm / Shop)"
-                  value={newAddress.label}
-                  onChange={(e) => setNewAddress((a) => ({ ...a, label: e.target.value }))}
-                  className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
-                <input
-                  type="text"
-                  placeholder="Flat / House / Gat No."
-                  value={newAddress.line1}
-                  onChange={(e) => setNewAddress((a) => ({ ...a, line1: e.target.value }))}
-                  className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
-                <input
-                  type="text"
-                  placeholder="Village"
-                  value={newAddress.village}
-                  onChange={(e) => setNewAddress((a) => ({ ...a, village: e.target.value }))}
-                  className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
-                <input
-                  type="text"
-                  placeholder="District"
-                  value={newAddress.district}
-                  onChange={(e) => setNewAddress((a) => ({ ...a, district: e.target.value }))}
-                  className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
-                <input
-                  type="text"
-                  placeholder="State"
-                  value={newAddress.state}
-                  onChange={(e) => setNewAddress((a) => ({ ...a, state: e.target.value }))}
-                  className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
-                <input
-                  type="text"
-                  placeholder="Pincode (6 digits)"
-                  maxLength={6}
-                  value={newAddress.pincode}
-                  onChange={(e) => setNewAddress((a) => ({ ...a, pincode: e.target.value.replace(/\D/g, '') }))}
-                  className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleSaveAddress()}
-                  disabled={savingAddress || !newAddress.line1.trim() || !newAddress.village.trim() || newAddress.pincode.length !== 6}
-                  className="sm:col-span-2 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs disabled:opacity-50"
-                >
-                  {savingAddress ? 'Saving…' : 'Save Address'}
-                </button>
-              </div>
+            {addresses.length === 0 && !showAddressForm && (
+              <button
+                type="button"
+                onClick={() => setShowAddressForm(true)}
+                className="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-6 text-xs font-bold text-slate-500 hover:border-emerald-400 hover:text-emerald-700"
+              >
+                No delivery address yet — add one
+              </button>
             )}
+
+            <AddressPicker
+              isOpen={showAddressForm}
+              onClose={() => setShowAddressForm(false)}
+              onSaved={handlePickedAddress}
+              defaultLabel="Home"
+              title="Delivery address"
+            />
           </div>
 
           {/* Delivery slot (SR 8) */}

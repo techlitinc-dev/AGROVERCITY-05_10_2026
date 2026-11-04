@@ -27,8 +27,9 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'closed', label: 'Closed' },
 ];
 
-/** Farmer destination #2 — "My Industrial Applications" (spec §3/§12). */
-export const MyIndustrialApplicationsView: React.FC = () => {
+/** Farmer destination #2 — "My Industrial Applications" (spec §3/§12).
+ * Also embedded as a tab on My Industry (`embedded` hides the page header). */
+export const MyIndustrialApplicationsView: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [demandMap, setDemandMap] = useState<Record<string, BuyerDemand>>({});
   const [filter, setFilter] = useState<Filter>('all');
@@ -98,17 +99,19 @@ export const MyIndustrialApplicationsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-            <FileText className="w-7 h-7 text-emerald-600" />
-            My Industrial Applications
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Applications you sent on industrial buyer requirements. Your contact stays private until the buyer accepts
-            the connection.
-          </p>
-        </div>
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${embedded ? '' : 'border-b border-slate-200 pb-4'}`}>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+              <FileText className="w-7 h-7 text-emerald-600" />
+              My Industrial Applications
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Applications you sent on industrial buyer requirements. Your contact stays private until the buyer accepts
+              the connection.
+            </p>
+          </div>
+        )}
         <div className="flex gap-2">
           <button
             onClick={() => void load()}

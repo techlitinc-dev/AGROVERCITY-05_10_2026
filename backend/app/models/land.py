@@ -320,3 +320,26 @@ class LandReviewIn(BaseModel):
     stars: int = Field(ge=1, le=5)
     aspects: dict[str, int] = Field(default_factory=dict)
     comment: str | None = Field(None, max_length=1000)
+
+
+class LandRequirementIn(BaseModel):
+    """Farmer-posted 'land wanted' request — the reverse of a landlord listing:
+    a farmer describes the plot they need so landlords with matching land can
+    respond (direct-connect, spec-consistent with lease interest)."""
+
+    areaAcres: float = Field(gt=0)
+    district: str = Field(min_length=2)
+    state: str = ""
+    taluka: str = ""
+    maxRentPerAcrePerYear: float | None = Field(None, gt=0)
+    durationMonths: int = Field(default=12, ge=1, le=120)
+    intendedCrop: str = ""
+    neededFrom: str | None = None
+    irrigated: bool | None = None
+    notes: str = Field("", max_length=1000)
+    termsAccepted: bool = False
+
+
+class LandRequirementRespondIn(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    termsAccepted: bool = False

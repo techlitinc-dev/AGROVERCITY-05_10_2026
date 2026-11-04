@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Layers,
   Building2,
@@ -15,6 +15,7 @@ import {
   Users,
   Repeat,
   Eye,
+  FileText,
 } from 'lucide-react';
 import { demands, lots, users, apiErrorMessage } from '../../lib/api';
 import {
@@ -27,6 +28,7 @@ import {
 } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { MpinPad } from '../../components/common/MpinPad';
+import { MyIndustrialApplicationsView } from './MyIndustrialApplicationsView';
 import { formatCurrency, formatWeight } from '../../lib/utils';
 import {
   DIRECT_CONNECT_TERMS,
@@ -37,7 +39,7 @@ import type { BuyerDemand, ProduceLot } from '../../types';
 
 type DemandRow = BuyerDemand;
 
-type FeedTab = 'matches' | 'all';
+type FeedTab = 'matches' | 'all' | 'applications';
 
 const qtyOf = (d: DemandRow): number => d.quantity ?? d.requiredQuantityQuintal ?? 0;
 const priceOf = (d: DemandRow): number => d.targetPrice ?? d.maxPrice ?? d.maxPricePerQuintal ?? 0;
@@ -70,6 +72,7 @@ export const VerificationBadges: React.FC<{ summary?: BuyerDemand['buyerSummary'
 };
 
 export const BuyerDemandsView: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<FeedTab>('matches');
   const [allDemands, setAllDemands] = useState<DemandRow[]>([]);
   const [matchedDemands, setMatchedDemands] = useState<DemandRow[]>([]);
@@ -120,12 +123,29 @@ export const BuyerDemandsView: React.FC = () => {
     void load();
   }, [load]);
 
+  // Deep link: /farmer/demands?tab=applications (the old standalone
+  // My Industrial Applications page now lives as a tab on My Industry).
+  useEffect(() => {
+    const fromQuery = searchParams.get('tab');
+    if (fromQuery === 'applications' || fromQuery === 'all' || fromQuery === 'matches') {
+      setTab(fromQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const kycVerified = me.kycStatus === 'verified' || me.vyapariVerified === true;
 
   const appFor = (demandId: string): Lead | undefined =>
     myApplications.find((l) => l.demandId === demandId && ['submitted', 'contacted', 'dealDone'].includes(l.status));
 
   const feed = tab === 'matches' ? matchedDemands : allDemands;
+
+  // Lots eligible for prefill: any current lot the farmer can still supply
+  // from (open, negotiating, in review). Terminal/withdrawn lots are excluded —
+  // the old `status === 'open'` filter emptied the dropdown for farmers whose
+  // lots sat in review or negotiation.
+  const PREFILL_EXCLUDED = new Set(['sold', 'withdrawn', 'taken_down', 'rejected']);
+  const prefillLots = useMemo(() => myLots.filter((l) => !PREFILL_EXCLUDED.has(l.status)), [myLots]);
 
   // ---- detail modal ----
   const [detailDemand, setDetailDemand] = useState<DemandRow | null>(null);
@@ -418,7 +438,7 @@ export const BuyerDemandsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Layers className="w-7 h-7 text-emerald-600" />
-          Industrial Buyer Requirements
+          My Industry
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Industrial buyers post what they need to source. Apply with your quantity, price, availability and supply
@@ -430,6 +450,7 @@ export const BuyerDemandsView: React.FC = () => {
             [
               { key: 'matches', label: 'Matches your crops', icon: Sprout },
               { key: 'all', label: 'All requirements', icon: Layers },
+              { key: 'applications', label: 'My Applications', icon: FileText },
             ] as const
           ).map((t) => (
             <button
@@ -445,7 +466,7 @@ export const BuyerDemandsView: React.FC = () => {
             </button>
           ))}
         </div>
-        {filters}
+        {tab !== 'applications' && filters}
       </div>
 
       {!kycVerified && (
@@ -469,7 +490,9 @@ export const BuyerDemandsView: React.FC = () => {
       )}
 
       <div className="space-y-4">
-        {loading ? (
+        {tab === 'applications' ? (
+          <MyIndustrialApplicationsView embedded />
+        ) : loading ? (
           <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
             Loading industrial buyer requirements…
           </div>
@@ -732,14 +755,18 @@ export const BuyerDemandsView: React.FC = () => {
                 className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-300 bg-white"
               >
                 <option value="">— none —</option>
-                {myLots
-                  .filter((l) => l.status === 'open')
-                  .map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.crop} {l.variety ? `(${l.variety})` : ''} · {(l.quantityQuintal ?? 0)} q
-                    </option>
-                  ))}
+                {prefillLots.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.crop} {l.variety ? `(${l.variety})` : ''} · {(l.quantityQuintal ?? 0)} q
+                    {l.status !== 'open' ? ` · ${l.status === 'pending_review' ? 'in review' : l.status}` : ''}
+                  </option>
+                ))}
               </select>
+              {prefillLots.length === 0 && (
+                <p className="mt-1 text-[10px] text-slate-400">
+                  No produce lots yet — post one from <Link to="/farmer/lots" className="font-bold text-emerald-700 hover:underline">Sell Produce</Link> and it appears here for one-tap prefill.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

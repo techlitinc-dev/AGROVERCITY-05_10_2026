@@ -23,7 +23,7 @@ const FILTERS = [
 ] as const;
 
 /** Farmer — My Export Applications (spec §3.2, §12). */
-export const MyExportApplicationsView: React.FC = () => {
+export const MyExportApplicationsView: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const navigate = useNavigate();
   const [applications, setApplications] = useState<ExportApplication[]>([]);
   const [filter, setFilter] = useState<string>('');
@@ -76,14 +76,18 @@ export const MyExportApplicationsView: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-          <FileText className="w-7 h-7 text-emerald-600" />
-          My Export Applications
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Track what you applied for. When an exporter unlocks your contact, Call, WhatsApp, and Chat
-          open here.
-        </p>
+        {!embedded && (
+          <>
+            <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+              <FileText className="w-7 h-7 text-emerald-600" />
+              My Export Applications
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Track what you applied for. When an exporter unlocks your contact, Call, WhatsApp, and Chat
+              open here.
+            </p>
+          </>
+        )}
         <div className="flex flex-wrap gap-2 mt-3">
           {FILTERS.map((f) => (
             <button

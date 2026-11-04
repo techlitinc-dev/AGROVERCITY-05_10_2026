@@ -18,7 +18,7 @@ import {
  * outcomes, ratings and issue reporting. No payment/shipping state exists
  * here by design.
  */
-export const ExportConnectionsView: React.FC<{ persona: 'farmer' | 'exporter' }> = ({ persona }) => {
+export const ExportConnectionsView: React.FC<{ persona: 'farmer' | 'exporter'; embedded?: boolean }> = ({ persona, embedded = false }) => {
   const [connections, setConnections] = useState<ExportApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,17 +77,19 @@ export const ExportConnectionsView: React.FC<{ persona: 'farmer' | 'exporter' }>
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-          <Handshake className="w-7 h-7 text-emerald-600" />
-          My Export Connections
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Exporters you are in touch with. Sampling, quality, price, payment, packaging, transport,
-          customs, freight, and insurance are settled directly between you and the exporter —
-          Agrovercity never holds export payments.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="border-b border-slate-200 pb-4">
+          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+            <Handshake className="w-7 h-7 text-emerald-600" />
+            My Export Connections
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Exporters you are in touch with. Sampling, quality, price, payment, packaging, transport,
+            customs, freight, and insurance are settled directly between you and the exporter —
+            Agrovercity never holds export payments.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">

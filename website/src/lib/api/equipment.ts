@@ -65,6 +65,25 @@ export const equipment = {
   myBookings: (): Promise<EquipmentMyBooking[]> =>
     readList<EquipmentMyBooking>('/equipment/my-bookings'),
 
+  /** POST /equipment/demand-posts — farmer posts the machine they need. */
+  createDemandPost: (payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>('/equipment/demand-posts', payload),
+
+  /** GET /equipment/demand-posts — open demand posts (equipment-owner board). */
+  demandPosts: (params?: Record<string, unknown>): Promise<unknown[]> =>
+    readList<unknown[]>('/equipment/demand-posts', { params }),
+
+  /** GET /equipment/demand-posts/mine — my posts with owner quotes. */
+  myDemandPosts: (): Promise<unknown[]> => readList<unknown[]>('/equipment/demand-posts/mine'),
+
+  /** DELETE /equipment/demand-posts/{id} — close my demand post. */
+  deleteDemandPost: (postId: string): Promise<unknown> =>
+    del<unknown>(`/equipment/demand-posts/${postId}`),
+
+  /** POST /equipment/demand-posts/{id}/quotes — owner quotes on a demand post. */
+  quoteDemandPost: (postId: string, payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/equipment/demand-posts/${postId}/quotes`, payload),
+
   /** GET /equipment/{id}/slots */
   slots: (equipmentId: string, params?: Record<string, unknown>): Promise<unknown[]> =>
     readList<unknown[]>(`/equipment/${equipmentId}/slots`, { params }),

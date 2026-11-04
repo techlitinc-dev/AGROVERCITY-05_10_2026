@@ -26,6 +26,7 @@ UPLOAD_CONTENT_TYPES = {
     "audio/mp4": "m4a",
     "audio/ogg": "ogg",
     "audio/wav": "wav",
+    "audio/webm": "webm",
     "video/mp4": "mp4",
     "video/webm": "webm",
     "video/quicktime": "mov",

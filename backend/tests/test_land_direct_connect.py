@@ -482,6 +482,22 @@ async def test_contact_visible_only_to_participants(client, user_store):
     assert "landlordContact" not in prow
 
 
+async def test_farmer_mine_includes_landlord_name(client, user_store):
+    landlord_token, farmer_token, listing, request, accepted = await _interest_and_accept(client, user_store)
+    assert accepted.status_code == 200
+
+    mine = await client.get("/v1/land/lease-requests/mine", headers=auth(farmer_token))
+    row = next(r for r in mine.json()["data"] if r["id"] == request["id"])
+    assert row["landlordName"] == "Landlord Patil"
+
+    # Contact hiding is unchanged: a pending request carries the name but no contact.
+    pending = await _send_interest(client, _farmer(user_store, uid="uid-f8"), listing["id"])
+    pm = await client.get("/v1/land/lease-requests/mine", headers=auth(_farmer(user_store, uid="uid-f8")))
+    prow = next(r for r in pm.json()["data"] if r["id"] == pending.json()["id"])
+    assert prow["landlordName"] == "Landlord Patil"
+    assert "landlordContact" not in prow
+
+
 async def test_landlord_only_listing_status_changes(client, user_store):
     landlord_token = _landlord(user_store)
     listing = await _make_listing(client, landlord_token)

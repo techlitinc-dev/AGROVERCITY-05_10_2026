@@ -6,6 +6,7 @@ import { users, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency, formatDateTime } from '../../lib/utils';
 import { DIRECT_CONNECT_TERMS as DIRECT_CONNECT_TERMS_BASE, LEAD_STATUS_LABEL } from './directConnect';
+import { FarmerLandConnectionsSection } from '../farmer/FarmerLandConnectionsSection';
 
 /** Direct-connect terms (spec §8/§10) — identical wording in every journey. */
 export const DIRECT_CONNECT_TERMS = DIRECT_CONNECT_TERMS_BASE;
@@ -124,10 +125,12 @@ export const MyConnectionsView: React.FC<Props> = ({ persona }) => {
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           {persona === 'farmer'
-            ? 'Vyaparis who contacted you about your lots, and the requirements you applied to. Call, WhatsApp or chat — deals close directly between you two.'
+            ? 'Vyaparis who contacted you about your lots, the requirements you applied to, and the farm-land landlords you connected with. Call, WhatsApp or chat — deals close directly between you two.'
             : 'Farmers you contacted about their lots, and applications on your requirements. Call, WhatsApp or chat — deals close directly between you two.'}
         </p>
       </div>
+
+      {persona === 'farmer' && <FarmerLandConnectionsSection />}
 
       {!verified && (
         <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-semibold text-amber-800 flex items-center gap-2">

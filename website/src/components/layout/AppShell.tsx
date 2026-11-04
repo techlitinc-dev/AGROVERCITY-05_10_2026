@@ -1,5 +1,6 @@
 import React from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
@@ -44,7 +45,12 @@ const isPublicPath = (pathname: string): boolean =>
 
 export const AppShell: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, activePersona, isAuthenticated } = useAuthStore();
+  // History-aware back affordance: react-router records the history index in
+  // history.state — >0 means there is a previous in-app screen to return to.
+  // SPA back preserves the previous page's component state (no lost form data).
+  const canGoBack = typeof window !== 'undefined' && (window.history.state?.idx ?? 0) > 0;
   const isFullWidthPage =
     location.pathname === '/' ||
     location.pathname === '/landing' ||
@@ -116,6 +122,19 @@ export const AppShell: React.FC = () => {
 
       {/* Mobile Bottom Navigation Bar */}
       {!isFullWidthPage && <BottomNav />}
+
+      {/* Global back button — every page, appears only when there is history
+          to return to. Sits above the mobile bottom nav. */}
+      {!isFullWidthPage && canGoBack && (
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          aria-label="Go back"
+          className="fixed bottom-20 lg:bottom-6 left-3 z-40 p-2.5 rounded-full bg-white/95 backdrop-blur-md border border-slate-200 shadow-lg text-slate-600 hover:text-emerald-700 hover:border-emerald-300 active:scale-95 transition-all"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+      )}
     </div>
   );
 };

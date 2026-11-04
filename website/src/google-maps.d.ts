@@ -46,6 +46,7 @@ declare namespace google {
       zoom?: number;
       disableDefaultUI?: boolean;
       zoomControl?: boolean;
+      fullscreenControl?: boolean;
       gestureHandling?: string;
       backgroundColor?: string;
       styles?: MapTypeStyle[];
@@ -55,6 +56,7 @@ declare namespace google {
       constructor(el: HTMLElement, opts?: MapOptions);
       setCenter(center: LatLngLike): void;
       setZoom(zoom: number): void;
+      panTo(center: LatLngLike): void;
       fitBounds(bounds: LatLngBounds, padding?: number | Point): void;
     }
 
@@ -88,11 +90,61 @@ declare namespace google {
       icon?: string | Symbol | Icon;
       label?: string | MarkerLabel;
       zIndex?: number;
+      draggable?: boolean;
+      animation?: number;
     }
 
     class Marker {
       constructor(opts?: MarkerOptions);
       setMap(map: Map | null): void;
+      setPosition(position: LatLngLike): void;
+      getPosition(): LatLng;
+      setDraggable(draggable: boolean): void;
+      addListener(eventName: string, handler: (e: unknown) => void): MapsEventListener;
+    }
+
+    /** Animated-drop constant (google.maps.Animation.DROP). */
+    const Animation: { DROP: number; BOUNCE: number };
+
+    class Geocoder {
+      geocode(
+        request: { location?: LatLngLike; address?: string },
+        callback: (results: GeocoderResult[], status: string) => void
+      ): void;
+    }
+
+    interface GeocoderAddressComponent {
+      long_name: string;
+      short_name: string;
+      types: string[];
+    }
+
+    interface GeocoderResult {
+      formatted_address: string;
+      address_components: GeocoderAddressComponent[];
+      geometry: { location: LatLng };
+    }
+
+    namespace places {
+      class Autocomplete {
+        constructor(inputField: HTMLInputElement, opts?: AutocompleteOptions);
+        addListener(eventName: 'place_changed', handler: () => void): MapsEventListener;
+        getPlace(): PlaceResult;
+        setBounds(bounds: LatLngBounds): void;
+      }
+
+      interface AutocompleteOptions {
+        fields?: string[];
+        componentRestrictions?: { country: string | string[] };
+        types?: string[];
+      }
+
+      interface PlaceResult {
+        formatted_address?: string;
+        name?: string;
+        geometry?: { location: LatLng };
+        address_components?: GeocoderAddressComponent[];
+      }
     }
 
     class MVCArray<T> {

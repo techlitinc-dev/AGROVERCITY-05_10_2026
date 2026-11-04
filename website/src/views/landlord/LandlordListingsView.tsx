@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCw, Pencil, BadgeCheck, ShieldAlert, FileText, Upload } from 'lucide-react';
-import { land, uploads, apiErrorMessage } from '../../lib/api';
+import { land, uploads, apiErrorMessage, addresses as addressesApi, addressLabel, addressSummary, type SavedAddress } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { UserVerificationBadge } from '../../components/common/UserVerificationBadge';
 import { formatCurrency } from '../../lib/utils';
@@ -70,9 +70,15 @@ export const LandlordListingsView: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<ListingRow | null>(null);
+  const [formOpen, setFormOpen] = useState(false);  const [editing, setEditing] = useState<ListingRow | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [savedAddrs, setSavedAddrs] = useState<SavedAddress[]>([]);
+  useEffect(() => {
+    addressesApi
+      .list()
+      .then(setSavedAddrs)
+      .catch(() => undefined);
+  }, []);
   const [saving, setSaving] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
 
@@ -418,6 +424,27 @@ export const LandlordListingsView: React.FC = () => {
         maxWidth="md"
       >
         <form onSubmit={(e) => void submit(e)} className="space-y-4">
+          {savedAddrs.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Fill from saved address</label>
+              <select
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                value=""
+                onChange={(e) => {
+                  const a = savedAddrs.find((x) => x.id === e.target.value);
+                  if (!a) return;
+                  setForm((f) => ({ ...f, village: a.village || f.village, district: a.district || f.district, state: a.state || f.state }));
+                }}
+              >
+                <option value="">Select a saved address…</option>
+                {savedAddrs.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {addressLabel(a)} — {addressSummary(a)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Village *</label>

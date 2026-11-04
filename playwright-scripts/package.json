@@ -1,0 +1,16 @@
+{
+  "name": "agrovercity-persona-checks",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Headless Playwright UAT — walks every option of every persona on the Agrovercity website and captures console/network errors for the troubleshoot docs.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test specs/00-smoke.spec.ts",
+    "report": "node scripts/build-troubleshoot.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.7.4"
+  }
+}

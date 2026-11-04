@@ -11,7 +11,7 @@ import {
   Flag,
   ShieldAlert,
 } from 'lucide-react';
-import { equipment, ratings, users, apiErrorMessage } from '../../lib/api';
+import { equipment, ratings, users, apiErrorMessage, addresses as addressesApi, addressLabel, addressSummary, type SavedAddress } from '../../lib/api';
 import type { EquipmentMyBooking } from '../../lib/api/equipment';
 import { isKycError } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
@@ -98,6 +98,27 @@ export const EquipmentRentalView: React.FC = () => {
   const [pickedSlot, setPickedSlot] = useState<string | null>(null);
   const [workLocation, setWorkLocation] = useState('');
   const [workType, setWorkType] = useState('');
+
+  // Farmer-posted "I need a machine" demand board + its create modal.
+  const [myDemandPosts, setMyDemandPosts] = useState<Record<string, unknown>[]>([]);
+  const [dpModalOpen, setDpModalOpen] = useState(false);
+  const [dpBusy, setDpBusy] = useState(false);
+  const [dpForm, setDpForm] = useState({
+    machineType: '',
+    acres: 0,
+    dateFrom: '',
+    dateTo: '',
+    village: '',
+    budgetPerHourRupees: 0,
+    notes: '',
+  });
+  const [savedAddrs, setSavedAddrs] = useState<SavedAddress[]>([]);
+  useEffect(() => {
+    addressesApi
+      .list()
+      .then(setSavedAddrs)
+      .catch(() => undefined);
+  }, []);
   const [workQuantity, setWorkQuantity] = useState<number>(1);
   const [workUnit, setWorkUnit] = useState<'acres' | 'hours' | 'days'>('acres');
   const [notes, setNotes] = useState('');
@@ -141,14 +162,59 @@ export const EquipmentRentalView: React.FC = () => {
     }
   }, []);
 
+  const loadDemandPosts = useCallback(async () => {
+    try {
+      const rows = (await equipment.myDemandPosts()) as unknown as Record<string, unknown>[];
+      setMyDemandPosts(rows);
+    } catch {
+      setMyDemandPosts([]);
+    }
+  }, []);
+
   useEffect(() => {
     void loadMachines();
+    void loadDemandPosts();
     users.getMe().then((u) => setMe(u as typeof me)).catch(() => {});
-  }, [loadMachines]);
+  }, [loadMachines, loadDemandPosts]);
 
   useEffect(() => {
     if (tab === 'requests') void loadBookings();
   }, [tab, loadBookings]);
+
+  const submitDemandPost = async () => {
+    setDpBusy(true);
+    setError(null);
+    try {
+      await equipment.createDemandPost({
+        machineType: dpForm.machineType.trim(),
+        acres: dpForm.acres || 0,
+        dateFrom: dpForm.dateFrom,
+        dateTo: dpForm.dateTo,
+        ...(dpForm.village.trim() ? { village: dpForm.village.trim() } : {}),
+        ...(dpForm.budgetPerHourRupees > 0 ? { budgetPerHourRupees: dpForm.budgetPerHourRupees } : {}),
+        ...(dpForm.notes.trim() ? { notes: dpForm.notes.trim() } : {}),
+      });
+      setNotice('Equipment request posted — owners with a matching machine will quote.');
+      setDpModalOpen(false);
+      setDpForm({ machineType: '', acres: 0, dateFrom: '', dateTo: '', village: '', budgetPerHourRupees: 0, notes: '' });
+      await loadDemandPosts();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setDpBusy(false);
+    }
+  };
+
+  const closeDemandPost = async (id: string) => {
+    if (!window.confirm('Close this equipment request? Owners will no longer see it.')) return;
+    try {
+      await equipment.deleteDemandPost(id);
+      setNotice('Equipment request closed.');
+      await loadDemandPosts();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  };
 
   // Type catalog derives from served listings — no hard-coded mirror list.
   const typeOptions = useMemo(
@@ -308,21 +374,29 @@ export const EquipmentRentalView: React.FC = () => {
         </div>
       )}
 
-      <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
-        {[
-          { id: 'browse', label: 'Find Equipment' },
-          { id: 'requests', label: `My Requests (${myBookings.length})` },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id as 'browse' | 'requests')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-              tab === t.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
+          {[
+            { id: 'browse', label: 'Find Equipment' },
+            { id: 'requests', label: `My Requests (${myBookings.length})` },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id as 'browse' | 'requests')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                tab === t.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setDpModalOpen(true)}
+          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
+        >
+          <Wrench className="w-3.5 h-3.5" /> Request Equipment
+        </button>
       </div>
 
       {tab === 'browse' && (
@@ -466,6 +540,69 @@ export const EquipmentRentalView: React.FC = () => {
 
       {tab === 'requests' && (
         <>
+          {/* My posted equipment requests (the demand board) with owner quotes */}
+          {myDemandPosts.length > 0 && (
+            <div className="space-y-3">
+              {myDemandPosts.map((p) => {
+                const quotes = (Array.isArray(p.quotes) ? p.quotes : []) as Record<string, unknown>[];
+                const open = p.status === 'open';
+                return (
+                  <div key={String(p.id)} className="bg-amber-50/60 rounded-3xl p-5 border border-amber-200/70 space-y-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-sm text-slate-900">{String(p.machineType ?? 'Machine')}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${open ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
+                            {open ? 'Open — visible to owners' : 'Closed'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1 flex items-center gap-1 flex-wrap">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          {String(p.dateFrom ?? '')} → {String(p.dateTo ?? '')}
+                          {Number(p.acres) > 0 ? ` · ${String(p.acres)} acres` : ''}
+                          {p.village ? ` · ${String(p.village)}` : ''}
+                          {Number(p.budgetPerHourRupees) > 0 ? ` · budget ${formatCurrency(Number(p.budgetPerHourRupees))}/hr` : ''}
+                        </p>
+                      </div>
+                      {open && (
+                        <button
+                          onClick={() => void closeDemandPost(String(p.id))}
+                          className="px-3 py-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 font-bold text-[10px]"
+                        >
+                          Close
+                        </button>
+                      )}
+                    </div>
+                    {quotes.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Owner Quotes ({quotes.length})</p>
+                        {quotes.map((q) => (
+                          <div key={String(q.id)} className="bg-white rounded-2xl p-3 border border-slate-200 flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                {String(q.ownerName || 'Owner')}
+                                {q.ownerVerified ? (
+                                  <span className="text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                                    <BadgeCheck className="w-2.5 h-2.5" /> Verified
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="text-[11px] text-slate-600">
+                                {Number(q.rateRupees) > 0 ? `${formatCurrency(Number(q.rateRupees))}/hr · ` : ''}
+                                {q.availableFrom ? `available ${String(q.availableFrom)} → ${String(q.availableTo ?? '')}` : ''}
+                              </p>
+                              {q.message ? <p className="text-[11px] text-slate-500 italic">“{String(q.message)}”</p> : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
             {(
               [
@@ -550,6 +687,128 @@ export const EquipmentRentalView: React.FC = () => {
           )}
         </>
       )}
+
+      {/* Create Request modal — post the machine the farm needs so owners quote */}
+      <ModalSheet
+        isOpen={dpModalOpen}
+        onClose={() => setDpModalOpen(false)}
+        title="Request Equipment"
+        description="Post what your farm needs — equipment owners with a matching machine see it and quote their rate."
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          {savedAddrs.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Location from saved address</label>
+              <select
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                value=""
+                onChange={(e) => {
+                  const a = savedAddrs.find((x) => x.id === e.target.value);
+                  if (!a) return;
+                  setDpForm((f) => ({
+                    ...f,
+                    village: [a.line1, a.village].filter(Boolean).join(', ') || f.village,
+                  }));
+                }}
+              >
+                <option value="">Select a saved address…</option>
+                {savedAddrs.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {addressLabel(a)} — {addressSummary(a)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Machine Type *</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={dpForm.machineType}
+                onChange={(e) => setDpForm({ ...dpForm, machineType: e.target.value })}
+                placeholder="e.g. Tractor + Rotavator, Thresher"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Area (acres)</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                value={dpForm.acres || ''}
+                onChange={(e) => setDpForm({ ...dpForm, acres: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Needed From *</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={dpForm.dateFrom}
+                onChange={(e) => setDpForm({ ...dpForm, dateFrom: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Needed Until *</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={dpForm.dateTo}
+                onChange={(e) => setDpForm({ ...dpForm, dateTo: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Village / Area</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={dpForm.village}
+                onChange={(e) => setDpForm({ ...dpForm, village: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Budget (₹/hr)</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                value={dpForm.budgetPerHourRupees || ''}
+                onChange={(e) => setDpForm({ ...dpForm, budgetPerHourRupees: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Notes (optional)</label>
+            <textarea
+              rows={2}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              value={dpForm.notes}
+              onChange={(e) => setDpForm({ ...dpForm, notes: e.target.value })}
+              placeholder="Soil type, water, transport access…"
+            />
+          </div>
+          <button
+            onClick={() => void submitDemandPost()}
+            disabled={
+              dpBusy ||
+              !dpForm.machineType.trim() ||
+              !dpForm.dateFrom ||
+              !dpForm.dateTo ||
+              dpForm.dateTo < dpForm.dateFrom
+            }
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+          >
+            {dpBusy ? 'Posting…' : 'Post Equipment Request'}
+          </button>
+        </div>
+      </ModalSheet>
 
       {/* Details modal */}
       <ModalSheet

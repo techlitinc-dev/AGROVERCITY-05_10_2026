@@ -12,6 +12,7 @@ const TrackDeliveryView = lazy(() => import('./TrackDeliveryView').then((m) => (
 const TransactionsPage = lazy(() => import('./TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
 const RatingsCenterPage = lazy(() => import('./RatingsCenterPage').then((m) => ({ default: m.RatingsCenterPage })));
 const ProfilePage = lazy(() => import('./ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const AddressBookPage = lazy(() => import('./AddressBookPage').then((m) => ({ default: m.AddressBookPage })));
 const SavedPage = lazy(() => import('./SavedPage').then((m) => ({ default: m.SavedPage })));
 const DeepLinkRedirect = lazy(() => import('./DeepLinkRedirect').then((m) => ({ default: m.DeepLinkRedirect })));
 
@@ -29,6 +30,7 @@ export const SharedRouteElements = () => (
     <Route path="/payments" element={<TransactionsPage />} />
     <Route path="/ratings" element={<RatingsCenterPage />} />
     <Route path="/profile" element={<ProfilePage />} />
+    <Route path="/profile/addresses" element={<AddressBookPage />} />
     <Route path="/saved" element={<SavedPage />} />
     <Route path="/dashboard/p/*" element={<DeepLinkRedirect />} />
   </>

@@ -147,12 +147,22 @@ async def _room_view(room: dict, uid: str) -> dict:
             )
     counterparty_id = room.get("buyerId") if is_farmer else room.get("farmerId")
     counterparty = await get_user(counterparty_id) if counterparty_id else None
+    kind = room.get("kind") or "purchase"
+    # Persona bucket so the chat UI can group threads per persona instead of
+    # merging every persona's conversations into one flat list.
+    if kind == "batch":
+        persona_bucket = "academy"
+    elif kind == "transport":
+        persona_bucket = "transport"
+    else:
+        persona_bucket = (counterparty or {}).get("activeProfile") or kind or "direct"
     return {
         **room,
-        "kind": room.get("kind") or "purchase",
+        "kind": kind,
         "counterpartyName": room.get("buyerName") if is_farmer else room.get("farmerName"),
         "counterpartyTrustTier": (counterparty or {}).get("trustTier"),
         "counterpartyVerified": await is_identity_verified(counterparty),
+        "counterpartyPersona": persona_bucket,
         "unread": unread,
         "unreadCount": unread_count,
     }
@@ -186,6 +196,8 @@ async def get_room(room_id: str, uid: str = Depends(current_user_id)):
 class MessageIn(BaseModel):
     text: str = Field(default="", max_length=MAX_TEXT_LEN)
     imageUrl: str = ""
+    # Voice notes (OGG/WebM from the in-app recorder).
+    audioUrl: str = ""
     # WS-02 task 2.36(f): in-platform lesson cards (gated content module only).
     lessonCardId: str = ""
 
@@ -432,8 +444,8 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
     if terminal:
         _error(409, "CHAT_CLOSED", "this thread is closed — chat is read-only")
     text = (body.text or "").strip()
-    if not text and not body.imageUrl:
-        _error(422, "VALIDATION_ERROR", "message needs text or an image")
+    if not text and not body.imageUrl and not body.audioUrl:
+        _error(422, "VALIDATION_ERROR", "message needs text, an image or a voice note")
 
     # WS-01 task 1.4 — regex fast-path. A violating message is rejected (422)
     # and never stored; a strike is recorded on the ladder.
@@ -503,11 +515,12 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
         "fromSide": _side(room, uid),
         "text": text,
         "imageUrl": image_url,
+        "audioUrl": body.audioUrl or None,
         "createdAt": _now(),
     }
     await set_doc(f"chat_rooms/{room['id']}/messages", doc["id"], doc)
     room["lastMessageAt"] = doc["createdAt"]
-    room["lastMessageText"] = text or "📷"
+    room["lastMessageText"] = text or ("📷" if image_url else "🎤")
     if doc["fromSide"] == "farmer":
         room["readByFarmer"] = True
         room["readByBuyer"] = False
@@ -530,7 +543,7 @@ async def post_message(room_id: str, body: MessageIn, uid: str = Depends(current
         other,
         type="chat_message",
         title="New message / नया संदेश",
-        body=f"{doc['fromName']}: {(text or '📷')[:80]}",
+        body=f"{doc['fromName']}: {(text or ('📷' if image_url else '🎤'))[:80]}",
         deepLink=path,
     )
     return doc

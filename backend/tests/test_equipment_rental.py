@@ -345,7 +345,7 @@ async def test_contract_versions_esign_and_pdf(client, user_store):
     # real PDF via reportlab into dev storage
     resp = await client.get("/v1/equipment/bookings/eqb_1/contract/pdf", headers=_auth(farmer))
     assert resp.status_code == 200
-    assert resp.json()["pdfUrl"].startswith("file://")
+    assert resp.json()["pdfUrl"].startswith("/local-uploads/")
     assert resp.json()["version"] == 3
 
 
@@ -565,3 +565,72 @@ async def test_booking_notifies_owner(client, user_store):
     # reminders surface the approval
     resp = await client.get("/v1/equipment-rental/reminders", headers=_auth(token))
     assert any(r["kind"] == "booking_approval_needed" for r in resp.json()["data"])
+
+
+# ---------------- demand-post board (farmer create → owner quote) ----------------
+
+
+async def test_demand_post_create_browse_quote_and_mine(client, user_store):
+    """Farmer posts the machine they need (create request) — the owner sees it
+    on their board, quotes a rate, and the farmer sees the quote on /mine."""
+    farmer_token = second_farmer_token(user_store)
+    owner_token = await _owner_token(client)
+
+    resp = await client.post(
+        "/v1/equipment/demand-posts",
+        json={
+            "machineType": "Tractor + Rotavator",
+            "acres": 4,
+            "dateFrom": _tomorrow(),
+            "dateTo": (datetime.now(IST).date() + timedelta(days=3)).isoformat(),
+            "village": "Pimpalgaon",
+            "budgetPerHourRupees": 800,
+        },
+        headers=_auth(farmer_token),
+    )
+    assert resp.status_code == 201
+    post = resp.json()
+    assert post["status"] == "open"
+
+    # Owner board lists the open demand.
+    resp = await client.get("/v1/equipment/demand-posts", headers=_auth(owner_token))
+    assert resp.status_code == 200
+    assert any(d["id"] == post["id"] for d in resp.json()["data"])
+
+    # Owner quotes.
+    resp = await client.post(
+        f"/v1/equipment/demand-posts/{post['id']}/quotes",
+        json={"rateRupees": 750, "message": "John Deere 5050 with rotavator", "availableFrom": _tomorrow()},
+        headers=_auth(owner_token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["quoteCount"] == 1
+
+    # Re-quote updates in place (one open quote per owner per post).
+    resp = await client.post(
+        f"/v1/equipment/demand-posts/{post['id']}/quotes",
+        json={"rateRupees": 700, "message": "final rate"},
+        headers=_auth(owner_token),
+    )
+    assert resp.status_code == 201
+    assert resp.json()["quoteCount"] == 1
+
+    # Farmer sees the quote on their own board.
+    resp = await client.get("/v1/equipment/demand-posts/mine", headers=_auth(farmer_token))
+    assert resp.status_code == 200
+    mine = resp.json()["data"]
+    assert len(mine) == 1
+    assert mine[0]["quotes"][0]["rateRupees"] == 700
+
+    # Farmer was notified (initial quote + the re-quote both ping — rate changed).
+    notes = [
+        d for k, d in user_store.items()
+        if k.startswith("notifications/") and d.get("type") == "equipment_demand_quote"
+    ]
+    assert len(notes) >= 1
+
+    # Farmer closes the post → it leaves the owner board.
+    resp = await client.delete(f"/v1/equipment/demand-posts/{post['id']}", headers=_auth(farmer_token))
+    assert resp.status_code == 204
+    resp = await client.get("/v1/equipment/demand-posts", headers=_auth(owner_token))
+    assert all(d["id"] != post["id"] for d in resp.json()["data"])

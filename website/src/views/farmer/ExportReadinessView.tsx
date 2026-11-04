@@ -17,7 +17,7 @@ interface CropRow {
  * genuine certifications, residue/test references, packaging, experience).
  * Nothing here is platform-verified and it never creates a "Export Ready" badge.
  */
-export const ExportReadinessView: React.FC = () => {
+export const ExportReadinessView: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [rows, setRows] = useState<CropRow[]>([]);
   const [farmLocation, setFarmLocation] = useState('');
   const [village, setVillage] = useState('');
@@ -110,18 +110,20 @@ export const ExportReadinessView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-200 pb-4">
-        <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-          <ClipboardCheck className="w-7 h-7 text-emerald-600" />
-          Export Readiness Profile
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Keep your export capability on record so you can apply faster. Only list genuine
-          certifications — a certificate shows "verified" only after an actual document review, never
-          just because it was uploaded. This profile never guarantees export clearance or buyer
-          acceptance.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="border-b border-slate-200 pb-4">
+          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
+            <ClipboardCheck className="w-7 h-7 text-emerald-600" />
+            Export Readiness Profile
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Keep your export capability on record so you can apply faster. Only list genuine
+            certifications — a certificate shows "verified" only after an actual document review, never
+            just because it was uploaded. This profile never guarantees export clearance or buyer
+            acceptance.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">

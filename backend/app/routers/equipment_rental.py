@@ -43,6 +43,7 @@ from app.services.payments import (
 )
 from app.services.sms import send_sms
 from app.services.users import get_user
+from app.services.verification import is_identity_verified
 
 owner_router = APIRouter(prefix="/equipment-rental", tags=["equipment-rental"])
 router = APIRouter(prefix="/equipment", tags=["equipment-rental-shared"])
@@ -521,6 +522,18 @@ async def browse_demand_posts(
     total = len(docs)
     start = (page - 1) * pageSize
     return {"data": docs[start:start + pageSize], "page": page, "pageSize": pageSize, "total": total}
+
+
+@router.get("/demand-posts/mine")
+async def my_demand_posts(uid: str = Depends(current_user_id)):
+    """The farmer's own equipment demand posts with the owner quotes joined in."""
+    docs = await query("equipment_demand_posts", [("userId", "==", uid)], limit=500)
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    for d in docs:
+        for q in d.get("quotes") or []:
+            owner = await get_user(q.get("ownerId", ""))
+            q["ownerVerified"] = await is_identity_verified(owner)
+    return {"data": docs, "total": len(docs)}
 
 
 @router.delete("/demand-posts/{post_id}", status_code=204)

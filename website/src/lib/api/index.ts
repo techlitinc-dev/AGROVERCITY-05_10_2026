@@ -123,6 +123,9 @@ export { farmerCrops } from './farmerCrops';
 export { ratings } from './ratings';
 export { exporter } from './exporter';
 export { pickup } from './pickup';
+export { addresses } from './addresses';
+export { addressLabel, addressSummary } from './addresses';
+export type { SavedAddress, AddressInput } from './addresses';
 
 import { auth } from './auth';
 import { mandi } from './mandi';

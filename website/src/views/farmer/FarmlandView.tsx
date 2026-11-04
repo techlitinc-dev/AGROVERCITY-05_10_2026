@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   MapPin,
   Droplets,
@@ -10,6 +11,9 @@ import {
   Clock,
   XCircle,
   Mountain,
+  Megaphone,
+  MessageSquare,
+  Trash2,
 } from 'lucide-react';
 import { land, ratings, users, apiErrorMessage } from '../../lib/api';
 import { isKycError } from '../../lib/api/leads';
@@ -53,6 +57,8 @@ interface ListingRow {
   landVerified?: boolean;
   status?: string;
   createdAt?: string;
+  /** Set by GET /land/listings when the caller already sent interest. */
+  myRequestStatus?: string;
 }
 
 interface RequestRow {
@@ -97,8 +103,11 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export const FarmlandView: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [myRequests, setMyRequests] = useState<RequestRow[]>([]);
+  const [requirements, setRequirements] = useState<Record<string, unknown>[]>([]);
   const [me, setMe] = useState<{ name?: string; kycStatus?: string }>({});
   const [tab, setTab] = useState<'find' | 'requests'>('find');
   const [reqTab, setReqTab] = useState<ReqTab>('all');
@@ -132,6 +141,22 @@ export const FarmlandView: React.FC = () => {
   const [rateTarget, setRateTarget] = useState<RequestRow | null>(null);
   const [reportTarget, setReportTarget] = useState<RequestRow | null>(null);
 
+  // My posted land requirements ("create request" board) + its form modal.
+  const [reqModalOpen, setReqModalOpen] = useState(false);
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqForm, setReqForm] = useState({
+    areaAcres: 0,
+    district: '',
+    state: '',
+    durationMonths: 12,
+    intendedCrop: '',
+    maxRentPerAcrePerYear: 0,
+    neededFrom: '',
+    irrigated: '',
+    notes: '',
+    termsAccepted: false,
+  });
+
   const loadListings = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -161,14 +186,91 @@ export const FarmlandView: React.FC = () => {
     }
   }, []);
 
+  const loadRequirements = useCallback(async () => {
+    try {
+      const res = (await land.myRequirements()) as unknown as Record<string, unknown>[];
+      setRequirements(res);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  }, []);
+
+  // Deep link (?tab=requests) — notifications from landlord responses land here.
+  useEffect(() => {
+    if (searchParams.get('tab') === 'requests') setTab('requests');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     void loadListings();
     users.getMe().then((u) => setMe(u as typeof me)).catch(() => {});
   }, [loadListings]);
 
+  // Auto-fetch both boards up front (not only on first tab visit) so the tab
+  // badge counts and the lists are ready — previously the requests board only
+  // loaded after manually switching tabs.
   useEffect(() => {
-    if (tab === 'requests') void loadRequests();
-  }, [tab, loadRequests]);
+    void loadRequests();
+    void loadRequirements();
+  }, [loadRequests, loadRequirements]);
+
+  const submitRequirement = async () => {
+    setReqBusy(true);
+    setError(null);
+    try {
+      await land.createRequirement({
+        areaAcres: reqForm.areaAcres,
+        district: reqForm.district.trim(),
+        ...(reqForm.state.trim() ? { state: reqForm.state.trim() } : {}),
+        durationMonths: reqForm.durationMonths,
+        ...(reqForm.intendedCrop.trim() ? { intendedCrop: reqForm.intendedCrop.trim() } : {}),
+        ...(reqForm.maxRentPerAcrePerYear > 0 ? { maxRentPerAcrePerYear: reqForm.maxRentPerAcrePerYear } : {}),
+        ...(reqForm.neededFrom ? { neededFrom: reqForm.neededFrom } : {}),
+        ...(reqForm.irrigated !== '' ? { irrigated: reqForm.irrigated === 'true' } : {}),
+        ...(reqForm.notes.trim() ? { notes: reqForm.notes.trim() } : {}),
+        termsAccepted: reqForm.termsAccepted,
+      });
+      setNotice('Land request posted — landlords in your area can now respond.');
+      setReqModalOpen(false);
+      setReqForm({
+        areaAcres: 0,
+        district: '',
+        state: '',
+        durationMonths: 12,
+        intendedCrop: '',
+        maxRentPerAcrePerYear: 0,
+        neededFrom: '',
+        irrigated: '',
+        notes: '',
+        termsAccepted: false,
+      });
+      await loadRequirements();
+    } catch (e) {
+      if (isKycError(e)) {
+        setError('Complete your identity verification (KYC) to post a land request — see Profile.');
+        setReqModalOpen(false);
+      } else {
+        setError(apiErrorMessage(e));
+      }
+    } finally {
+      setReqBusy(false);
+    }
+  };
+
+  const closeRequirement = async (id: string) => {
+    if (!window.confirm('Close this land request? Landlords will no longer see it.')) return;
+    try {
+      await land.closeRequirement(id);
+      setNotice('Land request closed.');
+      await loadRequirements();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    }
+  };
+
+  const openResponseChat = (chatRoomId?: string) => {
+    if (chatRoomId) navigate(`/chat?room=${encodeURIComponent(chatRoomId)}`);
+  };
 
   const grouped = reqTab === 'all' ? myRequests : myRequests.filter((r) => STATUS_GROUP[reqTab].includes(r.status));
 
@@ -418,12 +520,19 @@ export const FarmlandView: React.FC = () => {
                     <button onClick={() => setDetail(l)} className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs">
                       View Details
                     </button>
-                    <button
-                      onClick={() => openInterest(l)}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
-                    >
-                      Send Interest
-                    </button>
+                    {l.myRequestStatus ? (
+                      <span className="px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-xs flex items-center gap-1.5">
+                        <BadgeCheck className="w-3.5 h-3.5" />
+                        {l.myRequestStatus === 'contacted' ? 'In contact — see My Land Requests' : 'Interest sent'}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => openInterest(l)}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+                      >
+                        Send Interest
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -434,27 +543,110 @@ export const FarmlandView: React.FC = () => {
 
       {tab === 'requests' && (
         <>
-          <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
-            {(
-              [
-                ['all', 'All'],
-                ['pending', 'Pending'],
-                ['contacted', 'Contacted'],
-                ['dealDone', 'Deal Completed'],
-                ['closed', 'Declined / Withdrawn'],
-              ] as [ReqTab, string][]
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setReqTab(id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                  reqTab === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">
+              {(
+                [
+                  ['all', 'All'],
+                  ['pending', 'Pending'],
+                  ['contacted', 'Contacted'],
+                  ['dealDone', 'Deal Completed'],
+                  ['closed', 'Declined / Withdrawn'],
+                ] as [ReqTab, string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setReqTab(id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                    reqTab === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setReqModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
+            >
+              <Megaphone className="w-3.5 h-3.5" /> Create Request
+            </button>
           </div>
+
+          {/* My posted land requirements — farmers tell landlords what they need */}
+          {requirements.length > 0 && (
+            <div className="space-y-3">
+              {requirements.map((q) => {
+                const responses = Array.isArray(q.responses) ? (q.responses as Record<string, unknown>[]) : [];
+                const open = q.status === 'open';
+                return (
+                  <div key={String(q.id)} className="bg-emerald-50/60 rounded-3xl p-5 border border-emerald-200/70 space-y-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-sm text-slate-900">
+                            {String(q.areaAcres ?? '—')} acres needed · {String(q.district ?? '')}
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                              open
+                                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                : 'text-slate-500 bg-slate-100 border-slate-200'
+                            }`}
+                          >
+                            {open ? 'Open — visible to landlords' : 'Closed'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 flex items-center gap-1 flex-wrap mt-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          {q.durationMonths ? `${String(q.durationMonths)} months` : ''}
+                          {q.intendedCrop ? ` · ${String(q.intendedCrop)}` : ''}
+                          {q.maxRentPerAcrePerYear ? ` · up to ${formatCurrency(Number(q.maxRentPerAcrePerYear))}/acre/yr` : ''}
+                          {q.neededFrom ? ` · from ${String(q.neededFrom)}` : ''}
+                        </p>
+                        {q.notes ? <p className="text-[11px] text-slate-500 italic mt-1">“{String(q.notes)}”</p> : null}
+                      </div>
+                      {open && (
+                        <button
+                          onClick={() => void closeRequirement(String(q.id))}
+                          className="px-3 py-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 font-bold text-[10px] flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Close
+                        </button>
+                      )}
+                    </div>
+                    {responses.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Landlord Responses ({responses.length})</p>
+                        {responses.map((resp) => (
+                          <div key={String(resp.id)} className="bg-white rounded-2xl p-3 border border-slate-200 flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                {String(resp.landlordName || 'Landlord')}
+                                {resp.landlordVerified ? (
+                                  <span className="text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5">
+                                    <BadgeCheck className="w-2.5 h-2.5" /> Verified
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="text-[11px] text-slate-600">“{String(resp.message || '')}”</p>
+                            </div>
+                            <button
+                              onClick={() => openResponseChat(resp.chatRoomId as string | undefined)}
+                              disabled={!resp.chatRoomId}
+                              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1 shrink-0 disabled:opacity-40"
+                            >
+                              <MessageSquare className="w-3 h-3" /> Chat
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {grouped.length === 0 ? (
             <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
@@ -595,14 +787,156 @@ export const FarmlandView: React.FC = () => {
             {detail.notes && <p className="text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">{detail.notes}</p>}
             <NegotiationChecklist />
             <p className="text-[10px] text-slate-400 leading-relaxed">{LAND_DIRECT_CONNECT_TERMS}</p>
-            <button
-              onClick={() => { setDetail(null); openInterest(detail); }}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md"
-            >
-              Send Interest
-            </button>
+            {detail.myRequestStatus ? (
+              <div className="w-full py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-xs text-center flex items-center justify-center gap-1.5">
+                <BadgeCheck className="w-3.5 h-3.5" />
+                {detail.myRequestStatus === 'contacted' ? 'In contact — see My Land Requests' : 'Interest already sent'}
+              </div>
+            ) : (
+              <button
+                onClick={() => { setDetail(null); openInterest(detail); }}
+                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md"
+              >
+                Send Interest
+              </button>
+            )}
           </div>
         )}
+      </ModalSheet>
+
+      {/* Create Request modal — post the land I need so landlords can respond */}
+      <ModalSheet
+        isOpen={reqModalOpen}
+        onClose={() => setReqModalOpen(false)}
+        title="Create Land Request"
+        description="Describe the land you need — landlords with matching plots will see it and can respond. No deposit, no advance."
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Area Needed (acres) *</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                value={reqForm.areaAcres || ''}
+                onChange={(e) => setReqForm({ ...reqForm, areaAcres: Number(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Lease Duration (months)</label>
+              <input
+                type="number"
+                min={1}
+                max={120}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                value={reqForm.durationMonths}
+                onChange={(e) => setReqForm({ ...reqForm, durationMonths: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">District *</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={reqForm.district}
+                onChange={(e) => setReqForm({ ...reqForm, district: e.target.value })}
+                placeholder="e.g. Nashik"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">State</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={reqForm.state}
+                onChange={(e) => setReqForm({ ...reqForm, state: e.target.value })}
+                placeholder="e.g. Maharashtra"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Intended Crop</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={reqForm.intendedCrop}
+                onChange={(e) => setReqForm({ ...reqForm, intendedCrop: e.target.value })}
+                placeholder="e.g. Onion, soybean"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Max Rent (₹/acre/year)</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                value={reqForm.maxRentPerAcrePerYear || ''}
+                onChange={(e) => setReqForm({ ...reqForm, maxRentPerAcrePerYear: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Needed From</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={reqForm.neededFrom}
+                onChange={(e) => setReqForm({ ...reqForm, neededFrom: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Water</label>
+              <select
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                value={reqForm.irrigated}
+                onChange={(e) => setReqForm({ ...reqForm, irrigated: e.target.value })}
+              >
+                <option value="">No preference</option>
+                <option value="true">Irrigated</option>
+                <option value="false">Rainfed ok</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Notes (optional)</label>
+            <textarea
+              rows={2}
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+              value={reqForm.notes}
+              onChange={(e) => setReqForm({ ...reqForm, notes: e.target.value })}
+              placeholder="Soil preference, road access, borewell…"
+            />
+          </div>
+          <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={reqForm.termsAccepted}
+              onChange={(e) => setReqForm({ ...reqForm, termsAccepted: e.target.checked })}
+              className="mt-0.5 w-4 h-4 accent-emerald-600"
+            />
+            <span className="text-[11px] text-slate-600 leading-relaxed">{LAND_DIRECT_CONNECT_TERMS}</span>
+          </label>
+          <button
+            onClick={() => void submitRequirement()}
+            disabled={
+              reqBusy ||
+              !reqForm.areaAcres ||
+              reqForm.areaAcres <= 0 ||
+              !reqForm.district.trim() ||
+              !reqForm.durationMonths ||
+              !reqForm.termsAccepted
+            }
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+          >
+            {reqBusy ? 'Posting…' : 'Post Land Request'}
+          </button>
+        </div>
       </ModalSheet>
 
       {/* Interest modal */}

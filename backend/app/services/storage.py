@@ -72,7 +72,11 @@ def upload_user_file(
 
 def signed_download_url(blob_path: str, minutes: int = 60) -> str:
     if _dev_mode():
-        return f"file://{_LOCAL_UPLOAD_ROOT / blob_path}"
+        # Browser-servable path — the dev app mounts .local_uploads at
+        # /local-uploads (see main.py) and the Vite proxy forwards it, so
+        # <img src> in chat/KYC actually renders. file:// URLs never load
+        # from an http(s) page, which is what made chat images "not work".
+        return f"/local-uploads/{blob_path}"
     import firebase_admin.storage
 
     blob = firebase_admin.storage.bucket().blob(blob_path)

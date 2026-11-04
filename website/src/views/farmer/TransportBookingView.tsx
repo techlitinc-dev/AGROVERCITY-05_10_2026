@@ -20,7 +20,7 @@ import {
   Search,
   ShieldCheck,
 } from 'lucide-react';
-import { transport, apiErrorMessage } from '../../lib/api';
+import { transport, apiErrorMessage, addresses as addressesApi, addressLabel, addressSummary, type SavedAddress } from '../../lib/api';
 import { DIRECT_CONNECT_TERMS_TEXT } from '../../lib/api/transport';
 import { isMpinError } from '../../lib/api/leads';
 import { MpinPad } from '../../components/common/MpinPad';
@@ -103,7 +103,17 @@ export const TransportBookingView: React.FC = () => {
     notes: '',
     urgent: false,
     termsAccepted: false,
+    pickupLat: null as number | null,
+    pickupLng: null as number | null,
   });
+  /** Account-level address book — pickup can be filled from a saved address. */
+  const [savedAddrs, setSavedAddrs] = useState<SavedAddress[]>([]);
+  useEffect(() => {
+    addressesApi
+      .list()
+      .then(setSavedAddrs)
+      .catch(() => undefined);
+  }, []);
   const [appsFor, setAppsFor] = useState<Record<string, unknown> | null>(null);
   const [acceptBusyId, setAcceptBusyId] = useState<string | null>(null);
   const [revealFor, setRevealFor] = useState<Record<string, unknown> | null>(null);
@@ -265,10 +275,13 @@ export const TransportBookingView: React.FC = () => {
         preferredVehicleType: demandForm.preferredVehicleType,
         pickupDate: demandForm.pickupDate,
         pickupTime: `${demandForm.pickupDate}T${demandForm.pickupTime}:00`,
-        targetFare: demandForm.targetFare,
+        targetFare: demandForm.targetFare > 0 ? demandForm.targetFare : undefined,
         ...(demandForm.notes.trim() ? { notes: demandForm.notes.trim() } : {}),
         urgent: demandForm.urgent,
         termsAccepted: demandForm.termsAccepted,
+        ...(demandForm.pickupLat != null && demandForm.pickupLng != null
+          ? { pickupLat: demandForm.pickupLat, pickupLng: demandForm.pickupLng }
+          : {}),
         ...(sourceLotPrefill ? { sourceLotId: sourceLotPrefill.id } : {}),
       });
       setDemandModalOpen(false);
@@ -909,6 +922,33 @@ export const TransportBookingView: React.FC = () => {
               <Sprout className="w-4 h-4 flex-shrink-0" />
               Prefilled from produce lot “{sourceLotPrefill.label}” — crop, quantity and pickup are taken
               from your lot. Confirm the route, schedule and vehicle below.
+            </div>
+          )}
+
+          {savedAddrs.length > 0 && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Pickup from saved address</label>
+              <select
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                value=""
+                onChange={(e) => {
+                  const a = savedAddrs.find((x) => x.id === e.target.value);
+                  if (!a) return;
+                  setDemandForm((f) => ({
+                    ...f,
+                    pickupLocation: addressSummary(a),
+                    pickupLat: a.lat ?? null,
+                    pickupLng: a.lng ?? null,
+                  }));
+                }}
+              >
+                <option value="">Select a saved address…</option>
+                {savedAddrs.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {addressLabel(a)} — {addressSummary(a)}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

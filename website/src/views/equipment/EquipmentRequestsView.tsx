@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FileCheck, CheckCircle2, XCircle, Clock, MapPin, User as UserIcon, RefreshCw, BadgeCheck } from 'lucide-react';
-import { equipmentOwner, users, apiErrorMessage } from '../../lib/api';
+import { FileCheck, CheckCircle2, XCircle, Clock, MapPin, User as UserIcon, RefreshCw, BadgeCheck, Megaphone, Send } from 'lucide-react';
+import { equipment, equipmentOwner, users, apiErrorMessage } from '../../lib/api';
 import type { EquipmentContact } from '../../lib/api/equipment';
 import { isKycError, isMpinError } from '../../lib/api/leads';
 import { ModalSheet } from '../../components/common/ModalSheet';
@@ -47,6 +47,53 @@ export const EquipmentRequestsView: React.FC = () => {
   const [declineTarget, setDeclineTarget] = useState<OwnerRequest | null>(null);
   const [declineReason, setDeclineReason] = useState('');
 
+  // Farmers-posted "I need a machine" demand board — the owner quotes a rate.
+  const [demandPosts, setDemandPosts] = useState<Record<string, unknown>[]>([]);
+  const [demandLoading, setDemandLoading] = useState(true);
+  const [quoteTarget, setQuoteTarget] = useState<Record<string, unknown> | null>(null);
+  const [quoteRate, setQuoteRate] = useState<number>(0);
+  const [quoteMessage, setQuoteMessage] = useState('');
+  const [quoteFrom, setQuoteFrom] = useState('');
+  const [quoteTo, setQuoteTo] = useState('');
+  const [quoteBusy, setQuoteBusy] = useState(false);
+
+  const loadDemandPosts = useCallback(async () => {
+    setDemandLoading(true);
+    try {
+      const rows = (await equipment.demandPosts()) as unknown as Record<string, unknown>[];
+      setDemandPosts(rows);
+    } catch {
+      setDemandPosts([]);
+    } finally {
+      setDemandLoading(false);
+    }
+  }, []);
+
+  const submitQuote = async () => {
+    if (!quoteTarget) return;
+    setQuoteBusy(true);
+    setError(null);
+    try {
+      await equipment.quoteDemandPost(String(quoteTarget.id), {
+        ...(quoteRate > 0 ? { rateRupees: quoteRate } : {}),
+        message: quoteMessage.trim(),
+        availableFrom: quoteFrom || undefined,
+        availableTo: quoteTo || undefined,
+      });
+      setNotice('Quote sent — the farmer is notified.');
+      setQuoteTarget(null);
+      setQuoteRate(0);
+      setQuoteMessage('');
+      setQuoteFrom('');
+      setQuoteTo('');
+      await loadDemandPosts();
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -66,7 +113,8 @@ export const EquipmentRequestsView: React.FC = () => {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadDemandPosts();
+  }, [load, loadDemandPosts]);
 
   const confirmAccept = async () => {
     if (!acceptTarget) return;
@@ -144,6 +192,60 @@ export const EquipmentRequestsView: React.FC = () => {
         </div>
       )}
 
+      {/* Farmers Looking for Machines — quote on their demand posts */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Megaphone className="w-4 h-4 text-emerald-600" />
+          <h2 className="text-sm font-black text-slate-900">Farmers Looking for Machines</h2>
+          <span className="text-[10px] font-bold text-slate-400">{demandLoading ? '…' : `${demandPosts.length} open`}</span>
+        </div>
+        {demandLoading ? (
+          <div className="py-6 text-center text-xs font-bold text-slate-400 animate-pulse bg-white rounded-3xl border border-slate-200/80">
+            Scanning farmer requests…
+          </div>
+        ) : demandPosts.length === 0 ? (
+          <div className="py-6 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
+            No open farmer requests right now — they appear here when a farmer posts the machine they need.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {demandPosts.map((p) => (
+              <div key={String(p.id)} className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs space-y-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-extrabold text-sm text-slate-900">{String(p.machineType ?? 'Machine')}</span>
+                  {Number(p.budgetPerHourRupees) > 0 && (
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                      budget {formatCurrency(Number(p.budgetPerHourRupees))}/hr
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-600 flex items-center gap-1.5 flex-wrap">
+                  <UserIcon className="w-3.5 h-3.5 text-slate-400" /> {String(p.userName || 'Farmer')}
+                  <Clock className="w-3.5 h-3.5 text-slate-400 ml-1" />
+                  {String(p.dateFrom ?? '')} → {String(p.dateTo ?? '')}
+                  {Number(p.acres) > 0 ? ` · ${String(p.acres)} acres` : ''}
+                  {p.village ? <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" /> {String(p.village)}</span> : null}
+                </p>
+                {p.notes ? <p className="text-[11px] text-slate-500 italic">“{String(p.notes)}”</p> : null}
+                <button
+                  onClick={() => {
+                    setQuoteTarget(p);
+                    setQuoteRate(Number(p.budgetPerHourRupees) || 0);
+                    setQuoteMessage('');
+                    setQuoteFrom(String(p.dateFrom ?? ''));
+                    setQuoteTo(String(p.dateTo ?? ''));
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center justify-center gap-1.5"
+                >
+                  <Send className="w-3 h-3" /> Quote Your Rate
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <h2 className="text-sm font-black text-slate-900 pt-2">Booking Requests</h2>
       {loading ? (
         <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">Loading requests…</div>
       ) : requests.length === 0 ? (
@@ -271,6 +373,60 @@ export const EquipmentRequestsView: React.FC = () => {
             </p>
           </div>
         )}
+      </ModalSheet>
+
+      {/* Quote on a farmer's demand post */}
+      <ModalSheet
+        isOpen={Boolean(quoteTarget)}
+        onClose={() => setQuoteTarget(null)}
+        title="Quote Your Rate"
+        description={quoteTarget ? `${String(quoteTarget.machineType ?? 'Machine')} · ${String(quoteTarget.dateFrom ?? '')} → ${String(quoteTarget.dateTo ?? '')}` : undefined}
+        maxWidth="sm"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Your Rate (₹/hr)</label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 font-bold"
+                value={quoteRate || ''}
+                onChange={(e) => setQuoteRate(Number(e.target.value))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Message</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                value={quoteMessage}
+                onChange={(e) => setQuoteMessage(e.target.value)}
+                placeholder="e.g. John Deere 5050 with rotavator"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Available From</label>
+              <input type="date" className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" value={quoteFrom} onChange={(e) => setQuoteFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Available Until</label>
+              <input type="date" className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" value={quoteTo} onChange={(e) => setQuoteTo(e.target.value)} />
+            </div>
+          </div>
+          <button
+            onClick={() => void submitQuote()}
+            disabled={quoteBusy || (!quoteRate && !quoteMessage.trim())}
+            className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+          >
+            {quoteBusy ? 'Sending…' : 'Send Quote'}
+          </button>
+          <p className="text-[10px] text-slate-400 text-center">
+            The farmer is notified with your rate and availability — they contact you directly.
+          </p>
+        </div>
       </ModalSheet>
 
       {/* Decline */}

@@ -31,12 +31,25 @@ def _error(status_code: int, code: str, message: str):
 
 # ---------------------------------------------------------------- follows
 
+async def _get_follow_target(target_id: str) -> tuple[dict, str] | None:
+    """Resolve a followable profile — a platform user or a Gurukul teacher
+    profile (seeded instructors like inst_101 exist in teacher_profiles, not
+    the users collection). Returns (doc, kind)."""
+    user = await get_user(target_id)
+    if user:
+        return user, "user"
+    teacher = await get_doc("teacher_profiles", target_id)
+    if teacher:
+        return teacher, "teacher"
+    return None
+
+
 @router.post("/users/{user_id}/follow")
 async def follow_user(user_id: str, uid: str = Depends(current_user_id)):
     """Follow another profile (any authenticated user; target must exist)."""
     if user_id == uid:
         _error(400, "CANNOT_FOLLOW_SELF", "you cannot follow yourself")
-    target = await get_user(user_id)
+    target = await _get_follow_target(user_id)
     if not target:
         _error(404, "NOT_FOUND", "user not found")
     now = datetime.now(timezone.utc).isoformat()
@@ -65,19 +78,33 @@ async def my_follows(uid: str = Depends(current_user_id)):
         target_id = doc.get("targetId")
         if not target_id:
             continue
-        user = await get_user(target_id)
-        if not user:
-            continue  # target account gone — skip rather than error the list
+        resolved = await _get_follow_target(target_id)
+        if not resolved:
+            continue  # target profile gone — skip rather than error the list
+        target, kind = resolved
+        if kind == "teacher":
+            item = {
+                "userId": target_id,
+                "name": target.get("name") or target_id,
+                "persona": "teacher",
+                "since": doc.get("createdAt", ""),
+            }
+            if target.get("avatarUrl"):
+                item["photoUrl"] = target["avatarUrl"]
+            if target.get("rating") is not None:
+                item["rating"] = target["rating"]
+            items.append(item)
+            continue
         item = {
             "userId": target_id,
-            "name": user.get("name") or user.get("vernacularName") or target_id,
-            "persona": user.get("activeProfile") or user.get("primaryProfile") or "farmer",
+            "name": target.get("name") or target.get("vernacularName") or target_id,
+            "persona": target.get("activeProfile") or target.get("primaryProfile") or "farmer",
             "since": doc.get("createdAt", ""),
         }
-        if user.get("photoUrl"):
-            item["photoUrl"] = user["photoUrl"]
-        if user.get("rating") is not None:
-            item["rating"] = user["rating"]
+        if target.get("photoUrl"):
+            item["photoUrl"] = target["photoUrl"]
+        if target.get("rating") is not None:
+            item["rating"] = target["rating"]
         items.append(item)
     return {"items": items}
 
