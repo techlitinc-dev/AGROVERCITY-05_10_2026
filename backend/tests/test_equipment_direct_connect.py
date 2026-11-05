@@ -165,11 +165,13 @@ async def test_discovery_has_badges_and_no_private_contacts(client, user_store):
     for private in ("ownerPhone", "ownerPhoneDigits", "ownerWhatsapp", "phone", "whatsapp"):
         assert row.get(private) in (None, ""), private
 
-    # An unverified (still-under-review) machine is hidden from farmer
-    # discovery entirely — equipment verification must be genuine.
+    # An unverified (still-under-review) machine stays listed — activation is
+    # the visibility trigger; only the Equipment Verified badge is withheld
+    # until the document review completes.
     user_store[f"equipment/{machine_id}"]["docStatus"] = "pending"
     resp = await client.get("/v1/equipment", headers=_auth(farmer_token))
-    assert all(r["id"] != machine_id for r in resp.json()["data"])
+    row = next(r for r in resp.json()["data"] if r["id"] == machine_id)
+    assert row["equipmentVerified"] is False
     # The owner still sees it with its real document state.
     fleet = await client.get("/v1/equipment/owner/fleet", headers=_auth(owner_token))
     frow = next(r for r in fleet.json()["data"] if r["equipmentId"] == machine_id)

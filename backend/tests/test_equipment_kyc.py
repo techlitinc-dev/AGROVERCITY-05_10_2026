@@ -1,5 +1,6 @@
-"""E1: equipment KYC gate — expired insurance blocks NEW bookings but never
-in-flight ones; expiry reminders emitted 30/7/1 days out."""
+"""E1 legacy gate removed: document verification and insurance expiry no
+longer block NEW booking requests (owner activation is the only gate).
+Expiry reminders are still emitted 30/7/1 days out."""
 from datetime import datetime, timedelta, timezone
 
 from app.services.billing import seed_plans
@@ -53,7 +54,7 @@ async def _slots(client, token, equipment_id, date=None):
     return resp.json()["data"]
 
 
-async def test_expired_insurance_blocks_new_booking(client, user_store):
+async def test_expired_insurance_does_not_block_new_booking(client, user_store):
     seed_equipment(user_store)
     token = await _token(client)
     farmer_token = second_farmer_token(user_store)
@@ -66,9 +67,9 @@ async def test_expired_insurance_blocks_new_booking(client, user_store):
         json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "INSURANCE_EXPIRED"
-    assert user_store[f"equipment_slots/{slot['id']}"]["status"] == "available"
+    assert resp.status_code == 200
+    assert resp.json()["booking"]["status"] == "pending"
+    assert user_store[f"equipment_slots/{slot['id']}"]["status"] == "pending"
 
 
 async def test_in_flight_booking_unaffected_by_expiry(client, user_store):
@@ -112,12 +113,12 @@ async def test_in_flight_booking_unaffected_by_expiry(client, user_store):
     assert resp.status_code == 200
 
 
-async def test_unverified_kyc_case_blocks_booking(client, user_store):
+async def test_unverified_kyc_case_does_not_block_booking(client, user_store):
     seed_equipment(user_store)
     token = await _token(client)
     farmer_token = second_farmer_token(user_store)
     _owned_machine(user_store, "uid-1")
-    # the insurance doc falls back to pending — the machine is no longer bookable
+    # the insurance doc falls back to pending — the request is still accepted
     user_store["kyc_cases/kyc_uid-1_equipmentRental"]["docs"][1]["status"] = "pending"
     user_store["kyc_cases/kyc_uid-1_equipmentRental"]["status"] = "pending"
     slot = (await _slots(client, token, "eq-2"))[0]
@@ -126,8 +127,8 @@ async def test_unverified_kyc_case_blocks_booking(client, user_store):
         json={"farmerName": "Suresh Jadhav", "termsAccepted": True},
         headers=_auth(farmer_token),
     )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "EQUIPMENT_NOT_VERIFIED"
+    assert resp.status_code == 200
+    assert resp.json()["booking"]["status"] == "pending"
 
 
 async def test_expiry_reminders_30_7_1(client, user_store):

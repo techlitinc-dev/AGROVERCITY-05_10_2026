@@ -10,7 +10,6 @@ from app.core.security import verify_mpin
 from app.models.equipment import BookSlotRequest, EquipmentOut, EquipmentQuoteIn, SlotOut
 from app.routers.ratings import provider_rating_fields
 from app.routers.users import require_role
-from app.services import kyc as kyc_service
 from app.services.notify import notify_user
 from app.services.users import get_user
 from app.services.tasks import emit_task, module_deep_link
@@ -110,38 +109,6 @@ async def get_or_generate_slots(equipment: dict, date: str) -> list[dict]:
     return slots
 
 
-async def _assert_equipment_bookable(equipment: dict):
-    """E1: an owned machine needs the owner's equipment KYC case verified
-    (equipment_rc + equipment_insurance through the phase-00 pipeline) and a
-    live insurance expiry. Expired insurance blocks NEW bookings only —
-    in-flight bookings finish the season unimpeded."""
-    owner_id = equipment.get("ownerId")
-    if not owner_id:
-        return  # demo/fleet machines without an owning account stay bookable
-    case = await kyc_service.get_case(kyc_service.case_id_for(owner_id, "equipmentRental"))
-    verified_types = {
-        doc.get("type")
-        for doc in (case or {}).get("docs") or []
-        if doc.get("status") == "verified"
-    }
-    if not {"equipment_rc", "equipment_insurance"} <= verified_types:
-        _error(422, "EQUIPMENT_NOT_VERIFIED", "machine documents are not verified")
-    raw_expiry = equipment.get("insuranceExpiry")
-    if raw_expiry:
-        try:
-            expires = datetime.fromisoformat(str(raw_expiry))
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-        except ValueError:
-            expires = None
-        if expires is not None and expires <= datetime.now(timezone.utc):
-            _error(
-                422,
-                "INSURANCE_EXPIRED",
-                "machine insurance has expired — renew to accept new bookings",
-            )
-
-
 async def create_booking_for_slot(
     equipment: dict,
     slot: dict,
@@ -149,7 +116,6 @@ async def create_booking_for_slot(
     farmer_name: str,
     extra: dict | None = None,
 ) -> dict:
-    await _assert_equipment_bookable(equipment)
     # FPO machines auto-confirm; private machines wait for owner approval.
     # Status vocabulary maps to the direct-connect flow: pending=requested,
     # booked=accepted, in_progress, completed, rejected=declined, cancelled.
@@ -199,14 +165,17 @@ async def list_equipment(
     lng: float | None = None,
     uid: str = Depends(_viewer),
 ):
-    """Public discovery for farmers — spec §6. Cards carry the owner
-    identity-verification badge and, only when genuinely document-verified,
-    the equipment-verification badge. NEVER owner phone/WhatsApp/address/docs.
+    """Public discovery for farmers — spec §6. Visibility is owner-controlled:
+    an ACTIVE machine is listed here; `docStatus` drives only the
+    equipment-verification badge, never discoverability or booking. Cards
+    carry the owner identity-verification badge and, only when genuinely
+    document-verified, the equipment-verification badge. NEVER owner
+    phone/WhatsApp/address/docs.
     """
     docs = await query("equipment", [], limit=1000)
     docs = [
         d for d in docs
-        if d.get("active", True) and d.get("docStatus") == "verified" and (type is None or d.get("type") == type)
+        if d.get("active", True) and (type is None or d.get("type") == type)
     ]
     # SR 27: substring search over machine type / name / location (case-insensitive)
     needle = q.strip().lower() if q else None
@@ -349,7 +318,7 @@ async def report_issue(body: EquipmentIssueReportIn, uid: str = Depends(_viewer)
 @router.get("/{equipment_id}/slots")
 async def get_slots(equipment_id: str, date: str | None = None, uid: str = Depends(_viewer)):
     equipment = await get_doc("equipment", equipment_id)
-    if equipment is None or not equipment.get("active", True) or equipment.get("docStatus") != "verified":
+    if equipment is None or not equipment.get("active", True):
         _error(404, "EQUIPMENT_NOT_FOUND", "equipment not found")
     slots = await get_or_generate_slots(equipment, date or today_ist())
     return {"data": [SlotOut(**s).model_dump() for s in slots]}

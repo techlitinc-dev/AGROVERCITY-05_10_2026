@@ -112,19 +112,42 @@ async def test_fleet_summary(client, user_store):
     assert row["status"] == "active"
 
 
-async def test_new_machine_pending_hidden_from_farmers(client, user_store):
+async def test_new_machine_visible_once_active_hidden_when_deactivated(client, user_store):
     owner_token = await _owner_token(client)
     resp = await client.post("/v1/equipment", json=MACHINE_BODY, headers=_auth(owner_token))
     machine = resp.json()
     assert machine["docStatus"] == "pending"
     assert machine["rejectionReason"] is None
     farmer_token = second_farmer_token(user_store)
+    # New listings are active by default — activation is the go-live trigger,
+    # so the machine shows for farmers while its documents are still reviewed.
     resp = await client.get("/v1/equipment", headers=_auth(farmer_token))
     assert resp.status_code == 200
+    row = next(d for d in resp.json()["data"] if d["id"] == machine["id"])
+    assert row["equipmentVerified"] is False
+    resp = await client.get(f"/v1/equipment/{machine['id']}/slots", headers=_auth(farmer_token))
+    assert resp.status_code == 200
+    # Deactivating takes the machine off the farmer surface entirely.
+    resp = await client.put(
+        f"/v1/equipment/{machine['id']}",
+        json={**MACHINE_BODY, "active": False},
+        headers=_auth(owner_token),
+    )
+    assert resp.status_code == 200
+    resp = await client.get("/v1/equipment", headers=_auth(farmer_token))
     assert all(d["id"] != machine["id"] for d in resp.json()["data"])
     resp = await client.get(f"/v1/equipment/{machine['id']}/slots", headers=_auth(farmer_token))
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "EQUIPMENT_NOT_FOUND"
+    # Reactivating puts it back on the farmer surface.
+    resp = await client.put(
+        f"/v1/equipment/{machine['id']}",
+        json={**MACHINE_BODY, "active": True},
+        headers=_auth(owner_token),
+    )
+    assert resp.status_code == 200
+    resp = await client.get("/v1/equipment", headers=_auth(farmer_token))
+    assert any(d["id"] == machine["id"] for d in resp.json()["data"])
 
 
 async def test_verified_machine_visible(client, user_store):
