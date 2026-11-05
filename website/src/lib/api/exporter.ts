@@ -1,4 +1,5 @@
 import { del, post, put, readList, readOne } from './http';
+import { newIdempotencyKey } from '../utils';
 import type { ExportApplication, ExportOrder, ExportRfq } from '../../types';
 
 /**
@@ -14,7 +15,7 @@ import type { ExportApplication, ExportOrder, ExportRfq } from '../../types';
  */
 
 const idempotencyKey = (): Record<string, string> => ({
-  'Idempotency-Key': crypto.randomUUID(),
+  'Idempotency-Key': newIdempotencyKey(),
 });
 
 export type ApplicationOutcome =

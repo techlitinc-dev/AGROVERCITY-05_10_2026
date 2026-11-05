@@ -20,7 +20,7 @@ import { apiErrorMessage, customer, gamification, mall, addressLabel, type Saved
 import { AddressPicker } from '../../components/common/AddressPicker';
 import { useCartStore, type ProduceLogisticsMode } from '../../stores/cartStore';
 import { useAuthStore } from '../../stores/authStore';
-import { formatCurrency, formatPaisa } from '../../lib/utils';
+import { formatCurrency, formatPaisa, newIdempotencyKey } from '../../lib/utils';
 import {
   asRecords,
   num,
@@ -67,11 +67,6 @@ declare global {
 const BNPL_INSTALLMENTS = 2;
 
 const DEFAULT_DELIVERY_SLOTS = ['7–10 AM', '10–1 PM', '4–7 PM'];
-
-const newIdempotencyKey = (): string =>
-  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 export const CartCheckoutView: React.FC = () => {
   const { items, updateQty, removeItem, clearCart, getSubtotal, produceLines, updateProduceQty, updateProduceLogistics, removeProduceLine, clearProduceCart, getProduceSubtotalPaisa } = useCartStore();
