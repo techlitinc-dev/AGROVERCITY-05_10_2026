@@ -23,6 +23,7 @@ from app.models.transport import (
     FareEstimateRequest,
     InstantBookingRequest,
     LoadBidRequest,
+    LoadDeclineRequest,
     OpenLoadCreateRequest,
     OwnerVehicleRequest,
     OwnerVehicleUpdateRequest,
@@ -1832,9 +1833,12 @@ async def list_open_loads(
     if drop:
         loads = [ld for ld in loads if drop.lower() in ld.get("dropLocation", "").lower()]
     if vehicleType:
+        # A vehicle-type filter also surfaces "Any suitable vehicle" requests —
+        # a fleet vehicle of that type can carry them too.
         loads = [
             ld for ld in loads
             if vehicleType.lower() in (ld.get("preferredVehicleType") or "").lower()
+            or (ld.get("preferredVehicleType") or "").strip().lower() in ("any", "any suitable vehicle")
         ]
     if pickupDate:
         loads = [ld for ld in loads if str(ld.get("pickupDate", "")) >= pickupDate]
@@ -2217,6 +2221,69 @@ async def submit_load_bid(load_id: str, body: LoadBidRequest, uid: str = Depends
         deepLink="/farmer/transport",
     )
     return _bid_public_view(bid_doc)
+
+
+@router.post("/loads/{load_id}/decline")
+async def decline_open_load(load_id: str, body: LoadDeclineRequest, uid: str = Depends(_transporter)):
+    """Transporter rejects a farmer booking request. The farmer is notified in
+    real time (in-app + push) and the load drops out of THIS transporter's
+    board/inbox — it stays open for everyone else."""
+    load = await get_doc("transport_loads", load_id)
+    if load is None:
+        _error(404, "LOAD_NOT_FOUND", "open load not found")
+    if load.get("status") != "open":
+        _error(409, "LOAD_NOT_OPEN", "load is no longer open for applications")
+
+    user = await get_user(uid)
+    # Idempotent: a second decline from the same transporter returns the first.
+    index = await get_doc("transport_load_declines", uid) or {"loadIds": []}
+    if load_id in (index.get("loadIds") or []):
+        return {"id": None, "loadId": load_id, "alreadyDeclined": True}
+
+    doc = {
+        "id": f"decline_{uuid.uuid4().hex[:10]}",
+        "loadId": load_id,
+        "transporterId": uid,
+        "transporterName": user.get("name", "ट्रांसपोर्ट पार्टनर"),
+        "reason": (body.reason or "").strip() or None,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_doc(f"transport_loads/{load_id}/declines", doc["id"], doc)
+    index["loadIds"] = list(index.get("loadIds") or []) + [load_id]
+    index["userId"] = uid
+    await set_doc("transport_load_declines", uid, index)
+
+    reason_txt = f" Reason: {doc['reason']}" if doc["reason"] else ""
+    await send_fcm_to_user(
+        load["userId"],
+        "ट्रांसपोर्टर ने अनुरोध अस्वीकार किया (Request Declined)",
+        f"{doc['transporterName']} ने आपके {load.get('crop', 'load')} लोड ({load.get('pickupLocation', '—')} → {load.get('dropLocation', '—')}) का अनुरोध अस्वीकार किया।{reason_txt}",
+        {"type": "load_declined", "loadId": load_id},
+    )
+    await notify_user(
+        load["userId"],
+        type="load_declined",
+        title="Booking request declined / बुकिंग अनुरोध अस्वीकृत",
+        body=(
+            f"{doc['transporterName']} declined your {load.get('crop', 'load')} request "
+            f"({load.get('pickupLocation', '—')} → {load.get('dropLocation', '—')}).{reason_txt} "
+            "Other transporters can still apply."
+        ),
+        deepLink="/farmer/transport",
+    )
+    return doc
+
+
+@router.get("/loads/declines/mine")
+async def my_load_declines(uid: str = Depends(_transporter)):
+    """Load ids this transporter declined — the board/inbox hides them."""
+    index = await get_doc("transport_load_declines", uid) or {"loadIds": []}
+    ids: list[str] = []
+    for load_id in index.get("loadIds") or []:
+        load = await get_doc("transport_loads", load_id)
+        if load and load.get("status") == "open":
+            ids.append(load_id)
+    return {"data": ids, "total": len(ids)}
 
 
 @router.get("/loads/mine")
@@ -4338,7 +4405,9 @@ async def matched_loads(uid: str = Depends(_transporter)):
     +1 history corridor); the AI ranker may re-order the same set later."""
     await _assert_load_board_access(uid)
     vehicles = await query("vehicles", [("ownerId", "==", uid)], limit=1000)
-    my_types = {v.get("vehicleType") for v in vehicles if v.get("active", True)}
+    active_vehicles = [v for v in vehicles if v.get("active", True)]
+    my_types = {v.get("vehicleType") for v in active_vehicles}
+    my_max_capacity = max((float(v.get("capacityTonnes") or 0) for v in active_vehicles), default=0.0)
 
     profile = await get_doc(f"users/{uid}/role_profiles", "transport") or {}
     route_tokens = _place_tokens(
@@ -4359,7 +4428,14 @@ async def matched_loads(uid: str = Depends(_transporter)):
             continue
         score = 0
         reasons = []
-        if load.get("preferredVehicleType") in my_types:
+        pref = str(load.get("preferredVehicleType") or "")
+        if pref.lower() in ("any", "any suitable vehicle"):
+            # "Any suitable vehicle" fits any fleet that can carry the load in
+            # one trip (same capacity rule as the matchingFleet board filter).
+            if float(load.get("quantityQuintals") or 0) * QUINTAL_TO_TONNE <= my_max_capacity + 1e-9:
+                score += 2
+                reasons.append("vehicle_match")
+        elif pref in my_types:
             score += 2
             reasons.append("vehicle_match")
         pickup_tokens = _place_tokens(load.get("pickupLocation") or "")

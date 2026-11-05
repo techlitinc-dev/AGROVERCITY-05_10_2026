@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
+  Clock,
   CopyPlus,
   HandCoins,
   Inbox,
@@ -10,8 +11,11 @@ import {
   MessageCircle,
   Plus,
   RefreshCw,
+  Send,
   Trash2,
+  Truck,
   X,
+  XCircle,
 } from 'lucide-react';
 import { chat, transport, apiClient, apiErrorMessage } from '../../lib/api';
 import { DIRECT_CONNECT_TERMS_TEXT } from '../../lib/api/transport';
@@ -64,6 +68,24 @@ export const JobInboxView: React.FC = () => {
     notes: '',
   });
 
+  // --- farmer booking requests (load-board requirements) ---
+  const [requests, setRequests] = useState<Rec[]>([]);
+  const [myBids, setMyBids] = useState<Rec[]>([]);
+  const [declinedIds, setDeclinedIds] = useState<string[]>([]);
+  const [reqFilters, setReqFilters] = useState({ crop: '', pickup: '', drop: '', vehicleType: '', pickupDate: '', urgentOnly: false });
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqApplyFor, setReqApplyFor] = useState<Rec | null>(null);
+  const [reqRejectFor, setReqRejectFor] = useState<Rec | null>(null);
+  const [reqRejectReason, setReqRejectReason] = useState('');
+  const [reqRejectBusy, setReqRejectBusy] = useState(false);
+  const [bidFare, setBidFare] = useState(0);
+  const [bidVehicleId, setBidVehicleId] = useState('');
+  const [bidNotes, setBidNotes] = useState('');
+  const [bidTerms, setBidTerms] = useState(false);
+  const [bidStep, setBidStep] = useState<'form' | 'mpin' | 'done'>('form');
+  const [bidError, setBidError] = useState<string | null>(null);
+  const [bidBusy, setBidBusy] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -86,13 +108,115 @@ export const JobInboxView: React.FC = () => {
     }
   }, []);
 
+  const fetchRequests = useCallback(async (f: typeof reqFilters) => {
+    setReqBusy(true);
+    try {
+      const params: Record<string, unknown> = {};
+      if (f.crop.trim()) params.crop = f.crop.trim();
+      if (f.pickup.trim()) params.pickup = f.pickup.trim();
+      if (f.drop.trim()) params.drop = f.drop.trim();
+      if (f.vehicleType) params.vehicleType = f.vehicleType;
+      if (f.pickupDate) params.pickupDate = f.pickupDate;
+      if (f.urgentOnly) params.urgent = 'true';
+      const [rows, bids, declines] = await Promise.all([
+        transport.loads(params).catch(() => [] as unknown[]),
+        transport.myLoadBids().catch(() => [] as unknown[]),
+        transport.myLoadDeclines().catch(() => [] as unknown[]),
+      ]);
+      setRequests(asArr(rows).map(asRec));
+      setMyBids(asArr(bids).map(asRec));
+      setDeclinedIds(asArr(declines).map((x) => String(x)));
+    } finally {
+      setReqBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    void fetchRequests(reqFilters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, fetchRequests]);
 
   const flash = (msg: string) => {
     setNotice(msg);
     setTimeout(() => setNotice(null), 4000);
+  };
+
+  // --- farmer booking request helpers ---
+  const pickupDateOf = (loadRec: Rec): string => str(loadRec.pickupDate ?? loadRec.date, '').slice(0, 10);
+
+  const vehiclesFreeOn = (dateIso: string): TransportVehicle[] => {
+    const today = new Date().toISOString().slice(0, 10);
+    return vehicles.filter((v) => {
+      if (v.active === false) return false;
+      if ((v.docStatus ?? 'verified') !== 'verified') return false;
+      const dates = v.availableDates ?? [];
+      return Boolean(v.availableNow) || dates.includes(dateIso) || dates.includes(today);
+    });
+  };
+
+  const myBidFor = (loadId: string): Rec | undefined =>
+    myBids.find((b) => {
+      const loadRef = asRec(b.load);
+      return str(loadRef.id ?? b.loadId, '') === loadId;
+    });
+
+  const openApply = (loadRec: Rec) => {
+    const free = vehiclesFreeOn(pickupDateOf(loadRec));
+    setReqApplyFor(loadRec);
+    setBidFare(firstNum(loadRec, ['targetFare', 'currentBid', 'lowestBid', 'estFare', 'estimatedFare'], 0));
+    setBidVehicleId(free[0]?.id ?? '');
+    setBidNotes('');
+    setBidTerms(false);
+    setBidError(null);
+    setBidStep('form');
+    setMpinKey((k) => k + 1);
+  };
+
+  const submitApply = async (mpin: string) => {
+    if (!reqApplyFor) return;
+    setBidBusy(true);
+    setBidError(null);
+    try {
+      const vehicle = vehicles.find((v) => v.id === bidVehicleId);
+      await transport.bid(str(reqApplyFor.id), {
+        quotedFare: bidFare,
+        vehicleId: vehicle?.id,
+        vehicleNo: vehicle ? (vehicle.registrationNo ?? vehicle.registrationNumber) : undefined,
+        ...(bidNotes.trim() ? { notes: bidNotes.trim() } : {}),
+        termsAccepted: true,
+        mpin,
+      });
+      setBidStep('done');
+      flash('Quote sent — the farmer is notified immediately.');
+      await fetchRequests(reqFilters);
+    } catch (err) {
+      if (isMpinError(err)) {
+        setBidError('Incorrect MPIN — try again.');
+        setMpinKey((k) => k + 1);
+      } else {
+        setBidError(apiErrorMessage(err));
+      }
+    } finally {
+      setBidBusy(false);
+    }
+  };
+
+  const rejectRequest = async () => {
+    if (!reqRejectFor) return;
+    setReqRejectBusy(true);
+    setError(null);
+    try {
+      await transport.declineLoad(str(reqRejectFor.id), reqRejectReason);
+      flash('Request declined — the farmer has been notified.');
+      setReqRejectFor(null);
+      setReqRejectReason('');
+      await fetchRequests(reqFilters);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setReqRejectBusy(false);
+    }
   };
 
   const openAccept = (b: TransportBooking) => {
@@ -337,6 +461,203 @@ export const JobInboxView: React.FC = () => {
           usable immediately (no review) unless a document date has expired.
         </div>
       )}
+
+      {/* Farmer booking requests — open load-board requirements, incl. "Any suitable vehicle" */}
+      {(() => {
+        const visible = requests.filter((r) => !declinedIds.includes(str(r.id)));
+        return (
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-emerald-600" /> Farmer Booking Requests ({visible.length})
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Transport requirements posted by farmers — apply with your fare or decline. The farmer is notified
+                  immediately either way.
+                </p>
+              </div>
+              <button
+                onClick={() => void fetchRequests(reqFilters)}
+                className="p-2 rounded-2xl border border-slate-200 text-slate-500 hover:bg-slate-50 self-start sm:self-auto"
+                title="Refresh requests"
+              >
+                <RefreshCw className={`w-4 h-4 ${reqBusy ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              <input
+                type="text"
+                value={reqFilters.crop}
+                onChange={(e) => setReqFilters({ ...reqFilters, crop: e.target.value })}
+                placeholder="Crop"
+                className="px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+              <input
+                type="text"
+                value={reqFilters.pickup}
+                onChange={(e) => setReqFilters({ ...reqFilters, pickup: e.target.value })}
+                placeholder="Pickup contains"
+                className="px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+              <input
+                type="text"
+                value={reqFilters.drop}
+                onChange={(e) => setReqFilters({ ...reqFilters, drop: e.target.value })}
+                placeholder="Drop contains"
+                className="px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+              <select
+                value={reqFilters.vehicleType}
+                onChange={(e) => setReqFilters({ ...reqFilters, vehicleType: e.target.value })}
+                className="px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+              >
+                <option value="">All vehicle types</option>
+                <option value="Any">Any suitable vehicle</option>
+                {catalog.map((vt) => (
+                  <option key={vt.type} value={vt.type}>{vt.type}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={reqFilters.pickupDate}
+                onChange={(e) => setReqFilters({ ...reqFilters, pickupDate: e.target.value })}
+                className="px-3 py-2 text-xs rounded-xl border border-slate-300"
+              />
+              <div className="flex items-center gap-2 col-span-2 sm:col-span-3 lg:col-span-1">
+                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={reqFilters.urgentOnly}
+                    onChange={(e) => setReqFilters({ ...reqFilters, urgentOnly: e.target.checked })}
+                    className="w-3.5 h-3.5 accent-emerald-600"
+                  />
+                  Urgent only
+                </label>
+                <button
+                  onClick={() => void fetchRequests(reqFilters)}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px]"
+                >
+                  Filter
+                </button>
+                <button
+                  onClick={() => {
+                    const empty = { crop: '', pickup: '', drop: '', vehicleType: '', pickupDate: '', urgentOnly: false };
+                    setReqFilters(empty);
+                    void fetchRequests(empty);
+                  }}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-[11px] hover:bg-slate-50"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            {visible.length === 0 && !reqBusy ? (
+              <div className="p-8 bg-white rounded-3xl border border-dashed border-slate-300 text-center text-xs text-slate-500">
+                No farmer booking requests match these filters right now.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {visible.map((r) => {
+                  const id = str(r.id);
+                  const crop = firstStr(r, ['crop', 'cargoCrop', 'commodity', 'title'], 'Cargo');
+                  const weight = firstNum(r, ['quantityQuintals', 'weightQuintal', 'cargoWeightQuintal', 'weight'], 0);
+                  const pickupLoc = firstStr(r, ['pickupLocation', 'pickup', 'pickupAddress'], '—');
+                  const dropLoc = firstStr(r, ['dropLocation', 'drop', 'dropAddress'], '—');
+                  const pref = str(r.preferredVehicleType, '');
+                  const prefLabel = pref.toLowerCase() === 'any' || pref.toLowerCase() === 'any suitable vehicle' ? 'Any suitable vehicle' : pref || 'Any suitable vehicle';
+                  const dateIso = pickupDateOf(r);
+                  const freeVehicles = vehiclesFreeOn(dateIso);
+                  const myBid = myBidFor(id);
+                  const applied = myBid && str(myBid.status, 'pending') === 'pending';
+                  return (
+                    <div key={id || JSON.stringify(r).slice(0, 24)} className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                        <div>
+                          <h4 className="font-bold text-base text-slate-900 flex items-center gap-2 flex-wrap">
+                            {crop} {weight > 0 ? `(${formatWeight(weight)})` : ''}
+                            {Boolean(r.urgent) && (
+                              <span className="text-[10px] font-black uppercase tracking-wide text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-lg">Urgent</span>
+                            )}
+                          </h4>
+                          <p className="text-xs text-slate-400">{id} • {firstStr(r, ['farmerName'], 'Farmer')}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {applied && (
+                            <span className="text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-1 rounded-lg flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Applied — awaiting farmer
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50 rounded-2xl col-span-2">
+                          <span className="text-slate-400 text-[10px] uppercase font-bold">Route</span>
+                          <p className="font-bold text-slate-900 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-emerald-600" /> {pickupLoc} → {dropLoc}
+                          </p>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-2xl">
+                          <span className="text-slate-400 text-[10px] uppercase font-bold">Pickup</span>
+                          <p className="font-bold text-slate-900 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-sky-600" /> {fmtDate(r.pickupDate ?? r.pickupTime ?? r.date)}
+                          </p>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-2xl">
+                          <span className="text-slate-400 text-[10px] uppercase font-bold">Vehicle wanted</span>
+                          <p className="font-bold text-slate-900">{prefLabel}</p>
+                          <p className="text-slate-500">{firstStr(r, ['packaging'], '—')}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-xs text-slate-600 space-y-0.5">
+                          <p>
+                            Target fare: <strong className="text-emerald-700">{formatCurrency(firstNum(r, ['targetFare'], 0))}</strong>
+                            {firstNum(r, ['bidsCount'], 0) > 0 ? ` • ${firstNum(r, ['bidsCount'])} application(s)` : ''}
+                          </p>
+                          {firstStr(r, ['notes'], '') !== '—' && <p className="text-slate-500 italic">“{firstStr(r, ['notes'])}”</p>}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {applied ? (
+                            <button
+                              disabled
+                              className="px-5 py-2 rounded-xl bg-slate-100 text-slate-400 font-bold text-xs cursor-not-allowed"
+                            >
+                              Applied — awaiting farmer
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => openApply(r)}
+                              disabled={freeVehicles.length === 0}
+                              title={freeVehicles.length === 0 ? 'No verified vehicle free on the pickup date — add availability in Fleet' : undefined}
+                              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              <Send className="w-3.5 h-3.5" /> Apply — Quote Fare
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setReqRejectFor(r);
+                              setReqRejectReason('');
+                            }}
+                            className="px-4 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-xs flex items-center gap-1.5"
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Reject
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {bookings.length === 0 && !loading ? (
         <div className="p-10 bg-white rounded-3xl border border-dashed border-slate-300 text-center space-y-2">
@@ -745,6 +1066,184 @@ export const JobInboxView: React.FC = () => {
             Save Template
           </button>
         </form>
+      </ModalSheet>
+
+      {/* Apply on a farmer booking request: quote → vehicle → terms → MPIN → done */}
+      <ModalSheet
+        isOpen={!!reqApplyFor}
+        onClose={() => setReqApplyFor(null)}
+        title={bidStep === 'done' ? 'Application Submitted' : 'Apply for this Booking Request'}
+        description={
+          reqApplyFor
+            ? `${firstStr(reqApplyFor, ['crop', 'cargoCrop', 'commodity', 'title'], 'Load')} #${str(reqApplyFor.id)} — ${firstStr(reqApplyFor, ['pickupLocation', 'pickup'], '—')} → ${firstStr(reqApplyFor, ['dropLocation', 'drop'], '—')}`
+            : undefined
+        }
+        maxWidth="sm"
+      >
+        {bidStep === 'done' ? (
+          <div className="py-6 flex flex-col items-center gap-3 text-center">
+            <span className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
+              <Check className="w-8 h-8" />
+            </span>
+            <p className="text-sm font-bold text-slate-900">Quote sent — farmer notified in real time</p>
+            <p className="text-xs text-slate-500 max-w-sm">
+              Your quote and vehicle were shared. Your phone number stays hidden until the farmer accepts your
+              application — then both sides see phone &amp; WhatsApp to coordinate the pickup.
+            </p>
+            <button
+              onClick={() => setReqApplyFor(null)}
+              className="mt-1 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+            >
+              Done
+            </button>
+          </div>
+        ) : bidStep === 'form' ? (
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setBidError(null);
+              setMpinKey((k) => k + 1);
+              setBidStep('mpin');
+            }}
+          >
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Your Quoted Fare (₹)</label>
+              <input
+                type="number"
+                value={bidFare}
+                onChange={(e) => setBidFare(Number(e.target.value))}
+                className="w-full px-3 py-2.5 text-base font-bold rounded-xl border border-slate-300 text-emerald-800"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle (must be free on the pickup date)</label>
+              <select
+                value={bidVehicleId}
+                onChange={(e) => setBidVehicleId(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
+                required
+              >
+                <option value="" disabled>
+                  {vehiclesFreeOn(pickupDateOf(reqApplyFor ?? {})).length === 0
+                    ? 'No verified vehicle free on this date'
+                    : 'Select your vehicle'}
+                </option>
+                {vehiclesFreeOn(pickupDateOf(reqApplyFor ?? {})).map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.registrationNo ?? v.registrationNumber} — {v.vehicleType}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Note to farmer (optional)</label>
+              <textarea
+                value={bidNotes}
+                onChange={(e) => setBidNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+                placeholder="ETA, tarpaulin available, loading at 6 AM…"
+              />
+            </div>
+
+            <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50 border border-amber-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={bidTerms}
+                onChange={(e) => setBidTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-emerald-600"
+              />
+              <span className="text-[11px] text-amber-800 leading-relaxed">
+                <strong>Direct-connect terms (required).</strong> {DIRECT_CONNECT_TERMS_TEXT} I confirm the selected
+                vehicle is available for the pickup date. My contact stays hidden until the farmer accepts this
+                application; on acceptance both sides&apos; phone &amp; WhatsApp are shared to coordinate pickup directly.
+              </span>
+            </label>
+
+            {bidError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                {bidError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={!bidTerms || bidFare <= 0 || !bidVehicleId}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              <Send className="w-4 h-4" /> Continue — Verify MPIN
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-3">
+            <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 flex items-center justify-between">
+              <span>
+                Quote: <strong className="text-emerald-800">{formatCurrency(bidFare)}</strong>
+                {(() => {
+                  const vehicle = vehicles.find((v) => v.id === bidVehicleId);
+                  return vehicle ? (
+                    <>
+                      {' '}
+                      • <strong className="text-slate-900">{vehicle.registrationNo ?? vehicle.registrationNumber}</strong>
+                    </>
+                  ) : null;
+                })()}
+              </span>
+              <button type="button" onClick={() => setBidStep('form')} className="font-bold text-emerald-700 hover:underline">
+                Edit
+              </button>
+            </div>
+            <MpinPad
+              key={mpinKey}
+              onSuccess={(mpin) => void submitApply(mpin)}
+              title="Verify MPIN to Apply"
+              subtitle="Confirms your identity and notifies the farmer immediately — contact is shared only if the farmer accepts."
+            />
+            {bidError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800">
+                {bidError}
+              </div>
+            )}
+            {bidBusy && (
+              <div className="py-2 text-center text-xs font-bold text-slate-500 animate-pulse">
+                Verifying &amp; submitting application…
+              </div>
+            )}
+          </div>
+        )}
+      </ModalSheet>
+
+      {/* Reject a farmer booking request — farmer is notified in real time */}
+      <ModalSheet
+        isOpen={!!reqRejectFor}
+        onClose={() => setReqRejectFor(null)}
+        title="Reject Booking Request"
+        description={reqRejectFor ? `${firstStr(reqRejectFor, ['crop', 'commodity', 'title'], 'Load')} #${str(reqRejectFor.id)}` : undefined}
+        maxWidth="sm"
+      >
+        <div className="space-y-3">
+          <p className="text-[11px] text-slate-500">
+            The farmer is notified immediately that you declined. The request stays open for other transporters and
+            disappears from your board and inbox.
+          </p>
+          <textarea
+            value={reqRejectReason}
+            onChange={(e) => setReqRejectReason(e.target.value)}
+            rows={3}
+            className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
+            placeholder="Reason (vehicle busy, route not feasible…) — optional"
+          />
+          <button
+            onClick={() => void rejectRequest()}
+            disabled={reqRejectBusy}
+            className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs disabled:opacity-60 flex items-center justify-center gap-1.5"
+          >
+            <XCircle className="w-4 h-4" />
+            {reqRejectBusy ? 'Declining…' : 'Confirm Reject & Notify Farmer'}
+          </button>
+        </div>
       </ModalSheet>
     </div>
   );

@@ -169,3 +169,99 @@ list), and the label now says so.
 - Keep the "Land Verification (private)" panel, showing **status only**.
 - No persona label renaming — "farmer landlord to farmer" referred to the
   landlord→farmer listing connection, which was verified still working.
+
+---
+
+# Transporter Job Inbox — farmer booking requests, apply/reject (2026-11-05)
+
+## Goal
+
+A farmer's transport requirement (posted on `/farmer/transport` → "Post a
+Transport Requirement"), including one with the vehicle type set to **"Any
+suitable vehicle"** (`preferredVehicleType: "Any"`), reached the transporter
+only via the Load Board tab of Transporter Home. The **Job Inbox**
+(`/transporter/inbox`) — the surface labelled "Direct booking requests from
+farmers/shippers" — showed only direct bookings, so a farmer's request was
+invisible there ("Inbox zero"). This change surfaces farmer booking requests
+in the Job Inbox with full details and filters, and lets the transporter
+**apply with a quoted fare** or **reject** a request — the farmer is notified
+in real time either way.
+
+## What changed
+
+### Frontend — `website/src/views/transporter/JobInboxView.tsx`
+
+- New **"Farmer Booking Requests"** section at the top of the Job Inbox:
+  lists open load-board requirements (`GET /transport/loads`) with crop +
+  quantity, route, pickup date/time, packaging, wanted vehicle ("Any suitable
+  vehicle" or a specific type), target fare, notes, urgent badge and
+  application count.
+- **Filter bar** (all server-side via `GET /transport/loads` params): crop,
+  pickup-contains, drop-contains, vehicle type (incl. an "Any suitable
+  vehicle" option), pickup date, urgent-only — with Filter/Reset.
+- **Apply — Quote Fare** per request: quote → vehicle (verified fleet
+  vehicles free on the pickup date) → direct-connect terms → MPIN → done.
+  Reuses the existing bid flow; the card then shows "Applied — awaiting
+  farmer". Disabled with a hint when no vehicle is free on the pickup date.
+- **Reject** per request: optional reason → confirm. The request disappears
+  from this transporter's board and inbox and stays open for everyone else.
+- New API client methods in `website/src/lib/api/transport.ts`:
+  `declineLoad`, `myLoadDeclines`.
+
+### Backend — `backend/app/routers/transport.py` + `backend/app/models/transport.py`
+
+- `POST /transport/loads/{id}/decline` (new): records the decline (subcollection
+  + per-transporter index), idempotent per transporter, and notifies the
+  farmer in real time (in-app notification + FCM push, `type: load_declined`).
+- `GET /transport/loads/declines/mine` (new): load ids this transporter
+  declined (only still-open ones), registered before `/loads/{load_id}` so it
+  is not shadowed.
+- `GET /transport/loads` `vehicleType` filter now also surfaces **"Any
+  suitable vehicle"** requests — a filtered board (e.g. "Tata Ace") includes
+  them, since that vehicle type can carry them.
+- `GET /transport/loads/matched` scoring fix: an "Any suitable vehicle"
+  request now scores `vehicle_match` (+2) when the fleet's max capacity can
+  carry the load in one trip (same rule as the `matchingFleet` filter); it
+  previously never matched (exact string compare) and sank with score 0.
+
+## What was deliberately NOT changed (flow safety)
+
+- The existing **bid/apply contract is untouched** — same bid endpoint,
+  capacity gate, MPIN step-up, duplicate-bid guard and contact-reveal rules.
+  Apply notifications to the farmer (`load_bid_received`) already existed.
+- Direct bookings in the Job Inbox (accept/reject/negotiate/chat), the Load
+  Board tab, fleet, templates — all unchanged.
+- Farmer side unchanged: requests still live in "My Posted Requirements" with
+  Applications → accept to reveal contact.
+- No FCM infrastructure changes (see note below).
+
+## Verification
+
+- `pnpm build` (website) → `tsc --noEmit` + vite production build succeed.
+- Backend: `pytest tests/test_transport.py tests/test_transport_bids.py
+  tests/test_transport_direct_connect.py tests/test_transport_missing_endpoints.py
+  tests/test_ai_transport_match.py` → **73 passed**.
+- Live headless-browser smoke on the running dev stack (temporary script,
+  removed after the run) → **29/29 checks passed**: two "Any" requests
+  (incl. one urgent) posted by the farmer appear in the transporter's Job
+  Inbox with full details; crop filter narrows and resets; apply-with-quote
+  through the real modal + MPIN → farmer gets `load_bid_received` in real
+  time and sees the quote (Applications (1)); reject → farmer gets
+  `load_declined`, request hides from the inbox and stays hidden after
+  reload; matched-loads now reports `vehicle_match` for "Any" loads; no page
+  errors on either persona.
+- Smoke data cleaned up (loads cancelled, test vehicle deleted).
+
+## Notes / assumptions
+
+- "Approve" from the transporter side maps to **applying with a quoted fare**
+  (the load-board model has the farmer accept an application; contact reveal
+  rules unchanged).
+- **Pre-existing environment issue, not introduced by this change:** any
+  endpoint that sends an FCM push (bid, decline, cancel, …) blocks ~25-30 s
+  in this dev environment because `send_fcm_to_user` calls the synchronous
+  Firebase SDK inline and FCM is unreachable here. In-app notifications land
+  normally; with working FCM credentials the delay disappears.
+- The dev DB had no vehicle rate card (`vehicle_catalog` collection); it was
+  seeded with `scripts/seed_vehicle_catalog.py` (6 types) so the farmer's
+  vehicle-type dropdown and the transporter filters work.

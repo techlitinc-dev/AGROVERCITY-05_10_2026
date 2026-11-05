@@ -240,6 +240,12 @@ class LoadBidRequest(BaseModel):
     mpin: str | None = None
 
 
+class LoadDeclineRequest(BaseModel):
+    """Transporter rejects a farmer booking request (load-board requirement).
+    The farmer is notified immediately; the load stays open for everyone else."""
+    reason: str | None = None
+
+
 class AcceptLoadBidRequest(BaseModel):
     """Farmer selects a transporter's application. The farmer re-confirms the
     direct-connect terms and verifies their MPIN here — this is the pre-reveal

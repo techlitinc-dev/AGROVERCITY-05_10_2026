@@ -249,6 +249,15 @@ export const transport = {
   withdrawBid: (loadId: string, bidId: string): Promise<unknown> =>
     post<unknown>(`/transport/loads/${loadId}/bids/${bidId}/withdraw`),
 
+  /** POST /transport/loads/{id}/decline — transporter rejects a farmer booking
+   *  request; the farmer is notified in real time and the load disappears from
+   *  this transporter's board/inbox (stays open for everyone else). */
+  declineLoad: (loadId: string, reason?: string): Promise<unknown> =>
+    post<unknown>(`/transport/loads/${loadId}/decline`, { ...(reason?.trim() ? { reason: reason.trim() } : {}) }),
+
+  /** GET /transport/loads/declines/mine — load ids this transporter declined. */
+  myLoadDeclines: (): Promise<unknown[]> => readList<unknown[]>('/transport/loads/declines/mine'),
+
   // --- vehicles management ---
   /** GET /transport/vehicles/my */
   myVehicles: (): Promise<TransportVehicle[]> =>
