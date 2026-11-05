@@ -108,7 +108,7 @@ export const LandlordHome: React.FC = () => {
         <Link to="/landlord/listings" className="group p-6 rounded-3xl bg-emerald-600 text-white shadow-md hover:bg-emerald-700 transition-all">
           <Plus className="w-8 h-8 mb-3" />
           <h3 className="text-lg font-black">Add Land</h3>
-          <p className="text-xs text-emerald-100 mt-1">List farmland with rent, availability, photos and private documents.</p>
+          <p className="text-xs text-emerald-100 mt-1">List farmland with rent, availability and an optional farm land photo.</p>
           <span className="inline-flex items-center gap-1 text-xs font-bold mt-4 group-hover:gap-2 transition-all">
             My Land Listings <ArrowRight className="w-3.5 h-3.5" />
           </span>

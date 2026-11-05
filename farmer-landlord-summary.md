@@ -83,3 +83,89 @@ requests still omit `landlordContact`.
 - Land rows appear as a clearly headed section **above** the existing trade
   leads (which are unchanged), rather than one interleaved list — keeps the
   two flows visually distinct and zero-risk for the existing list.
+
+---
+
+# My Land Listings — 7/12 upload removed, Photo → Farm Land Photo (2026-11-05)
+
+## Goal
+
+In the **Farm Landlord** persona's **My Land Listings** page
+(`/landlord/listings`), stop asking landlords to upload 7/12/ownership
+documents: the "Land Verification (private)" panel's upload + "Submit for
+Review" button and the Add/Edit form's "Private Document (7/12, ownership)"
+field are removed. The verification panel remains as a **status-only**
+display (Docs Not Submitted / Under Review / Verified / Rejected). The
+form's **Photo** field is renamed to **Farm Land Photo (optional)** — it was
+already optional in code (no `required` mark; backend defaults to an empty
+list), and the label now says so.
+
+## What changed
+
+### Frontend — `website/src/views/landlord/LandlordListingsView.tsx`
+
+- "Land Verification (private)" panel is now status-only: file input,
+  "Choose 7/12 or ownership doc" label, and "Submit for Review" button
+  removed; the panel keeps its header and renders the existing
+  `verificationChip(l)` plus the privacy note.
+- Add/Edit form: "Private Document (7/12, ownership)" upload block removed.
+- Form state cleaned up: `documentUrl` removed from `EMPTY_FORM`/`openEdit`,
+  the `landDocuments` payload line dropped, and the now-dead
+  `submitDocuments` handler deleted along with the unused `Upload` icon
+  import.
+- "Photo" label → "Farm Land Photo (optional)"; button text
+  "Upload/Change Farm Land Photo"; image `alt` updated.
+- Page subtitle updated ("…a farm land photo (optional). …document review by
+  verification personnel — identity KYC alone never earns it."); view
+  docblock comment updated to match.
+
+### Frontend — `website/src/views/landlord/LandlordHome.tsx`
+
+- "Add Land" card copy no longer mentions "private documents".
+
+### Backend — none
+
+- `photos` and `landDocuments` were already optional
+  (`LandListingIn`, `backend/app/models/land.py`), and `update_listing`
+  uses `exclude_unset`, so editing a listing no longer sending
+  `landDocuments` cannot wipe previously stored documents.
+
+## What was deliberately NOT changed (flow safety)
+
+- The verification status chips and the **admin review path** are intact —
+  listings can still reach "Land Docs Verified" via admin verification; the
+  badge is never inferred from KYC or an upload.
+- Sidebar "Land Verification" still redirects to `/landlord/listings`.
+- The farmer side (`FarmlandView`, `/farmer/land`) is untouched — it only
+  reads listings and badges.
+- `LandlordPlotsView`'s "Search 7/12 Record" is a separate (legacy,
+  redirected) plots-registry feature and was left alone.
+- The `land.submitLandDocuments` API client function remains in
+  `website/src/lib/api/land.ts` (now unused by the UI) to keep the change
+  surface minimal.
+
+## Verification
+
+- `pnpm build` (website) → `tsc --noEmit` + vite production build succeed.
+- Live headless-browser smoke on the running dev stack (temporary script,
+  removed after the run) → **22/22 checks passed**:
+  - No 7/12 upload control anywhere on My Land Listings; panel shows the
+    status chip only.
+  - Created a real listing with **no photo and no document** — succeeds,
+    card renders with "Docs Not Submitted".
+  - Edit modal opens/saves cleanly (no references to removed fields);
+    Withdraw status action works.
+  - Farmer persona `/farmer/land` still lists landlord listings — the
+    landlord→farmer connection flow is intact.
+  - No page errors on either flow.
+- No e2e spec depends on the removed UI (the 7/12 e2e tests cover the
+  farmer's land vault, a different feature).
+- Smoke listings deleted from the DB afterwards; no stray files left.
+
+## Assumptions confirmed with the requester
+
+- Remove the 7/12 upload from **both** the verification panel and the
+  Add/Edit form.
+- Keep the "Land Verification (private)" panel, showing **status only**.
+- No persona label renaming — "farmer landlord to farmer" referred to the
+  landlord→farmer listing connection, which was verified still working.

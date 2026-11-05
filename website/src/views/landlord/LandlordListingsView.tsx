@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCw, Pencil, BadgeCheck, ShieldAlert, FileText, Upload } from 'lucide-react';
+import { Plus, RefreshCw, Pencil, BadgeCheck, ShieldAlert, FileText } from 'lucide-react';
 import { land, uploads, apiErrorMessage, addresses as addressesApi, addressLabel, addressSummary, type SavedAddress } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { UserVerificationBadge } from '../../components/common/UserVerificationBadge';
@@ -50,7 +50,6 @@ const EMPTY_FORM = {
   permittedCrops: '',
   notes: '',
   photoUrl: '',
-  documentUrl: '',
 };
 
 const STATUS_ACTIONS: { id: string; label: string; cls: string }[] = [
@@ -60,9 +59,10 @@ const STATUS_ACTIONS: { id: string; label: string; cls: string }[] = [
   { id: 'withdrawn', label: 'Withdraw', cls: 'border-rose-200 text-rose-600 hover:bg-rose-50' },
 ];
 
-/** My Land Listings — add/edit farmland, photos, private documents, pricing
+/** My Land Listings — add/edit farmland, farm land photo, pricing
  * and availability; pause/reactivate/leased/withdrawn; and the true land
- * verification state (spec §4/§5/§6). */
+ * verification state (spec §4/§5/§6). Landlords no longer upload title
+ * documents here — verification status is set by verification personnel. */
 export const LandlordListingsView: React.FC = () => {
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,7 +125,6 @@ export const LandlordListingsView: React.FC = () => {
       permittedCrops: '',
       notes: l.notes ?? '',
       photoUrl: l.photos?.[0] ?? '',
-      documentUrl: '',
     });
     setFormOpen(true);
   };
@@ -174,7 +173,6 @@ export const LandlordListingsView: React.FC = () => {
         permittedCrops: form.permittedCrops.trim() || undefined,
         notes: form.notes.trim() || undefined,
         photos: form.photoUrl.trim() ? [form.photoUrl.trim()] : [],
-        landDocuments: form.documentUrl.trim() ? [form.documentUrl.trim()] : [],
       };
       if (editing) {
         await land.updateListing(editing.id, payload);
@@ -194,25 +192,6 @@ export const LandlordListingsView: React.FC = () => {
       }
     } finally {
       setSaving(false);
-    }
-  };
-
-  const submitDocuments = async (l: ListingRow) => {
-    if (!form.documentUrl.trim()) {
-      setError('Choose a document to submit.');
-      return;
-    }
-    setBusyId(l.id);
-    setError(null);
-    try {
-      await land.submitLandDocuments(l.id, [form.documentUrl.trim()]);
-      setNotice('Documents submitted — verification is pending review.');
-      setForm((f) => ({ ...f, documentUrl: '' }));
-      await load();
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    } finally {
-      setBusyId(null);
     }
   };
 
@@ -272,8 +251,8 @@ export const LandlordListingsView: React.FC = () => {
             My Land Listings
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            List farmland with rent, availability and photos. "Land Docs Verified" appears only after an actual
-            document review — identity KYC or an upload alone never earns it.
+            List farmland with rent, availability and a farm land photo (optional). "Land Docs Verified" appears only after an actual
+            document review by verification personnel — identity KYC alone never earns it.
           </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
@@ -356,39 +335,13 @@ export const LandlordListingsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Verification panel — private document submission */}
+              {/* Verification panel — status only; document review is handled by verification personnel */}
               <div className="mt-3 p-3 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-2">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                   <FileText className="w-3 h-3" /> Land Verification (private)
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="file"
-                    accept="application/pdf,image/*"
-                    className="hidden"
-                    id={`doc-input-${l.id}`}
-                    onChange={(e) =>
-                      void pickFile(e.target.files?.[0], 'land-docs', 'land-document', (url) =>
-                        setForm((f) => ({ ...f, documentUrl: url })),
-                      )
-                    }
-                  />
-                  <label
-                    htmlFor={`doc-input-${l.id}`}
-                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-[10px] cursor-pointer flex items-center gap-1"
-                  >
-                    <Upload className="w-3 h-3" />
-                    {uploadBusy ? 'Uploading…' : form.documentUrl ? 'Picked — submit below' : 'Choose 7/12 or ownership doc'}
-                  </label>
-                  {form.documentUrl && (
-                    <button
-                      onClick={() => void submitDocuments(l)}
-                      disabled={busyId === l.id}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-[10px] disabled:opacity-50"
-                    >
-                      Submit for Review
-                    </button>
-                  )}
+                  {verificationChip(l)}
                   <span className="text-[9px] text-slate-400">Visible only to you and verification personnel.</span>
                 </div>
               </div>
@@ -524,23 +477,13 @@ export const LandlordListingsView: React.FC = () => {
             <input className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" value={form.permittedCrops} onChange={(e) => setForm({ ...form, permittedCrops: e.target.value })} />
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Photo</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Farm Land Photo (optional)</label>
             <div className="flex items-center gap-3">
               <input type="file" accept="image/*" className="hidden" id="land-photo-input" onChange={(e) => void pickFile(e.target.files?.[0], 'land', 'land-photo', (url) => setForm((f) => ({ ...f, photoUrl: url })))} />
               <label htmlFor="land-photo-input" className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer">
-                {uploadBusy ? 'Uploading…' : form.photoUrl ? 'Change Photo' : 'Upload Photo'}
+                {uploadBusy ? 'Uploading…' : form.photoUrl ? 'Change Farm Land Photo' : 'Upload Farm Land Photo'}
               </label>
-              {form.photoUrl && <img src={form.photoUrl} alt="Land" className="h-12 w-12 rounded-xl object-cover border border-slate-200" />}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Private Document (7/12, ownership)</label>
-            <div className="flex items-center gap-3">
-              <input type="file" accept="application/pdf,image/*" className="hidden" id="land-doc-input" onChange={(e) => void pickFile(e.target.files?.[0], 'land-docs', 'land-document', (url) => setForm((f) => ({ ...f, documentUrl: url })))} />
-              <label htmlFor="land-doc-input" className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer">
-                {form.documentUrl ? 'Picked — submit with listing' : 'Upload Document'}
-              </label>
-              <span className="text-[9px] text-slate-400">Submitted for review; never public.</span>
+              {form.photoUrl && <img src={form.photoUrl} alt="Farm land" className="h-12 w-12 rounded-xl object-cover border border-slate-200" />}
             </div>
           </div>
           <div>
