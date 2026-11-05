@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ClipboardCheck, Loader2, Plus, Trash2 } from 'lucide-react';
+import { BadgeCheck, Boxes, ClipboardCheck, FlaskConical, History, Loader2, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
 import { exporter, type ExportReadinessPayload } from '../../lib/api/exporter';
 import { apiErrorMessage } from '../../lib/api';
+import { formatDateTime } from '../../lib/utils';
 
 interface CropRow {
   crop: string;
@@ -31,11 +32,15 @@ export const ExportReadinessView: React.FC<{ embedded?: boolean }> = ({ embedded
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** View mode shows the saved profile read-only; edit mode is the form. */
+  const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const doc = await exporter.getReadiness();
+      const doc = (await exporter.getReadiness()) as ExportReadinessPayload & { updatedAt?: string };
+      setSavedAt(doc.updatedAt || null);
       setRows(
         (doc.crops || []).map((c) => ({
           crop: c.crop || '',
@@ -91,14 +96,27 @@ export const ExportReadinessView: React.FC<{ embedded?: boolean }> = ({ embedded
       previousExportExperience: previousExportExperience || null,
     };
     try {
-      await exporter.saveReadiness(payload);
+      const saved = (await exporter.saveReadiness(payload)) as ExportReadinessPayload & { updatedAt?: string };
+      setSavedAt(saved.updatedAt || new Date().toISOString());
       setNotice('Export readiness profile saved. It is your own record — certifications are only marked verified after a real document review.');
+      setMode('view');
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
       setSaving(false);
     }
   };
+
+  const isEmpty =
+    !rows.some((r) => r.crop.trim()) &&
+    !farmLocation.trim() &&
+    !village.trim() &&
+    !district.trim() &&
+    !state.trim() &&
+    !certifications.trim() &&
+    !residueTestRefs.trim() &&
+    !packagingCapability.trim() &&
+    !previousExportExperience.trim();
 
   if (loading) {
     return (
@@ -136,7 +154,119 @@ export const ExportReadinessView: React.FC<{ embedded?: boolean }> = ({ embedded
         </div>
       )}
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 space-y-3">
+      {mode === 'view' ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-extrabold text-slate-800">Saved readiness profile</h2>
+            {!isEmpty && (
+              <button
+                type="button"
+                onClick={() => setMode('edit')}
+                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 hover:bg-emerald-700 transition"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit Profile
+              </button>
+            )}
+          </div>
+
+          {isEmpty ? (
+            <div className="py-10 text-center space-y-3">
+              <ClipboardCheck className="w-10 h-10 text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-500">No readiness profile saved yet</p>
+              <p className="text-[11px] text-slate-400">
+                Set it up once — your details prefill every time you apply to an export opportunity.
+              </p>
+              <button
+                type="button"
+                onClick={() => setMode('edit')}
+                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 text-white text-[11px] font-bold px-4 py-2 hover:bg-emerald-700 transition"
+              >
+                <Plus className="w-3.5 h-3.5" /> Set Up Readiness Profile
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {rows.filter((r) => r.crop.trim()).length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Crops &amp; normal quantities
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {rows
+                      .filter((r) => r.crop.trim())
+                      .map((r, i) => (
+                        <div key={i} className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-1">
+                          <p className="text-xs font-extrabold text-slate-900">{r.crop}</p>
+                          <p className="text-[11px] text-slate-600">
+                            {r.normalQuantity ? `${r.normalQuantity} ${r.unit}` : 'Quantity on request'}
+                          </p>
+                          {(r.availableFrom || r.availableTo) && (
+                            <p className="text-[11px] text-slate-400">
+                              {r.availableFrom || '…'} → {r.availableTo || '…'}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {(village.trim() || district.trim() || state.trim() || farmLocation.trim()) && (
+                <div className="space-y-1">
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Farm location</h3>
+                  <p className="text-xs text-slate-700 flex items-center gap-1.5 flex-wrap">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    {[village, district, state].map((s) => s.trim()).filter(Boolean).join(', ') || farmLocation}
+                  </p>
+                  {farmLocation.trim() && [village, district, state].some((s) => s.trim()) && (
+                    <p className="text-[11px] text-slate-500 pl-5">{farmLocation}</p>
+                  )}
+                </div>
+              )}
+
+              {(certifications.trim() || residueTestRefs.trim() || packagingCapability.trim() || previousExportExperience.trim()) && (
+                <div className="space-y-2.5">
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Quality &amp; capability</h3>
+                  {certifications.trim() && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      {certifications.split(',').map((c) => c.trim()).filter(Boolean).map((c) => (
+                        <span key={c} className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {residueTestRefs.trim() && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <FlaskConical className="w-3.5 h-3.5 text-sky-600" />
+                      {residueTestRefs.split(',').map((c) => c.trim()).filter(Boolean).map((c) => (
+                        <span key={c} className="text-[10px] font-bold text-sky-800 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {packagingCapability.trim() && (
+                    <p className="text-[11px] text-slate-600 flex items-center gap-1.5">
+                      <Boxes className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /> {packagingCapability}
+                    </p>
+                  )}
+                  {previousExportExperience.trim() && (
+                    <p className="text-[11px] text-slate-600 flex items-start gap-1.5">
+                      <History className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-0.5" /> {previousExportExperience}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {savedAt && <p className="text-[10px] text-slate-400">Last saved {formatDateTime(savedAt)}</p>}
+            </div>
+          )}
+        </section>
+      ) : (
+        <>
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-extrabold text-slate-800">Crops & normal quantities</h2>
           <button
@@ -294,14 +424,28 @@ export const ExportReadinessView: React.FC<{ embedded?: boolean }> = ({ embedded
         </label>
       </section>
 
-      <button
-        type="button"
-        onClick={save}
-        disabled={saving}
-        className="w-full rounded-xl bg-emerald-600 text-white text-sm font-bold py-2.5 hover:bg-emerald-700 transition disabled:opacity-50 inline-flex items-center justify-center gap-2"
-      >
-        {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save Readiness Profile
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setMode('view');
+            void load();
+          }}
+          className="px-4 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold py-2.5 hover:bg-slate-50 transition"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="flex-1 rounded-xl bg-emerald-600 text-white text-sm font-bold py-2.5 hover:bg-emerald-700 transition disabled:opacity-50 inline-flex items-center justify-center gap-2"
+        >
+          {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save Readiness Profile
+        </button>
+      </div>
+        </>
+      )}
     </div>
   );
 };
