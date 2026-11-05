@@ -12,6 +12,9 @@ const InstructorConsoleHome = lazy(() =>
   import('./InstructorConsoleHome').then((m) => ({ default: m.InstructorConsoleHome })),
 );
 const CourseBuilderPage = lazy(() => import('./CourseBuilderPage').then((m) => ({ default: m.CourseBuilderPage })));
+const CourseBuilderHomePage = lazy(() =>
+  import('./CourseBuilderHomePage').then((m) => ({ default: m.CourseBuilderHomePage })),
+);
 const EnrollmentRequestsPage = lazy(() =>
   import('./EnrollmentRequestsPage').then((m) => ({ default: m.EnrollmentRequestsPage })),
 );
@@ -49,7 +52,9 @@ export const AcademyRouteElements = () => (
     {/* Instructor console */}
     <Route path="/instructor" element={<Navigate to="/instructor/home" replace />} />
     <Route path="/instructor/home" element={<InstructorConsoleHome />} />
-    <Route path="/instructor/courses" element={<InstructorConsoleHome />} />
+    {/* Course Builder — course list + create/publish; editing lives at /instructor/courses/:id/edit */}
+    <Route path="/instructor/courses" element={<CourseBuilderHomePage />} />
+    <Route path="/instructor/course-builder" element={<Navigate to="/instructor/courses" replace />} />
     <Route path="/instructor/courses/:id/edit" element={<CourseBuilderPage />} />
     <Route path="/instructor/enrollment-requests" element={<EnrollmentRequestsPage />} />
     <Route path="/instructor/enquiries" element={<EnquiriesDesk />} />

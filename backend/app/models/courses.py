@@ -32,6 +32,7 @@ class CourseStatus(str, Enum):
     draft = "draft"
     pending_review = "pendingReview"
     published = "published"
+    unpublished = "unpublished"
     rejected = "rejected"
     archived = "archived"
 

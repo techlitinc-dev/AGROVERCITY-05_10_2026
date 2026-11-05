@@ -284,8 +284,8 @@ export const CourseBuilderPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <Link to="/instructor/home" className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-emerald-600 mb-1">
-            <ArrowLeft className="w-3.5 h-3.5" /> Console
+          <Link to="/instructor/courses" className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-emerald-600 mb-1">
+            <ArrowLeft className="w-3.5 h-3.5" /> All Courses
           </Link>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <BookOpen className="w-7 h-7 text-emerald-600" />
