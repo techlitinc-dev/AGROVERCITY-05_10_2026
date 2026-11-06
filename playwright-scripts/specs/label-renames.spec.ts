@@ -85,6 +85,22 @@ test.describe('renamed labels — farmer workspace', () => {
     }
   });
 
+  test('My Learning removed from Ecosystem Hubs but reachable via Courses', async ({ page }) => {
+    const watch = new Watch();
+    attachWatchers(page, watch);
+    await page.goto(BASE_URL + '/farmer');
+    const aside = page.locator('aside');
+    await expect(aside).not.toContainText('My Learning');
+    await expect(aside).toContainText('Courses');
+
+    // flow preserved: Courses page exposes My Learning
+    await page.goto(BASE_URL + '/academy');
+    await page.getByRole('link', { name: /My Learning/ }).first().click();
+    await expect(page).toHaveURL(/\/academy\/my-learning$/);
+    await expect(page.locator('body')).toContainText('My Learning', { timeout: 30_000 });
+    expect(watch.pageErrors).toEqual([]);
+  });
+
   test('renamed pages render with their new headings', async ({ page }) => {
     const watch = new Watch();
     attachWatchers(page, watch);

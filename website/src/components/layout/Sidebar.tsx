@@ -462,21 +462,6 @@ export const Sidebar: React.FC = () => {
           </NavLink>
 
           <NavLink
-            to="/academy/my-learning"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
-                isActive
-                  ? 'bg-emerald-50 text-emerald-900 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              )
-            }
-          >
-            <BookOpen className="w-4 h-4 text-sky-600" />
-            <span>My Learning</span>
-          </NavLink>
-
-          <NavLink
             to="/payments"
             className={({ isActive }) =>
               cn(
