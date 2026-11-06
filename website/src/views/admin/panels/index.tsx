@@ -10,7 +10,6 @@ import React, { lazy, Suspense } from 'react';
 const ConsoleHome = lazy(() => import('./ConsoleHome').then((m) => ({ default: m.ConsoleHome })));
 const SecurityPanel = lazy(() => import('./SecurityPanel').then((m) => ({ default: m.SecurityPanel })));
 const UsersPanel = lazy(() => import('./UsersPanel').then((m) => ({ default: m.UsersPanel })));
-const KycPanel = lazy(() => import('./KycPanel').then((m) => ({ default: m.KycPanel })));
 const RatesPanel = lazy(() => import('./RatesPanel').then((m) => ({ default: m.RatesPanel })));
 const MarketplacePanel = lazy(() => import('./MarketplacePanel').then((m) => ({ default: m.MarketplacePanel })));
 const ContractsDeskPanel = lazy(() => import('./ContractsDisputesPanel').then((m) => ({ default: m.ContractsDeskPanel })));
@@ -20,14 +19,10 @@ const DisputesPanel = lazy(() => import('./DisputesPanel').then((m) => ({ defaul
 const AdvisoryPanel = lazy(() => import('./AdvisoryPanel').then((m) => ({ default: m.AdvisoryPanel })));
 const ChatbotPanel = lazy(() => import('./ChatbotPanel').then((m) => ({ default: m.ChatbotPanel })));
 const DiaryPanel = lazy(() => import('./DiaryPanel').then((m) => ({ default: m.DiaryPanel })));
-const FinancePanel = lazy(() => import('./FinancePanel').then((m) => ({ default: m.FinancePanel })));
-const ClaimsPanel = lazy(() => import('./ClaimsPanel').then((m) => ({ default: m.ClaimsPanel })));
 const LandRecordsPanel = lazy(() => import('./LandRecordsPanel').then((m) => ({ default: m.LandRecordsPanel })));
 const WaterPanel = lazy(() => import('./WaterPanel').then((m) => ({ default: m.WaterPanel })));
 const FpoPanel = lazy(() => import('./FpoPanel').then((m) => ({ default: m.FpoPanel })));
-const LivestockPanel = lazy(() => import('./LivestockPanel').then((m) => ({ default: m.LivestockPanel })));
 const ColdStoragePanel = lazy(() => import('./ColdStoragePanel').then((m) => ({ default: m.ColdStoragePanel })));
-const WomenPanel = lazy(() => import('./WomenPanel').then((m) => ({ default: m.WomenPanel })));
 const SettlementsPanel = lazy(() => import('./SettlementsPanel').then((m) => ({ default: m.SettlementsPanel })));
 const PlatformPanel = lazy(() => import('./PlatformPanel').then((m) => ({ default: m.PlatformPanel })));
 const CoursesPanel = lazy(() => import('./CoursesPanel').then((m) => ({ default: m.CoursesPanel })));
@@ -43,7 +38,6 @@ const ReportsPanel = lazy(() => import('./ReportsPanel').then((m) => ({ default:
 const SOP_PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
   'SOP-01': SecurityPanel,
   'SOP-02': UsersPanel,
-  'SOP-03': KycPanel,
   'SOP-04': RatesPanel,
   'SOP-05': MarketplacePanel,
   'SOP-06': MarketplacePanel,
@@ -54,17 +48,13 @@ const SOP_PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
   'SOP-11': AdvisoryPanel,
   'SOP-12': ChatbotPanel,
   'SOP-13': DiaryPanel,
-  'SOP-14': FinancePanel,
-  'SOP-15': ClaimsPanel,
   'SOP-16': LandRecordsPanel,
   'SOP-17': WaterPanel,
   'SOP-18': FpoPanel,
-  'SOP-19': LivestockPanel,
   'SOP-20': ContentPanel,
   'SOP-21': TreesPanel,
   'SOP-22': EconomyPanel,
   'SOP-23': ColdStoragePanel,
-  'SOP-24': WomenPanel,
   'SOP-25': SettlementsPanel,
   'SOP-26': PlatformPanel,
   'SOP-27': CoursesPanel,
@@ -84,11 +74,10 @@ const PANELS: Record<string, React.LazyExoticComponent<React.FC>> = {
   ...EXTRA_PANELS,
 };
 
-/** Human sidebar titles for SOP-01…SOP-27 (single source of truth). */
+/** Human sidebar titles for the mounted SOPs (single source of truth). */
 export const SOP_LABELS: Record<string, string> = {
   'SOP-01': 'Auth & Admin Sessions',
   'SOP-02': 'User & Persona Governance',
-  'SOP-03': 'KYC & Document Vault Queue',
   'SOP-04': 'Mandi Rates & Approvals',
   'SOP-05': 'Produce Lots & B2B Trade',
   'SOP-06': 'Marketplace Catalog',
@@ -99,17 +88,13 @@ export const SOP_LABELS: Record<string, string> = {
   'SOP-11': 'AI Advisory & Soil Labs',
   'SOP-12': 'Chatbot Transcripts & Handoff',
   'SOP-13': 'Farm Diary & P&L Oversight',
-  'SOP-14': 'Banking & Loan Underwriting',
-  'SOP-15': 'Insurance Claims & DBT Disbursal',
   'SOP-16': 'Land Records Registry Sync',
   'SOP-17': 'Water Resources & Canal Roster',
   'SOP-18': 'FPO Verification & Pools',
-  'SOP-19': 'Livestock, Vet & Dairy Network',
   'SOP-20': 'Content CMS & Live Channels',
   'SOP-21': 'Agroforestry & Saplings',
   'SOP-22': 'Gamification & Referral Economy',
   'SOP-23': 'Climate Alerts & Cold Storage',
-  'SOP-24': 'Women & SHG Enterprise Programs',
   'SOP-25': 'Financial Settlements & Cron Jobs',
   'SOP-26': 'System Config & Platform Broadcasts',
   'SOP-27': 'Gurukul Instructor Oversight',

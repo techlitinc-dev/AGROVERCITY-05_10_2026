@@ -98,7 +98,6 @@ export const Navbar: React.FC = () => {
     { id: 'exporter', label: 'International Exporter (अंतर्राष्ट्रीय निर्यातक)', icon: '🚢' },
     { id: 'directBuyer', label: 'Industrial Buyer (थोक खरीदार)', icon: '🏢' },
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
-    { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG (महिला गृह उद्योग)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
     { id: 'nursery', label: 'Plant Nursery (पौधघर / नर्सरी)', icon: '🌱' },
     { id: 'coldStorageProvider', label: 'Cold Storage (शीतगृह)', icon: '❄️' },
@@ -479,14 +478,6 @@ export const Navbar: React.FC = () => {
                       className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
                     >
                       <CreditCard className="w-4 h-4 text-slate-400" /> Billing & Plans
-                    </Link>
-
-                    <Link
-                      to="/bank-accounts"
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
-                    >
-                      <Landmark className="w-4 h-4 text-slate-400" /> Bank Accounts
                     </Link>
 
                     {!restricted && (

@@ -17,7 +17,8 @@ const PERSONA_HOME: Record<PersonaType, string> = {
   milkSeller: '/milkSeller',
   vet: '/vet',
   fpoManager: '/fpoManager',
-  womenShg: '/womenShg',
+  // womenShg persona removed from the frontend; legacy profiles land on the mall.
+  womenShg: '/mall',
   broker: '/broker',
   dairyManager: '/dairyManager',
   instructor: '/instructor',
@@ -41,7 +42,6 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'equipmentOwner', title: 'Equipment Owner', category: 'Machinery Services', icon: '🚜' },
   { id: 'exporter', title: 'Agri Exporter', category: 'Global Trade & Export', icon: '🚢' },
   { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', category: 'Daily Milk Delivery', icon: '🫗' },
-  { id: 'womenShg', title: 'Mahila Gruh Udyog & SHG', category: 'Cottage Industry', icon: '🪔' },
   { id: 'directBuyer', title: 'Industrial Buyer', category: 'B2B Procurement', icon: '🏢' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
   { id: 'coldStorageProvider', title: 'Cold Storage Owner', category: 'Post-Harvest Warehousing', icon: '❄️' },

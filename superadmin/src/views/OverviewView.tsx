@@ -24,7 +24,6 @@ export const OverviewView: React.FC = () => {
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
-  const [shgs, setShgs] = useState<any[]>([]);
   const [nurseries, setNurseries] = useState<any[]>([]);
   const [rates, setRates] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +38,6 @@ export const OverviewView: React.FC = () => {
         vehiclesData,
         bookingsData,
         ordersData,
-        shgsData,
         nurseriesData,
         ratesData,
       ] = await Promise.all([
@@ -48,7 +46,6 @@ export const OverviewView: React.FC = () => {
         api.getVehicles().catch(() => []),
         api.getTransportBookings().catch(() => []),
         api.getMarketplaceOrders().catch(() => []),
-        api.getShgQueue().catch(() => []),
         api.getNurseries().catch(() => []),
         api.getPendingMandiRates().catch(() => []),
       ]);
@@ -58,7 +55,6 @@ export const OverviewView: React.FC = () => {
       setVehicles(vehiclesData);
       setBookings(bookingsData);
       setOrders(ordersData);
-      setShgs(shgsData);
       setNurseries(nurseriesData);
       setRates(ratesData);
     } catch (err: any) {
@@ -85,7 +81,7 @@ export const OverviewView: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black text-white">System Operations & Multi-Persona Clearance Desk</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Real-time governance over Farmers, Transporters, Vyaparis, Mahila Graha Udyog, Nurseries & eMarket Customers.
+            Real-time governance over Farmers, Transporters, Vyaparis, Nurseries & eMarket Customers.
           </p>
         </div>
 
@@ -160,14 +156,6 @@ export const OverviewView: React.FC = () => {
                 <p className="text-[10px] text-slate-500">Vyapari trader rate proposals</p>
               </div>
               <span className="text-lg font-black text-amber-400 font-mono">{rates.length}</span>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-300">Women SHG Verification</span>
-                <p className="text-[10px] text-slate-500">Mahila Bachat Gat approvals</p>
-              </div>
-              <span className="text-lg font-black text-purple-400 font-mono">{shgs.length}</span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">

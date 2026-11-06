@@ -14,7 +14,6 @@ import {
   TrendingUp,
   Image,
   CheckCircle2,
-  Landmark,
   ShieldCheck,
   Ban,
 } from 'lucide-react';
@@ -235,9 +234,6 @@ export const SellerProfileView: React.FC = () => {
               <Link to="/kyc" className={`${primaryBtnCls} flex items-center gap-1.5`}>
                 <ShieldCheck className="w-3.5 h-3.5" />
                 {kycStatus === 'verified' ? 'Review KYC Case' : 'Complete Shop KYC'}
-              </Link>
-              <Link to="/bank-accounts" className={`${ghostBtnCls} flex items-center gap-1.5`}>
-                <Landmark className="w-3.5 h-3.5" /> Bank Accounts (payouts)
               </Link>
             </div>
           </div>

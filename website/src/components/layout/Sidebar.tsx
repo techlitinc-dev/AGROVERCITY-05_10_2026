@@ -39,7 +39,6 @@ import {
   User,
   Star,
   Megaphone,
-  HandCoins,
   Search,
   Handshake,
   Sprout,
@@ -49,7 +48,6 @@ import {
   Bookmark,
   ArrowLeftRight,
   ClipboardList,
-  PawPrint,
   Briefcase,
   Mountain,
   BadgeCheck,
@@ -93,19 +91,13 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
               { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
-              { to: '/farmer/livestock', label: 'Pashu Dhan / पशुधन', icon: PawPrint },
-              { to: '/women/directory', label: 'Mahila Bachat Gat', icon: HandCoins },
             ],
           },
           {
             title: 'Finance & Security',
             items: [
-              { to: '/farmer/loans', label: 'KCC & Agri Loans', icon: Landmark },
-              { to: '/farmer/bank-accounts', label: 'Bank Accounts', icon: Building2 },
-              { to: '/farmer/insurance', label: 'PMFBY Crop Insurance', icon: ShieldAlert },
               { to: '/farmer/712', label: '7/12 Land Records', icon: FileSpreadsheet },
               { to: '/farmer/schemes', label: 'Govt Schemes', icon: Gift },
-              { to: '/farmer/vault', label: 'Document Vault', icon: Award },
               { to: '/farmer/water', label: 'Water & Weather', icon: Droplets },
             ],
           },
@@ -115,7 +107,6 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/referrals', label: 'Refer & Earn', icon: Users },
               { to: '/farmer/coins', label: 'Kisan Coins', icon: Sparkles },
               { to: '/community/trees', label: 'Tree Plantation Hub', icon: TreePine },
-              { to: '/community/carbon', label: 'Carbon Footprint & Eco', icon: Leaf },
             ],
           },
         ];
@@ -276,21 +267,6 @@ export const Sidebar: React.FC = () => {
               { to: '/coldStorageProvider/facilities', label: 'Chambers & Temperature', icon: Snowflake },
               { to: '/coldStorageProvider/bookings', label: 'Inward & Release Bookings', icon: Boxes },
               { to: '/coldStorageProvider/fees', label: 'Rent Ledger & e-NWR Fees', icon: DollarSign },
-            ],
-          },
-        ];
-
-      case 'womenShg':
-        return [
-          {
-            title: 'Mahila Gruh Udyog',
-            items: [
-              { to: '/womenShg', label: 'Enterprise Dashboard', icon: LayoutDashboard },
-              { to: '/women/directory', label: 'Bachat Gat Directory', icon: Users },
-              { to: '/womenShg/products', label: 'Cottage Catalog', icon: Store },
-              { to: '/womenShg/batches', label: 'Production Batches', icon: Package },
-              { to: '/womenShg/certs', label: 'FSSAI Certifications', icon: Award },
-              { to: '/womenShg/savings', label: 'SHG Savings & Micro-Loan', icon: Landmark },
             ],
           },
         ];

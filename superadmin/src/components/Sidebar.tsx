@@ -4,7 +4,6 @@ import {
   Sprout,
   Truck,
   Briefcase,
-  HeartHandshake,
   Flower2,
   ShoppingBag,
   Users2,
@@ -14,10 +13,8 @@ import {
   Building2,
   Wrench,
   Globe2,
-  Heart,
   Building,
   GraduationCap,
-  Landmark,
   Snowflake,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -32,11 +29,8 @@ export type ActiveTab =
   | 'vyapari'
   | 'equipment'
   | 'trade_desk'
-  | 'livestock'
   | 'fpo'
-  | 'mahila'
   | 'gurukul'
-  | 'banking_insurance'
   | 'cold_storage'
   | 'nursery'
   | 'customer'
@@ -104,34 +98,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
       icon: Globe2,
     },
     {
-      id: 'livestock',
-      label: '7, 8, 13, 18. Livestock Hub',
-      sub: 'Vets, Gaushalas, Dairies & Milkmen',
-      icon: Heart,
-    },
-    {
       id: 'fpo',
       label: '9. FPO & Cooperatives',
       sub: 'Registered FPOs & Bulk Pools',
       icon: Building,
     },
     {
-      id: 'mahila',
-      label: '10. Mahila Graha Udyog',
-      sub: 'SHG Queue & FSSAI Certs',
-      icon: HeartHandshake,
-    },
-    {
       id: 'gurukul',
       label: '14. Gurukul Academy',
       sub: 'Certified Courses & ICAR Faculty',
       icon: GraduationCap,
-    },
-    {
-      id: 'banking_insurance',
-      label: '15, 16. Banking & Insurance',
-      sub: 'KCC Underwriting & PMFBY Claims',
-      icon: Landmark,
     },
     {
       id: 'cold_storage',

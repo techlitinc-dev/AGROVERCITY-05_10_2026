@@ -10,11 +10,8 @@ import { TransporterView } from './views/TransporterView';
 import { VyapariView } from './views/VyapariView';
 import { EquipmentView } from './views/EquipmentView';
 import { TradeDeskView } from './views/TradeDeskView';
-import { LivestockHubView } from './views/LivestockHubView';
 import { FpoHubView } from './views/FpoHubView';
-import { MahilaView } from './views/MahilaView';
 import { GurukulAdminView } from './views/GurukulAdminView';
-import { BankingInsuranceView } from './views/BankingInsuranceView';
 import { ColdStorageView } from './views/ColdStorageView';
 import { NurseryView } from './views/NurseryView';
 import { CustomerView } from './views/CustomerView';
@@ -40,11 +37,8 @@ const MainShell: React.FC = () => {
             {activeTab === 'vyapari' && <VyapariView />}
             {activeTab === 'equipment' && <EquipmentView />}
             {activeTab === 'trade_desk' && <TradeDeskView />}
-            {activeTab === 'livestock' && <LivestockHubView />}
             {activeTab === 'fpo' && <FpoHubView />}
-            {activeTab === 'mahila' && <MahilaView />}
             {activeTab === 'gurukul' && <GurukulAdminView />}
-            {activeTab === 'banking_insurance' && <BankingInsuranceView />}
             {activeTab === 'cold_storage' && <ColdStorageView />}
             {activeTab === 'nursery' && <NurseryView />}
             {activeTab === 'customer' && <CustomerView />}

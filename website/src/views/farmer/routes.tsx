@@ -12,19 +12,11 @@ const TransportBookingDetailView = lazy(() => import('./TransportBookingDetailVi
 const FarmDiaryView = lazy(() => import('./FarmDiaryView').then((m) => ({ default: m.FarmDiaryView })));
 const PnlDashboardView = lazy(() => import('./PnlDashboardView').then((m) => ({ default: m.PnlDashboardView })));
 const EquipmentRentalView = lazy(() => import('./EquipmentRentalView').then((m) => ({ default: m.EquipmentRentalView })));
-const LoanFintechView = lazy(() => import('./LoanFintechView').then((m) => ({ default: m.LoanFintechView })));
-const LoanDetailView = lazy(() => import('./LoanDetailView').then((m) => ({ default: m.LoanDetailView })));
-const BankAccountsView = lazy(() => import('./BankAccountsView').then((m) => ({ default: m.BankAccountsView })));
-const CropInsuranceView = lazy(() => import('./CropInsuranceView').then((m) => ({ default: m.CropInsuranceView })));
-const PolicyListView = lazy(() => import('./PolicyListView').then((m) => ({ default: m.PolicyListView })));
-const ClaimTrackerView = lazy(() => import('./ClaimTrackerView').then((m) => ({ default: m.ClaimTrackerView })));
 const LandRecordsView = lazy(() => import('./LandRecordsView').then((m) => ({ default: m.LandRecordsView })));
 const GovtSchemesView = lazy(() => import('./GovtSchemesView').then((m) => ({ default: m.GovtSchemesView })));
 const WaterClimateView = lazy(() => import('./WaterClimateView').then((m) => ({ default: m.WaterClimateView })));
-const VaultView = lazy(() => import('./VaultView').then((m) => ({ default: m.VaultView })));
 const ReferralsView = lazy(() => import('./ReferralsView').then((m) => ({ default: m.ReferralsView })));
 const KisanCoinsView = lazy(() => import('../community/KisanCoinsView').then((m) => ({ default: m.KisanCoinsView })));
-const LivestockHubView = lazy(() => import('./LivestockHubView').then((m) => ({ default: m.LivestockHubView })));
 const MyCropsView = lazy(() => import('./MyCropsView').then((m) => ({ default: m.MyCropsView })));
 const AiCropPlanView = lazy(() => import('./AiCropPlanView').then((m) => ({ default: m.AiCropPlanView })));
 const AiCropDoctorView = lazy(() => import('./AiCropDoctorView').then((m) => ({ default: m.AiCropDoctorView })));
@@ -51,22 +43,25 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/diary" element={<FarmDiaryView />} />
     <Route path="/farmer/pnl" element={<PnlDashboardView />} />
     <Route path="/farmer/equipment" element={<EquipmentRentalView />} />
-    <Route path="/farmer/loans" element={<LoanFintechView />} />
-    <Route path="/farmer/loans/:id" element={<LoanDetailView />} />
-    <Route path="/farmer/bank-accounts" element={<BankAccountsView />} />
-    <Route path="/farmer/insurance" element={<CropInsuranceView />} />
-    <Route path="/farmer/insurance/policies" element={<PolicyListView />} />
-    <Route path="/farmer/insurance/claims/:id" element={<ClaimTrackerView />} />
+    <Route path="/farmer/loans" element={<Navigate to="/farmer" replace />} />
+    <Route path="/farmer/loans/:id" element={<Navigate to="/farmer" replace />} />
+    <Route path="/farmer/bank-accounts" element={<Navigate to="/farmer" replace />} />
+    <Route path="/farmer/insurance" element={<Navigate to="/farmer" replace />} />
+    <Route path="/farmer/insurance/policies" element={<Navigate to="/farmer" replace />} />
+    <Route path="/farmer/insurance/claims/:id" element={<Navigate to="/farmer" replace />} />
     <Route path="/farmer/712" element={<LandRecordsView />} />
     <Route path="/farmer/schemes" element={<GovtSchemesView />} />
     <Route path="/farmer/water" element={<WaterClimateView />} />
-    <Route path="/farmer/vault" element={<VaultView />} />
     <Route path="/farmer/referrals" element={<ReferralsView />} />
     <Route path="/farmer/coins" element={<KisanCoinsView />} />
     {/* My Milk & Payments is a milk-vendor desk feature — removed from the
         farmer persona (manual-test finding); the route redirects for compat. */}
     <Route path="/farmer/dairy" element={<Navigate to="/farmer" replace />} />
-    <Route path="/farmer/livestock" element={<LivestockHubView />} />
+    {/* KCC & Agri Loans, Bank Accounts, PMFBY Crop Insurance, Document Vault
+        and Pashu Dhan (Livestock) were removed from the frontend — the routes
+        redirect for compat (bookmarks, notifications). Backend APIs unchanged. */}
+    <Route path="/farmer/vault" element={<Navigate to="/farmer" replace />} />
+    <Route path="/farmer/livestock" element={<Navigate to="/farmer" replace />} />
     <Route path="/farmer/crops" element={<MyCropsView />} />
     <Route path="/farmer/crop-plan" element={<AiCropPlanView />} />
     {/* Export sourcing — merged Agri Export desk (opportunities / applications /

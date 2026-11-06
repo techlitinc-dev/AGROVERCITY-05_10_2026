@@ -25,10 +25,6 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
       return '/community/trees';
     case 'postHarvest':
       return '/community/cold';
-    case 'women':
-    case 'womenShg':
-    case 'gruhUdyog':
-      return '/womenShg';
     case 'myContracts':
     case 'contracts':
       // Farmer supply-contracts page was removed; buyers keep their contract desk.
@@ -82,12 +78,6 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
       return '/farmer/lots';
     case 'demands':
       return activePersona === 'seller' ? '/seller/demands' : '/farmer/demands';
-    case 'insurance':
-      return '/farmer/insurance';
-    case 'loans':
-      return '/farmer/loans';
-    case 'vault':
-      return '/farmer/vault';
     case 'finance':
     case 'pnl':
       return '/farmer/pnl';
@@ -95,8 +85,6 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
     case 'krishiRatna':
     case 'referEarn':
       return '/farmer/coins';
-    case 'livestock':
-      return '/farmer/livestock';
     default:
       return null;
   }

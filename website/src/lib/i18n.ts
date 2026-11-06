@@ -89,7 +89,7 @@ const translations: Record<Language, Record<string, string>> = {
     'farmer.loans': 'KCC & Agri Loans',
     'farmer.insurance': 'PMFBY Crop Insurance',
     'farmer.land_records': '7/12 Land Records',
-    'farmer.schemes': 'Govt Schemes & Vault',
+    'farmer.schemes': 'Govt Schemes',
     'farmer.water': 'Water & Weather Intelligence',
 
     // Exporter

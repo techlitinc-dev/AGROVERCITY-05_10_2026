@@ -276,17 +276,6 @@ export const LandingPage: React.FC = () => {
       stat: '120k+ Urban Households',
     },
     {
-      id: 'womenShg',
-      title: 'Mahila Gruh Udyog & SHG',
-      hindiTitle: 'महिला गृह उद्योग एवं स्वयं सहायता',
-      category: 'producers',
-      desc: 'Cottage pickles, papad and spices catalog, FSSAI compliance, production batch tracking, and SHG monthly savings.',
-      icon: '🪔',
-      route: '/womenShg',
-      features: ['Cottage Food Products Catalog', 'FSSAI License Vault', 'SHG Monthly Micro-Savings', 'Direct Consumer Delivery'],
-      stat: '28,000+ Women Artisans',
-    },
-    {
       id: 'instructor',
       title: 'Gurukul Academy Instructor',
       hindiTitle: 'कृषि गुरुकुल शिक्षक',
@@ -1244,15 +1233,6 @@ export const LandingPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-2">
-                <Link
-                  to="/farmer/loans"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-xs"
-                >
-                  <span>Explore Kisan Credit & PMFBY Insurance</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
             </div>
 
             {/* Land & Loan Visual */}
@@ -2118,7 +2098,6 @@ export const LandingPage: React.FC = () => {
                 <li><Link to="/farmer" className="hover:text-emerald-400 transition-colors">Kisan / Farmer</Link></li>
                 <li><Link to="/landlord" className="hover:text-emerald-400 transition-colors">Farm Landlord</Link></li>
                 <li><Link to="/equipment" className="hover:text-emerald-400 transition-colors">Custom Machinery (CHC)</Link></li>
-                <li><Link to="/womenShg" className="hover:text-emerald-400 transition-colors">Mahila Gruh Udyog</Link></li>
               </ul>
             </div>
 

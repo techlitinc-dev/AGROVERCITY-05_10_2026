@@ -434,14 +434,6 @@ export const CustomerHomeView: React.FC = () => {
             <p className="text-xs font-bold text-slate-800">Women mode</p>
             <p className="text-[11px] text-slate-400">
               Prioritise SHG &amp; gruh udyog products in your recommendations
-              {womenMode && (
-                <>
-                  {' · '}
-                  <Link to="/community/women" className="text-purple-700 font-bold hover:underline">
-                    Explore the women hub
-                  </Link>
-                </>
-              )}
             </p>
           </div>
         </div>

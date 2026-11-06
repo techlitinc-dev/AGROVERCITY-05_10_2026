@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TreePine, Leaf, Globe2, Sprout } from 'lucide-react';
 import { StatusBadge } from '../../../components/common/StatusBadge';
-import { admin, apiClient } from '../../../lib/api';
+import { admin } from '../../../lib/api';
 import {
   PanelShell,
   DataTable,
@@ -24,7 +24,7 @@ import {
 /**
  * SOP-21 — Agroforestry & Saplings.
  * Tree plantation requests + status + survival tracking, NGO verification,
- * biofuel tree edits, carbon audit and climate variety advisories.
+ * biofuel tree edits and climate variety advisories.
  */
 export const TreesPanel: React.FC = () => {
   const [tab, setTab] = useState('requests');
@@ -38,14 +38,14 @@ export const TreesPanel: React.FC = () => {
           { id: 'ngos', label: 'NGO partners' },
           { id: 'biofuel', label: 'Biofuel trees' },
           { id: 'saplings', label: 'Sapling requests' },
-          { id: 'carbon', label: 'Carbon audit' },
+          { id: 'varieties', label: 'Varieties' },
         ]}
       />
       {tab === 'requests' && <TreeRequestsCard />}
       {tab === 'ngos' && <NgoCard />}
       {tab === 'biofuel' && <BiofuelCard />}
       {tab === 'saplings' && <SaplingCard />}
-      {tab === 'carbon' && <CarbonCard />}
+      {tab === 'varieties' && <VarietiesCard />}
     </>
   );
 };
@@ -340,27 +340,11 @@ const SaplingCard: React.FC = () => {
   );
 };
 
-const CarbonCard: React.FC = () => {
-  const audit = useAsync(
-    () => apiClient.get('/admin/climate/carbon-audit').then((res) => (res.data?.data ?? res.data) as unknown),
-    []
-  );
-
+const VarietiesCard: React.FC = () => {
   const varieties = useAsync(() => admin.fieldOps.climateVarieties(), []);
 
   return (
-    <>
-      <PanelShell
-        title="SOP-21: Carbon Credit Audit"
-        subtitle="Sequestration estimate across plantation programmes (GET /admin/climate/carbon-audit — direct apiClient; not in admin namespace)."
-        icon={Globe2}
-        loading={audit.loading}
-        error={audit.error}
-        onRefresh={audit.reload}
-      >
-        <KV record={asRow(audit.data)} />
-      </PanelShell>
-      <PanelShell
+    <PanelShell
         title="SOP-21: Climate-Resilient Varieties"
         subtitle="Varieties promoted alongside agroforestry for climate adaptation."
         icon={Leaf}
@@ -386,6 +370,5 @@ const CarbonCard: React.FC = () => {
           ]}
         />
       </PanelShell>
-    </>
   );
 };

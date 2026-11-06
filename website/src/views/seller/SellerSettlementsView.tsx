@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Landmark, RefreshCcw, Wallet, ShieldCheck, CalendarRange, Landmark as BankIcon } from 'lucide-react';
+import { RefreshCcw, Wallet, ShieldCheck, CalendarRange, Landmark as BankIcon } from 'lucide-react';
 import { seller, bankAccounts, apiErrorMessage } from '../../lib/api';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatDate } from '../../lib/utils';
@@ -179,9 +179,6 @@ export const SellerSettlementsView: React.FC = () => {
                   </p>
                 </div>
               )}
-              <Link to="/bank-accounts" className={`${ghostBtnCls} w-full flex items-center justify-center gap-1.5`}>
-                <Landmark className="w-3.5 h-3.5" /> Manage Bank Accounts
-              </Link>
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-[11px] text-slate-500 flex items-start gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
                 Payouts without a verified account are flagged "onHold" in the weekly payout run.

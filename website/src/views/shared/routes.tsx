@@ -1,12 +1,11 @@
 import React, { lazy } from 'react';
-import { Route } from 'react-router-dom';
+import { Navigate, Route } from 'react-router-dom';
 
 const NotificationsInbox = lazy(() => import('./NotificationsInbox').then((m) => ({ default: m.NotificationsInbox })));
 const SupportCenter = lazy(() => import('./SupportCenter').then((m) => ({ default: m.SupportCenter })));
 const SettingsPage = lazy(() => import('./SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const BillingPage = lazy(() => import('./BillingPage').then((m) => ({ default: m.BillingPage })));
 const KycCasePage = lazy(() => import('./KycCasePage').then((m) => ({ default: m.KycCasePage })));
-const BankAccountsPage = lazy(() => import('./BankAccountsPage').then((m) => ({ default: m.BankAccountsPage })));
 const ChatPage = lazy(() => import('./ChatPage').then((m) => ({ default: m.ChatPage })));
 const TrackDeliveryView = lazy(() => import('./TrackDeliveryView').then((m) => ({ default: m.TrackDeliveryView })));
 const TransactionsPage = lazy(() => import('./TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
@@ -24,7 +23,10 @@ export const SharedRouteElements = () => (
     <Route path="/settings" element={<SettingsPage />} />
     <Route path="/billing" element={<BillingPage />} />
     <Route path="/kyc" element={<KycCasePage />} />
-    <Route path="/bank-accounts" element={<BankAccountsPage />} />
+    {/* Bank Accounts page removed from the frontend — redirect for compat. */}
+    <Route path="/bank-accounts" element={<Navigate to="/profile" replace />} />
+    {/* Mahila Bachat Gat directory removed from the frontend — redirect for compat. */}
+    <Route path="/women/directory" element={<Navigate to="/mall" replace />} />
     <Route path="/chat" element={<ChatPage />} />
     <Route path="/track/:token" element={<TrackDeliveryView />} />
     <Route path="/payments" element={<TransactionsPage />} />

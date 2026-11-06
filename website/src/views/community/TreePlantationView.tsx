@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   TreePine,
   BookOpen,
@@ -11,7 +10,6 @@ import {
   Sprout,
   Search,
   Bookmark,
-  ArrowRight,
   Leaf,
 } from 'lucide-react';
 import { apiErrorMessage, tree, users } from '../../lib/api';
@@ -202,28 +200,20 @@ export const TreePlantationView: React.FC = () => {
 
       {/* My plantations strip */}
       {myPlantations.length > 0 && (
-        <Link
-          to="/community/carbon"
-          className="flex items-center justify-between gap-3 p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl hover:border-emerald-300 transition-colors"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <Leaf className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="font-bold text-xs text-emerald-900">
-                My Plantations · {formatNumber(myPlantations.length)}
-              </p>
-              <p className="text-[11px] text-emerald-700">
-                {formatNumber(
-                  myPlantations.reduce((sum, p) => sum + pickNum(p, 'estimatedCo2KgPerYear'), 0)
-                )}{' '}
-                kg CO₂ captured per year
-              </p>
-            </div>
+        <div className="flex items-center gap-3 p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl">
+          <Leaf className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="font-bold text-xs text-emerald-900">
+              My Plantations · {formatNumber(myPlantations.length)}
+            </p>
+            <p className="text-[11px] text-emerald-700">
+              {formatNumber(
+                myPlantations.reduce((sum, p) => sum + pickNum(p, 'estimatedCo2KgPerYear'), 0)
+              )}{' '}
+              kg CO₂ captured per year
+            </p>
           </div>
-          <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1 shrink-0">
-            Carbon dashboard <ArrowRight className="w-3.5 h-3.5" />
-          </span>
-        </Link>
+        </div>
       )}
 
       {/* Search */}

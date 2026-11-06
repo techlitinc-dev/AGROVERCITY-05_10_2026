@@ -42,7 +42,7 @@ const ONBOARDING_ROLES: RoleOption[] = [
     icon: '🌾',
     title: 'Kisan / Farmer',
     nativeTitle: 'किसान / शेतकरी',
-    desc: 'Sell crops directly to buyers, check live mandi rates, apply for KCC loans & insurance.',
+    desc: 'Sell crops directly to buyers, check live mandi rates, and track your farm P&L.',
     badge: 'Core Agricultural',
   },
   {
@@ -108,14 +108,6 @@ const ONBOARDING_ROLES: RoleOption[] = [
     nativeTitle: 'गौशाला व्यवस्थापक',
     desc: 'Cattle registry, cow adoption programs, 80G donation receipts, and veterinary care.',
     badge: 'Gauseva & Shelter',
-  },
-  {
-    id: 'womenShg',
-    icon: '🪔',
-    title: 'Mahila Gruh Udyog & SHG',
-    nativeTitle: 'महिला गृह उद्योग',
-    desc: 'Cottage food products, spices, pickles, SHG monthly savings, and Micro-Mudras.',
-    badge: 'Women Enterprise',
   },
   {
     id: 'nursery',

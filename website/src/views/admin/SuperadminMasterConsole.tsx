@@ -57,20 +57,18 @@ export const SuperadminMasterConsole: React.FC = () => {
 
   // ----- KPI wall + sidebar queue badges (allSettled so one dead queue can't blank the wall)
   const kpis = useAsync(async () => {
-    const [summary, overview, kyc, rates, approvals, disputes] = await Promise.all([
+    const [summary, overview, rates, approvals, disputes] = await Promise.all([
       admin.platform.analyticsSummary().then((d) => d, () => null),
       admin.platform.overview().then((d) => d, () => null),
-      admin.kyc.queue().then((d) => d, () => null),
       admin.rates.pending().then((d) => d, () => null),
       admin.moderation.approvals().then((d) => d, () => null),
       admin.disputes.list().then((d) => d, () => null),
     ]);
-    return { summary, overview, kyc, rates, approvals, disputes };
+    return { summary, overview, rates, approvals, disputes };
   }, []);
 
   const badges: Record<string, number> = {};
   if (kpis.data) {
-    badges['SOP-03'] = asRows(kpis.data.kyc).length;
     badges['SOP-04'] = asRows(kpis.data.rates).length;
     badges['SOP-26'] = asRows(kpis.data.approvals).length;
     badges['SOP-10'] = asRows(kpis.data.disputes).length;
@@ -85,10 +83,10 @@ export const SuperadminMasterConsole: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-amber-500" />
-            Superadmin Master Operations Console (SOP 01–27)
+            Superadmin Master Operations Console (SOP Console)
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Platform-wide governance, KYC verification queues, escrow releases, and automated financial settlements
+            Platform-wide governance, escrow releases, and automated financial settlements
           </p>
         </div>
 
@@ -114,9 +112,9 @@ export const SuperadminMasterConsole: React.FC = () => {
           colorScheme="green"
         />
         <StatCard
-          title="Pending KYC Review"
-          value={`${badges['SOP-03'] ?? 0} In Queue`}
-          subtitle="SOP-03 verification"
+          title="Pending Mandi Rate Approvals"
+          value={`${badges['SOP-04'] ?? 0} In Queue`}
+          subtitle="SOP-04 rate verification"
           icon={ShieldCheck}
           colorScheme="amber"
         />
