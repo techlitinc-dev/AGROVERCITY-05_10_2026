@@ -322,7 +322,7 @@ export const NurseryHome: React.FC = () => {
             { to: '/nursery/gyan', label: 'Gyansetu Learning', icon: GraduationCap, desc: 'Horticulture courses' },
             { to: '/nursery/news', label: 'Agri News Feed', icon: Radio, desc: 'Schemes & market' },
             { to: '/nursery/coins', label: 'Coin Rewards', icon: Award, desc: 'Krushi Ratna wallet' },
-            { to: '/nursery/referrals', label: 'Refer & Earn', icon: Gift, desc: 'Referral program' },
+            { to: '/nursery/referrals', label: 'Invite & Earn', icon: Gift, desc: 'Referral program' },
             { to: '/nursery/trees', label: 'Tree Hub', icon: Droplets, desc: 'Plantation verification' },
             { to: '/nursery/land-records', label: '7/12 Records', icon: FileText, desc: 'Land extracts' },
           ].map((item) => {

@@ -61,8 +61,8 @@ test.describe('removed pages stay unreachable', () => {
     for (const label of REMOVED_SIDEBAR_LABELS) {
       await expect(aside).not.toContainText(label);
     }
-    // surrounding entries survive
-    for (const label of ['Farmer Cockpit', 'Govt Schemes', 'Tree Plantation Hub', '7/12 Land Records']) {
+    // surrounding entries survive (renamed where applicable)
+    for (const label of ['Farmer Cockpit', 'Government Schemes', 'Tree Plantation', 'My Land Records (7/12)']) {
       await expect(aside).toContainText(label);
     }
   });
@@ -86,11 +86,11 @@ test.describe('removed pages stay unreachable', () => {
     await expect(page.locator('body')).toContainText(/Welcome back to your farm cockpit/i);
 
     await page.goto(BASE_URL + '/farmer/schemes');
-    await expect(page.locator('body')).toContainText('Govt Schemes');
+    await expect(page.locator('body')).toContainText('Government Schemes');
     await expect(page.locator('body')).not.toContainText('Document Vault');
 
     await page.goto(BASE_URL + '/community/trees');
-    await expect(page.locator('body')).toContainText('Tree Plantation Hub');
+    await expect(page.locator('body')).toContainText('Tree Plantation');
     await expect(page.locator('body')).not.toContainText('Carbon Footprint');
 
     await page.goto(BASE_URL + '/mall');

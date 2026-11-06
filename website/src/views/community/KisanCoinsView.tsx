@@ -24,7 +24,7 @@ type Tab = 'overview' | 'rewards' | 'referrals' | 'leaderboard';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Wallet & Ledger' },
   { id: 'rewards', label: 'Rewards Store' },
-  { id: 'referrals', label: 'Refer & Earn' },
+  { id: 'referrals', label: 'Invite & Earn' },
   { id: 'leaderboard', label: 'Leaderboard' },
 ];
 
@@ -91,7 +91,7 @@ export const KisanCoinsView: React.FC = () => {
     const message = pickStr(referral, 'shareMessage') || `Join me on Agrovercity: ${link}`;
     try {
       if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        await navigator.share({ title: 'Agrovercity Refer & Earn', text: message, url: link });
+        await navigator.share({ title: 'Agrovercity Invite & Earn', text: message, url: link });
         return;
       }
       await navigator.clipboard.writeText(link || message);

@@ -21,7 +21,7 @@ export const BottomNav: React.FC = () => {
       label: 'Trade',
       icon: Package,
     },
-    { to: '/mall', label: 'Mall', icon: ShoppingBag },
+    { to: '/mall', label: 'Market', icon: ShoppingBag },
     { to: '/community/ai', label: 'Kisan AI', icon: Bot },
   ];
 

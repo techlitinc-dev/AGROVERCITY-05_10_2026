@@ -51,7 +51,7 @@ const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '
 
 const GREETING: ChatMsg = {
   sender: 'ai',
-  text: 'Namaste! 🙏 I am your dedicated AI Agronomist & ICAR Farming Assistant. Ask me anything about crop nutrition, soil pest diagnosis, mandi price projections, or PM-KISAN schemes in Hindi or English!',
+  text: 'Namaste! 🙏 I am your dedicated AI Advisor & ICAR Farming Assistant. Ask me anything about crop nutrition, soil pest diagnosis, mandi price projections, or PM-KISAN schemes in Hindi or English!',
   time: now(),
 };
 
@@ -294,7 +294,7 @@ export const AiAgronomistView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Bot className="w-7 h-7 text-emerald-600" />
-            AI Agronomist & Farming Intelligence (Kisan Mitra)
+            AI Advisor & Farming Intelligence (Kisan Mitra)
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             24×7 crop advisory, disease diagnostics, and ICAR agronomist recommendations

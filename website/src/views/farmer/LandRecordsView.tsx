@@ -89,7 +89,7 @@ export const LandRecordsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <FileSpreadsheet className="w-7 h-7 text-emerald-600" />
-          7/12 Land Records (Saat-Baarah Utara)
+          My Land Records (7/12)
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Instant digital verification of land ownership, cadastral boundaries, and crop registration from state revenue registries
@@ -213,7 +213,7 @@ export const LandRecordsView: React.FC = () => {
                 </div>
                 <div className="p-3 bg-slate-50 rounded-2xl">
                   <span className="text-slate-400 font-semibold block text-[10px] uppercase">Recorded Crops</span>
-                  <span className="font-bold text-slate-900">{rec.cropsRegistered.join(', ') || '—'}</span>
+                  <span className="font-bold text-slate-900">{(rec.cropsRegistered ?? []).join(', ') || '—'}</span>
                 </div>
               </div>
             </div>

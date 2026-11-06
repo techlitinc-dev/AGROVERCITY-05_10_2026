@@ -70,7 +70,7 @@ const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '
 
 const GREETING: ChatMsg = {
   sender: 'ai',
-  text: 'Namaste Ramesh ji! 🙏 I am your Agrovercity AI Agronomist (Kisan Mitra). Ask me anything about crop diseases, mandi price forecasts, fertilizer schedules, or government subsidies!',
+  text: 'Namaste Ramesh ji! 🙏 I am your Agrovercity AI Advisor (Kisan Mitra). Ask me anything about crop diseases, mandi price forecasts, fertilizer schedules, or government subsidies!',
   time: 'Just now',
 };
 
@@ -235,7 +235,7 @@ export const AiChatbotDrawer: React.FC = () => {
         ...prev,
         {
           sender: 'ai',
-          text: `⚠️ ${message} — please retry, or ask via the AI Agronomist page for expert handoff.`,
+          text: `⚠️ ${message} — please retry, or ask via the AI Advisor page for expert handoff.`,
           time: now(),
         },
       ]);
@@ -254,7 +254,7 @@ export const AiChatbotDrawer: React.FC = () => {
         >
           <Bot className="w-6 h-6 animate-pulse" />
           <span className="hidden sm:inline font-bold text-sm tracking-wide">
-            AI Agronomist (Kisan Mitra)
+            AI Advisor (Kisan Mitra)
           </span>
           <span className="flex h-2.5 w-2.5 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>

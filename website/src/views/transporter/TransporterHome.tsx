@@ -54,7 +54,7 @@ const QUICK_LINKS = [
   { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
   { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
   { to: '/transporter/ratings', label: 'Ratings & Reviews', icon: Star },
-  { to: '/transporter/ads', label: 'My Advertisements', icon: Megaphone },
+  { to: '/transporter/ads', label: 'Ads & Promotions', icon: Megaphone },
   { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
   { to: '/transporter/profile', label: 'Profile', icon: User },
 ];

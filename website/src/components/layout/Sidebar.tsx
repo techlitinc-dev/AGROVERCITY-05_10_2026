@@ -96,17 +96,17 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Finance & Security',
             items: [
-              { to: '/farmer/712', label: '7/12 Land Records', icon: FileSpreadsheet },
-              { to: '/farmer/schemes', label: 'Govt Schemes', icon: Gift },
-              { to: '/farmer/water', label: 'Water & Weather', icon: Droplets },
+              { to: '/farmer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet },
+              { to: '/farmer/schemes', label: 'Government Schemes', icon: Gift },
+              { to: '/farmer/water', label: 'Weather & Water', icon: Droplets },
             ],
           },
           {
             title: 'Growth & Community',
             items: [
-              { to: '/farmer/referrals', label: 'Refer & Earn', icon: Users },
+              { to: '/farmer/referrals', label: 'Invite & Earn', icon: Users },
               { to: '/farmer/coins', label: 'Kisan Coins', icon: Sparkles },
-              { to: '/community/trees', label: 'Tree Plantation Hub', icon: TreePine },
+              { to: '/community/trees', label: 'Tree Plantation', icon: TreePine },
             ],
           },
         ];
@@ -137,7 +137,7 @@ export const Sidebar: React.FC = () => {
               { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
               { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
               { to: '/transporter/ratings', label: 'Ratings', icon: Star },
-              { to: '/transporter/ads', label: 'Advertisements', icon: Megaphone },
+              { to: '/transporter/ads', label: 'Ads & Promotions', icon: Megaphone },
               { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
               { to: '/transporter/profile', label: 'Profile', icon: User },
             ],
@@ -230,7 +230,7 @@ export const Sidebar: React.FC = () => {
       case 'customer':
         return [
           {
-            title: 'Shopping Mall',
+            title: 'Agri Market',
             items: [
               { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
               { to: '/mall', label: 'Shop Fresh & Inputs', icon: ShoppingBag },
@@ -251,8 +251,8 @@ export const Sidebar: React.FC = () => {
               { to: '/customer/finance', label: 'Finance CEO (Household)', icon: Landmark },
               { to: '/customer/wallet', label: 'Wallet & Cashback', icon: DollarSign },
               { to: '/customer/coins', label: 'Coin Rewards (Krushi Ratna)', icon: Sparkles },
-              { to: '/customer/trees', label: 'Tree Hub (Plant-a-Tree)', icon: TreePine },
-              { to: '/customer/712', label: '7/12 Land Records', icon: FileSpreadsheet },
+              { to: '/customer/trees', label: 'Tree Plantation', icon: TreePine },
+              { to: '/customer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet },
               { to: '/customer/news', label: 'Agri News & Stories', icon: Radio },
             ],
           },
@@ -330,9 +330,9 @@ export const Sidebar: React.FC = () => {
               { to: '/nursery/gyan', label: 'Gyansetu Learning', icon: GraduationCap },
               { to: '/nursery/news', label: 'Agri News Feed', icon: Radio },
               { to: '/nursery/coins', label: 'Coin Rewards Wallet', icon: Award },
-              { to: '/nursery/referrals', label: 'Refer & Earn', icon: Gift },
-              { to: '/nursery/trees', label: 'Tree Plantation Hub', icon: Droplets },
-              { to: '/nursery/land-records', label: '7/12 Land Records', icon: FileText },
+              { to: '/nursery/referrals', label: 'Invite & Earn', icon: Gift },
+              { to: '/nursery/trees', label: 'Tree Plantation', icon: Droplets },
+              { to: '/nursery/land-records', label: 'My Land Records (7/12)', icon: FileText },
             ],
           },
         ];
@@ -398,7 +398,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <ShoppingBag className="w-4 h-4 text-emerald-600" />
-            <span>Shopping Mall</span>
+            <span>Agri Market</span>
           </NavLink>
 
           <NavLink
@@ -428,7 +428,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <Bot className="w-4 h-4 text-teal-600" />
-            <span>AI Agronomist (Kisan Mitra)</span>
+            <span>AI Advisor (Kisan Mitra)</span>
           </NavLink>
 
           <NavLink
@@ -443,7 +443,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <ScanLine className="w-4 h-4 text-rose-500" />
-            <span>AI Scanner</span>
+            <span>AI Crop Scanner</span>
           </NavLink>
 
           <NavLink
@@ -458,7 +458,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <Radio className="w-4 h-4 text-indigo-500" />
-            <span>News & Audio</span>
+            <span>Agriculture News & Audio</span>
           </NavLink>
 
           <NavLink

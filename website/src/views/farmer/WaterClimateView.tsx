@@ -80,7 +80,7 @@ export const WaterClimateView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Droplets className="w-7 h-7 text-sky-600" />
-          Water Intelligence & Climate Resilience
+          Weather & Water
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Borewell groundwater telemetry, canal rotation roster, and micro-climate spray windows

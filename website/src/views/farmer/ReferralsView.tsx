@@ -74,7 +74,7 @@ export const ReferralsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Users className="w-7 h-7 text-emerald-600" />
-          Refer & Earn (Gaon Connect)
+          Invite & Earn (Gaon Connect)
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Invite neighbouring farmers. When they verify their 7/12 record, you both earn Kisan Coins.

@@ -221,7 +221,7 @@ export const SellerCompliancePage: React.FC = () => {
 
           {/* Referrals */}
           <div className={`${cardCls} p-6 space-y-4`}>
-            <h3 className="font-bold text-sm text-slate-900">Refer & Earn</h3>
+            <h3 className="font-bold text-sm text-slate-900">Invite & Earn</h3>
             <div className="grid grid-cols-3 gap-3 text-center">
               {[
                 { label: 'Invited', value: num(referral.invitedCount ?? referral.totalInvited) },
