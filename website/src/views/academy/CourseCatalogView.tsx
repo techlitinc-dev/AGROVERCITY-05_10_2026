@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   GraduationCap,
@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { courses, teachers, apiErrorMessage } from '../../lib/api';
 import { getCourseRecommendations } from '../../lib/api/dashboard';
+import { useAuthStore } from '../../stores/authStore';
+import { normalizePersona } from '../../lib/personas';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency } from '../../lib/utils';
 import { asRec, boolOf, nameOf, numOf, recArr, strOf } from './helpers';
@@ -34,11 +36,16 @@ import { ContactInstructorModal } from './ContactInstructorModal';
  *           instructor grants access manually after direct payment)
  */
 export const CourseCatalogView: React.FC = () => {
+  const { activePersona } = useAuthStore();
+  const isFarmerPersona = normalizePersona(activePersona) === 'farmer';
   const [catalog, setCatalog] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [allCategories, setAllCategories] = useState<Record<string, unknown>[]>([]);
+  const requestSeq = useRef(0);
   const [category, setCategory] = useState('All');
   const [freeOnly, setFreeOnly] = useState(false);
   const [paidOnly, setPaidOnly] = useState(false);
@@ -81,28 +88,49 @@ export const CourseCatalogView: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  // Category options come from the unfiltered catalog (fetched once) so the
+  // dropdown stays stable even when the current filter returns nothing.
+  useEffect(() => {
+    courses
+      .list({})
+      .then((list) => setAllCategories(recArr(list)))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const seq = ++requestSeq.current;
     (async () => {
       try {
         const [list, home] = await Promise.all([
           courses.list({
-            search: search || undefined,
+            search: debouncedSearch || undefined,
             category,
             isFree: freeOnly ? true : paidOnly ? false : undefined,
           }),
-          teachers.home().catch(() => null),
+          // The farmer persona is learner-only in Gurukul — don't probe the
+          // instructor console (the mode toggle stays hidden for them).
+          isFarmerPersona ? Promise.resolve(null) : teachers.home().catch(() => null),
         ]);
+        // Ignore stale responses — a slower earlier request must not overwrite
+        // the results for the current filters.
+        if (seq !== requestSeq.current) return;
         setCatalog(recArr(list));
         if (home) setInstructorAvailable(true);
       } catch (e) {
-        setError(apiErrorMessage(e));
+        if (seq === requestSeq.current) setError(apiErrorMessage(e));
       } finally {
-        setLoading(false);
+        if (seq === requestSeq.current) setLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, category, freeOnly, paidOnly]);
+  }, [debouncedSearch, category, freeOnly, paidOnly, isFarmerPersona]);
 
-  const categories = ['All', ...Array.from(new Set(catalog.map((c) => strOf(c.category)).filter(Boolean)))];
+  const categories = ['All', ...Array.from(new Set(allCategories.map((c) => strOf(c.category)).filter(Boolean)))];
+  const isFiltering = debouncedSearch.trim() !== '' || category !== 'All' || freeOnly || paidOnly;
 
   const openCourse = async (c: Record<string, unknown>) => {
     setActiveCourse(c);
@@ -135,7 +163,7 @@ export const CourseCatalogView: React.FC = () => {
       await courses.enroll(strOf(c.id));
       setNotice(`Enrolled in “${nameOf(c, strOf(c.title))}”! Find it under My Learning.`);
       setActiveCourse(null);
-      const list = await courses.list({ search: search || undefined, category, isFree: freeOnly ? true : paidOnly ? false : undefined });
+      const list = await courses.list({ search: debouncedSearch || undefined, category, isFree: freeOnly ? true : paidOnly ? false : undefined });
       setCatalog(recArr(list));
     } catch (err) {
       setError(apiErrorMessage(err));
@@ -172,7 +200,7 @@ export const CourseCatalogView: React.FC = () => {
         await courses.save(strOf(c.id));
         setNotice(`Saved “${nameOf(c, strOf(c.title))}” for later.`);
       }
-      const list = await courses.list({ search: search || undefined, category, isFree: freeOnly ? true : paidOnly ? false : undefined });
+      const list = await courses.list({ search: debouncedSearch || undefined, category, isFree: freeOnly ? true : paidOnly ? false : undefined });
       setCatalog(recArr(list));
     } catch (e) {
       setError(apiErrorMessage(e));
@@ -213,7 +241,7 @@ export const CourseCatalogView: React.FC = () => {
             </Link>
           </div>
         </div>
-        {instructorAvailable && (
+        {!isFarmerPersona && instructorAvailable && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <MonitorSmartphone className="w-4 h-4 text-slate-400" />
             <span className="text-xs font-bold text-slate-500">Instructor mode</span>
@@ -297,7 +325,7 @@ export const CourseCatalogView: React.FC = () => {
         </label>
       </div>
 
-      {recommended.length > 0 && (
+      {recommended.length > 0 && !isFiltering && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-600" />

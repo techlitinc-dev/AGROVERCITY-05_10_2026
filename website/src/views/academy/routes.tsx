@@ -4,6 +4,9 @@ import { Route, Navigate, useParams } from 'react-router-dom';
 const CourseCatalogView = lazy(() => import('./CourseCatalogView').then((m) => ({ default: m.CourseCatalogView })));
 const MyLearningView = lazy(() => import('./MyLearningView').then((m) => ({ default: m.MyLearningView })));
 const InstructorsView = lazy(() => import('./InstructorsView').then((m) => ({ default: m.InstructorsView })));
+const InstructorProfilePage = lazy(() =>
+  import('./InstructorProfilePage').then((m) => ({ default: m.InstructorProfilePage })),
+);
 const CoursePlayerPage = lazy(() => import('./CoursePlayerPage').then((m) => ({ default: m.CoursePlayerPage })));
 const CourseCertificatePage = lazy(() =>
   import('./CourseCertificatePage').then((m) => ({ default: m.CourseCertificatePage })),
@@ -44,6 +47,7 @@ export const AcademyRouteElements = () => (
     {/* Student learner surface */}
     <Route path="/academy/my-learning" element={<MyLearningView />} />
     <Route path="/academy/instructors" element={<InstructorsView />} />
+    <Route path="/academy/instructors/:id" element={<InstructorProfilePage />} />
     <Route path="/academy/courses/:id/learn" element={<CoursePlayerPage />} />
     <Route path="/academy/courses/:id/certificate" element={<CourseCertificatePage />} />
     {/* Legacy notification deep links */}

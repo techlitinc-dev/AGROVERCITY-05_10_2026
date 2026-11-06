@@ -1,4 +1,6 @@
 import { del, post, put, readList, readOne } from './http';
+import { apiClient } from './client';
+import { handleApiError } from './errors';
 import type { CourseItem } from '../../types';
 
 /**
@@ -107,9 +109,18 @@ export const courses = {
    * GET /courses/my-learning — grouped learner surface: continueLearning,
    * freeCourses, paidCourses (access granted), awaitingAccess, completedCourses,
    * savedCourses, sessions. Plus the flat `data`/`total` for older clients.
+   * Read raw (not via readOne) so the grouped envelope keys survive — readOne
+   * would unwrap `data` and drop savedCourses and every other section.
    */
-  myLearning: (): Promise<Record<string, unknown>> =>
-    readOne<Record<string, unknown>>('/courses/my-learning', { mock: MOCK_MY_LEARNING }),
+  myLearning: async (): Promise<Record<string, unknown>> => {
+    try {
+      const res = await apiClient.get('/courses/my-learning');
+      return (res.data ?? {}) as Record<string, unknown>;
+    } catch (e) {
+      if (import.meta.env.DEV) return MOCK_MY_LEARNING;
+      handleApiError(e);
+    }
+  },
 
   /** GET /courses/my-questions — every question the learner asked, with the
    *  answered/unanswered state and instructor answers. */

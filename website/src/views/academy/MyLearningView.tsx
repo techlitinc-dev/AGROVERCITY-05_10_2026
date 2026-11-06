@@ -1,29 +1,46 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   Award,
   BookOpen,
+  Bookmark,
   CalendarClock,
   CheckCircle2,
   GraduationCap,
+  HelpCircle,
   Hourglass,
   MessageCircle,
+  MessagesSquare,
   Play,
   Star,
+  Trash2,
 } from 'lucide-react';
-import { apiErrorMessage, courses, ApiError } from '../../lib/api';
+import type { LucideIcon } from 'lucide-react';
+import { apiErrorMessage, chat, courses, ApiError } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { asRec, boolOf, numOf, recArr, strOf } from './helpers';
 
 /**
- * My Learning — the learner surface. Sections: Continue Learning, Awaiting
- * Access (contact unlocked, instructor has not granted yet), Free Courses,
- * Paid Courses with Access, Completed Courses, Saved Courses, upcoming live
- * sessions, and My Questions with the answered/unanswered state. Paid access
- * is always described as "granted by the instructor" — never as a platform
- * payment state.
+ * My Learning — the learner surface, organised as tabs:
+ *   My Courses     — Continue Learning, Awaiting Instructor Access, Free,
+ *                    Paid with Access, Live Sessions, Completed (check-in +
+ *                    rating live here).
+ *   Saved Courses  — bookmarked catalog courses ("Save for later"), removable.
+ *   My Questions   — every question the learner asked, with the
+ *                    answered/unanswered state and instructor answers.
+ *   Chat with Instructor — the learner's 1:1 instructor threads; opens the
+ *                    shared chat page. Paid access is always described as
+ *                    "granted by the instructor" — never a platform payment.
  */
+type TabKey = 'courses' | 'saved' | 'questions' | 'chats';
+
+const TABS: { key: TabKey; label: string; icon: LucideIcon }[] = [
+  { key: 'courses', label: 'My Courses', icon: BookOpen },
+  { key: 'saved', label: 'Saved Courses', icon: Bookmark },
+  { key: 'questions', label: 'My Questions', icon: HelpCircle },
+  { key: 'chats', label: 'Chat with Instructor', icon: MessagesSquare },
+];
 export const MyLearningView: React.FC = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
@@ -45,6 +62,15 @@ export const MyLearningView: React.FC = () => {
   const [reviewText, setReviewText] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<TabKey>(() => {
+    const t = searchParams.get('tab');
+    return t === 'saved' || t === 'questions' || t === 'chats' ? t : 'courses';
+  });
+  const [chats, setChats] = useState<Record<string, unknown>[]>([]);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const [chatsLoaded, setChatsLoaded] = useState(false);
+  const [removingSavedId, setRemovingSavedId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -75,8 +101,44 @@ export const MyLearningView: React.FC = () => {
 
   useEffect(() => {
     void load();
+    if (tab === 'chats') void loadChats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadChats = async () => {
+    setChatsLoading(true);
+    try {
+      const rows = recArr(await chat.rooms());
+      setChats(rows.filter((r) => strOf(r.counterpartyPersona) === 'instructor'));
+    } catch {
+      setChats([]);
+    } finally {
+      setChatsLoading(false);
+      setChatsLoaded(true);
+    }
+  };
+
+  const selectTab = (next: TabKey) => {
+    setTab(next);
+    setSearchParams(next === 'courses' ? {} : { tab: next }, { replace: true });
+    if (next === 'chats' && !chatsLoaded && !chatsLoading) void loadChats();
+  };
+
+  const handleRemoveSaved = async (c: Record<string, unknown>) => {
+    const courseId = strOf(c.courseId) || strOf(c.id);
+    if (!courseId || removingSavedId) return;
+    setRemovingSavedId(courseId);
+    setError(null);
+    try {
+      await courses.unsave(courseId);
+      setSavedCourses((prev) => prev.filter((x) => (strOf(x.courseId) || strOf(x.id)) !== courseId));
+      setNotice(`Removed “${strOf(c.title) || 'course'}” from saved courses.`);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setRemovingSavedId(null);
+    }
+  };
 
   const handleCheckIn = async (s: Record<string, unknown>) => {
     const sessionId = strOf(s.id);
@@ -151,6 +213,45 @@ export const MyLearningView: React.FC = () => {
         </Link>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="My Learning sections">
+        {TABS.map(({ key, label, icon: Icon }) => {
+          const active = tab === key;
+          const count =
+            key === 'saved'
+              ? savedCourses.length
+              : key === 'questions'
+                ? myQuestions.length
+                : key === 'chats' && chatsLoaded
+                  ? chats.length
+                  : null;
+          return (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={active}
+              onClick={() => selectTab(key)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                active
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+              {count !== null && count > 0 && (
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                    active ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {error && (
         <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" /> {error}
@@ -164,19 +265,20 @@ export const MyLearningView: React.FC = () => {
 
       {loading ? (
         <p className="text-xs text-slate-400">Loading your learning…</p>
-      ) : items.length === 0 && awaitingAccess.length === 0 && savedCourses.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center">
-          <p className="text-xs text-slate-400 mb-3">No courses yet.</p>
-          <Link
-            to="/academy"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
-          >
-            <BookOpen className="w-3.5 h-3.5" /> Find a course
-          </Link>
-        </div>
-      ) : (
-        <>
-          {continueLearning.length > 0 && (
+      ) : tab === 'courses' ? (
+        items.length === 0 && awaitingAccess.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center">
+            <p className="text-xs text-slate-400 mb-3">No courses yet.</p>
+            <Link
+              to="/academy"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Find a course
+            </Link>
+          </div>
+        ) : (
+          <>
+            {continueLearning.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-extrabold text-slate-900">Continue Learning</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -358,73 +460,154 @@ export const MyLearningView: React.FC = () => {
             </section>
           )}
 
-          {savedCourses.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-sm font-extrabold text-slate-900">Saved Courses</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {savedCourses.map((c) => (
-                  <div
-                    key={strOf(c.courseId) || strOf(c.id)}
-                    className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 flex flex-col justify-between"
-                  >
-                    <div>
-                      <h3 className="font-extrabold text-sm text-slate-900 leading-snug">{strOf(c.title)}</h3>
-                      <p className="text-xs text-slate-400 mt-1">By {strOf(c.instructorName) || 'Gurukul Faculty'}</p>
-                      <p className="text-xs font-black text-emerald-800 mt-2">
-                        {numOf(c.priceRupees) === 0 ? 'Free' : `${strOf(c.currency, 'INR') || 'INR'} ${numOf(c.priceRupees).toLocaleString('en-IN')}`}
-                      </p>
-                    </div>
+          </>
+        )
+      ) : tab === 'saved' ? (
+        savedCourses.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center">
+            <Bookmark className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-xs text-slate-400 mb-3">
+              No saved courses yet. Use “Save for later” on any course in the catalog.
+            </p>
+            <Link
+              to="/academy"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Browse courses
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {savedCourses.map((c) => {
+              const courseId = strOf(c.courseId) || strOf(c.id);
+              return (
+                <div
+                  key={courseId}
+                  className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 flex flex-col justify-between"
+                >
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900 leading-snug">{strOf(c.title)}</h3>
+                    <p className="text-xs text-slate-400 mt-1">By {strOf(c.instructorName) || 'Gurukul Faculty'}</p>
+                    <p className="text-xs font-black text-emerald-800 mt-2">
+                      {numOf(c.priceRupees) === 0 ? 'Free' : `${strOf(c.currency, 'INR') || 'INR'} ${numOf(c.priceRupees).toLocaleString('en-IN')}`}
+                    </p>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
                     <button
                       onClick={() => navigate('/academy')}
-                      className="mt-3 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
                     >
                       View course
                     </button>
+                    <button
+                      onClick={() => void handleRemoveSaved(c)}
+                      disabled={removingSavedId === courseId}
+                      className="px-3 py-2 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-50 font-bold text-[11px] inline-flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> {removingSavedId === courseId ? 'Removing…' : 'Remove'}
+                    </button>
                   </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : tab === 'questions' ? (
+        myQuestions.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center">
+            <HelpCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-xs text-slate-400">
+              You haven’t asked any questions yet. Ask the instructor from a course page and track the answer here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {myQuestions.map((q) => (
+              <div key={strOf(q.id)} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold text-violet-700">{strOf(q.courseTitle) || 'Course'}</p>
+                    <p className="text-xs font-bold text-slate-900 mt-0.5">{strOf(q.question)}</p>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
+                      boolOf(q.isAnswered)
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}
+                  >
+                    {boolOf(q.isAnswered) ? (
+                      <>
+                        <CheckCircle2 className="w-3 h-3" /> Answered
+                      </>
+                    ) : (
+                      <>
+                        <Hourglass className="w-3 h-3" /> Awaiting answer
+                      </>
+                    )}
+                  </span>
+                </div>
+                {recArr(q.answers).map((a) => (
+                  <p key={strOf(a.id)} className="text-[11px] text-slate-600 bg-slate-50 rounded-xl p-3 border border-slate-100 mt-2">
+                    <span className="font-bold text-emerald-700">Instructor: </span>
+                    {strOf(a.answer)}
+                  </p>
                 ))}
               </div>
-            </section>
-          )}
-
-          {myQuestions.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-sm font-extrabold text-slate-900">My Questions</h2>
-              <div className="space-y-2">
-                {myQuestions.map((q) => (
-                  <div key={strOf(q.id)} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-bold text-violet-700">{strOf(q.courseTitle) || 'Course'}</p>
-                        <p className="text-xs font-bold text-slate-900 mt-0.5">{strOf(q.question)}</p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
-                          boolOf(q.isAnswered)
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}
-                      >
-                        {boolOf(q.isAnswered) ? (
-                          <>
-                            <CheckCircle2 className="w-3 h-3" /> Answered
-                          </>
-                        ) : (
-                          <>
-                            <Hourglass className="w-3 h-3" /> Awaiting answer
-                          </>
-                        )}
+            ))}
+          </div>
+        )
+      ) : (
+        <>
+          {chatsLoading ? (
+            <p className="text-xs text-slate-400">Loading your instructor chats…</p>
+          ) : chats.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center">
+              <MessagesSquare className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-xs text-slate-400">
+                No instructor chats yet. Chat unlocks after you enrol in a course or contact the instructor from the
+                course page.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {chats.map((r) => {
+                const roomId = strOf(r.id) || strOf(r.roomId);
+                const unreadCount = numOf(r.unreadCount);
+                return (
+                  <div
+                    key={roomId}
+                    className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <span className="p-2 rounded-xl bg-violet-50 text-violet-600 shrink-0">
+                        <MessagesSquare className="w-4 h-4" />
                       </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900">{strOf(r.counterpartyName) || 'Instructor'}</p>
+                        <p className="text-[11px] text-slate-400">{strOf(r.crop) || 'Gurukul course'}</p>
+                        {strOf(r.lastMessageText) && (
+                          <p className="text-[11px] text-slate-500 mt-1 truncate">{strOf(r.lastMessageText)}</p>
+                        )}
+                      </div>
                     </div>
-                    {recArr(q.answers).map((a) => (
-                      <p key={strOf(a.id)} className="text-[11px] text-slate-600 bg-slate-50 rounded-xl p-3 border border-slate-100 mt-2">
-                        <span className="font-bold text-emerald-700">Instructor: </span>
-                        {strOf(a.answer)}
-                      </p>
-                    ))}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {unreadCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                          {unreadCount} new
+                        </span>
+                      )}
+                      <button
+                        onClick={() => navigate(`/chat?room=${encodeURIComponent(roomId)}`)}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                      >
+                        Open chat
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </section>
+                );
+              })}
+            </div>
           )}
         </>
       )}
