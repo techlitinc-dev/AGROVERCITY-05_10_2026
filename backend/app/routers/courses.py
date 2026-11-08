@@ -175,13 +175,9 @@ def _validate_access_pricing(access_type: str | None, price: float) -> str:
 async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
     if not _is_instructor(user):
         _error(403, "NOT_INSTRUCTOR", "only instructors can publish courses")
-    # WS-02 task 2.27: KYC must be approved before publishing (browse stays open).
-    from app.services.kyc import instructor_publish_blocked_reason
-
-    if not user.get("isAdmin"):
-        blocked = await instructor_publish_blocked_reason(user["id"])
-        if blocked:
-            _error(403, "KYC_NOT_APPROVED", blocked)
+    # Any registered instructor can create (and publish) a course — no KYC
+    # case is required. Content review happens independently through the
+    # course moderation queue (moderationStatus starts pending_review).
     # WS-02 step 5: Free tier = 1 course; further courses need `instructor_pro`.
     existing = await query("courses", [("instructorId", "==", user["id"])], limit=500)
     owned = [c for c in existing if c.get("status") in ("published", "pending_review", "pendingReview")]

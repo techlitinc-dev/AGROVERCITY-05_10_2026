@@ -301,13 +301,7 @@ async def list_my_courses(user: dict = Depends(_user)):
 async def create_course(body: CourseCreateIn, user: dict = Depends(_user)):
     if not _is_instructor(user):
         _error(403, "NOT_INSTRUCTOR", "only instructors can publish courses")
-    # WS-02 task 2.27: KYC must be approved before publishing (browse stays open).
-    from app.services.kyc import instructor_publish_blocked_reason
-
-    if not user.get("isAdmin"):
-        blocked = await instructor_publish_blocked_reason(user["id"])
-        if blocked:
-            _error(403, "KYC_NOT_APPROVED", blocked)
+    # Course creation is open to every registered instructor — no KYC gate.
     # WS-02 step 5: Free tier = 1 course; further courses need `instructor_pro`.
     existing = await query("courses", [("instructorId", "==", user["id"])], limit=500)
     owned = [c for c in existing if c.get("status") in ("published", "pending_review", "pendingReview")]
@@ -350,13 +344,7 @@ async def list_teacher_batches(user: dict = Depends(_user)):
 
 @router.post("/batches", status_code=201)
 async def create_teacher_batch(body: BatchCreateIn, user: dict = Depends(_user)):
-    # WS-02 task 2.27: taking bookings (batches) also requires approved KYC.
-    from app.services.kyc import instructor_publish_blocked_reason
-
-    if not user.get("isAdmin"):
-        blocked = await instructor_publish_blocked_reason(user["id"])
-        if blocked:
-            _error(403, "KYC_NOT_APPROVED", blocked)
+    # Batches are open to every registered instructor — no KYC gate.
     bid = f"btc_{uuid.uuid4().hex[:8]}"
     doc = {
         "id": bid,

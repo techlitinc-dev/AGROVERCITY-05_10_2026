@@ -139,20 +139,20 @@ async def test_invalid_free_paid_pricing_rejected(client, user_store):
     assert bad_paid.json()["error"]["code"] == "INVALID_PRICING"
 
 
-async def test_unverified_instructor_cannot_publish(client, user_store):
+async def test_course_creation_and_publish_do_not_require_instructor_kyc(client, user_store):
     instructor = _instructor(user_store)
-    # flip the seeded approved case back to pending
-    case_id = "kyc_uid-inst_instructor"
-    user_store[f"kyc_cases/{case_id}"] = {
-        "caseId": case_id,
-        "userId": "uid-instructor",
-        "persona": "instructor",
-        "status": "pending",
-        "docs": [],
-    }
-    resp = await client.post("/v1/courses", json=COURSE, headers=auth(instructor))
-    assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "KYC_NOT_APPROVED"
+    # The exact reported scenario: no KYC case submitted at all.
+    user_store.pop("kyc_cases/kyc_uid-inst_instructor", None)
+    course = await _create(client, instructor)
+    assert course["status"] == "pendingReview"
+    # Going public is allowed as well.
+    resp = await client.put(
+        f"/v1/courses/{course['id']}",
+        json={"status": "published"},
+        headers=auth(instructor),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "published"
 
 
 # ---------------------------------------------------------------------------

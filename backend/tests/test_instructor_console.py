@@ -122,53 +122,16 @@ async def test_entitlement_gate_free_one_course_then_pro(client, user_store):
     assert third.status_code == 201
 
 
-def _seed_instructor_case(user_store, uid, *, specialization, docs):
-    """Overwrite the fixture's approved instructor case with a specialization."""
-    case_id = f"kyc_{uid[:8]}_instructor"
-    user_store[f"kyc_cases/{case_id}"] = {
-        "caseId": case_id,
-        "userId": uid,
-        "persona": "instructor",
-        "status": "verified",
-        "specialization": specialization,
-        "docs": [
-            {"docId": f"{case_id}:{doc_type}", "type": doc_type, "status": status}
-            for doc_type, status in docs
-        ],
-        "submittedAt": "2026-10-05T00:00:00+00:00",
-    }
-    return case_id
-
-
-async def test_kyc_dgca_specialization_publish_gate(client, user_store):
+async def test_course_creation_does_not_require_instructor_kyc(client, user_store):
     token = seed_user(user_store, uid="uid-drone", active_profile="instructor")
-    # A drone-training instructor whose DGCA certificate is not yet verified
-    # cannot publish (WS-02 task 2.28 / eligibility rule §B).
-    _seed_instructor_case(
-        user_store, "uid-drone", specialization=["drone_training"], docs=[("pan", "verified")]
-    )
-
-    blocked = await client.post(
+    # The exact reported scenario: no KYC case submitted at all. A registered
+    # Gurukul instructor can still create a course — and it goes public.
+    user_store.pop("kyc_cases/kyc_uid-dron_instructor", None)
+    created = await client.post(
         "/v1/teachers/courses/create", json=COURSE_BODY, headers=auth(token)
     )
-    assert blocked.status_code == 403
-    assert blocked.json()["error"]["code"] == "KYC_NOT_APPROVED"
-
-    # Once the verified RPTO-issued DGCA certificate lands, the same call passes.
-    case_id = "kyc_uid-dron_instructor"
-    user_store[f"kyc_cases/{case_id}"]["docs"].append(
-        {
-            "docId": f"{case_id}:dgca_remote_pilot_certificate",
-            "type": "dgca_remote_pilot_certificate",
-            "status": "verified",
-        }
-    )
-    allowed = await client.post(
-        "/v1/teachers/courses/create",
-        json={**COURSE_BODY, "title": "DGCA Drone Pilot Certification"},
-        headers=auth(token),
-    )
-    assert allowed.status_code == 201
+    assert created.status_code == 201
+    assert created.json()["status"] == "published"
 
 
 async def test_licence_expiry_reverification(client, user_store):
