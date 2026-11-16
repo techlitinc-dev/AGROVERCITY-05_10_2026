@@ -110,6 +110,14 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Gauseva & Shelter',
   },
   {
+    id: 'womenShg',
+    icon: '🪔',
+    title: 'Mahila Gruh Udyog & SHG',
+    nativeTitle: 'महिला गृह उद्योग',
+    desc: 'Cottage food products, spices, pickles, SHG monthly savings, and Micro-Mudras.',
+    badge: 'Women Enterprise',
+  },
+  {
     id: 'nursery',
     icon: '🌱',
     title: 'Plant Nursery Owner',

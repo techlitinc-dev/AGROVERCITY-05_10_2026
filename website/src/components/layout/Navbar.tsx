@@ -98,6 +98,7 @@ export const Navbar: React.FC = () => {
     { id: 'exporter', label: 'International Exporter (अंतर्राष्ट्रीय निर्यातक)', icon: '🚢' },
     { id: 'directBuyer', label: 'Industrial Buyer (थोक खरीदार)', icon: '🏢' },
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
+    { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG (महिला गृह उद्योग)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
     { id: 'nursery', label: 'Plant Nursery (पौधघर / नर्सरी)', icon: '🌱' },
     { id: 'coldStorageProvider', label: 'Cold Storage (शीतगृह)', icon: '❄️' },

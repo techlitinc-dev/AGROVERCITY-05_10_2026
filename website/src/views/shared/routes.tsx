@@ -25,8 +25,6 @@ export const SharedRouteElements = () => (
     <Route path="/kyc" element={<KycCasePage />} />
     {/* Bank Accounts page removed from the frontend — redirect for compat. */}
     <Route path="/bank-accounts" element={<Navigate to="/profile" replace />} />
-    {/* Mahila Bachat Gat directory removed from the frontend — redirect for compat. */}
-    <Route path="/women/directory" element={<Navigate to="/mall" replace />} />
     <Route path="/chat" element={<ChatPage />} />
     <Route path="/track/:token" element={<TrackDeliveryView />} />
     <Route path="/payments" element={<TransactionsPage />} />

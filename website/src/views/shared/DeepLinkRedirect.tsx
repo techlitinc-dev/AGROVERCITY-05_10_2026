@@ -25,6 +25,10 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
       return '/community/trees';
     case 'postHarvest':
       return '/community/cold';
+    case 'women':
+    case 'womenShg':
+    case 'gruhUdyog':
+      return '/womenShg';
     case 'myContracts':
     case 'contracts':
       // Farmer supply-contracts page was removed; buyers keep their contract desk.

@@ -169,6 +169,21 @@ export const PERSONAS: PersonaDef[] = [
     createProbe: ['/milkSeller/clients'],
   },
   {
+    id: 'womenShg',
+    label: 'Mahila Gruh Udyog & SHG',
+    roleplay: 'PW Test SHG, women self-help group managing product batches, savings and FSSAI certificates.',
+    onboard: { phone: '+919100000103', name: 'PW Test SHG' },
+    home: '/womenShg',
+    routes: [
+      '/womenShg',
+      '/womenShg/products',
+      '/womenShg/batches',
+      '/womenShg/certs',
+      '/womenShg/savings',
+    ],
+    createProbe: ['/womenShg/products', '/womenShg/batches'],
+  },
+  {
     id: 'directBuyer',
     label: 'Industrial / Direct Buyer',
     roleplay: 'Shree Foods Pvt Ltd, processor posting bulk escrow demands and running gate QC.',

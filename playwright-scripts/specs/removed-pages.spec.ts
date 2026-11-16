@@ -4,9 +4,12 @@ import { BASE_URL, SUPERADMIN_URL } from '../lib/env';
 import type { PersonaDef } from '../lib/personas';
 
 /**
- * Regression guard for the "7 pages + Mahila Gruh Udyog hub" frontend removal.
- * Asserts the pages are gone from navigation, their URLs redirect somewhere
- * safe (no 404 / blank), and the surrounding flows still render.
+ * Regression guard for the "7 pages" frontend removal (carbon, documentation
+ * vault, PMFBY, bank accounts, KCC loans, Mahila Bachat Gat-era pages, pashu dhan).
+ * The Mahila Gruh Udyog hub itself was restored to the frontend on 2026-11-16 —
+ * women-hub URLs are expected to RENDER again (see the dedicated test below).
+ * Remaining removed pages: gone from navigation, URLs redirect somewhere safe
+ * (no 404 / blank), and the surrounding flows still render.
  */
 
 const FARMER = {
@@ -20,7 +23,6 @@ const FARMER = {
 
 const REMOVED_SIDEBAR_LABELS = [
   'Pashu Dhan',
-  'Mahila Bachat Gat',
   'KCC & Agri Loans',
   'Bank Accounts',
   'PMFBY Crop Insurance',
@@ -38,12 +40,6 @@ const REDIRECTS: Array<[string, RegExp]> = [
   ['/farmer/vault', /\/farmer$/],
   ['/farmer/livestock', /\/farmer$/],
   ['/community/carbon', /\/community\/trees$/],
-  ['/community/women', /\/mall$/],
-  ['/womenShg', /\/mall$/],
-  ['/womenShg/products', /\/mall$/],
-  ['/womenShg/savings', /\/mall$/],
-  ['/gruhUdyog', /\/mall$/],
-  ['/women/directory', /\/mall$/],
   ['/bank-accounts', /\/profile$/],
 ];
 
@@ -93,13 +89,20 @@ test.describe('removed pages stay unreachable', () => {
     await expect(page.locator('body')).toContainText('Tree Plantation');
     await expect(page.locator('body')).not.toContainText('Carbon Footprint');
 
-    await page.goto(BASE_URL + '/mall');
-    await expect(page.locator('body')).not.toContainText('Explore the women hub');
-
     await page.goto(BASE_URL + '/farmer/lots');
     await expect(page.locator('body')).toContainText('Produce');
 
     expect(watch.pageErrors, 'uncaught page errors on core flows').toEqual([]);
+  });
+
+  test('women hub renders again', async ({ page }) => {
+    const watch = new Watch();
+    attachWatchers(page, watch);
+    await page.goto(BASE_URL + '/womenShg');
+    await expect(page.locator('body')).toContainText('Mahila Gruh Udyog', { timeout: 30_000 });
+    await page.goto(BASE_URL + '/women/directory');
+    await expect(page.locator('body')).toContainText('Mahila Bachat Gat', { timeout: 30_000 });
+    expect(watch.pageErrors, 'uncaught page errors on women hub').toEqual([]);
   });
 
   test('profile dropdown no longer offers Bank Accounts', async ({ page }) => {

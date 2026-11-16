@@ -16,6 +16,7 @@ import { AcademyRouteElements } from './views/academy/routes';
 import { FinanceRouteElements } from './views/finance/routes';
 import { MallRouteElements } from './views/mall/routes';
 import { CommunityRouteElements } from './views/community/routes';
+import { WomenRouteElements } from './views/women/routes';
 import { SharedRouteElements } from './views/shared/routes';
 import { ExporterRouteElements } from './views/exporter/routes';
 import { MilkSellerRouteElements } from './views/milkseller/routes';
@@ -49,6 +50,7 @@ export const App: React.FC = () => {
           {FinanceRouteElements()}
           {MallRouteElements()}
           {CommunityRouteElements()}
+          {WomenRouteElements()}
           {SharedRouteElements()}
 
           {/* Catch-all redirect */}

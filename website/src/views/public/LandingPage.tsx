@@ -6,77 +6,32 @@ import {
   TrendingDown,
   ArrowRight,
   ArrowUpRight,
-  ShieldCheck,
-  Truck,
-  Building2,
   Sparkles,
-  Bot,
-  Landmark,
   Coins,
-  CheckCircle2,
   Users,
   Wheat,
-  Scale,
   Milk,
   Search,
-  Filter,
-  Shield,
-  ShieldAlert,
-  Activity,
-  BarChart3,
-  Smartphone,
-  Laptop,
-  Zap,
   Star,
   ChevronDown,
-  ChevronRight,
-  Play,
-  Eye,
-  FileText,
-  FileSpreadsheet,
-  HeartHandshake,
   PhoneCall,
   HelpCircle,
-  Layers,
-  Award,
-  Stethoscope,
-  Snowflake,
-  Warehouse,
-  Ship,
-  Heart,
-  Droplets,
-  Wrench,
-  Check,
-  AlertCircle,
-  RefreshCw,
-  ShoppingCart,
-  ShoppingBag,
-  Radio,
-  ScanLine,
-  Clock,
-  Calculator,
-  Cpu,
-  DollarSign,
   MapPin,
-  Gauge,
 } from 'lucide-react';
 import { mandi } from '../../lib/api';
 import { formatCurrency, formatNumber } from '../../lib/utils';
 import { useAuthStore } from '../../stores/authStore';
 import { useI18nStore } from '../../lib/i18n';
 import { ParticleNetworkCanvas } from '../../components/common/ParticleNetworkCanvas';
-import type { MandiPrice, PersonaType } from '../../types';
+import type { PersonaType } from '../../types';
 
 interface PersonaCardInfo {
   id: PersonaType;
   title: string;
   hindiTitle: string;
   category: 'producers' | 'trade' | 'dairy' | 'fintech';
-  desc: string;
   icon: string;
   route: string;
-  features: string[];
-  stat: string;
 }
 
 interface CommodityBenchmark {
@@ -88,9 +43,24 @@ interface CommodityBenchmark {
   category: 'oilseeds' | 'grains' | 'vegetables' | 'spices' | 'cash';
   modalPrice: number;
   msp?: number;
-  trendPercentage: number;
-  arrivalsQ: number;
+  trendPercentage?: number;
+  arrivalsQ?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  priceDate?: string;
+  /** True when the row came from the government open-data live feed. */
+  live?: boolean;
 }
+
+/** Bucket a gov-feed commodity name into the radar's filter categories. */
+const categorizeCommodity = (name: string): CommodityBenchmark['category'] => {
+  const n = name.toLowerCase();
+  if (/(onion|tomato|potato|brinjal|cauliflower|cabbage|okra|beans|peas|vegetable)/.test(n)) return 'vegetables';
+  if (/(wheat|rice|paddy|maize|bajra|jowar|gram|moong|urad|arhar|lentil|ragi|barley)/.test(n)) return 'grains';
+  if (/(cotton|jute|sugarcane)/.test(n)) return 'cash';
+  if (/(turmeric|coriander|cumin|chilli|chili|pepper|cardamom|ginger|garlic|fenugreek)/.test(n)) return 'spices';
+  return 'oilseeds';
+};
 
 const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm1', commodity: 'Soybean', variety: 'Yellow #JS335', mandi: 'Latur', state: 'Maharashtra', category: 'oilseeds', modalPrice: 4850, msp: 4892, trendPercentage: 2.4, arrivalsQ: 8450 },
@@ -105,86 +75,205 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm10', commodity: 'Groundnut', variety: 'Bold #TG37A', mandi: 'Gondal', state: 'Gujarat', category: 'oilseeds', modalPrice: 6150, msp: 6377, trendPercentage: 1.1, arrivalsQ: 5600 },
 ];
 
+/** The 9 finalized personas the landing FAQ is organized around. */
+const FAQ_PERSONAS: { id: PersonaType; label: string; icon: string }[] = [
+  { id: 'farmer', label: 'Farmer', icon: '🌾' },
+  { id: 'landlord', label: 'Landlord', icon: '🏡' },
+  { id: 'equipmentOwner', label: 'Equipment', icon: '🚜' },
+  { id: 'womenShg', label: 'Women Hub', icon: '🪔' },
+  { id: 'transporter', label: 'Transporter', icon: '🚚' },
+  { id: 'seller', label: 'Vyapari', icon: '🏪' },
+  { id: 'milkSeller', label: 'Milk Vendor', icon: '🫗' },
+  { id: 'instructor', label: 'Instructor', icon: '🎓' },
+  { id: 'customer', label: 'Customer', icon: '🛍️' },
+];
+
+interface FaqItem {
+  id: string;
+  persona: PersonaType;
+  /** Feature/topic keywords — the ONLY content search matches on (plus persona). */
+  tags: string[];
+  q: string;
+  a: string;
+}
+
+/** Two Q&As per finalized persona — powers the searchable FAQ accordion. */
+const FAQ_DATA: FaqItem[] = [
+  {
+    id: 'farmer-1',
+    persona: 'farmer',
+    tags: ['escrow', 'payment', 'b2b trade', 'otp settlement', 'counter offer'],
+    q: 'How does the B2B Escrow guarantee 100% payment safety for farmers and buyers?',
+    a: "When a buyer confirms a produce lot or counter-offer, 100% of the trade value is securely locked in a dedicated escrow account monitored by Agrovercity. The farmer receives an official SMS and digital contract before loading the truck. Upon arrival at the buyer gate, quality inspection is recorded, and the farmer releases a 4-digit OTP. The moment OTP is verified, the escrow account automatically triggers an instant RTGS/NEFT settlement directly into the farmer’s verified bank account.",
+  },
+  {
+    id: 'farmer-2',
+    persona: 'farmer',
+    tags: ['pmfby', 'insurance', 'claim', 'crop loss', 'dbt'],
+    q: 'What is the procedure for PMFBY crop insurance loss claims?',
+    a: 'In case of hail, excess rain, pest outbreak, or drought, farmers can intimate crop loss within 72 hours through the app with geotagged and timestamped field photos. Agrovercity cross-verifies the claim against satellite NDVI vegetative health data and weather station metrics, assigns a certified surveyor from the local roster, and coordinates the Direct Benefit Transfer (DBT) directly with the insurance provider.',
+  },
+  {
+    id: 'landlord-1',
+    persona: 'landlord',
+    tags: ['7/12', 'land records', 'kcc loan', 'mahabhulekh', 'bhulekh'],
+    q: 'How does digital 7/12 land record sync help with leasing and KCC loans?',
+    a: 'Agrovercity integrates directly with official state revenue portals (Mahabhulekh in Maharashtra, AnyRoR in Gujarat, Bhulekh in UP/MP). When registering land or applying for a Kisan Credit Card (KCC) loan, our automated OCR parses the land survey numbers (Gat/Khasra), ownership shares, and encumbrances in seconds. This eliminates physical visits to the Tehsil office and reduces loan approval time from 4 weeks to under 48 hours.',
+  },
+  {
+    id: 'landlord-2',
+    persona: 'landlord',
+    tags: ['lease', 'rent', 'security deposit', 'escrow'],
+    q: 'How are my rental payments and security deposits protected?',
+    a: 'Lease rents are auto-collected via UPI mandate on the due date and credited straight to your bank account. The security deposit sits in a neutral escrow — never with the tenant — and is refunded within 7 days of handover, with deductions only against documented, photo-verified damage claims agreed in the 5-round digital lease.',
+  },
+  {
+    id: 'equipment-1',
+    persona: 'equipmentOwner',
+    tags: ['machinery booking', 'tractor', 'hourly rate', 'per acre', 'slot booking'],
+    q: 'How do hourly and per-acre machinery bookings work?',
+    a: 'List each machine with operator details and your rate (per hour or per acre). Farmers book calendar slots, and GPS geofencing logs the actual worked area for acreage billing. The farmer’s payment is locked in escrow before the job starts and is released to you the moment the work is confirmed complete.',
+  },
+  {
+    id: 'equipment-2',
+    persona: 'equipmentOwner',
+    tags: ['damage claim', 'repair', 'security deposit'],
+    q: 'What happens if my tractor or harvester is damaged during a job?',
+    a: 'Every booking carries a damage security deposit from the farmer. You file a claim with geotagged photos from the field; our damage desk mediates within 48 hours and compensates you from the deposit, so repairs never come out of your pocket.',
+  },
+  {
+    id: 'women-1',
+    persona: 'womenShg',
+    tags: ['shg savings', 'bachat', 'micro loan', 'mudra', 'credit score'],
+    q: 'How do SHG monthly savings and micro-loans work on the platform?',
+    a: 'Your bachat gat runs as a digital savings circle — members get auto-reminders, and every contribution updates the group passbook instantly. The SHG’s savings history builds a group credit score that unlocks Micro-Mudra working-capital loans at 1–1.5% per month, with zero middlemen.',
+  },
+  {
+    id: 'women-2',
+    persona: 'womenShg',
+    tags: ['fssai', 'pickles', 'papad', 'gruh udyog', 'cottage food'],
+    q: 'What do I need to legally sell pickles, papad and masala online?',
+    a: 'Register your gruh udyog, upload your FSSAI registration (free for small cottage producers), and list products with batch dates. Agrovercity auto-generates compliant labels and invoices for cottage-scale sales, so your home enterprise sells across India worry-free.',
+  },
+  {
+    id: 'transporter-1',
+    persona: 'transporter',
+    tags: ['bilty', 'ft-1', 'eway bill', 'gps tracking', 'freight'],
+    q: 'How does the Smart Transport Bilty (FT-1 to FT-8) protect transporters?',
+    a: 'Our freight module automatically generates a GST and e-Way bill compliant Digital Bilty (Lorry Receipt) specifying the consignor, consignee, cargo weight, and agreed freight rate. Transporters get real-time GPS tracking with a 48-hour shareable web link. If loading or unloading exceeds the agreed 2-hour window, the system automatically bills and credits hourly detention fees to the transporter wallet.',
+  },
+  {
+    id: 'transporter-2',
+    persona: 'transporter',
+    tags: ['detention', 'waiting charges', 'loading'],
+    q: 'Do I get paid for waiting long hours at loading or unloading?',
+    a: 'Yes. After a free 2-hour window at the mandi gate or buyer warehouse, GPS geofencing automatically computes hourly detention and credits it to your wallet — billed to whichever party caused the delay. No arguments, no phone calls.',
+  },
+  {
+    id: 'seller-1',
+    persona: 'seller',
+    tags: ['pos', 'khata', 'udhaar', 'credit sale', 'payment reminder'],
+    q: 'How does the digital POS khata help my agri-input shop?',
+    a: 'Every sale on credit is recorded against the customer’s phone number, with polite auto WhatsApp reminders on due dates. You see per-customer outstanding at a glance, send payment links, and the khata updates the instant a repayment lands — no more paper registers.',
+  },
+  {
+    id: 'seller-2',
+    persona: 'seller',
+    tags: ['j-form', 'apmc', 'procurement', 'escrow'],
+    q: 'Can I procure crops directly from farmers without APMC commission agents?',
+    a: 'Yes — post your procurement plan with your J-Form/APMC details. Farmers within your radius see live bids and counter-offer; you pick the lots, and the pickup happens at your storefront or the farm gate with 100% escrow settlement and digital weighbridge slips.',
+  },
+  {
+    id: 'milk-1',
+    persona: 'milkSeller',
+    tags: ['language', 'voice support', 'doodhwala', 'easy to use'],
+    q: 'Can a small farmer or village doodhwala use this platform easily?',
+    a: 'Yes! The entire Agrovercity platform is designed ground-up for Bharat with full voice-assistant support in 9 Indian languages (Hindi, Marathi, Gujarati, Punjabi, Telugu, Tamil, Kannada, Bengali, and English). Dairies and milk vendors can punch milk deliveries with single taps, and farmers can check mandi rates or diagnose leaf diseases using photos without typing complex words.',
+  },
+  {
+    id: 'milk-2',
+    persona: 'milkSeller',
+    tags: ['fat', 'snf', 'milk price', 'rate chart', 'passbook'],
+    q: 'How is my milk priced every single day?',
+    a: 'Every can is tested for FAT and SNF at collection, and the day’s rate chart converts your readings into a transparent per-litre price — visible to both you and the customer. Each delivery auto-credits your digital passbook and the customer’s monthly bill.',
+  },
+  {
+    id: 'instructor-1',
+    persona: 'instructor',
+    tags: ['royalty', 'course', 'payout', 'earn'],
+    q: 'How do I earn money from my agriculture courses?',
+    a: 'Upload your video or audio masterclasses, set your price, and publish to the Gurukul catalog. Farmers pay by UPI and you receive an 85% royalty payout every week after the platform fee — with live doubt-clearing batches to keep students engaged.',
+  },
+  {
+    id: 'instructor-2',
+    persona: 'instructor',
+    tags: ['certificate', 'batch', 'verification'],
+    q: 'Can I issue certificates to students who complete my batches?',
+    a: 'Yes. Completed batches generate verifiable digital certificates carrying your academy name, the course, and a unique batch ID. Students can download and share them, and employers can verify them instantly on the platform.',
+  },
+  {
+    id: 'customer-1',
+    persona: 'customer',
+    tags: ['traceable', 'qr code', 'farm to home', 'organic'],
+    q: 'Is the produce I buy really coming directly from farmers?',
+    a: 'Every product carries a farm-traceable QR code showing the farmer and farm it came from, the harvest date, and any lab test results. What you see on the label is what reached your door.',
+  },
+  {
+    id: 'customer-2',
+    persona: 'customer',
+    tags: ['subscription', 'basket', 'delivery', 'upi'],
+    q: 'Can I set up weekly milk and vegetable subscriptions?',
+    a: 'Yes — subscribe once to milk, vegetables, or curated baskets. The vendor’s digital punch-sheet auto-bills you weekly with UPI payment links, and you can pause, resume, or skip deliveries anytime from your phone.',
+  },
+];
+
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { switchPersona, isAuthenticated, user, activePersona } = useAuthStore();
   const { t } = useI18nStore();
 
   const [mandiPrices, setMandiPrices] = useState<CommodityBenchmark[]>(BENCHMARK_MANDI);
+  const [mandiMeta, setMandiMeta] = useState<{ reportedDate: string | null; source: string; stale: boolean } | null>(null);
   const [selectedMandiCategory, setSelectedMandiCategory] = useState<string>('all');
   const [mandiSearch, setMandiSearch] = useState<string>('');
 
-  // 20 Personas State
+  // Persona matrix state
   const [personaCategory, setPersonaCategory] = useState<'all' | 'producers' | 'trade' | 'dairy' | 'fintech'>('all');
   const [personaSearch, setPersonaSearch] = useState('');
 
-  // Technology Engine Active Tab
-  const [activeEngineTab, setActiveEngineTab] = useState<number>(0);
+  // FAQ state — searchable accordion filtered by the 9 finalized personas
+  const [openFaqId, setOpenFaqId] = useState<string | null>(FAQ_DATA[0].id);
+  const [faqSearch, setFaqSearch] = useState('');
+  const [faqPersona, setFaqPersona] = useState<'all' | PersonaType>('all');
 
-  // Profit Simulator State
-  const [cropType, setCropType] = useState<'soybean' | 'cotton' | 'wheat' | 'onion' | 'rice'>('soybean');
-  const [farmAcres, setFarmAcres] = useState<number>(5);
-  const [yieldPerAcre, setYieldPerAcre] = useState<number>(12);
-  const [targetMandiRate, setTargetMandiRate] = useState<number>(4850);
-
-  // Vision AI Diagnostic Sandbox State
-  const [selectedDiseaseSample, setSelectedDiseaseSample] = useState<number>(0);
-
-  // FAQ Accordion State
-  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
-
-  // Fetch real mandi prices on mount if available
+  // Live government open-data feed for the mandi radar (public endpoint).
+  // Rotates across showcase districts; benchmark data stays as error fallback.
   useEffect(() => {
-    void mandi.prices()
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped: CommodityBenchmark[] = data.slice(0, 10).map((d: MandiPrice, idx: number) => ({
-            id: d.id || `api-${idx}`,
-            commodity: d.commodity || 'Commodity',
-            variety: d.variety || 'Standard',
-            mandi: d.mandi || 'APMC Market',
-            state: d.state || 'India',
-            category: (d.commodity.toLowerCase().includes('onion') || d.commodity.toLowerCase().includes('tomato'))
-              ? 'vegetables'
-              : (d.commodity.toLowerCase().includes('wheat') || d.commodity.toLowerCase().includes('rice'))
-              ? 'grains'
-              : 'oilseeds',
-            modalPrice: d.modalPrice || 3500,
-            msp: d.msp,
-            trendPercentage: d.trendPercentage || 1.2,
-            arrivalsQ: 5000 + idx * 850,
-          }));
+    const showcase = ['Pune', 'Nashik', 'Indore', 'Rajkot', 'Karnal', 'Ludhiana'];
+    const district = showcase[Math.floor(Math.random() * showcase.length)];
+    mandi
+      .publicLive({ district, limit: 10 })
+      .then((res) => {
+        const mapped: CommodityBenchmark[] = res.data.slice(0, 10).map((d) => ({
+          id: d.id,
+          commodity: d.commodity,
+          variety: `${d.variety} • ${d.grade}`,
+          mandi: d.mandiName,
+          state: d.state,
+          category: categorizeCommodity(d.commodity),
+          modalPrice: d.modalPrice,
+          minPrice: d.minPrice,
+          maxPrice: d.maxPrice,
+          priceDate: d.priceDate,
+          live: true,
+        }));
+        if (mapped.length > 0) {
           setMandiPrices(mapped);
+          setMandiMeta({ reportedDate: res.reportedDate, source: res.source, stale: res.stale });
         }
       })
       .catch(() => undefined);
   }, []);
-
-  // Update simulator defaults when crop changes
-  useEffect(() => {
-    switch (cropType) {
-      case 'soybean':
-        setYieldPerAcre(12);
-        setTargetMandiRate(4850);
-        break;
-      case 'cotton':
-        setYieldPerAcre(10);
-        setTargetMandiRate(7200);
-        break;
-      case 'wheat':
-        setYieldPerAcre(22);
-        setTargetMandiRate(2850);
-        break;
-      case 'onion':
-        setYieldPerAcre(90);
-        setTargetMandiRate(2450);
-        break;
-      case 'rice':
-        setYieldPerAcre(26);
-        setTargetMandiRate(3950);
-        break;
-    }
-  }, [cropType]);
 
   const personasList: PersonaCardInfo[] = [
     {
@@ -192,132 +281,72 @@ export const LandingPage: React.FC = () => {
       title: 'Kisan / Farmer',
       hindiTitle: 'अन्नदाता किसान',
       category: 'producers',
-      desc: 'Direct B2B crop selling without middlemen, live mandi rates, KCC loans, PMFBY insurance, and digital farm diary.',
       icon: '🌾',
       route: '/farmer',
-      features: ['B2B Lot Auctions & 1-Round Counter', 'Digital Farm Diary & P&L', 'KCC Loan Instant Underwriting', 'PMFBY Drone Damage Intimation'],
-      stat: '150k+ Active Farmers',
     },
     {
       id: 'landlord',
       title: 'Agricultural Landlord',
       hindiTitle: 'जमीन मालिक',
       category: 'producers',
-      desc: 'Register agricultural plots, instant 7/12 sync, 5-round interactive lease negotiation, and escrow rental deposits.',
       icon: '🏡',
       route: '/landlord',
-      features: ['Mahabhulekh 7/12 Sync', '5-Round Lease Bargaining', 'Escrow Security Deposit', 'Automatic Khata Ledger'],
-      stat: '42,000+ Acres Listed',
     },
     {
       id: 'transporter',
       title: 'Freight Transporter',
       hindiTitle: 'गाड़ी मालिक / ट्रांसपोर्टर',
       category: 'trade',
-      desc: 'Freight load board, live auction bids, detention waiting fee calculator, return load matching, and digital GST bilty.',
       icon: '🚚',
       route: '/transporter',
-      features: ['Digital Bilty Generator (FT-1)', 'Real-time GPS Tracking', 'Detention Fee Calculation', 'Return Load Matchmaking'],
-      stat: '18,500+ Verified Trucks',
     },
     {
       id: 'seller',
       title: 'Agri Vyapari & Dealer',
       hindiTitle: 'कृषि इनपुट व्यापारी',
       category: 'trade',
-      desc: 'Storefront input catalog, mall order dispatch, farmer direct procurement with J-Forms, and digital POS khata ledger.',
       icon: '🏪',
       route: '/seller',
-      features: ['Digital POS & Customer Khata', 'J-Form APMC Procurement', 'Krishi Mall Fulfillment', 'Seeds & Fertilizer Stocking'],
-      stat: '6,200+ Dealerships',
     },
     {
       id: 'equipmentOwner',
       title: 'Equipment Owner (CHC)',
       hindiTitle: 'यंत्र मालिक / कस्टम हायरिंग',
       category: 'producers',
-      desc: 'List tractors, harvesters, drone sprayers with hourly and acreage slot bookings, GPS geofencing, and damage claims.',
       icon: '🚜',
       route: '/equipment',
-      features: ['Hourly & Per-Acre Slot Engine', 'Harvester & Tractor Fleet Registry', 'Damage Escrow Claim Desk', 'Driver & Operator Dispatch'],
-      stat: '9,400+ Farm Machines',
-    },
-    {
-      id: 'exporter',
-      title: 'International Agri Exporter',
-      hindiTitle: 'अंतर्राष्ट्रीय निर्यातक',
-      category: 'trade',
-      desc: 'Global RFQ tenders, Phytosanitary and APEDA certificates, refrigerated container tracking, and LC trade finance.',
-      icon: '🚢',
-      route: '/exporter',
-      features: ['APEDA & Phytosanitary Vault', 'Letter of Credit (LC) Financing', 'Reefer Container Telematics', 'Bulk Institutional Forward Contracts'],
-      stat: '₹480 Cr+ Forex Volume',
-    },
-    {
-      id: 'directBuyer',
-      title: 'Industrial Buyer',
-      hindiTitle: 'थोक खरीददार / कॉर्पोरेट',
-      category: 'trade',
-      desc: 'Post bulk crop demands, contract farming, gate QC inspection with moisture slips, and instant escrow settlement.',
-      icon: '🏢',
-      route: '/directbuyer',
-      features: ['Bulk Demand Posting Desk', 'Quality Moisture & Grade Slips', 'Gate Pass OTP Verification', 'Contract Farming Lifecycle'],
-      stat: '850+ Corporate Buyers',
     },
     {
       id: 'milkSeller',
       title: 'Milk Vendor / Doodh Vala',
       hindiTitle: 'दूध विक्रेता / हॉकर',
       category: 'dairy',
-      desc: 'Door-to-door customer delivery punch-sheet, daily milk records, monthly automated billing, and UPI payment links.',
       icon: '🫗',
       route: '/milkSeller',
-      features: ['Daily Customer Punch Sheet', 'Monthly Automated Invoices', 'WhatsApp Billing Reminders', 'Morning Route Organizer'],
-      stat: '120k+ Urban Households',
+    },
+    {
+      id: 'womenShg',
+      title: 'Mahila Gruh Udyog & SHG',
+      hindiTitle: 'महिला गृह उद्योग एवं स्वयं सहायता',
+      category: 'producers',
+      icon: '🪔',
+      route: '/womenShg',
     },
     {
       id: 'instructor',
       title: 'Gurukul Academy Instructor',
       hindiTitle: 'कृषि गुरुकुल शिक्षक',
       category: 'fintech',
-      desc: 'Upload agricultural masterclasses, run farmer training workshops, issue digital certificates, and monetize expertise.',
       icon: '🎓',
       route: '/instructor',
-      features: ['Course Video Studio Builder', 'Live Doubt Clearing Batches', 'Govt Recognized Certificates', 'Instructor Royalty Payouts'],
-      stat: '450+ Master Courses',
-    },
-    {
-      id: 'coldStorageProvider',
-      title: 'Cold Storage & Warehousing',
-      hindiTitle: 'शीतगृह एवं गोदाम संचालक',
-      category: 'fintech',
-      desc: 'Chamber temperature monitoring, inward/release bookings, e-NWR receipt issuance for bank pledge financing.',
-      icon: '❄️',
-      route: '/coldStorageProvider',
-      features: ['e-NWR Electronic Receipts', 'Chamber IoT Sensor Feeds', 'Inward & Outward Gate Passes', 'Pledge Loan Integration'],
-      stat: '1.4M Metric Ton Capacity',
-    },
-    {
-      id: 'gaushalaManager',
-      title: 'Gaushala & Sanctuary',
-      hindiTitle: 'गौशाला एवं नंदी अभयारण्य',
-      category: 'dairy',
-      desc: 'Cattle registry, cow adoption programs, 80G tax-exempt receipts, veterinary visits, and organic dung fertilizer sales.',
-      icon: '🐄',
-      route: '/gaushalaManager',
-      features: ['Section 80G Tax Certificates', 'Online Cow Adoption Desk', 'Herd Pedigree & Vaccination', 'Panchagavya Product Catalog'],
-      stat: '85,000+ Protected Cattle',
     },
     {
       id: 'customer',
       title: 'E-Market Consumer',
       hindiTitle: 'उपभोक्ता / खरीददार',
       category: 'fintech',
-      desc: 'Shop authentic farmer produce, organic grains, cold-pressed oils, cottage spices, and gardening tools directly.',
       icon: '🛍️',
       route: '/customer',
-      features: ['100% Farm-Traceable Produce', 'Subscription Milk & Veg Baskets', 'Kisan Coins Cashbacks', 'Doorstep Delivery Tracking'],
-      stat: '350k+ Happy Families',
     },
   ];
 
@@ -332,9 +361,7 @@ export const LandingPage: React.FC = () => {
     const matchesQuery =
       personaSearch === '' ||
       p.title.toLowerCase().includes(personaSearch.toLowerCase()) ||
-      p.hindiTitle.includes(personaSearch) ||
-      p.desc.toLowerCase().includes(personaSearch.toLowerCase()) ||
-      p.features.some((f) => f.toLowerCase().includes(personaSearch.toLowerCase()));
+      p.hindiTitle.includes(personaSearch);
     return matchesCat && matchesQuery;
   });
 
@@ -349,88 +376,21 @@ export const LandingPage: React.FC = () => {
     return matchesCat && matchesQuery;
   });
 
-  // Dynamic Simulator Calculations
-  const totalProductionQ = farmAcres * yieldPerAcre;
-  const grossTradeValue = totalProductionQ * targetMandiRate;
-  // Traditional APMC middleman cuts: 8.5% (commission, unauthorized deduction, handling, scale cuts)
-  const traditionalDeductions = grossTradeValue * 0.085;
-  const traditionalNetIncome = grossTradeValue - traditionalDeductions;
-  // Agrovercity Direct Escrow realization: 100% value + direct bulk buyer premium (approx +3%) - 0% middleman fees
-  const agrovercityEscrowIncome = grossTradeValue * 1.03;
-  const additionalFarmerProfit = agrovercityEscrowIncome - traditionalNetIncome;
-  const freightSavedViaMatching = totalProductionQ * 35; // ₹35 per quintal saved on return logistics
+  // Filtered FAQ — by active persona chip + search over feature tags/persona only
+  // (the long answer prose is deliberately NOT searchable).
+  const filteredFaqs = FAQ_DATA.filter((f) => {
+    const matchesPersona = faqPersona === 'all' || f.persona === faqPersona;
+    const needle = faqSearch.trim().toLowerCase();
+    if (needle === '') return matchesPersona;
+    const personaLabel = (FAQ_PERSONAS.find((fp) => fp.id === f.persona)?.label ?? '').toLowerCase();
+    const matchesQuery =
+      f.tags.some((tag) => tag.toLowerCase().includes(needle)) ||
+      personaLabel.includes(needle) ||
+      f.persona.toLowerCase().includes(needle);
+    return matchesPersona && matchesQuery;
+  });
+  const visibleFaqs = faqPersona === 'all' ? filteredFaqs.slice(0, 5) : filteredFaqs;
 
-  // Disease Samples
-  const diseaseSamples = [
-    {
-      crop: 'Tomato (टमाटर)',
-      pathogen: 'Early Blight (Alternaria solani)',
-      confidence: '98.4%',
-      risk: 'High',
-      symptoms: 'Concentric dark brown rings on lower leaves, yellowing halos, stem lesions.',
-      treatment: 'Spray Mancozeb 75% WP @ 2.5g/L or Azoxystrobin 23% SC @ 1ml/L. Repeat after 10 days.',
-      organic: 'Neem Oil 10,000 PPM (3ml/L) + Trichoderma viride soil drenching.',
-      inputLink: '/mall',
-    },
-    {
-      crop: 'Cotton (कपास)',
-      pathogen: 'Leaf Curl Virus (CLCuV)',
-      confidence: '96.8%',
-      risk: 'Critical',
-      symptoms: 'Upward curling of leaf margins, leaf thickening, enation on undersurface.',
-      treatment: 'Control whitefly vector immediately: Spray Diafenthiuron 50% WP @ 1.2g/L or Pyriproxyfen 10% EC.',
-      organic: 'Install yellow sticky traps @ 15/acre; spray 5% Neem Seed Kernel Extract (NSKE).',
-      inputLink: '/mall',
-    },
-    {
-      crop: 'Wheat (गेहूं)',
-      pathogen: 'Yellow Stripe Rust (Puccinia striiformis)',
-      confidence: '97.9%',
-      risk: 'Severe',
-      symptoms: 'Bright yellow pustules arranged in linear stripes between leaf veins, yellow powder rub-off.',
-      treatment: 'Spray Propiconazole 25% EC (Tilt) @ 1ml/L water immediately upon first appearance.',
-      organic: 'Spray sour buttermilk (chaas) @ 50ml/L or bio-fungicide Pseudomonas fluorescens.',
-      inputLink: '/mall',
-    },
-    {
-      crop: 'Potato (आलू)',
-      pathogen: 'Late Blight (Phytophthora infestans)',
-      confidence: '99.2%',
-      risk: 'Critical',
-      symptoms: 'Water-soaked irregular black lesions on leaf tips, white fungal downy growth in humid mornings.',
-      treatment: 'Cymoxanil 8% + Mancozeb 64% WP @ 3g/L or Metalaxyl-M 4% + Mancozeb 64% WP.',
-      organic: 'Copper Oxychloride 50% WP @ 3g/L preventive spray before rain showers.',
-      inputLink: '/mall',
-    },
-  ];
-
-  // FAQ Data
-  const faqs = [
-    {
-      q: 'How does the B2B Escrow guarantee 100% payment safety for farmers and buyers?',
-      a: 'When a buyer confirms a produce lot or counter-offer, 100% of the trade value is securely locked in a dedicated escrow account monitored by Agrovercity. The farmer receives an official SMS and digital contract before loading the truck. Upon arrival at the buyer gate, quality inspection is recorded, and the farmer releases a 4-digit OTP. The moment OTP is verified, the escrow account automatically triggers an instant RTGS/NEFT settlement directly into the farmer’s verified bank account.',
-    },
-    {
-      q: 'How does digital 7/12 land record sync help with KCC loans and leasing?',
-      a: 'Agrovercity integrates directly with official state revenue portals (Mahabhulekh in Maharashtra, AnyRoR in Gujarat, Bhulekh in UP/MP). When registering land or applying for a Kisan Credit Card (KCC) loan, our automated OCR parses the land survey numbers (Gat/Khasra), ownership shares, and encumbrances in seconds. This eliminates physical visits to the Tehsil office and reduces loan approval time from 4 weeks to under 48 hours.',
-    },
-    {
-      q: 'Can a small farmer or village doodhwala use this platform easily?',
-      a: 'Yes! The entire Agrovercity platform is designed ground-up for Bharat with full voice-assistant support in 9 Indian languages (Hindi, Marathi, Gujarati, Punjabi, Telugu, Tamil, Kannada, Bengali, and English). Dairies and milk vendors can punch milk deliveries with single taps, and farmers can check mandi rates or diagnose leaf diseases using photos without typing complex words.',
-    },
-    {
-      q: 'What is the procedure for PMFBY crop insurance loss claims?',
-      a: 'In case of hail, excess rain, pest outbreak, or drought, farmers can intimate crop loss within 72 hours through the app with geotagged and timestamped field photos. Agrovercity cross-verifies the claim against satellite NDVI vegetative health data and weather station metrics, assigns a certified surveyor from the local roster, and coordinates the Direct Benefit Transfer (DBT) directly with the insurance provider.',
-    },
-    {
-      q: 'How does the Smart Transport Bilty (FT-1 to FT-8) protect transporters?',
-      a: 'Our freight module automatically generates a GST and e-Way bill compliant Digital Bilty (Lorry Receipt) specifying the consignor, consignee, cargo weight, and agreed freight rate. Transporters get real-time GPS tracking with a 48-hour shareable web link. If loading or unloading exceeds the agreed 2-hour window, the system automatically bills and credits hourly detention fees to the transporter wallet.',
-    },
-    {
-      q: 'How do Gaushalas generate 80G tax-exemption receipts?',
-      a: 'Registered Gaushala and sanctuary managers upload their Section 80G certificate approved by the Income Tax Department. Whenever an urban donor adopts a cow or contributes fodder funds via UPI/Card, the platform generates a digitally signed 80G tax receipt PDF with the unique donation reference number, which the donor can instantly download for their annual tax return filing.',
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-emerald-500 selection:text-white">
@@ -490,193 +450,11 @@ export const LandingPage: React.FC = () => {
                 className="px-7 py-4 rounded-2xl bg-white/10 hover:bg-white/20 backdrop-blur-md text-white font-bold text-sm sm:text-base border border-white/20 flex items-center gap-2 transition-all transform hover:-translate-y-0.5"
               >
                 <Users className="w-5 h-5 text-emerald-300" />
-                <span>Explore 20 Personas</span>
-              </a>
-
-              <a
-                href="#simulator"
-                className="px-7 py-4 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold text-sm sm:text-base border border-amber-400/30 flex items-center gap-2 transition-all transform hover:-translate-y-0.5"
-              >
-                <Calculator className="w-5 h-5 text-amber-300" />
-                <span>Profit & Escrow Simulator</span>
+                <span>Explore 9 Personas</span>
               </a>
             </div>
-
-            {/* Trusted Integrations Pill */}
-            <div className="pt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-emerald-200/70 font-semibold">
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/5 border border-white/10">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" /> 100% Escrow Protected
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/5 border border-white/10">
-                <FileSpreadsheet className="w-4 h-4 text-sky-400" /> 7/12 Mahabhulekh Sync
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/5 border border-white/10">
-                <Truck className="w-4 h-4 text-amber-400" /> FT-1 Digital Bilty
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/5 border border-white/10">
-                <Milk className="w-4 h-4 text-teal-400" /> FAT/SNF Milk Desk
-              </span>
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/5 border border-white/10">
-                <Landmark className="w-4 h-4 text-emerald-300" /> PMFBY & KCC Ready
-              </span>
-            </div>
           </div>
 
-          {/* Hero Live Mockup Cards Showcase (3 Floating Micro-Consoles) */}
-          <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Card 1: B2B Lot Auction Preview */}
-            <div className="p-5 rounded-3xl bg-slate-900/90 border border-emerald-500/30 shadow-2xl backdrop-blur-xl relative overflow-hidden group hover:border-emerald-400 transition-all">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Live Escrow Trade</span>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                  Funded ₹7.27 Lakh
-                </span>
-              </div>
-              <div className="mt-4 space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-extrabold text-sm text-white">Soybean Lot #SB-8921</h4>
-                    <p className="text-xs text-slate-400">Latur APMC • Moisture 11.2% • Grade A</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-400 block">Lot Volume</span>
-                    <span className="font-black text-sm text-white">150 Quintals</span>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Accepted Counter</span>
-                    <span className="font-extrabold text-emerald-400 text-sm">₹4,850 /q</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">Status</span>
-                    <span className="font-bold text-emerald-300 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Gate OTP Verified
-                    </span>
-                  </div>
-                </div>
-
-                <div className="pt-2 flex justify-between items-center text-[11px] text-slate-400 font-semibold">
-                  <span>Buyer: ITC Agri Sourcing</span>
-                  <span className="text-emerald-400">Escrow Settled In Bank</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 2: Logistics & Smart Bilty Preview */}
-            <div className="p-5 rounded-3xl bg-slate-900/90 border border-sky-500/30 shadow-2xl backdrop-blur-xl relative overflow-hidden group hover:border-sky-400 transition-all">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400">Smart Bilty Tracking (FT-1)</span>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold">
-                  In-Transit
-                </span>
-              </div>
-              <div className="mt-4 space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-extrabold text-sm text-white">Tata 1618 (MH-12-Q-4091)</h4>
-                    <p className="text-xs text-slate-400">Nashik Onion Mandi → Vashi Terminal</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-400 block">Freight</span>
-                    <span className="font-black text-sm text-white">₹28,500</span>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Bilty Ref #</span>
-                    <span className="font-mono font-bold text-sky-300">BLT-2026-9041</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">GPS Telematics</span>
-                    <span className="font-bold text-slate-200">62 km/h • ETA 2.4 hrs</span>
-                  </div>
-                </div>
-
-                <div className="pt-2 flex justify-between items-center text-[11px] text-slate-400 font-semibold">
-                  <span>Transit Insurance: ₹10 Lakh Active</span>
-                  <span className="text-sky-400">Live GPS Link</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 3: Dairy FAT/SNF Collection Preview */}
-            <div className="p-5 rounded-3xl bg-slate-900/90 border border-amber-500/30 shadow-2xl backdrop-blur-xl relative overflow-hidden group hover:border-amber-400 transition-all">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Dairy Desk & Passbook</span>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold">
-                  Slip #DS-410
-                </span>
-              </div>
-              <div className="mt-4 space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-extrabold text-sm text-white">Member: Ramesh Tukaram</h4>
-                    <p className="text-xs text-slate-400">Morning Batch • Cow Milk</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-400 block">Quantity</span>
-                    <span className="font-black text-sm text-white">34.5 Litres</span>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Testing Result</span>
-                    <span className="font-mono font-bold text-amber-300">FAT 4.8% • SNF 8.9%</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">Calculated Payout</span>
-                    <span className="font-black text-emerald-400 text-sm">₹1,483.50</span>
-                  </div>
-                </div>
-
-                <div className="pt-2 flex justify-between items-center text-[11px] text-slate-400 font-semibold">
-                  <span>Rate: ₹43.00/L (Auto Chart)</span>
-                  <span className="text-amber-400">Passbook Credited</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Hero Bottom Scale Statistics Bar */}
-          <div className="mt-14 pt-10 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 text-center">
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-emerald-400">₹142.8 Cr+</div>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Escrow Volume Settled</p>
-            </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-white">150,000+</div>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Registered Farmers</p>
-            </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-teal-300">500+</div>
-              <p className="text-xs text-slate-400 mt-1 font-medium">APMC Mandis Live</p>
-            </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-amber-300">98.9%</div>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Dispute-Free Delivery</p>
-            </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-sky-400">9</div>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Indian Languages</p>
-            </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-black text-rose-400">4.9 / 5.0</div>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Farmer Rating (42k+)</p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -692,8 +470,17 @@ export const LandingPage: React.FC = () => {
               Live Mandi Price Radar & Arrivals
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Live prices updated from 500+ mandis. Compare current modal rates against Government Minimum Support Price (MSP).
+              Live government open-data mandi prices, reported daily by APMC markets across India.
             </p>
+            {mandiMeta && (
+              <p className="text-[11px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>
+                  Live feed · reported {mandiMeta.reportedDate ?? '—'}
+                  {mandiMeta.stale ? ' · cached snapshot' : ''} · {mandiMeta.source}
+                </span>
+              </p>
+            )}
           </div>
 
           {/* Mandi Search & Filters */}
@@ -738,7 +525,7 @@ export const LandingPage: React.FC = () => {
         {/* Mandi Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
           {filteredMandi.map((m) => {
-            const isPositive = m.trendPercentage >= 0;
+            const isPositive = (m.trendPercentage ?? 0) >= 0;
             return (
               <div
                 key={m.id}
@@ -750,14 +537,16 @@ export const LandingPage: React.FC = () => {
                       <h4 className="font-extrabold text-sm text-slate-900">{m.commodity}</h4>
                       <p className="text-[11px] text-slate-500">{m.variety}</p>
                     </div>
-                    <span
-                      className={`inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${
-                        isPositive ? 'bg-emerald-50 text-emerald-700' : 'text-rose-600 bg-rose-50'
-                      }`}
-                    >
-                      {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      {isPositive ? `+${m.trendPercentage}%` : `${m.trendPercentage}%`}
-                    </span>
+                    {m.trendPercentage != null && (
+                      <span
+                        className={`inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${
+                          isPositive ? 'bg-emerald-50 text-emerald-700' : 'text-rose-600 bg-rose-50'
+                        }`}
+                      >
+                        {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {isPositive ? `+${m.trendPercentage}%` : `${m.trendPercentage}%`}
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-3 flex items-baseline justify-between">
@@ -767,6 +556,11 @@ export const LandingPage: React.FC = () => {
                         {formatCurrency(m.modalPrice)}
                         <span className="text-xs font-normal text-slate-500"> /q</span>
                       </div>
+                      {m.live && m.minPrice != null && m.maxPrice != null && (
+                        <div className="text-[10px] text-slate-500 mt-0.5">
+                          Range ₹{formatNumber(m.minPrice)} – ₹{formatNumber(m.maxPrice)}
+                        </div>
+                      )}
                     </div>
                     {m.msp && (
                       <div className="text-right">
@@ -795,20 +589,20 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 3. ALL 20 PERSONAS ECOSYSTEM MATRIX */}
+      {/* 3. ALL 9 PERSONAS ECOSYSTEM MATRIX */}
       <section id="personas-matrix" className="py-16 bg-slate-100/70 border-y border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
           <div className="text-center max-w-3xl mx-auto space-y-3">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold border border-emerald-300">
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Comprehensive 20-Role Agricultural Stack</span>
+              <span>Comprehensive 9-Role Agricultural Stack</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
               Dedicated Workspaces for Every Agricultural Stakeholder
             </h2>
             <p className="text-sm text-slate-600 leading-relaxed">
               Agrovercity is not a single app — it is a complete operating system offering state-machine workflows,
-              role-gated tools, and compliance engines for 13 participants in India's agricultural economy.
+              role-gated tools, and compliance engines for 9 participants in India's agricultural economy.
             </p>
           </div>
 
@@ -816,11 +610,11 @@ export const LandingPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex flex-wrap items-center justify-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs text-xs font-bold w-full sm:w-auto">
               {[
-                { id: 'all', label: 'All 13 Personas (सभी)' },
+                { id: 'all', label: 'All 9 Personas (सभी)' },
                 { id: 'producers', label: 'Producers & Land (4)' },
-                { id: 'trade', label: 'Trade & Logistics (4)' },
-                { id: 'dairy', label: 'Dairy & Livestock (2)' },
-                { id: 'fintech', label: 'Fintech & Public (3)' },
+                { id: 'trade', label: 'Trade & Logistics (2)' },
+                { id: 'dairy', label: 'Dairy & Livestock (1)' },
+                { id: 'fintech', label: 'Fintech & Public (2)' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -840,7 +634,7 @@ export const LandingPage: React.FC = () => {
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search any persona or feature..."
+                placeholder="Search persona..."
                 value={personaSearch}
                 onChange={(e) => setPersonaSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
@@ -848,7 +642,7 @@ export const LandingPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Personas 20 Cards Grid */}
+          {/* Persona Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {filteredPersonas.map((p) => (
               <div
@@ -860,26 +654,12 @@ export const LandingPage: React.FC = () => {
                     <span className="text-3xl p-2 rounded-2xl bg-slate-50 border border-slate-100 group-hover:scale-110 transition-transform">
                       {p.icon}
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 group-hover:bg-emerald-50 group-hover:text-emerald-800 transition-colors">
-                      {p.stat}
-                    </span>
                   </div>
 
                   <h3 className="font-extrabold text-base text-slate-900 group-hover:text-emerald-800 transition-colors">
                     {p.title}
                   </h3>
                   <p className="text-[11px] font-bold text-emerald-700 mt-0.5">{p.hindiTitle}</p>
-                  <p className="text-xs text-slate-500 mt-2 leading-relaxed">{p.desc}</p>
-
-                  {/* Feature Tags List */}
-                  <div className="mt-4 space-y-1.5">
-                    {p.features.map((feat, fIdx) => (
-                      <div key={fIdx} className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
-                        <Check className="w-3 h-3 text-emerald-600 flex-shrink-0" />
-                        <span className="truncate">{feat}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between">
@@ -897,1005 +677,7 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 4. DEEP-DIVE 6 TECHNOLOGY ENGINES (INTERACTIVE TABBED ARCHITECTURE) */}
-      <section id="core-engines" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        <div className="text-center max-w-3xl mx-auto space-y-3">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-800 text-xs font-bold border border-teal-200">
-            <Cpu className="w-3.5 h-3.5 text-teal-600" />
-            <span>Platform Core Engines</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-slate-900">
-            Engineered for Ground-Reality Agriculture
-          </h2>
-          <p className="text-sm text-slate-600">
-            Explore the six technological foundations built into Agrovercity that solve payments, logistics,
-            land verification, dairy analysis, machinery, and global exports.
-          </p>
-        </div>
-
-        {/* Engine Tabs Header */}
-        <div className="flex flex-wrap items-center justify-center gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
-          {[
-            { label: 'B2B Escrow Trade', icon: Scale },
-            { label: 'Smart Bilty Logistics', icon: Truck },
-            { label: 'Dairy FAT/SNF & Gaushala', icon: Milk },
-            { label: 'Fintech, 7/12 & PMFBY', icon: Landmark },
-            { label: 'Custom Machinery (CHC)', icon: Wrench },
-            { label: 'International Exports', icon: Ship },
-          ].map((tab, idx) => (
-            <button
-              key={idx}
-              onClick={() => setActiveEngineTab(idx)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeEngineTab === idx
-                  ? 'bg-white text-emerald-800 shadow-sm border border-slate-200/80'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <tab.icon className={`w-4 h-4 ${activeEngineTab === idx ? 'text-emerald-600' : 'text-slate-400'}`} />
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Tab 1: B2B Escrow Trade Engine */}
-        {activeEngineTab === 0 && (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm grid grid-cols-1 lg:grid-cols-2 gap-8 items-center animate-fade-in">
-            <div className="space-y-5">
-              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold">
-                Engine #1 • Direct Commodity Trading
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
-                100% Escrow-Funded Trade with 1-Round Counter Offers
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Traditional APMC trade leaves farmers waiting weeks for cash with arbitrary quality cuts.
-                Agrovercity introduces a legally binding escrow model where buyers lock funds upfront before the crop is dispatched.
-              </p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
-                    1
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Dual-Target Produce Lots</h5>
-                    <p className="text-xs text-slate-500">Farmers post crop lots with moisture %, variety, photos, and base price.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
-                    2
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">1-Round Final Counter Offer</h5>
-                    <p className="text-xs text-slate-500">Buyers offer or counter once; acceptance triggers instant escrow deposit into an RBI-monitored nodal account.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
-                    3
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Gate QC & 4-Digit OTP Release</h5>
-                    <p className="text-xs text-slate-500">Weighbridge slip and moisture meter results recorded. Farmer verifies OTP; payment transfers instantly via RTGS.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Link
-                  to="/farmer/lots"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-xs"
-                >
-                  <span>Explore B2B Lots Market</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Visual Workflow Diagram */}
-            <div className="bg-slate-900 rounded-3xl p-6 text-white border border-slate-800 space-y-4">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-                <span className="text-xs font-bold text-emerald-400">Escrow State Machine</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
-                  State: ESCROW_FUNDED
-                </span>
-              </div>
-
-              <div className="space-y-3 font-mono text-xs">
-                <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex justify-between items-center">
-                  <span>1. Farmer Lot Posted:</span>
-                  <span className="text-emerald-400">150 Q Soybean @ ₹4,900</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex justify-between items-center">
-                  <span>2. Buyer Counter-Offer:</span>
-                  <span className="text-amber-400">₹4,850 Accepted</span>
-                </div>
-                <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-600/60 flex justify-between items-center">
-                  <span>3. Escrow Deposit:</span>
-                  <span className="text-emerald-300 font-bold">₹7,27,500 Locked (Yes Bank Nodal)</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex justify-between items-center">
-                  <span>4. Gate Inspection:</span>
-                  <span className="text-sky-300">Moisture 11.2% • Weighslip OK</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 flex justify-between items-center">
-                  <span>5. OTP Release:</span>
-                  <span className="text-emerald-400 font-bold">OTP [4 8 1 9] Verified → Disbursed</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 2: Smart Bilty Logistics Engine */}
-        {activeEngineTab === 1 && (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm grid grid-cols-1 lg:grid-cols-2 gap-8 items-center animate-fade-in">
-            <div className="space-y-5">
-              <span className="px-3 py-1 rounded-full bg-sky-100 text-sky-800 text-xs font-extrabold">
-                Engine #2 • Logistics & Freight (FT-1 to FT-8)
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
-                Digital Bilty Generator with Live GPS & Detention Shield
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Agrovercity transforms rural farm trucking with instant digital consignment bilty (Lorry Receipt),
-                automated detention waiting fees, cargo transit insurance, and return-load matching to cut empty miles.
-              </p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Truck className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Digital Bilty PDF (GST / e-Way Bill Compliant)</h5>
-                    <p className="text-xs text-slate-500">Official 3-copy consignor, consignee, and driver bilty generated automatically with QR verification.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Automated Detention Waiting Fees</h5>
-                    <p className="text-xs text-slate-500">If mandi gate unloading exceeds 2 hours, GPS geofencing automatically bills hourly detention fees to the buyer.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <RefreshCw className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Zero Empty Return Miles</h5>
-                    <p className="text-xs text-slate-500">Transporters unloading grains in urban terminals are matched with fertilizer/cement/seed return trips back to rural hubs.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Link
-                  to="/transporter"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-sky-600 text-white font-bold text-xs hover:bg-sky-700 shadow-xs"
-                >
-                  <span>Open Transporter Freight Hub</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Bilty Mockup Preview */}
-            <div className="bg-slate-50 rounded-3xl p-6 border border-slate-300/80 shadow-inner space-y-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs">
-                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                  <div>
-                    <span className="font-extrabold text-slate-900 uppercase">KISAN SETU DIGITAL BILTY</span>
-                    <p className="text-[10px] text-slate-400">Consignment Note: BLT-2026-9041</p>
-                  </div>
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 font-bold rounded-md text-[10px]">
-                    GST Compliant
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div>
-                    <span className="text-slate-400 block">Consignor (Farmer)</span>
-                    <span className="font-bold text-slate-800">Dnyaneshwar Shinde, Latur</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block">Consignee (Buyer)</span>
-                    <span className="font-bold text-slate-800">Godrej Agrovet, Pune</span>
-                  </div>
-                </div>
-                <div className="p-2.5 bg-slate-50 rounded-xl flex justify-between items-center text-[11px]">
-                  <span>Vehicle: Tata 1618 (MH-12-Q-4091)</span>
-                  <span className="font-bold text-slate-800">Freight: ₹28,500</span>
-                </div>
-                <div className="flex justify-between items-center text-[10px] text-slate-500 pt-1">
-                  <span>Transit Insurance: ₹10,00,000 Covered</span>
-                  <span className="text-emerald-700 font-bold">48hr Public Tracking Active</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: Dairy FAT/SNF & Gaushala Engine */}
-        {activeEngineTab === 2 && (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm grid grid-cols-1 lg:grid-cols-2 gap-8 items-center animate-fade-in">
-            <div className="space-y-5">
-              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-extrabold">
-                Engine #3 • Dairy & Cattle Sanctum
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
-                Automated FAT/SNF Rate Charts & 80G Tax Cow Adoptions
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Eliminate manual milk register errors. Our dairy engine connects electronic milk analyzers to calculate
-                exact farmer dues with automated member passbooks, while our Gaushala module empowers cattle adoption with instant 80G tax receipts.
-              </p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Milk className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Dynamic FAT/SNF Pricing Formula</h5>
-                    <p className="text-xs text-slate-500">`Rate = (FAT × ₹8.20) + (SNF × ₹4.60)`. Transparent rate charts updated in real-time on member screens.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Smartphone className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Door-to-Door Milk Vendor Punch Sheet</h5>
-                    <p className="text-xs text-slate-500">Urban doodhwalas record daily morning/evening customer litres with 1-tap, generating automated monthly UPI bills.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Heart className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Section 80G Income Tax Receipts for Gaushalas</h5>
-                    <p className="text-xs text-slate-500">Donors adopt cows and receive instant 50% tax-exemption receipts digitally verified by the Gaushala trust.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Dairy & Gaushala Live Calculator Visual */}
-            <div className="bg-amber-50/70 rounded-3xl p-6 border border-amber-200/80 space-y-4">
-              <h4 className="font-extrabold text-sm text-amber-950 flex items-center gap-2">
-                <Gauge className="w-4 h-4 text-amber-700" />
-                <span>Live Milk Testing Calculator</span>
-              </h4>
-
-              <div className="bg-white p-4 rounded-2xl border border-amber-200/60 shadow-xs space-y-3">
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Milk FAT %</span>
-                    <div className="font-black text-amber-700 text-lg">4.8 %</div>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Milk SNF %</span>
-                    <div className="font-black text-amber-700 text-lg">8.9 %</div>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex justify-between items-center text-xs">
-                  <span className="font-bold text-emerald-900">Per Litre Realization:</span>
-                  <span className="font-black text-emerald-700 text-base">₹43.20 / Litre</span>
-                </div>
-
-                <div className="text-[11px] text-slate-500 leading-tight">
-                  For 34.5 litres delivered: <strong className="text-slate-800">₹1,490.40</strong> directly added to Ramesh’s passbook balance with SMS notification.
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 4: Fintech, 7/12 & PMFBY */}
-        {activeEngineTab === 3 && (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm grid grid-cols-1 lg:grid-cols-2 gap-8 items-center animate-fade-in">
-            <div className="space-y-5">
-              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold">
-                Engine #4 • Sovereign Agritech Stack
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
-                7/12 Land Revenue Sync, KCC Credit & Satellite PMFBY
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Bridge the digital divide between farmers and financial institutions. By parsing state land revenue extracts,
-                Agrovercity speeds up loan underwriting while automating crop insurance intimations via satellite NDVI analysis.
-              </p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Instant Mahabhulekh / Bhulekh 7/12 Extraction</h5>
-                    <p className="text-xs text-slate-500">Automated OCR maps survey numbers, crop cultivation history, and land encumbrances directly into loan files.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Landmark className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Kisan Credit Card (KCC) 48-Hour Approval</h5>
-                    <p className="text-xs text-slate-500">Bank loan officers review automated CIBIL and land appraisals, issuing DBT credit directly to farmer accounts.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <ShieldAlert className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">PMFBY 72-Hour Satellite Damage Claims</h5>
-                    <p className="text-xs text-slate-500">Geotagged farmer photos cross-checked with Sentinel-2 satellite crop health indexes for fast DBT compensation.</p>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Land & Loan Visual */}
-            <div className="bg-slate-900 rounded-3xl p-6 text-white border border-slate-800 space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-                <span className="text-xs font-bold text-emerald-400">7/12 Revenue Extract Verified</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                  Gat #142/A
-                </span>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Land Title:</span>
-                  <span className="font-bold text-white">Shri Ramesh Tukaram Patil</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Total Cultivable Area:</span>
-                  <span className="font-bold text-white">4.85 Hectares (12.0 Acres)</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Kharif Crop Recorded:</span>
-                  <span className="font-bold text-emerald-400">Soybean + Cotton</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Recommended KCC Limit:</span>
-                  <span className="font-black text-amber-300 text-sm">₹3,40,000 Approved</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 5: Custom Machinery (CHC) */}
-        {activeEngineTab === 4 && (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm grid grid-cols-1 lg:grid-cols-2 gap-8 items-center animate-fade-in">
-            <div className="space-y-5">
-              <span className="px-3 py-1 rounded-full bg-orange-100 text-orange-800 text-xs font-extrabold">
-                Engine #5 • Farm Mechanization
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
-                Custom Hiring Centers: Tractors, Harvesters & Agro-Drones
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Smallholder farmers cannot afford ₹12 Lakh tractors or ₹25 Lakh combine harvesters. Agrovercity operates
-                an Uber-like rental marketplace with hourly/acreage reservation, GPS telematics, and damage deposit escrow.
-              </p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Wrench className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Fleet Registry & Hourly Slots</h5>
-                    <p className="text-xs text-slate-500">Rent John Deere, Mahindra, Sonalika tractors, rotavators, and laser levelers with or without drivers.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Sparkles className="w-5 h-5 text-teal-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Drone Spraying on Demand</h5>
-                    <p className="text-xs text-slate-500">Book DGCA-certified drone pilots for precision nano-urea and pesticide spraying at ₹350/acre in 10 minutes.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Damage Claims Escrow</h5>
-                    <p className="text-xs text-slate-500">Security deposits held safely and released automatically after inspection upon job completion.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Link
-                  to="/equipment"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 text-white font-bold text-xs hover:bg-orange-700 shadow-xs"
-                >
-                  <span>Book Agricultural Machinery</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Machinery Visual Card */}
-            <div className="bg-slate-900 rounded-3xl p-6 text-white border border-slate-800 space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-                <span className="text-xs font-bold text-orange-400">Available Near You</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
-                  Within 8 km
-                </span>
-              </div>
-              <div className="space-y-3">
-                <div className="p-3 bg-slate-800/80 rounded-2xl flex justify-between items-center text-xs">
-                  <div>
-                    <h5 className="font-bold text-white">Mahindra 575 DI (45 HP)</h5>
-                    <p className="text-[11px] text-slate-400">With Rotavator & Operator</p>
-                  </div>
-                  <span className="font-bold text-emerald-400 text-sm">₹850 / hr</span>
-                </div>
-                <div className="p-3 bg-slate-800/80 rounded-2xl flex justify-between items-center text-xs">
-                  <div>
-                    <h5 className="font-bold text-white">Claas Crop Tiger Harvester</h5>
-                    <p className="text-[11px] text-slate-400">Paddy & Wheat Harvesting</p>
-                  </div>
-                  <span className="font-bold text-emerald-400 text-sm">₹2,200 / acre</span>
-                </div>
-                <div className="p-3 bg-slate-800/80 rounded-2xl flex justify-between items-center text-xs">
-                  <div>
-                    <h5 className="font-bold text-white">Garuda Kisan Drone (16L)</h5>
-                    <p className="text-[11px] text-slate-400">Precision Liquid Spraying</p>
-                  </div>
-                  <span className="font-bold text-emerald-400 text-sm">₹350 / acre</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 6: International Exports */}
-        {activeEngineTab === 5 && (
-          <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-sm grid grid-cols-1 lg:grid-cols-2 gap-8 items-center animate-fade-in">
-            <div className="space-y-5">
-              <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 text-xs font-extrabold">
-                Engine #6 • Global Commodity Export
-              </span>
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-900">
-                APEDA & Phytosanitary Gateway with Letter of Credit (LC)
-              </h3>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Connect Indian farmers directly to Gulf, European, and Southeast Asian buyers. Our export gateway integrates
-                APEDA certification, phytosanitary clearance, refrigerated ocean telematics, and LC milestone payments.
-              </p>
-
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Ship className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Global Tender RFQs</h5>
-                    <p className="text-xs text-slate-500">Verified international buyers in Dubai, Singapore, and Rotterdam post containerized purchase requirements.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Award className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Phytosanitary & FSSAI Compliance</h5>
-                    <p className="text-xs text-slate-500">MRL residue testing reports and farm traceability logs pre-cleared before container loading.</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <DollarSign className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h5 className="font-bold text-xs text-slate-900">Letter of Credit (LC) Trade Finance</h5>
-                    <p className="text-xs text-slate-500">Foreign currency escrow release upon bill of lading (BL) generation and port customs clearance.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Link
-                  to="/exporter"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-xs"
-                >
-                  <span>Launch Global Export Desk</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Export Visual Showcase */}
-            <div className="bg-slate-900 rounded-3xl p-6 text-white border border-slate-800 space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-                <span className="text-xs font-bold text-indigo-400">Active Export Shipment</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold">
-                  Jawaharlal Nehru Port (JNPT)
-                </span>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Commodity:</span>
-                  <span className="font-bold text-white">Basmati Rice 1121 Pusa</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Destination:</span>
-                  <span className="font-bold text-white">Jebel Ali Port, Dubai (UAE)</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Container Quantity:</span>
-                  <span className="font-bold text-white">4 × 40ft Reefer (100 MT)</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-800/80">
-                  <span className="text-slate-400">Invoice LC Amount:</span>
-                  <span className="font-black text-emerald-400 text-sm">$92,400 USD</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* 5. INTERACTIVE FARM PROFIT & ESCROW ROI SIMULATOR */}
-      <section id="simulator" className="py-16 bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-950 text-white relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-          <div className="text-center max-w-3xl mx-auto space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold border border-emerald-400/30">
-              <Calculator className="w-3.5 h-3.5 text-amber-300" />
-              <span>Real Financial Impact Calculator</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-black text-white">
-              Calculate Your Additional Profit on Agrovercity
-            </h2>
-            <p className="text-sm text-emerald-100/80">
-              See how direct institutional trading and zero middleman cuts translate to substantial cash savings for your farm.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            {/* Input Controls (Left Column) */}
-            <div className="lg:col-span-6 bg-white/10 backdrop-blur-xl p-6 sm:p-8 rounded-3xl border border-white/20 space-y-6">
-              <h3 className="font-extrabold text-lg text-white flex items-center gap-2">
-                <span>Configure Your Crop & Harvest</span>
-              </h3>
-
-              {/* Crop Selector Buttons */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-emerald-200 uppercase tracking-wider block">Select Crop</label>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                  {[
-                    { id: 'soybean', label: 'Soybean' },
-                    { id: 'cotton', label: 'Cotton' },
-                    { id: 'wheat', label: 'Wheat' },
-                    { id: 'onion', label: 'Onion' },
-                    { id: 'rice', label: 'Rice' },
-                  ].map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => setCropType(c.id as any)}
-                      className={`py-2 px-2 rounded-xl text-xs font-bold capitalize transition-all ${
-                        cropType === c.id
-                          ? 'bg-emerald-500 text-white shadow-md'
-                          : 'bg-white/10 hover:bg-white/20 text-slate-200'
-                      }`}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Farm Acres Slider */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-200">
-                  <span>Farm Cultivation Area:</span>
-                  <span className="text-emerald-300 font-extrabold text-sm">{farmAcres} Acres</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="40"
-                  value={farmAcres}
-                  onChange={(e) => setFarmAcres(Number(e.target.value))}
-                  className="w-full accent-emerald-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>1 Acre</span>
-                  <span>20 Acres</span>
-                  <span>40 Acres</span>
-                </div>
-              </div>
-
-              {/* Yield per Acre Slider */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-200">
-                  <span>Expected Yield per Acre:</span>
-                  <span className="text-emerald-300 font-extrabold text-sm">{yieldPerAcre} Quintals/Acre</span>
-                </div>
-                <input
-                  type="range"
-                  min="5"
-                  max={cropType === 'onion' ? 140 : 40}
-                  value={yieldPerAcre}
-                  onChange={(e) => setYieldPerAcre(Number(e.target.value))}
-                  className="w-full accent-emerald-500 cursor-pointer"
-                />
-              </div>
-
-              {/* Target Rate Slider */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-200">
-                  <span>Mandi Price Realization:</span>
-                  <span className="text-amber-300 font-extrabold text-sm">₹{targetMandiRate} / Quintal</span>
-                </div>
-                <input
-                  type="range"
-                  min={targetMandiRate * 0.7}
-                  max={targetMandiRate * 1.5}
-                  value={targetMandiRate}
-                  onChange={(e) => setTargetMandiRate(Number(e.target.value))}
-                  className="w-full accent-amber-400 cursor-pointer"
-                />
-              </div>
-
-              <div className="pt-2 text-xs text-emerald-200/80 bg-emerald-950/40 p-3 rounded-2xl border border-emerald-500/20">
-                Total Production Estimated: <strong className="text-white font-extrabold">{totalProductionQ} Quintals</strong> ({totalProductionQ * 100} kg).
-              </div>
-            </div>
-
-            {/* Realization Results (Right Column) */}
-            <div className="lg:col-span-6 space-y-5">
-              {/* Massive Net Extra Profit Box */}
-              <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-emerald-500/30 to-teal-500/20 border-2 border-emerald-400/50 backdrop-blur-xl shadow-2xl space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-                  Net Additional Farmer Earnings
-                </span>
-                <div className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 via-teal-100 to-amber-200">
-                  +{formatCurrency(additionalFarmerProfit)}
-                </div>
-                <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-                  By cutting arbitrary commission agents, grading weight cuts, and mandi market cess, you take home
-                  <strong className="text-white font-bold"> {(additionalFarmerProfit / traditionalNetIncome * 100).toFixed(1)}% higher net realization</strong> directly to your bank account.
-                </p>
-
-                <div className="pt-2 grid grid-cols-2 gap-3 text-xs border-t border-emerald-400/30">
-                  <div>
-                    <span className="text-[10px] text-slate-300 uppercase block">Traditional Mandi Cut</span>
-                    <span className="text-rose-400 font-extrabold text-sm">-{formatCurrency(traditionalDeductions)}</span>
-                    <span className="text-[10px] text-slate-400 block">(8.5% Commission/Fees)</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-300 uppercase block">Agrovercity Escrow Payout</span>
-                    <span className="text-emerald-300 font-extrabold text-sm">{formatCurrency(agrovercityEscrowIncome)}</span>
-                    <span className="text-[10px] text-slate-400 block">(0% Hidden Deductions)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bonus Freight & Cashflow Benefits */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md">
-                  <div className="flex items-center gap-2 text-sky-300 text-xs font-bold">
-                    <Truck className="w-4 h-4" />
-                    <span>Return Logistics Savings</span>
-                  </div>
-                  <div className="mt-2 text-xl font-black text-white">+{formatCurrency(freightSavedViaMatching)}</div>
-                  <p className="text-[11px] text-slate-300 mt-0.5">Saved via return-load freight matchmaking</p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md">
-                  <div className="flex items-center gap-2 text-amber-300 text-xs font-bold">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Payment Default Risk</span>
-                  </div>
-                  <div className="mt-2 text-xl font-black text-white">0% Risk</div>
-                  <p className="text-[11px] text-slate-300 mt-0.5">100% Escrow deposit before loading</p>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Link
-                  to="/farmer/lots"
-                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg transition-all"
-                >
-                  <span>List Your Lot at This Price</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 6. VISION AI LEAF DISEASE SCANNER & KISAN MITRA SANDBOX */}
-      <section id="ai-doctor" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        <div className="text-center max-w-3xl mx-auto space-y-3">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 text-xs font-bold border border-indigo-200">
-            <Bot className="w-3.5 h-3.5 text-indigo-600" />
-            <span>AI Agronomy & Computer Vision</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-slate-900">
-            24x7 Vision AI Crop Doctor & Multilingual Agronomist
-          </h2>
-          <p className="text-sm text-slate-600">
-            Diagnose crop pests, fungal infections, and nutrient deficiencies in 3 seconds. Instant chemical spray
-            prescriptions and organic herbal remedies certified by agricultural universities.
-          </p>
-        </div>
-
-        {/* Live Interactive Scanner Sandbox */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Sample Selectors (Left 5 Cols) */}
-          <div className="lg:col-span-5 space-y-4">
-            <h4 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-              <ScanLine className="w-4 h-4 text-emerald-600" />
-              <span>Select Sample Diseased Leaf to Scan</span>
-            </h4>
-
-            <div className="space-y-2">
-              {diseaseSamples.map((sample, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedDiseaseSample(idx)}
-                  className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between ${
-                    selectedDiseaseSample === idx
-                      ? 'bg-emerald-50/80 border-emerald-500 shadow-xs'
-                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-900">{sample.crop}</h5>
-                    <p className="text-[11px] text-slate-500">{sample.pathogen}</p>
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      sample.risk === 'Critical'
-                        ? 'bg-rose-100 text-rose-700'
-                        : sample.risk === 'Severe'
-                        ? 'bg-orange-100 text-orange-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}
-                  >
-                    {sample.risk} Risk
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="pt-2">
-              <Link
-                to="/community/scan"
-                className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs"
-              >
-                <ScanLine className="w-4 h-4 text-emerald-400" />
-                <span>Upload Your Own Crop Photo</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* AI Diagnosis Output Card (Right 7 Cols) */}
-          <div className="lg:col-span-7 bg-slate-900 text-white rounded-3xl p-6 sm:p-8 border border-slate-800 space-y-5">
-            <div className="flex justify-between items-start border-b border-slate-800 pb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-mono uppercase text-emerald-400 tracking-wider">AI Diagnosis Complete</span>
-                </div>
-                <h3 className="text-xl font-black text-white mt-1">
-                  {diseaseSamples[selectedDiseaseSample].pathogen}
-                </h3>
-                <p className="text-xs text-slate-400">Crop: {diseaseSamples[selectedDiseaseSample].crop}</p>
-              </div>
-
-              <div className="text-right">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">AI Confidence</span>
-                <span className="text-lg font-black text-emerald-300">
-                  {diseaseSamples[selectedDiseaseSample].confidence}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-slate-400 font-bold block text-[11px]">Visible Symptoms:</span>
-                <p className="text-slate-200 mt-0.5">{diseaseSamples[selectedDiseaseSample].symptoms}</p>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 space-y-1">
-                <span className="text-emerald-400 font-extrabold flex items-center gap-1.5 text-xs">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Recommended Chemical Spray (Immediate Action)</span>
-                </span>
-                <p className="text-slate-300 text-xs leading-relaxed">{diseaseSamples[selectedDiseaseSample].treatment}</p>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-teal-950/40 border border-teal-500/30 space-y-1">
-                <span className="text-teal-300 font-extrabold flex items-center gap-1.5 text-xs">
-                  <Sparkles className="w-4 h-4 text-teal-300" />
-                  <span>Organic & Preventive Management</span>
-                </span>
-                <p className="text-teal-100/90 text-xs leading-relaxed">{diseaseSamples[selectedDiseaseSample].organic}</p>
-              </div>
-            </div>
-
-            <div className="pt-2 flex items-center justify-between">
-              <Link
-                to="/mall"
-                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs flex items-center gap-1.5 transition-all"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                <span>Buy Recommended Fungicide on Krishi Mall</span>
-              </Link>
-
-              <Link
-                to="/community/ai"
-                className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
-              >
-                <span>Ask Kisan Mitra AI</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 7. KRISHI SHOPPING MALL SPOTLIGHT */}
-      <section className="py-14 bg-emerald-900/10 border-y border-emerald-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
-                <ShoppingBag className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Direct Verified Inputs</span>
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-                Shopping Mall & Equipment Store
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-500">
-                100% genuine hybrid seeds, bio-fertilizers, solar irrigation, and machinery delivered directly to your farm.
-              </p>
-            </div>
-
-            <Link
-              to="/mall"
-              className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 flex items-center gap-1.5 self-start sm:self-auto shadow-xs"
-            >
-              <span>View All 1,400+ Products</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-            {[
-              { name: 'Pioneer Hybrid Mustard', category: 'Seeds', price: 850, unit: 'kg', rating: 4.8, badge: 'High Yield' },
-              { name: 'Neem Oil Bio-Pesticide', category: 'Organic', price: 620, unit: 'Litre', rating: 4.9, badge: '10,000 PPM' },
-              { name: 'Solar Drip Irrigation Kit', category: 'Irrigation', price: 14999, unit: '1 Acre', rating: 4.7, badge: 'Subsidy Ready' },
-              { name: '16L Battery Knapsack', category: 'Sprayers', price: 2450, unit: 'pc', rating: 4.8, badge: '12V Battery' },
-              { name: 'Bio-NPK Consortium', category: 'Fertilizer', price: 380, unit: 'Bottle', rating: 4.9, badge: 'Microbial' },
-              { name: 'Cow Care Herbal Mix', category: 'Livestock', price: 790, unit: '5 kg', rating: 4.9, badge: 'Ayurvedic' },
-            ].map((prod, idx) => (
-              <div
-                key={idx}
-                className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-400 transition-all hover-lift flex flex-col justify-between"
-              >
-                <div>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800">
-                    {prod.badge}
-                  </span>
-                  <h4 className="font-extrabold text-xs text-slate-900 mt-2 line-clamp-2">{prod.name}</h4>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{prod.category}</p>
-                </div>
-
-                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <div className="text-xs font-black text-slate-900">
-                    ₹{prod.price}
-                    <span className="text-[10px] font-normal text-slate-400">/{prod.unit}</span>
-                  </div>
-                  <Link
-                    to="/mall"
-                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-colors"
-                  >
-                    <ShoppingCart className="w-3.5 h-3.5" />
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* 8. NATIONAL SOVEREIGN COMPLIANCE & DIGITAL STACK */}
-      <section id="compliance" className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
-        <div className="text-center max-w-3xl mx-auto space-y-3">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Digital India & Regulatory Interoperability</span>
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-slate-900">
-            Compliant with Government & Banking Standards
-          </h2>
-          <p className="text-sm text-slate-600">
-            Engineered to operate seamlessly within India’s sovereign agricultural infrastructure,
-            ensuring zero regulatory friction for farmers, banks, and corporates.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-3 hover-lift">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-700">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <h4 className="font-extrabold text-base text-slate-900">Digital Land Revenue Sync (7/12)</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              API connections with Mahabhulekh, AnyRoR, and State Bhulekh portals for instant parcel verification,
-              ownership share audit, and automated Gat number mapping.
-            </p>
-            <span className="inline-block text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
-              Govt Land Registry Verified
-            </span>
-          </div>
-
-          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-3 hover-lift">
-            <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-700">
-              <Scale className="w-5 h-5" />
-            </div>
-            <h4 className="font-extrabold text-base text-slate-900">e-NAM & APMC Interoperability</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Daily price reporting synced with APMC yards and National Agriculture Market standards
-              for unified price discovery and J-Form compliance.
-            </p>
-            <span className="inline-block text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-md">
-              Government Open-Data Feed
-            </span>
-          </div>
-
-          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-3 hover-lift">
-            <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-700">
-              <Landmark className="w-5 h-5" />
-            </div>
-            <h4 className="font-extrabold text-base text-slate-900">PMFBY Direct Benefit Transfer (DBT)</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Automated claims workflow conforming to Pradhan Mantri Fasal Bima Yojana guidelines with
-              surveyor geotagging and NPCI Aadhaar-linked bank transfers.
-            </p>
-            <span className="inline-block text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">
-              Aadhaar DBT Compliant
-            </span>
-          </div>
-
-          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-3 hover-lift">
-            <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-700">
-              <Heart className="w-5 h-5" />
-            </div>
-            <h4 className="font-extrabold text-base text-slate-900">Section 80G Tax Exemption Receipts</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Automated generation of Income Tax Section 80G tax donation certificates for Gaushalas
-              and cattle sanctuaries with unique registration verification.
-            </p>
-            <span className="inline-block text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md">
-              Income Tax Act Compliant
-            </span>
-          </div>
-
-          <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-3 hover-lift">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-700">
-              <Ship className="w-5 h-5" />
-            </div>
-            <h4 className="font-extrabold text-base text-slate-900">APEDA & FSSAI Export Gateway</h4>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Phytosanitary certificate validation, residue test report logging, and agricultural export registration
-              adhering to international quarantine specifications.
-            </p>
-            <span className="inline-block text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">
-              APEDA Trade Verified
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* 9. GRASSROOTS VOICES & CASE STUDIES */}
+      {/* 4. GRASSROOTS VOICES & CASE STUDIES */}
       <section className="py-16 bg-slate-100/60 border-y border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
           <div className="text-center max-w-2xl mx-auto space-y-2">
@@ -1980,7 +762,7 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 10. INTERACTIVE FAQS ACCORDION */}
+      {/* 5. INTERACTIVE FAQS ACCORDION — searchable, 9-persona filtered */}
       <section id="faqs" className="py-20 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200 text-slate-800 text-xs font-bold">
@@ -1989,23 +771,80 @@ export const LandingPage: React.FC = () => {
           </div>
           <h2 className="text-3xl font-black text-slate-900">Got Questions? We Have Answers.</h2>
           <p className="text-xs sm:text-sm text-slate-500">
-            Clear, transparent answers about payments, land record security, transport, and dairy testing.
+            Search instantly, or filter by your role — answers tailored to each of our 9 personas.
           </p>
         </div>
 
+        {/* FAQ Search & Persona Filter */}
         <div className="space-y-3">
-          {faqs.map((faq, idx) => {
-            const isOpen = openFaqIndex === idx;
+          <div className="relative max-w-md mx-auto">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by feature or persona…"
+              value={faqSearch}
+              onChange={(e) => setFaqSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
+            <button
+              onClick={() => setFaqPersona('all')}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
+                faqPersona === 'all'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400'
+              }`}
+            >
+              All
+            </button>
+            {FAQ_PERSONAS.map((fp) => (
+              <button
+                key={fp.id}
+                onClick={() => setFaqPersona(faqPersona === fp.id ? 'all' : fp.id)}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center gap-1 ${
+                  faqPersona === fp.id
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400'
+                }`}
+              >
+                <span>{fp.icon}</span>
+                <span>{fp.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {faqPersona === 'all' && filteredFaqs.length > 5 && (
+          <p className="text-center text-[11px] text-slate-400 font-medium -mt-3">
+            Showing the 5 latest questions — filter by a persona above to see all answers.
+          </p>
+        )}
+
+        <div className="space-y-3">
+          {filteredFaqs.length === 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 text-center text-xs text-slate-500">
+              No answers match your search{faqPersona !== 'all' ? ' for this persona' : ''}. Try a different keyword.
+            </div>
+          )}
+          {visibleFaqs.map((faq) => {
+            const isOpen = openFaqId === faq.id;
+            const personaMeta = FAQ_PERSONAS.find((fp) => fp.id === faq.persona);
             return (
               <div
-                key={idx}
+                key={faq.id}
                 className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all"
               >
                 <button
-                  onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
+                  onClick={() => setOpenFaqId(isOpen ? null : faq.id)}
                   className="w-full p-5 text-left flex items-center justify-between font-bold text-xs sm:text-sm text-slate-900 hover:text-emerald-700 transition-colors"
                 >
-                  <span className="pr-4">{faq.q}</span>
+                  <span className="pr-4 flex items-center gap-2">
+                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 whitespace-nowrap">
+                      {personaMeta?.icon} {personaMeta?.label}
+                    </span>
+                    <span>{faq.q}</span>
+                  </span>
                   <ChevronDown
                     className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${
                       isOpen ? 'rotate-180 text-emerald-600' : ''
@@ -2015,6 +854,16 @@ export const LandingPage: React.FC = () => {
                 {isOpen && (
                   <div className="px-5 pb-5 pt-1 text-xs sm:text-sm text-slate-600 leading-relaxed border-t border-slate-100 bg-slate-50/50">
                     {faq.a}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {faq.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -2023,7 +872,7 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 11. GRAND FINAL CALL TO ACTION */}
+      {/* 6. GRAND FINAL CALL TO ACTION */}
       <section className="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-800 via-teal-900 to-emerald-950 text-white p-8 sm:p-14 lg:p-16 text-center shadow-2xl border border-emerald-600/40">
           <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-emerald-400/20 blur-3xl pointer-events-none" />
@@ -2062,7 +911,7 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 12. GRAND ECOSYSTEM FOOTER */}
+      {/* 7. GRAND ECOSYSTEM FOOTER */}
       <footer className="bg-slate-950 text-slate-400 pt-16 pb-12 border-t border-slate-800 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-8">
@@ -2098,6 +947,7 @@ export const LandingPage: React.FC = () => {
                 <li><Link to="/farmer" className="hover:text-emerald-400 transition-colors">Kisan / Farmer</Link></li>
                 <li><Link to="/landlord" className="hover:text-emerald-400 transition-colors">Farm Landlord</Link></li>
                 <li><Link to="/equipment" className="hover:text-emerald-400 transition-colors">Custom Machinery (CHC)</Link></li>
+                <li><Link to="/womenShg" className="hover:text-emerald-400 transition-colors">Mahila Gruh Udyog</Link></li>
               </ul>
             </div>
 

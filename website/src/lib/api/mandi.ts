@@ -74,6 +74,25 @@ export const mandi = {
     }
   },
 
+  /**
+   * GET /mandi/public/live — anonymous-safe government open-data slice for the
+   * public landing page. Same payload as live(); district must come from the
+   * backend showcase whitelist and defaults to the first showcase market.
+   */
+  publicLive: async (params?: {
+    district?: string;
+    commodity?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<MandiLiveResponse> => {
+    try {
+      const res = await apiClient.get<MandiLiveResponse>('/mandi/public/live', { params });
+      return res.data;
+    } catch (e) {
+      handleApiError(e);
+    }
+  },
+
   /** GET /mandi/live/filters — districts/commodities/mandis from stored genuine snapshots. */
   liveFilters: (): Promise<MandiLiveFilters> => readOne<MandiLiveFilters>('/mandi/live/filters'),
 

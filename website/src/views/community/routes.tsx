@@ -5,6 +5,7 @@ const AiAgronomistView = lazy(() => import('./AiAgronomistView').then((m) => ({ 
 const DiseaseScanView = lazy(() => import('./DiseaseScanView').then((m) => ({ default: m.DiseaseScanView })));
 const AgriNewsChannelsView = lazy(() => import('./AgriNewsChannelsView').then((m) => ({ default: m.AgriNewsChannelsView })));
 const KisanCoinsView = lazy(() => import('./KisanCoinsView').then((m) => ({ default: m.KisanCoinsView })));
+const WomenGruhUdyogView = lazy(() => import('./WomenGruhUdyogView').then((m) => ({ default: m.WomenGruhUdyogView })));
 const ColdStorageView = lazy(() => import('./ColdStorageView').then((m) => ({ default: m.ColdStorageView })));
 const TreePlantationView = lazy(() => import('./TreePlantationView').then((m) => ({ default: m.TreePlantationView })));
 
@@ -18,16 +19,15 @@ export const CommunityRouteElements = () => (
     <Route path="/community/coins" element={<KisanCoinsView />} />
     <Route path="/community/cold" element={<ColdStorageView />} />
     <Route path="/community/trees" element={<TreePlantationView />} />
-    {/* Carbon Footprint & Eco and the Mahila Gruh Udyog hub (incl. its
-        /womenShg persona aliases) were removed from the frontend — the routes
-        redirect for compat. Backend APIs unchanged. */}
+    {/* Carbon Footprint & Eco stays removed from the frontend — redirect for compat. */}
     <Route path="/community/carbon" element={<Navigate to="/community/trees" replace />} />
-    <Route path="/community/women" element={<Navigate to="/mall" replace />} />
-    <Route path="/womenShg" element={<Navigate to="/mall" replace />} />
-    <Route path="/womenShg/products" element={<Navigate to="/mall" replace />} />
-    <Route path="/womenShg/batches" element={<Navigate to="/mall" replace />} />
-    <Route path="/womenShg/certs" element={<Navigate to="/mall" replace />} />
-    <Route path="/womenShg/savings" element={<Navigate to="/mall" replace />} />
-    <Route path="/gruhUdyog" element={<Navigate to="/mall" replace />} />
+    {/* Mahila Gruh Udyog hub — restored to the frontend. */}
+    <Route path="/community/women" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/products" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/batches" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/certs" element={<WomenGruhUdyogView />} />
+    <Route path="/womenShg/savings" element={<WomenGruhUdyogView />} />
+    <Route path="/gruhUdyog" element={<WomenGruhUdyogView />} />
   </>
 );

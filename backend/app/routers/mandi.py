@@ -446,6 +446,47 @@ async def live_refresh(
     return {**payload, "refreshed": True}
 
 
+# Public landing-page showcase slice of the government feed. Anonymous callers
+# have no profile district, so requests are restricted to a small whitelist of
+# major markets (bounds the upstream/cache surface) and a tight result cap.
+PUBLIC_LIVE_DISTRICTS = ("Pune", "Nashik", "Indore", "Rajkot", "Karnal", "Ludhiana")
+PUBLIC_LIVE_MAX_LIMIT = 12
+
+
+@router.get("/public/live")
+async def public_live_prices(
+    district: str | None = None,
+    commodity: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+):
+    """Anonymous-safe read of the government open-data mandi feed for the
+    public landing page. Same payload shape as /mandi/live; the district must
+    come from PUBLIC_LIVE_DISTRICTS and defaults to the first showcase market."""
+    if offset < 0:
+        _error(422, "VALIDATION_ERROR", "offset must be >= 0", {"offset": "must be >= 0"})
+    limit = max(1, min(PUBLIC_LIVE_MAX_LIMIT, limit))
+    try:
+        cleaned = mandi_gov_data.clean_name(district, "district") if district else PUBLIC_LIVE_DISTRICTS[0]
+        match = next((d for d in PUBLIC_LIVE_DISTRICTS if d.lower() == cleaned.lower()), None)
+        if match is None:
+            _error(
+                422,
+                "VALIDATION_ERROR",
+                f"district must be one of: {', '.join(PUBLIC_LIVE_DISTRICTS)}",
+                {"district": "unsupported showcase district"},
+            )
+        cleaned_commodity = mandi_gov_data.clean_name(commodity, "commodity") if commodity else None
+    except GovFeedError as exc:
+        _error(422, "VALIDATION_ERROR", str(exc))
+    try:
+        return await mandi_gov_data.get_live_prices(
+            match, commodity=cleaned_commodity, limit=limit, offset=offset
+        )
+    except GovFeedError as exc:
+        _gov_error(exc)
+
+
 @router.get("/analytics/movers")
 async def analytics_movers(user: dict = Depends(_mandi_user)):
     """Gainers/losers are not computable from the government feed: it reports

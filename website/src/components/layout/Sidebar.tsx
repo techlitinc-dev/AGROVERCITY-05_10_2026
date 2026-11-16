@@ -22,6 +22,7 @@ import {
   Sparkles,
   ShoppingBag,
   HeartHandshake,
+  HandCoins,
   Bot,
   ScanLine,
   Radio,
@@ -91,6 +92,7 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
               { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
+              { to: '/women/directory', label: 'Mahila Bachat Gat', icon: HandCoins },
             ],
           },
           {
@@ -267,6 +269,21 @@ export const Sidebar: React.FC = () => {
               { to: '/coldStorageProvider/facilities', label: 'Chambers & Temperature', icon: Snowflake },
               { to: '/coldStorageProvider/bookings', label: 'Inward & Release Bookings', icon: Boxes },
               { to: '/coldStorageProvider/fees', label: 'Rent Ledger & e-NWR Fees', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'womenShg':
+        return [
+          {
+            title: 'Mahila Gruh Udyog',
+            items: [
+              { to: '/womenShg', label: 'Enterprise Dashboard', icon: LayoutDashboard },
+              { to: '/women/directory', label: 'Bachat Gat Directory', icon: Users },
+              { to: '/womenShg/products', label: 'Cottage Catalog', icon: Store },
+              { to: '/womenShg/batches', label: 'Production Batches', icon: Package },
+              { to: '/womenShg/certs', label: 'FSSAI Certifications', icon: Award },
+              { to: '/womenShg/savings', label: 'SHG Savings & Micro-Loan', icon: Landmark },
             ],
           },
         ];
