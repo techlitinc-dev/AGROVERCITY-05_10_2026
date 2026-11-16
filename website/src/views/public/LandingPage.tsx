@@ -423,7 +423,14 @@ export const LandingPage: React.FC = () => {
             <p className="text-base sm:text-xl text-emerald-100/80 leading-relaxed max-w-3xl mx-auto font-medium">
               From Soil to Supermarket, Dairy to Cargo Port. A unified digital ecosystem uniting
               <strong className="text-white font-bold"> Farmers, Farm Landlords, Women Hub Enterprises, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, Instructors, and Agri Market Sellers </strong>
-              with live mandi discovery, 100% escrow guaranteed trade, smart logistics, and 24x7 AI agronomy.
+              — with AI Crop Doctor, live Mandi Desk, farm diary, P&amp;L and 7/12 farmland for farmers; plot listings,
+              7/12 verification and lease requests for landlords; machines registry, availability calendar and job
+              bookings for equipment owners; SHG dashboard &amp; savings, kitchen garden, gruh-udyog studio and bachat
+              gat directory for women enterprises; delivery punch-sheets, FAT/SNF rate charts and auto-billing for milk
+              vendors; lot discovery, demands manager, mandi rates and storefront profiles for vyaparis; loads, trips,
+              FT-1 digital bilty, tracking, settlements and fleet for transporters; course studio, catalog,
+              certificates and payouts for instructors; and Krishi Mall orders, subscriptions and produce browsing
+              for agri market sellers.
             </p>
 
             {/* Action Buttons */}
