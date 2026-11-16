@@ -14,7 +14,6 @@ import {
   Search,
   Star,
   ChevronDown,
-  PhoneCall,
   HelpCircle,
   MapPin,
 } from 'lucide-react';
@@ -409,11 +408,7 @@ export const LandingPage: React.FC = () => {
             {/* Version & Network Badge */}
             <div className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/20 backdrop-blur-md text-emerald-300 text-xs font-bold tracking-wide shadow-lg">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>AGROVERCITY OS 2.0 • Bharat's Sovereign Agritech & B2B Operating System</span>
-              <span className="text-slate-400">|</span>
-              <span className="text-amber-300 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" /> 28 States Connected
-              </span>
+              <span>AGROVERCITY OS 1.0 • Bharat's Sovereign Agritech</span>
             </div>
 
             {/* Main Headline */}
@@ -427,7 +422,7 @@ export const LandingPage: React.FC = () => {
             {/* Subtitle */}
             <p className="text-base sm:text-xl text-emerald-100/80 leading-relaxed max-w-3xl mx-auto font-medium">
               From Soil to Supermarket, Dairy to Cargo Port. A unified digital ecosystem uniting
-              <strong className="text-white font-bold"> Farmers, Landlords, Transporters, Agri Vyaparis, Dairies, and Institutional Buyers </strong>
+              <strong className="text-white font-bold"> Farmers, Farm Landlords, Women Hub Enterprises, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, Instructors, and Agri Market Sellers </strong>
               with live mandi discovery, 100% escrow guaranteed trade, smart logistics, and 24x7 AI agronomy.
             </p>
 
@@ -924,7 +919,7 @@ export const LandingPage: React.FC = () => {
                 <div>
                   <span className="font-extrabold text-base tracking-tight text-white">AGROVERCITY</span>
                   <span className="ml-1 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300">
-                    OS 2.0
+                    OS 1.0
                   </span>
                 </div>
               </Link>
@@ -932,12 +927,6 @@ export const LandingPage: React.FC = () => {
                 Kisan Setu • Bharat's Unified Agritech Operating System. Integrating B2B trade,
                 smart bilty transport, dairy tech, land records, KCC loans, PMFBY insurance, and multilingual AI agronomy.
               </p>
-              <div className="pt-2 flex items-center gap-3 text-slate-300">
-                <span className="flex items-center gap-1">
-                  <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
-                  <strong>Toll-Free:</strong> 1800-AGRO-SETU
-                </span>
-              </div>
             </div>
 
             {/* Col 2: Producer Workspaces */}
@@ -957,8 +946,6 @@ export const LandingPage: React.FC = () => {
               <ul className="space-y-2">
                 <li><Link to="/transporter" className="hover:text-emerald-400 transition-colors">Freight Transporter</Link></li>
                 <li><Link to="/seller" className="hover:text-emerald-400 transition-colors">Agri Vyapari / POS</Link></li>
-                <li><Link to="/directbuyer" className="hover:text-emerald-400 transition-colors">Direct Institutional Buyer</Link></li>
-                <li><Link to="/exporter" className="hover:text-emerald-400 transition-colors">International Exporter</Link></li>
               </ul>
             </div>
 
@@ -967,8 +954,6 @@ export const LandingPage: React.FC = () => {
               <h4 className="font-bold uppercase tracking-wider text-slate-200 text-[11px]">Dairy & Livestock</h4>
               <ul className="space-y-2">
                 <li><Link to="/milkSeller" className="hover:text-emerald-400 transition-colors">Milk Vendor / Doodhwala</Link></li>
-                <li><Link to="/gaushalaManager" className="hover:text-emerald-400 transition-colors">Gaushala Sanctuary</Link></li>
-                <li><Link to="/coldStorageProvider" className="hover:text-emerald-400 transition-colors">Cold Storage & e-NWR</Link></li>
               </ul>
             </div>
 

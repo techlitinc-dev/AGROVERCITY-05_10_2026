@@ -107,14 +107,17 @@ visitors always got mocks). It now shows **real government open-data prices**:
 "Got Questions? We Have Answers." was a static 6-item accordion; it is now a
 dynamic, searchable dataset organized around the 9 finalized personas
 (`FAQ_PERSONAS` + `FAQ_DATA` in `LandingPage.tsx`): 18 Q&As (2 per persona),
-persona filter chips (All + 9), live text search over question/answer text,
-persona tag on every item, and an empty state. The **All filter shows only the
-5 latest questions** (with a "Showing the 5 latest questions — filter by a
-persona…" hint); persona chips still show that persona's full set. 5 old
-answers were reused verbatim where they fit (escrow→Farmer, PMFBY→Farmer,
-7/12→Landlord, bilty→Transporter, doodhwala→Milk Vendor); the gaushala
-question (persona no longer on the page) was replaced. Guard:
-`specs/landing-faq.spec.ts`.
+persona filter chips (All + 9), persona tag on every item, and an empty state.
+The **All filter shows only the 5 latest questions** (with a "Showing the 5
+latest questions — filter by a persona…" hint); persona chips still show that
+persona's full set. **Search matches only feature tags + persona** — each
+question carries a curated `tags` array (4–6 keywords like escrow, PMFBY,
+7/12, bilty, FAT/SNF, FSSAI, khata) shown as chips inside the answer, and the
+long answer prose is deliberately not searchable. 5 old answers were reused
+verbatim where they fit (escrow→Farmer, PMFBY→Farmer, 7/12→Landlord,
+bilty→Transporter, doodhwala→Milk Vendor); the gaushala question (persona no
+longer on the page) was replaced. Guard: `specs/landing-faq.spec.ts`
+(includes a negative case proving answer-body words do not match).
 
 
 ### What was deliberately NOT changed
