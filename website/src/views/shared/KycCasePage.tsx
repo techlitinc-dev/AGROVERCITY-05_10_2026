@@ -161,16 +161,12 @@ export const KycCasePage: React.FC = () => {
 
       {/* Create case */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
-        <h3 className="font-bold text-sm text-slate-900">Open a KYC Case</h3>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <select
-            value={persona}
-            onChange={(e) => setPersona(e.target.value as PersonaType)}
-            className="flex-1 px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 bg-white"
-          >
-            {/* Only the currently selected persona can be verified here. */}
-            <option value={persona}>{PERSONA_LABELS.find((p) => p.id === persona)?.label ?? persona}</option>
-          </select>
+        <h3 className="font-bold text-sm text-slate-900">KYC Verification</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <span className="flex-1 inline-flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-200 bg-slate-50 text-slate-700">
+            <FileCheck2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+            {PERSONA_LABELS.find((p) => p.id === persona)?.label ?? persona}
+          </span>
           <button
             onClick={() => void createCase()}
             disabled={busy === 'create'}
