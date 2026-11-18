@@ -11,7 +11,6 @@ import {
   Shield,
   LogOut,
   Settings,
-  CreditCard,
   Landmark,
   LifeBuoy,
   MessageCircle,
@@ -396,14 +395,6 @@ export const Navbar: React.FC = () => {
                       className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
                     >
                       <Settings className="w-4 h-4 text-slate-400" /> Settings & Privacy
-                    </Link>
-
-                    <Link
-                      to="/billing"
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-semibold"
-                    >
-                      <CreditCard className="w-4 h-4 text-slate-400" /> Billing & Plans
                     </Link>
 
                     {!restricted && (

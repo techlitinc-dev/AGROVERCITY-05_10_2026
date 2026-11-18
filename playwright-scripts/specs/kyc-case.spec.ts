@@ -16,7 +16,7 @@ test('KYC page shows verification for the active persona with no persona dropdow
   await page.goto('/kyc');
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  await expect(page.getByText('KYC Verification')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'KYC Verification', exact: true })).toBeVisible();
   // Active persona shown as a static label — no dropdown anywhere on the page.
   await expect(page.locator('select')).toHaveCount(0);
   await expect(page.getByText('Farmer / Kisan').first()).toBeVisible();
