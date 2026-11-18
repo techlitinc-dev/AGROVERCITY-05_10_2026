@@ -1,4 +1,4 @@
-// Core Domain Types for AGROVERCITY / Kisan Setu
+// Core Domain Types for AGROVERCITY
 
 export type PersonaType =
   | 'farmer'

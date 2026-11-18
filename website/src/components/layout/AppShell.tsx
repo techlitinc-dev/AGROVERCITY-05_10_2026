@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { NotificationCenter } from '../common/NotificationCenter';
 import { AiChatbotDrawer } from '../common/AiChatbotDrawer';
+import { KycNudgeModal } from '../common/KycNudgeModal';
 import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
 import { isPersonaEnabled } from '../../lib/personas';
 import type { PersonaType } from '../../types';
@@ -51,6 +52,9 @@ export const AppShell: React.FC = () => {
   // history.state — >0 means there is a previous in-app screen to return to.
   // SPA back preserves the previous page's component state (no lost form data).
   const canGoBack = typeof window !== 'undefined' && (window.history.state?.idx ?? 0) > 0;
+  // Provider verification screens (DigiLocker mock consent + registration
+  // callback) render focused/full-width like the auth pages — no sidebar or
+  // bottom nav while KYC verification is in flight.
   const isFullWidthPage =
     location.pathname === '/' ||
     location.pathname === '/landing' ||
@@ -59,7 +63,9 @@ export const AppShell: React.FC = () => {
     location.pathname === '/register' ||
     location.pathname === '/onboarding' ||
     location.pathname.startsWith('/track/') ||
-    location.pathname.startsWith('/public/');
+    location.pathname.startsWith('/public/') ||
+    location.pathname.startsWith('/mock-digilocker') ||
+    location.pathname.startsWith('/kyc/callback');
 
   // Auth gate: persona pages need a session — bounce to /login remembering
   // where the user was headed so login can return them there.
@@ -119,6 +125,7 @@ export const AppShell: React.FC = () => {
       {/* Floating Global Micro-Services */}
       <NotificationCenter />
       <AiChatbotDrawer />
+      <KycNudgeModal />
 
       {/* Mobile Bottom Navigation Bar */}
       {!isFullWidthPage && <BottomNav />}

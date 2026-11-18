@@ -1,5 +1,4 @@
 import { post, readList, readOne } from './http';
-import { MOCK_LOANS } from './mocks';
 import type { LoanApplication } from '../../types';
 
 /** Finance namespace — credit score, KCC, loan calculator & applications. */
@@ -16,7 +15,7 @@ export const finance = {
 
   /** GET /finance/loans */
   loans: (params?: Record<string, unknown>): Promise<LoanApplication[]> =>
-    readList<LoanApplication>('/finance/loans', { params, mock: MOCK_LOANS }),
+    readList<LoanApplication>('/finance/loans', { params }),
 
   /** POST /finance/loans/apply */
   applyLoan: (payload: Record<string, unknown>): Promise<LoanApplication> =>

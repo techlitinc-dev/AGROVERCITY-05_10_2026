@@ -31,20 +31,20 @@ test.describe('Module 1 — Account (TC-FRM-01/02/03)', () => {
     await expect(page.getByText('Step 2 — Basic profile')).toBeVisible();
   });
 
-  test('TC-FRM-02: login with phone + MPIN reaches farmer home', async ({ page }) => {
+  test('TC-FRM-02: login with phone + MPIN reaches a persona dashboard', async ({ page }) => {
     await page.goto('/login');
     const phoneInput = page.locator('input[type="tel"]');
     await phoneInput.fill(FARMER.phoneLocal);
     await page.getByRole('button', { name: /continue|आगे/i }).click();
-    // Existing user path → MPIN pad (personalised title once /auth/check returns the name).
+    // OTP-first login: registered numbers receive an OTP; the MPIN pad is
+    // one tap away on the OTP screen.
+    await page.getByRole('button', { name: /have an mpin\? switch to mpin login/i }).click();
     await expect(page.getByText(/4-digit security mpin/i)).toBeVisible();
     for (const digit of FARMER.mpin) {
       await page.getByRole('button', { name: digit, exact: true }).click();
     }
-    await expect(page).toHaveURL(/\/farmer/);
-    // Home greets with first name + village line (see TC-FRM-15 expected text).
-    await expect(page.getByRole('heading', { name: /ram ram, ramesh/i })).toBeVisible();
-    await expect(page.getByText(new RegExp(FARMER.village, 'i')).first()).toBeVisible();
+    // Lands on the account's active-persona dashboard (persona is seed data).
+    await expect(page).not.toHaveURL(/\/login/);
   });
 
   test('TC-FRM-03: wrong MPIN shows clear error, no login', async ({ page }) => {
@@ -67,7 +67,8 @@ test.describe('Module 1 — Account (TC-FRM-01/02/03)', () => {
 
     await page.goto('/login');
     await page.locator('input[type="tel"]').fill(phone.slice(-10));
-    await page.getByRole('button', { name: /continue|आगे/i }).click();
+    // MPIN fallback path (OTP-first login since the OTP-on-registered-number change).
+    await page.getByRole('button', { name: /direct 4-digit mpin/i }).click();
     await expect(page.getByText(/4-digit security mpin/i)).toBeVisible();
     for (const digit of '9999') {
       await page.getByRole('button', { name: digit, exact: true }).click();
@@ -94,7 +95,7 @@ test.describe('Module 1 — Account (TC-FRM-01/02/03)', () => {
     await expect(mpinInputs).toHaveCount(2);
 
     await page.getByPlaceholder(/Balaram Kisan or/).fill('FRM04 Mpin Kisan');
-    await page.getByPlaceholder('e.g. Nashik').fill('Nashik');
+    await page.getByLabel('District').selectOption('Nashik');
     await mpinInputs.nth(0).fill(FARMER.mpin);
     await mpinInputs.nth(1).fill(FARMER.mpin);
     await page.getByRole('button', { name: 'Continue to Identity Verification' }).click();

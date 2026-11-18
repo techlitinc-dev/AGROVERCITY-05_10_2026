@@ -11,13 +11,11 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
-  EyeOff,
   MapPin,
 } from 'lucide-react';
 import { apiErrorMessage, kyc, ratings, uploads, users } from '../../lib/api';
-import type { PersonaType, UserProfile } from '../../types';
-import { useAuthStore, normalizeUserProfile } from '../../stores/authStore';
-import { ALL_PERSONAS, isPersonaEnabled, normalizePersona } from '../../lib/personas';
+import type { UserProfile } from '../../types';
+import { useAuthStore } from '../../stores/authStore';
 import { cn, formatDateTime, formatNumber } from '../../lib/utils';
 import { asRecord, asRecords, pick, pickNum, pickStr, str } from './records';
 
@@ -122,60 +120,16 @@ const StarRow: React.FC<{ rating: number }> = ({ rating }) => (
 );
 
 export const ProfilePage: React.FC = () => {
-  const { user, setUser } = useAuthStore();
   const [me, setMe] = useState<Record<string, unknown> | null>(null);
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const [personaBusy, setPersonaBusy] = useState<PersonaType | null>(null);
   const [kycCases, setKycCases] = useState<Record<string, unknown>[] | null>(null);
   const [ratingMine, setRatingMine] = useState<Record<string, unknown> | null>(null);
   const [savedCount, setSavedCount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Persona visibility (hide ≠ unlink — everything reappears on re-enable).
-  const disabledPersonas = new Set((user?.disabledPersonas ?? []).map(normalizePersona));
-  const enabledLinked = (user?.availablePersonas ?? []).filter(
-    (p) => !disabledPersonas.has(normalizePersona(p))
-  );
-
-  const togglePersona = async (persona: PersonaType, enabled: boolean, label: string) => {
-    if (personaBusy) return;
-    const norm = normalizePersona(persona);
-    if (
-      !enabled &&
-      enabledLinked.length <= 1 &&
-      enabledLinked.some((p) => normalizePersona(p) === norm)
-    ) {
-      flash('err', 'At least one persona must stay enabled.');
-      return;
-    }
-    if (!enabled && normalizePersona(user?.activePersona ?? '') === norm) {
-      const fallback = enabledLinked.find((p) => normalizePersona(p) !== norm);
-      if (
-        !window.confirm(
-          `Hide ${label}? You'll be switched to ${fallback ?? 'your next enabled persona'}. You can turn it back on anytime.`
-        )
-      ) {
-        return;
-      }
-    }
-    setPersonaBusy(norm);
-    try {
-      await users.setPersonaVisibility(norm, enabled);
-      const fresh = await users.getMe();
-      const rec = asRecord(fresh);
-      setMe(rec);
-      setUser(normalizeUserProfile(fresh));
-      flash('ok', `${label} ${enabled ? 'enabled' : 'hidden'}.`);
-    } catch (err) {
-      flash('err', apiErrorMessage(err));
-    } finally {
-      setPersonaBusy(null);
-    }
-  };
 
   useEffect(() => {
     users
@@ -365,68 +319,6 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Persona visibility — hide/show personas (hidden ≠ deleted) */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
-        <div>
-          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-            <EyeOff className="w-4 h-4 text-emerald-600" /> Persona Visibility
-          </h3>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Turn personas on or off. A hidden persona disappears from the switcher and its menus —
-            nothing is deleted, and turning it back on restores everything.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {ALL_PERSONAS.map((p) => {
-            const enabled = isPersonaEnabled(user?.disabledPersonas, p.id);
-            const busyP = personaBusy === p.id;
-            return (
-              <div
-                key={p.id}
-                className={cn(
-                  'flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5 transition-colors',
-                  enabled ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50'
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex items-center gap-2 text-xs font-semibold min-w-0',
-                    enabled ? 'text-slate-700' : 'text-slate-400'
-                  )}
-                >
-                  <span className="text-base flex-shrink-0">{p.icon}</span>
-                  <span className="truncate">{p.label}</span>
-                  {!enabled && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex-shrink-0">
-                      Hidden
-                    </span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={enabled}
-                  aria-label={`${p.label} visibility`}
-                  disabled={busyP}
-                  onClick={() => togglePersona(p.id, !enabled, p.label)}
-                  className={cn(
-                    'relative w-10 h-[22px] rounded-full transition-colors flex-shrink-0 disabled:opacity-60',
-                    enabled ? 'bg-emerald-600' : 'bg-slate-300'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all',
-                      enabled ? 'left-[20px]' : 'left-[2px]'
-                    )}
-                  />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Edit profile */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
         <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
@@ -439,9 +331,6 @@ export const ProfilePage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Full name">
                 <input type="text" value={form.name} onChange={setField('name')} className={inputCls} />
-              </Field>
-              <Field label="Vernacular name (नाम)">
-                <input type="text" value={form.vernacularName} onChange={setField('vernacularName')} className={inputCls} />
               </Field>
               <Field label="Email">
                 <input type="email" value={form.email} onChange={setField('email')} className={inputCls} />
@@ -456,14 +345,6 @@ export const ProfilePage: React.FC = () => {
                   <option value="female">Female</option>
                   <option value="other">Other</option>
                 </select>
-              </Field>
-              <Field label="Alternate phone (10-digit)">
-                <input
-                  type="tel"
-                  value={form.alternatePhone}
-                  onChange={(e) => setForm((f) => ({ ...f, alternatePhone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                  className={inputCls}
-                />
               </Field>
               <Field label="WhatsApp number (10-digit)">
                 <input
@@ -526,15 +407,6 @@ export const ProfilePage: React.FC = () => {
                     </option>
                   ))}
                 </select>
-              </Field>
-              <Field label="Active crops (comma separated)">
-                <input
-                  type="text"
-                  value={form.activeCrops}
-                  onChange={setField('activeCrops')}
-                  placeholder="e.g. onion, wheat"
-                  className={inputCls}
-                />
               </Field>
             </div>
             <button

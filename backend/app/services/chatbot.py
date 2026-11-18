@@ -441,7 +441,7 @@ async def process_chat_message(user_id: str, payload: ChatMessageIn, user_name: 
             suggested_actions = [{"title": "Open Disease Scanner", "route": "/disease-scan"}]
         else:
             bot_text = (
-                f"राम राम {user_name} जी! मैं किसान सेतु का AI सलाहकार **किसान मित्र** हूँ।\n"
+                f"राम राम {user_name} जी! मैं एग्रोवर्सिटी का AI सलाहकार **किसान मित्र** हूँ।\n"
                 "मैं फसल सुरक्षा, जैविक खेती, मंडी भाव, सरकारी योजनाओं (PM-KISAN) और यंत्र बुकिंग में आपकी मदद कर सकता हूँ। "
                 "आप नीचे दिए गए विकल्पों में से चुन सकते हैं या अपना सवाल पूछ सकते हैं।"
             )

@@ -5,18 +5,16 @@
  *  1. Every call goes through the helpers in `./http`, which implement
  *     `try { real call } catch (e) { handleApiError(e) }` and throw an
  *     `ApiError` (with `code` from `error.response.data.error.code`).
- *  2. Reads may fall back to MOCK constants ONLY when `import.meta.env.DEV`.
- *  3. Writes/mutations ALWAYS throw on failure — never fake success on a POST.
- *  4. List endpoints unwrap the `{data, page, pageSize, total}` envelope to a
+ *  2. Writes/mutations ALWAYS throw on failure — never fake success on a POST.
+ *  3. List endpoints unwrap the `{data, page, pageSize, total}` envelope to a
  *     plain array (`readList`); use `readPaged` when pagination matters.
- *  5. Path params are method args, e.g. `purchases.advance(id, body)`.
+ *  4. Path params are method args, e.g. `purchases.advance(id, body)`.
  */
 
 // --- infra ---
 export { apiClient } from './client';
 export { ApiError, handleApiError, apiErrorMessage } from './errors';
 export {
-  DEV,
   unwrapList,
   unwrapItems,
   unwrapPaged,
@@ -32,26 +30,6 @@ export {
   download,
 } from './http';
 export type { Paged, Params, MutateOpts } from './http';
-
-// --- mocks (dev-only fallbacks; unchanged data) ---
-export {
-  INITIAL_USER,
-  MOCK_MANDI_PRICES,
-  MOCK_PRODUCE_LOTS,
-  MOCK_BUYER_DEMANDS,
-  MOCK_TRADE_OFFERS,
-  MOCK_PURCHASES,
-  MOCK_SUPPLY_CONTRACTS,
-  MOCK_FARM_DIARY,
-  MOCK_EQUIPMENT,
-  MOCK_LOANS,
-  MOCK_INSURANCE_CLAIMS,
-  MOCK_LAND_RECORDS,
-  MOCK_LAND_LEASES,
-  MOCK_MILK_SLIPS,
-  MOCK_MALL_PRODUCTS,
-  MOCK_NOTIFICATIONS,
-} from './mocks';
 
 // --- domains ---
 export { auth, registration } from './auth';

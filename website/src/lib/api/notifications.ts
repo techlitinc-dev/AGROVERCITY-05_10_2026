@@ -1,12 +1,11 @@
 import { post, put, readList, readOne } from './http';
-import { MOCK_NOTIFICATIONS } from './mocks';
 import type { AppNotification } from '../../types';
 
 /** Notifications namespace — paged list, read/read-all/batch-read, preferences. */
 export const notifications = {
   /** GET /notifications — paged list. */
   list: (params?: Record<string, unknown>): Promise<AppNotification[]> =>
-    readList<AppNotification>('/notifications', { params, mock: MOCK_NOTIFICATIONS }),
+    readList<AppNotification>('/notifications', { params }),
 
   /** POST /notifications/{id}/read */
   markRead: (notificationId: string): Promise<{ success: boolean }> =>

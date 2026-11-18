@@ -3,7 +3,7 @@
  * `../drafts/kn.draft.ts` pending approval. */
 
 const kn = {
-  'app.title': 'ಅಗ್ರೋವರ್ಸಿಟಿ ಕಿಸಾನ್ ಸೇತು',
+  'app.title': 'ಅಗ್ರೋವರ್ಸಿಟಿ',
   'nav.home': 'ಮುಖಪುಟ',
   'nav.market': 'ಮಾರುಕಟ್ಟೆ',
   'common.save': 'ಉಳಿಸಿ',

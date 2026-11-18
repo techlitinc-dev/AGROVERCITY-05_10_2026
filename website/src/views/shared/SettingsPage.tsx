@@ -282,12 +282,6 @@ export const SettingsPage: React.FC = () => {
           void saveSetting('language', next ? 'hi' : 'en');
         })}
         {toggleRow(
-          'Women mode',
-          'Prioritise SHG, gruh udyog and mahila-specific content',
-          bool(settings['womenMode']),
-          (next) => void saveSetting('womenMode', next)
-        )}
-        {toggleRow(
           'High contrast',
           'Boost text and border contrast across all screens',
           bool(settings['highContrast']),

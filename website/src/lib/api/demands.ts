@@ -1,23 +1,22 @@
 import { del, post, put, readList, readOne } from './http';
-import { MOCK_BUYER_DEMANDS } from './mocks';
 import type { BuyerDemand } from '../../types';
 
 /** Buyer demands namespace — /demands CRUD + browse + industrial sourcing. */
 export const demands = {
   /** GET /demands */
   list: (params?: Record<string, unknown>): Promise<BuyerDemand[]> =>
-    readList<BuyerDemand>('/demands', { params, mock: MOCK_BUYER_DEMANDS }),
+    readList<BuyerDemand>('/demands', { params }),
 
   /** GET /demands/browse */
   browse: (params?: Record<string, unknown>): Promise<BuyerDemand[]> =>
-    readList<BuyerDemand>('/demands/browse', { params, mock: MOCK_BUYER_DEMANDS }),
+    readList<BuyerDemand>('/demands/browse', { params }),
 
   /** GET /demands/matches — "Matches your crops" (deterministic crop/location). */
   matches: (params?: Record<string, unknown>): Promise<BuyerDemand[]> =>
-    readList<BuyerDemand>('/demands/matches', { params, mock: [] }),
+    readList<BuyerDemand>('/demands/matches', { params }),
 
   /** GET /demands/standing */
-  standing: (): Promise<BuyerDemand[]> => readList<BuyerDemand>('/demands/standing', { mock: [] }),
+  standing: (): Promise<BuyerDemand[]> => readList<BuyerDemand>('/demands/standing'),
 
   /** GET /demands/{id} */
   get: (demandId: string): Promise<BuyerDemand> => readOne<BuyerDemand>(`/demands/${demandId}`),

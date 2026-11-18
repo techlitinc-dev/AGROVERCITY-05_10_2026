@@ -170,6 +170,15 @@ async def onboard_user(
             "landAreaAcres": body.farmSizeAcres or user.get("landAreaAcres", 0.0),
         }
     )
+    if is_new:
+        # Streamlined onboarding completes registration immediately, but the
+        # account is honestly unverified — the app nudges these users toward
+        # KYC (KycNudgeModal) instead of inheriting the frontend default that
+        # treats a missing kycStatus as verified.
+        user["registrationStatus"] = "completed"
+        user["kycStatus"] = "unverified"
+    elif not user.get("kycStatus"):
+        user["kycStatus"] = "unverified"
     await set_doc("users", uid, user)
 
     try:

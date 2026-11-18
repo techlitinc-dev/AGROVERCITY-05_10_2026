@@ -7,15 +7,11 @@ import { handleApiError } from './errors';
  * these, which is what uniformly enforces the platform convention:
  *
  *   1. try { real call } catch (e) { handleApiError(e) }
- *   2. Reads (readOne/readList/readPaged) may fall back to MOCK constants
- *      ONLY when `import.meta.env.DEV` is true.
- *   3. Writes (post/put/patch/del/mutate) ALWAYS throw on failure —
+ *   2. Writes (post/put/patch/del/mutate) ALWAYS throw on failure —
  *      never fake success on a mutation.
- *   4. List endpoints return the envelope { data, page, pageSize, total };
+ *   3. List endpoints return the envelope { data, page, pageSize, total };
  *      readList unwraps to the array, readPaged keeps the pagination.
  */
-
-export const DEV: boolean = !!import.meta.env.DEV;
 
 export interface Paged<T> {
   data: T[];
@@ -71,61 +67,47 @@ export function unwrapPaged<T>(payload: unknown): Paged<T> {
   return { data, page: 1, pageSize: data.length, total: data.length };
 }
 
-interface ReadOpts<M> {
+interface ReadOpts {
   params?: Params;
-  mock?: M | (() => M);
 }
 
 // ---------------------------------------------
-// READS — dev-only mock fallback
+// READS — failures always throw; no mock fallbacks
 // ---------------------------------------------
 
-export async function readOne<T>(url: string, opts: ReadOpts<T> = {}): Promise<T> {
+export async function readOne<T>(url: string, opts: ReadOpts = {}): Promise<T> {
   try {
     const res = await apiClient.get(url, { params: opts.params });
     return (res.data?.data ?? res.data) as T;
   } catch (e) {
-    if (DEV && opts.mock !== undefined) {
-      return typeof opts.mock === 'function' ? (opts.mock as () => T)() : opts.mock;
-    }
     handleApiError(e);
   }
 }
 
-export async function readList<T>(url: string, opts: ReadOpts<T[]> = {}): Promise<T[]> {
+export async function readList<T>(url: string, opts: ReadOpts = {}): Promise<T[]> {
   try {
     const res = await apiClient.get(url, { params: opts.params });
     return unwrapList<T>(res.data);
   } catch (e) {
-    if (DEV && opts.mock !== undefined) {
-      return typeof opts.mock === 'function' ? (opts.mock as () => T[])() : opts.mock;
-    }
     handleApiError(e);
   }
 }
 
 /** Read endpoints that return the `{items: [...]}` envelope (women hub, ratings). */
-export async function readItems<T>(url: string, opts: ReadOpts<T[]> = {}): Promise<T[]> {
+export async function readItems<T>(url: string, opts: ReadOpts = {}): Promise<T[]> {
   try {
     const res = await apiClient.get(url, { params: opts.params });
     return unwrapItems<T>(res.data?.data ?? res.data);
   } catch (e) {
-    if (DEV && opts.mock !== undefined) {
-      return typeof opts.mock === 'function' ? (opts.mock as () => T[])() : opts.mock;
-    }
     handleApiError(e);
   }
 }
 
-export async function readPaged<T>(url: string, opts: ReadOpts<T[]> = {}): Promise<Paged<T>> {
+export async function readPaged<T>(url: string, opts: ReadOpts = {}): Promise<Paged<T>> {
   try {
     const res = await apiClient.get(url, { params: opts.params });
     return unwrapPaged<T>(res.data);
   } catch (e) {
-    if (DEV && opts.mock !== undefined) {
-      const data = typeof opts.mock === 'function' ? (opts.mock as () => T[])() : opts.mock;
-      return { data, page: 1, pageSize: data.length, total: data.length };
-    }
     handleApiError(e);
   }
 }
@@ -152,7 +134,7 @@ export async function mutate<T>(
   method: 'post' | 'put' | 'patch' | 'delete',
   url: string,
   body?: unknown,
-  opts: MutateOpts = {}
+  opts: MutateOpts = {},
 ): Promise<T> {
   try {
     const res = await apiClient.request({

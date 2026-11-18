@@ -1,5 +1,4 @@
 import { post, readList, readOne } from './http';
-import { MOCK_TRADE_OFFERS } from './mocks';
 import type { TradeOffer, PurchaseOrder } from '../../types';
 
 /** Accept response: first call records my agreement (purchase null, status
@@ -14,7 +13,7 @@ export interface OfferAcceptResult {
 export const offers = {
   /** GET /offers/mine */
   mine: (params?: Record<string, unknown>): Promise<TradeOffer[]> =>
-    readList<TradeOffer>('/offers/mine', { params, mock: MOCK_TRADE_OFFERS }),
+    readList<TradeOffer>('/offers/mine', { params }),
 
   /** GET /offers/{id} */
   get: (offerId: string): Promise<TradeOffer> => readOne<TradeOffer>(`/offers/${offerId}`),

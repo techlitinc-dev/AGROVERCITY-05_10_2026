@@ -1,5 +1,4 @@
 import { del, download, post, put, readList, readOne } from './http';
-import { MOCK_FARM_DIARY } from './mocks';
 import type { FarmDiaryEntry } from '../../types';
 
 /** Diary write payload — the typed core plus the loose backend extras
@@ -10,7 +9,7 @@ export type DiaryEntryPayload = Partial<FarmDiaryEntry> & Record<string, unknown
 export const diary = {
   /** GET /diary/entries — supports type/category/q/from/to params. */
   entries: (params?: Record<string, unknown>): Promise<FarmDiaryEntry[]> =>
-    readList<FarmDiaryEntry>('/diary/entries', { params, mock: MOCK_FARM_DIARY }),
+    readList<FarmDiaryEntry>('/diary/entries', { params }),
 
   /** POST /diary/entries */
   create: (entry: DiaryEntryPayload): Promise<FarmDiaryEntry> =>

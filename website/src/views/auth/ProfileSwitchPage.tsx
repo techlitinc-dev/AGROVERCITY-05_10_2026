@@ -39,15 +39,10 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'transporter', title: 'Transporter / Gadi', category: 'Logistics', icon: '🚚' },
   { id: 'seller', title: 'Agri Vyapari', category: 'Commerce & Inputs', icon: '🏪' },
   { id: 'equipmentOwner', title: 'Equipment Owner', category: 'Machinery Services', icon: '🚜' },
-  { id: 'exporter', title: 'Agri Exporter', category: 'Global Trade & Export', icon: '🚢' },
   { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', category: 'Daily Milk Delivery', icon: '🫗' },
   { id: 'womenShg', title: 'Mahila Gruh Udyog & SHG', category: 'Cottage Industry', icon: '🪔' },
-  { id: 'directBuyer', title: 'Industrial Buyer', category: 'B2B Procurement', icon: '🏢' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
-  { id: 'coldStorageProvider', title: 'Cold Storage Owner', category: 'Post-Harvest Warehousing', icon: '❄️' },
-  { id: 'gaushalaManager', title: 'Gaushala & Sanctuary', category: 'Cattle Welfare & 80G', icon: '🐄' },
-  { id: 'nursery', title: 'Plant Nursery', category: 'Horticulture & Saplings', icon: '🌱' },
-  { id: 'customer', title: 'E-Market Customer', category: 'Consumer Shopping', icon: '🛍️' },
+  { id: 'customer', title: 'Agri Market Seller', category: 'Krishi Mall Seller', icon: '🛍️' },
 ];
 
 export const ProfileSwitchPage: React.FC = () => {
@@ -222,13 +217,6 @@ export const ProfileSwitchPage: React.FC = () => {
           );
         })}
       </div>
-      <p className="text-[11px] text-slate-400">
-        Hidden personas stay linked to your account — manage them under{' '}
-        <Link to="/profile" className="text-emerald-700 font-semibold underline">
-          Profile → Persona Visibility
-        </Link>
-        .
-      </p>
     </div>
   );
 };

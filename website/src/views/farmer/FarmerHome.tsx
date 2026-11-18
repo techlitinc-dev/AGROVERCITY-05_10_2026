@@ -51,7 +51,6 @@ export const FarmerHome: React.FC = () => {
   const [intel, setIntel] = useState<Record<string, unknown> | null>(null);
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [urgentTask, setUrgentTask] = useState<Record<string, unknown> | null>(null);
   const [coinBalance, setCoinBalance] = useState<number | null>(null);
   // Buyer/vyapari requirements matched to this farmer's crops — surfaced on the
   // dashboard so a posted requirement is visible without opening the feed.
@@ -97,17 +96,20 @@ export const FarmerHome: React.FC = () => {
         }
         setIntel(asRecord(home.intelligence) || null);
         setNotifs(asArray(home.notifications ?? []) as AppNotification[]);
-        setUrgentTask(home.urgentTask ? asRecord(home.urgentTask) : null);
         setTasks(
-          asArray(home.tasks ?? []).map((t, i) => {
-            const r = asRecord(t);
-            return {
-              id: asStr(r.id, String(i)),
-              text: taskTitle(r),
-              done: r.done === true || r.status === 'done',
-              time: asStr(r.dueAt ?? r.time, 'Today'),
-            };
-          })
+          // Five newest open actions only — plain recency, newest first.
+          asArray(home.tasks ?? [])
+            .sort((a, b) => asStr(asRecord(b).createdAt).localeCompare(asStr(asRecord(a).createdAt)))
+            .slice(0, 5)
+            .map((t, i) => {
+              const r = asRecord(t);
+              return {
+                id: asStr(r.taskId ?? r.id, String(i)),
+                text: taskTitle(r),
+                done: r.done === true || r.status === 'done',
+                time: asStr(r.dueAt ?? r.time, 'Today'),
+              };
+            })
         );
         return;
       } catch {
@@ -127,16 +129,20 @@ export const FarmerHome: React.FC = () => {
         setRates(r as MandiPrice[]);
         if (i) setIntel(asRecord(i));
         setNotifs(n);
+        const todayRows = Array.isArray(t) ? t : asArray(asRecord(t).items);
         setTasks(
-          asArray(t ?? []).map((task, idx) => {
-            const rec = asRecord(task);
-            return {
-              id: asStr(rec.id, String(idx)),
-              text: taskTitle(rec),
-              done: rec.done === true || rec.status === 'done',
-              time: asStr(rec.dueAt ?? rec.time, 'Today'),
-            };
-          })
+          todayRows
+            .sort((a, b) => asStr(asRecord(b).createdAt).localeCompare(asStr(asRecord(a).createdAt)))
+            .slice(0, 5)
+            .map((task, idx) => {
+              const rec = asRecord(task);
+              return {
+                id: asStr(rec.taskId ?? rec.id, String(idx)),
+                text: taskTitle(rec),
+                done: rec.done === true || rec.status === 'done',
+                time: asStr(rec.dueAt ?? rec.time, 'Today'),
+              };
+            })
         );
       } catch (e) {
         if (active) setError(apiErrorMessage(e));
@@ -174,10 +180,7 @@ export const FarmerHome: React.FC = () => {
   const condition = asStr(weather?.condition ?? weather?.summary, 'Sunny');
   const sprayOk = asStr(weather?.sprayWindow ?? weather?.spray, '') || asStr(intel?.sprayWindow ?? '', '');
 
-  const intelText = asStr(
-    intel?.advice ?? intel?.tip ?? intel?.summary ?? intel?.headline,
-    'Soil moisture is ideal for sowing. Seed treatment with Trichoderma will prevent root rot.'
-  );
+  const intelText = asStr(intel?.advice ?? intel?.tip ?? intel?.summary ?? intel?.headline, '');
 
   const unreadCount = notifs.filter((n) => !n.read).length;
 
@@ -191,12 +194,16 @@ export const FarmerHome: React.FC = () => {
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-emerald-300">
               <MapPin className="w-4 h-4 text-emerald-400" />
-              <span>{user?.village || 'Pimpalgaon Baswant'}, {user?.district || 'Nashik'}</span>
-              <span className="text-emerald-400/40">•</span>
-              <span>Gat 312 ({user?.farmSizeAcres || 4.5} Acres)</span>
+              <span>{[user?.village, user?.district].filter(Boolean).join(', ') || '—'}</span>
+              {user?.farmSizeAcres ? (
+                <>
+                  <span className="text-emerald-400/40">•</span>
+                  <span>{user.farmSizeAcres} Acres</span>
+                </>
+              ) : null}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Ram Ram, {user?.name.split(' ')[0] || 'Ramesh'} Ji! 🌾
+              Ram Ram{user?.name ? `, ${user.name.split(' ')[0]}` : ''} Ji! 🌾
             </h1>
             <p className="text-xs sm:text-sm text-emerald-100/90 max-w-xl">
               {rates.length > 0 ? (
@@ -292,7 +299,7 @@ export const FarmerHome: React.FC = () => {
             </div>
             <div className="mt-3 flex items-baseline gap-2">
               <span className="text-2xl font-bold tracking-tight text-slate-900">
-                {user?.kisanCoins || coinBalance || 350}
+                {user?.kisanCoins || coinBalance || '—'}
               </span>
             </div>
             <p className="mt-1 text-xs text-slate-500">Redeemable on Krishi Mall</p>
@@ -485,38 +492,13 @@ export const FarmerHome: React.FC = () => {
             </span>
           </div>
 
-          {tasks.length === 0 && !urgentTask ? (
+          {tasks.length === 0 ? (
             <p className="text-xs text-slate-400 py-4 text-center">
               No pending tasks. You are all caught up!
             </p>
           ) : (
             <div className="space-y-2.5">
-              {urgentTask && (
-                <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50 flex items-start gap-3">
-                  <span className="mt-0.5 px-1.5 py-0.5 rounded-md bg-rose-600 text-white text-[9px] font-black uppercase tracking-wide flex-shrink-0">
-                    {asStr(urgentTask.priority, 'urgent')}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-rose-900">{taskTitle(urgentTask)}</p>
-                    {asStr(urgentTask.subtitle) && (
-                      <p className="text-[10px] text-rose-700 mt-0.5 truncate">{asStr(urgentTask.subtitle)}</p>
-                    )}
-                    <span className="text-[10px] text-rose-500 font-semibold mt-0.5 block">
-                      Due {asStr(urgentTask.dueAt, 'today')}
-                    </span>
-                  </div>
-                  {asStr(urgentTask.id) && (
-                    <button
-                      onClick={() => completeTask(asStr(urgentTask.id))}
-                      className="p-1 text-rose-400 hover:text-rose-600 rounded-md flex-shrink-0"
-                      title="Mark done"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              )}
-              {tasks.slice(0, 6).map((task) => (
+              {tasks.map((task) => (
                 <div
                   key={task.id}
                   className={`p-3 rounded-2xl border transition-all flex items-start gap-3 ${
@@ -559,7 +541,9 @@ export const FarmerHome: React.FC = () => {
             <Bot className="w-5 h-5 text-teal-700 flex-shrink-0 mt-0.5" />
             <div>
               <h5 className="font-bold text-xs">Agronomist Advisory</h5>
-              <p className="text-[11px] text-teal-900/80 mt-0.5 leading-relaxed">{intelText}</p>
+              <p className="text-[11px] text-teal-900/80 mt-0.5 leading-relaxed">
+                {intelText || 'No advisory available right now.'}
+              </p>
             </div>
           </div>
         </div>

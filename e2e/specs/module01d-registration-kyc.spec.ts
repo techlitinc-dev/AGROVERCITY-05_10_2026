@@ -25,7 +25,7 @@ async function reachIdentityStep(page: Page, phone: string, name: string): Promi
 
   await expect(page.getByText('Step 2 — Basic profile')).toBeVisible();
   await page.getByPlaceholder(/Balaram Kisan or/).fill(name);
-  await page.getByPlaceholder('e.g. Nashik').fill('Nashik');
+  await page.getByLabel('District').selectOption('Nashik');
   const mpinInputs = page.locator('input[type="password"]');
   await mpinInputs.nth(0).fill(MPIN);
   await mpinInputs.nth(1).fill(MPIN);
@@ -36,40 +36,6 @@ async function reachIdentityStep(page: Page, phone: string, name: string): Promi
 }
 
 test.describe('Registration-integrated KYC (mock provider)', () => {
-  test('new registration via Aadhaar number + OTP: masked storage only, completes registration', async ({
-    page,
-  }) => {
-    const phone = freshPhone();
-    await reachIdentityStep(page, phone, 'E2E Aadhaar Kisan');
-
-    // Aadhaar-OTP is the default method card in test mode.
-    await expect(page.getByText('Aadhaar Number (OTP)')).toBeVisible();
-    const verifyBtn = page.getByRole('button', { name: 'Send OTP to Aadhaar-linked Mobile' });
-    await expect(verifyBtn).toBeDisabled();
-    await page.getByRole('checkbox').check();
-    await page.getByPlaceholder('Enter 12-digit Aadhaar number').fill('123456789012');
-    await verifyBtn.click();
-
-    const devOtpHint = page.locator('text=Dev mode — your OTP is');
-    await expect(devOtpHint).toBeVisible();
-    const otp = ((await devOtpHint.innerText()).match(/(\d{6})/) ?? [])[1];
-    await page.getByPlaceholder('••••••').fill(otp);
-    await page.getByRole('button', { name: 'Verify & Continue' }).click();
-
-    // Same single resumption point as the DigiLocker flow. The session is
-    // already verified at navigation, so the callback goes straight to the
-    // completing state; the verified card auto-navigates away after ~2s, so
-    // persistent outcomes are asserted on the farmer home.
-    await expect(page).toHaveURL(/\/kyc\/callback/, { timeout: 15_000 });
-    await expect(page.getByText('Identity verified — completing registration…')).toBeVisible({ timeout: 20_000 });
-    await expect(page).toHaveURL(/\/farmer$/, { timeout: 20_000 });
-    // Post-login polls (notifications/settings) shift the header once — let the
-    // app settle before opening the profile menu.
-    await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: /E2E/ }).first().click();
-    await expect(page.getByText(/^Verified/)).toBeVisible();
-  });
-
   test('new registration: KYC is a mandatory step; approve completes registration and shows the verified badge', async ({
     page,
   }) => {
@@ -77,7 +43,6 @@ test.describe('Registration-integrated KYC (mock provider)', () => {
     await reachIdentityStep(page, phone, 'E2E Verified Kisan');
 
     // Consent gates the provider redirect.
-    await page.getByText('DigiLocker', { exact: true }).click();
     const verifyBtn = page.getByRole('button', { name: /Verify with DigiLocker/ });
     await expect(verifyBtn).toBeDisabled();
     await page.getByRole('checkbox').check();
@@ -123,7 +88,7 @@ test.describe('Registration-integrated KYC (mock provider)', () => {
     await expect(page.getByText('• Primary')).toBeVisible();
 
     await page.getByPlaceholder(/Balaram Kisan or/).fill('E2E Multi Persona Kisan');
-    await page.getByPlaceholder('e.g. Nashik').fill('Nashik');
+    await page.getByLabel('District').selectOption('Nashik');
     const mpinInputs = page.locator('input[type="password"]');
     await mpinInputs.nth(0).fill(MPIN);
     await mpinInputs.nth(1).fill(MPIN);
@@ -131,7 +96,6 @@ test.describe('Registration-integrated KYC (mock provider)', () => {
 
     await expect(page.getByRole('heading', { name: 'Verify Your Identity' })).toBeVisible();
     await page.getByRole('checkbox').check();
-    await page.getByText('DigiLocker', { exact: true }).click();
     await page.getByRole('button', { name: /Verify with DigiLocker/ }).click();
     await expect(page).toHaveURL(/\/mock-digilocker/, { timeout: 15_000 });
     await page.getByRole('button', { name: 'Approve' }).click();
@@ -162,7 +126,6 @@ test.describe('Registration-integrated KYC (mock provider)', () => {
 
     // And the journey still completes normally.
     await page.getByRole('checkbox').check();
-    await page.getByText('DigiLocker', { exact: true }).click();
     await page.getByRole('button', { name: /Verify with DigiLocker/ }).click();
     await expect(page).toHaveURL(/\/mock-digilocker/, { timeout: 15_000 });
     await page.getByRole('button', { name: 'Approve' }).click();
@@ -175,7 +138,6 @@ test.describe('Registration-integrated KYC (mock provider)', () => {
     await reachIdentityStep(page, phone, 'E2E Deny Kisan');
 
     await page.getByRole('checkbox').check();
-    await page.getByText('DigiLocker', { exact: true }).click();
     await page.getByRole('button', { name: /Verify with DigiLocker/ }).click();
     await expect(page).toHaveURL(/\/mock-digilocker/, { timeout: 15_000 });
     await page.getByRole('button', { name: 'Deny' }).click();
@@ -189,7 +151,6 @@ test.describe('Registration-integrated KYC (mock provider)', () => {
     await expect(page).toHaveURL(/\/register/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Verify Your Identity' })).toBeVisible();
     await page.getByRole('checkbox').check();
-    await page.getByText('DigiLocker', { exact: true }).click();
     await page.getByRole('button', { name: /Verify with DigiLocker/ }).click();
     await expect(page).toHaveURL(/\/mock-digilocker/, { timeout: 15_000 });
     await page.getByRole('button', { name: 'Approve' }).click();

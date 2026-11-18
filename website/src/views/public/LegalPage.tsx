@@ -7,7 +7,7 @@ export const LegalPage: React.FC = () => {
       <div className="border-b border-slate-200 pb-5">
         <h1 className="text-3xl font-extrabold text-slate-900">Legal, Privacy & Compliance</h1>
         <p className="text-sm text-slate-500 mt-1">
-          AGROVERCITY / Kisan Setu Platform Terms and Grievance Redressal
+          AGROVERCITY Platform Terms and Grievance Redressal
         </p>
       </div>
 

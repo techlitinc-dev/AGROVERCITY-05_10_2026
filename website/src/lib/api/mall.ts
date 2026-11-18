@@ -1,5 +1,4 @@
 import { del, post, put, readList, readOne } from './http';
-import { MOCK_MALL_PRODUCTS } from './mocks';
 import type { MallProduct } from '../../types';
 
 /**
@@ -10,7 +9,7 @@ export const mall = {
   // --- catalog ---
   /** GET /products */
   products: (params?: Record<string, unknown>): Promise<MallProduct[]> =>
-    readList<MallProduct>('/products', { params, mock: MOCK_MALL_PRODUCTS }),
+    readList<MallProduct>('/products', { params }),
 
   /** GET /products/{id} */
   product: (productId: string): Promise<MallProduct> => readOne<MallProduct>(`/products/${productId}`),
@@ -45,7 +44,7 @@ export const mall = {
 
   // --- wishlist ---
   /** GET /wishlist */
-  wishlist: (): Promise<MallProduct[]> => readList<MallProduct>('/wishlist', { mock: [] }),
+  wishlist: (): Promise<MallProduct[]> => readList<MallProduct>('/wishlist'),
 
   /** POST /wishlist/items */
   addToWishlist: (productId: string): Promise<unknown> => post<unknown>('/wishlist/items', { productId }),

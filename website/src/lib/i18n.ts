@@ -32,7 +32,7 @@ const translations: Record<Language, Record<string, string>> = {
   en: {
     // Nav & Common
     'app.name': 'AGROVERCITY',
-    'app.tagline': 'Kisan Setu • Digital Agri Operating System',
+    'app.tagline': 'Digital Agri Operating System',
     'common.login': 'Log In',
     'common.logout': 'Sign Out',
     'common.register': 'Join Agrovercity',
@@ -108,7 +108,7 @@ const translations: Record<Language, Record<string, string>> = {
   hi: {
     // Nav & Common
     'app.name': 'एग्रोवर्सिटी',
-    'app.tagline': 'किसान सेतु • सम्पूर्ण डिजिटल कृषि मंच',
+    'app.tagline': 'सम्पूर्ण डिजिटल कृषि मंच',
     'common.login': 'लॉग इन',
     'common.logout': 'साइन आउट',
     'common.register': 'रजिस्टर करें',
@@ -183,7 +183,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   pa: {
     'app.name': 'ਐਗਰੋਵਰਸਿਟੀ',
-    'app.tagline': 'ਕਿਸਾਨ ਸੇਤੂ • ਡਿਜੀਟਲ ਖੇਤੀਬਾੜੀ ਪਲੇਟਫਾਰਮ',
+    'app.tagline': 'ਡਿਜੀਟਲ ਖੇਤੀਬਾੜੀ ਪਲੇਟਫਾਰਮ',
     'common.login': 'ਲਾਗ ਇਨ',
     'common.logout': 'ਸਾਈਨ ਆਊਟ',
     'common.register': 'ਸ਼ਾਮਲ ਹੋਵੋ',
@@ -254,7 +254,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   te: {
     'app.name': 'అగ్రోవర్సిటీ',
-    'app.tagline': 'కిసాన్ సేతు • డిజిటల్ వ్యవసాయ వ్యవస్థ',
+    'app.tagline': 'డిజిటల్ వ్యవసాయ వ్యవస్థ',
     'common.login': 'లాగిన్',
     'common.logout': 'లాగ్ అవుట్',
     'common.register': 'చేరండి',
@@ -325,7 +325,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   ta: {
     'app.name': 'அக்ரோவர்சிட்டி',
-    'app.tagline': 'கிசான் சேது • டிஜிட்டல் விவசாய தளம்',
+    'app.tagline': 'டிஜிட்டல் விவசாய தளம்',
     'common.login': 'உள்நுழைக',
     'common.logout': 'வெளியேறுக',
     'common.register': 'இணையுங்கள்',
@@ -396,7 +396,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   mr: {
     'app.name': 'ॲग्रोव्हर्सिटी',
-    'app.tagline': 'किसान सेतू • डिजिटल कृषी परिसंस्था',
+    'app.tagline': 'डिजिटल कृषी परिसंस्था',
     'common.login': 'लॉग इन करा',
     'common.logout': 'साइन आउट करा',
     'common.register': 'सामील व्हा',
@@ -467,7 +467,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   bn: {
     'app.name': 'অ্যাগ্রোভার্সিটি',
-    'app.tagline': 'কিষাণ সেতু • ডিজিটাল কৃষি প্ল্যাটফর্ম',
+    'app.tagline': 'ডিজিটাল কৃষি প্ল্যাটফর্ম',
     'common.login': 'লগ ইন',
     'common.logout': 'সাইন আউট',
     'common.register': 'যোগ দিন',
@@ -538,7 +538,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   kn: {
     'app.name': 'ಅಗ್ರೋವರ್ಸಿಟಿ',
-    'app.tagline': 'ಕಿಸಾನ್ ಸೇತು • ಡಿಜಿಟಲ್ ಕೃಷಿ ವ್ಯವಸ್ಥೆ',
+    'app.tagline': 'ಡಿಜಿಟಲ್ ಕೃಷಿ ವ್ಯವಸ್ಥೆ',
     'common.login': 'ಲಾಗಿನ್',
     'common.logout': 'ಸೈನ್ ಔಟ್',
     'common.register': 'ಸೇರಿ',
@@ -609,7 +609,7 @@ const translations: Record<Language, Record<string, string>> = {
 
   gu: {
     'app.name': 'એગ્રોવર્સિટી',
-    'app.tagline': 'કિસાન સેતુ • ડિજિટલ કૃષિ પ્લેટફોર્મ',
+    'app.tagline': 'ડિજિટલ કૃષિ પ્લેટફોર્મ',
     'common.login': 'લૉગ ઇન',
     'common.logout': 'સાઇન આઉટ',
     'common.register': 'જોડાઓ',

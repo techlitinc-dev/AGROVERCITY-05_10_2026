@@ -1,12 +1,11 @@
 import { post, readList, readOne } from './http';
-import { MOCK_SUPPLY_CONTRACTS } from './mocks';
 import type { SupplyContract } from '../../types';
 
 /** Supply contracts namespace — /contracts. */
 export const contracts = {
   /** GET /contracts/mine */
   mine: (params?: Record<string, unknown>): Promise<SupplyContract[]> =>
-    readList<SupplyContract>('/contracts/mine', { params, mock: MOCK_SUPPLY_CONTRACTS }),
+    readList<SupplyContract>('/contracts/mine', { params }),
 
   /** GET /contracts */
   list: (params?: Record<string, unknown>): Promise<SupplyContract[]> =>

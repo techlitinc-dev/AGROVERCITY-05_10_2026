@@ -84,13 +84,13 @@ export const SellerChatbotView: React.FC = () => {
   const getFallbackReply = (query: string): string => {
     const lower = query.toLowerCase();
     if (lower.includes('escrow') || lower.includes('book') || lower.includes('advance')) {
-      return 'When you book a produce lot, your advance payment is held safely in Kisan Setu escrow. The farmer is notified to pack the produce. Funds are released only after vehicle pickup and digital QC inspection.';
+      return 'When you book a produce lot, your advance payment is held safely in Agrovercity escrow. The farmer is notified to pack the produce. Funds are released only after vehicle pickup and digital QC inspection.';
     }
     if (lower.includes('pickup') || lower.includes('agent')) {
       return 'Pickup agents can be scheduled directly from "My Purchases". You select an active agent (e.g. Sham - MH-12-AB-1234), specify a time slot and grace window (e.g. 60 mins). Both parties receive automated 24h and 2h FCM arrival alerts.';
     }
     if (lower.includes('j-form') || lower.includes('cess') || lower.includes('procurement')) {
-      return 'Kisan Setu generates digital J-Forms compliant with APMC Act Section 32. Standard mandi cess (typically 1.05%) and hamali deductions are automatically itemized in the procurement ledger.';
+      return 'Agrovercity generates digital J-Forms compliant with APMC Act Section 32. Standard mandi cess (typically 1.05%) and hamali deductions are automatically itemized in the procurement ledger.';
     }
     if (lower.includes('rate') || lower.includes('price') || lower.includes('soybean')) {
       return 'Soybean modal rates in Maharashtra APMCs (Pune, Nashik, Latur) are trading in the ₹4,550 - ₹4,650/quintal band. Our AI Smart-Select tool recommends Pune APMC for maximum transport-adjusted net realization.';

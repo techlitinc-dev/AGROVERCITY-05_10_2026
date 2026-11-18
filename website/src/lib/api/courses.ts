@@ -3,63 +3,6 @@ import { apiClient } from './client';
 import { handleApiError } from './errors';
 import type { CourseItem } from '../../types';
 
-/**
- * DEV-only fallback for GET /courses/my-learning (readOne mock — used by the
- * http helpers only when `import.meta.env.DEV`). Shaped like the real backend
- * envelope `{data, total}` plus the grouped learner sections.
- */
-const MOCK_MY_LEARNING: Record<string, unknown> = {
-  data: [
-    {
-      id: 'crs_demo_1',
-      title: 'Soil Health & Organic Cultivation',
-      category: 'Agronomy',
-      instructorName: 'Dr. Sunita Deshmukh',
-      thumbnailUrl: '',
-      progressPercent: 45,
-      isCompleted: false,
-      isPurchased: true,
-      hasAccess: true,
-      accessType: 'free',
-      accessStatus: 'granted',
-      learningStatus: 'inProgress',
-      enrolledAt: '2026-10-02T09:30:00+00:00',
-    },
-    {
-      id: 'crs_demo_2',
-      title: 'Precision Drip Irrigation Masterclass',
-      category: 'Irrigation',
-      instructorName: 'Shri Vilas Jadhav',
-      thumbnailUrl: '',
-      progressPercent: 100,
-      isCompleted: true,
-      isPurchased: true,
-      hasAccess: true,
-      accessType: 'manualOffPlatform',
-      accessStatus: 'granted',
-      learningStatus: 'completed',
-      certificateId: 'CERT-GS-DEMO-AB12CD',
-      enrolledAt: '2026-09-18T11:00:00+00:00',
-    },
-  ],
-  total: 2,
-  continueLearning: [],
-  freeCourses: [],
-  paidCourses: [],
-  awaitingAccess: [],
-  completedCourses: [],
-  savedCourses: [],
-  sessions: [
-    {
-      id: 'ses_demo_1',
-      courseId: 'crs_demo_1',
-      title: 'Field visit: compost pit audit',
-      startsAt: '2026-10-25T06:30:00+00:00',
-      status: 'scheduled',
-    },
-  ],
-};
-
 /** Courses namespace — catalog, learning, reviews, Q&A, modules. */
 export const courses = {
   // --- catalog ---
@@ -117,7 +60,6 @@ export const courses = {
       const res = await apiClient.get('/courses/my-learning');
       return (res.data ?? {}) as Record<string, unknown>;
     } catch (e) {
-      if (import.meta.env.DEV) return MOCK_MY_LEARNING;
       handleApiError(e);
     }
   },

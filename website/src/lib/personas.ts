@@ -99,15 +99,10 @@ export const ALL_PERSONAS: { id: PersonaType; label: string; icon: string }[] = 
   { id: 'transporter', label: 'Transporter / Gadi', icon: '🚚' },
   { id: 'seller', label: 'Agri Vyapari', icon: '🏪' },
   { id: 'equipmentOwner', label: 'Equipment Owner', icon: '🚜' },
-  { id: 'exporter', label: 'Agri Exporter', icon: '🚢' },
   { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala', icon: '🫗' },
   { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG', icon: '🪔' },
-  { id: 'directBuyer', label: 'Industrial Buyer', icon: '🏢' },
   { id: 'instructor', label: 'Gurukul Instructor', icon: '🎓' },
-  { id: 'coldStorageProvider', label: 'Cold Storage Owner', icon: '❄️' },
-  { id: 'gaushalaManager', label: 'Gaushala & Sanctuary', icon: '🐄' },
-  { id: 'nursery', label: 'Plant Nursery', icon: '🌱' },
-  { id: 'customer', label: 'E-Market Customer', icon: '🛍️' },
+  { id: 'customer', label: 'Agri Market Seller', icon: '🛍️' },
 ];
 
 // v2 personas (UI removed for v1, backend contract unchanged):

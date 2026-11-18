@@ -760,7 +760,7 @@ export const SellerPurchasesView: React.FC = () => {
               >
                 <option value="upi">UPI Escrow (Instant)</option>
                 <option value="netbanking">NEFT / RTGS Bank Transfer</option>
-                <option value="wallet">Kisan Setu Escrow Wallet</option>
+                <option value="wallet">Agrovercity Escrow Wallet</option>
               </select>
             </div>
 

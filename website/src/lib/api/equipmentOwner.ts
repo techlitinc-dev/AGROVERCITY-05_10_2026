@@ -1,5 +1,4 @@
 import { del, post, put, readList, readOne } from './http';
-import { MOCK_EQUIPMENT } from './mocks';
 import type { EquipmentMachine } from '../../types';
 
 /** Equipment owner namespace — fleet ops, bookings adjudication, damage claims, settlements. */
@@ -7,7 +6,7 @@ export const equipmentOwner = {
   // --- fleet ---
   /** GET /equipment/owner/fleet */
   fleet: (): Promise<EquipmentMachine[]> =>
-    readList<EquipmentMachine>('/equipment/owner/fleet', { mock: MOCK_EQUIPMENT }),
+    readList<EquipmentMachine>('/equipment/owner/fleet'),
 
   /** POST /equipment */
   addMachine: (machine: Partial<EquipmentMachine>): Promise<EquipmentMachine> =>

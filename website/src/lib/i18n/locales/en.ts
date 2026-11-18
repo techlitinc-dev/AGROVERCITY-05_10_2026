@@ -1,7 +1,7 @@
 /** English source strings — WS-07 locale pipeline source of truth. */
 
 const en = {
-  'app.title': 'AGROVERCITY Kisan Setu',
+  'app.title': 'AGROVERCITY',
   'nav.home': 'Home',
   'nav.market': 'Market',
   'mandiPrices.title': 'Live mandi bhav',

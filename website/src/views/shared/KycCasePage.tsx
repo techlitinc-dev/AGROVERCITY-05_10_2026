@@ -9,12 +9,15 @@ import { asRecord, asRecords, pick, pickStr } from './records';
 
 const PERSONA_LABELS: { id: PersonaType; label: string }[] = [
   { id: 'farmer', label: 'Farmer / Kisan' },
+  { id: 'landlord', label: 'Farm Landlord' },
   { id: 'seller', label: 'Agri Vyapari / Seller' },
   { id: 'transporter', label: 'Transporter' },
   { id: 'equipmentOwner', label: 'Equipment Owner' },
+  { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala' },
+  { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG' },
   { id: 'directBuyer', label: 'Industrial Buyer' },
   { id: 'instructor', label: 'Instructor' },
-  { id: 'customer', label: 'E-Market Customer' },
+  { id: 'customer', label: 'Agri Market Seller' },
 ];
 
 /**
@@ -165,11 +168,8 @@ export const KycCasePage: React.FC = () => {
             onChange={(e) => setPersona(e.target.value as PersonaType)}
             className="flex-1 px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 bg-white"
           >
-            {PERSONA_LABELS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
+            {/* Only the currently selected persona can be verified here. */}
+            <option value={persona}>{PERSONA_LABELS.find((p) => p.id === persona)?.label ?? persona}</option>
           </select>
           <button
             onClick={() => void createCase()}

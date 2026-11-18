@@ -1,5 +1,4 @@
 import { download, post, readList, readOne } from './http';
-import { MOCK_INSURANCE_CLAIMS } from './mocks';
 import type { CropInsuranceClaim } from '../../types';
 
 /** Insurance namespace — farmer policies/claims + provider desk. */
@@ -29,7 +28,7 @@ export const insurance = {
 
   /** GET /insurance/claims */
   claims: (): Promise<CropInsuranceClaim[]> =>
-    readList<CropInsuranceClaim>('/insurance/claims', { mock: MOCK_INSURANCE_CLAIMS }),
+    readList<CropInsuranceClaim>('/insurance/claims'),
 
   /** POST /insurance/claims — multipart claim intimation (legacy). */
   intimateClaim: (payload: Partial<CropInsuranceClaim>): Promise<CropInsuranceClaim> =>
@@ -69,7 +68,7 @@ export const insurance = {
 
   /** GET /insurance/provider/claims */
   providerClaims: (params?: Record<string, unknown>): Promise<CropInsuranceClaim[]> =>
-    readList<CropInsuranceClaim>('/insurance/provider/claims', { params, mock: MOCK_INSURANCE_CLAIMS }),
+    readList<CropInsuranceClaim>('/insurance/provider/claims', { params }),
 
   /** GET /insurance/provider/claims/{id} */
   providerClaim: (claimId: string): Promise<CropInsuranceClaim> =>

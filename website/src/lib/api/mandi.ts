@@ -1,14 +1,13 @@
 import { apiClient } from './client';
 import { handleApiError } from './errors';
 import { del, post, readItems, readList, readOne } from './http';
-import { MOCK_MANDI_PRICES } from './mocks';
 import type { MandiLiveFilters, MandiLiveResponse, MandiPrice } from '../../types';
 
 /** Mandi namespace — government live prices, compare, forecast, smart-select, price alerts live in priceAlerts.ts. */
 export const mandi = {
   /** GET /mandi/prices */
   prices: (params?: Record<string, unknown>): Promise<MandiPrice[]> =>
-    readList<MandiPrice>('/mandi/prices', { params, mock: MOCK_MANDI_PRICES }),
+    readList<MandiPrice>('/mandi/prices', { params }),
 
   /** GET /mandi/list */
   list: (params?: Record<string, unknown>): Promise<unknown[]> =>

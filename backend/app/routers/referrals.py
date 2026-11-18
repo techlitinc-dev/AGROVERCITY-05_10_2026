@@ -36,7 +36,7 @@ def _share_link(code: str) -> str:
 
 def _share_message(code: str) -> str:
     return (
-        f"Kisan Setu par judiye! Mera referral code {code} use karein "
+        f"Agrovercity par judiye! Mera referral code {code} use karein "
         f"aur 100 AgriCoins ka bonus paayein: {_share_link(code)}"
     )
 

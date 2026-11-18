@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Sprout,
   Bell,
   Coins,
   Globe,
-  ShoppingCart,
   ChevronDown,
   User,
   UserRound,
@@ -25,30 +24,31 @@ import {
   DollarSign,
   Calendar,
   BookOpen,
-  Heart,
 } from 'lucide-react';
 import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
-import { useCartStore } from '../../stores/cartStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useI18nStore, SUPPORTED_LANGUAGES } from '../../lib/i18n';
-import { users } from '../../lib/api';
 import type { PersonaType } from '../../types';
 import { cn } from '../../lib/utils';
 import { normalizePersona } from '../../lib/personas';
 
 export const Navbar: React.FC = () => {
   const { user, activePersona, switchPersona, isAuthenticated, logout } = useAuthStore();
-  const { getTotalItems } = useCartStore();
   const { getUnreadCount, setIsOpen: setNotifOpen, refresh: refreshNotifications } =
     useNotificationStore();
   const { language, setLanguage, t } = useI18nStore();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // Onboarding routes (registration + KYC journey) get a minimal header:
+  // no coins, cart, notifications bell, or profile menu.
+  const onboardingRoute =
+    pathname.startsWith('/register') ||
+    pathname.startsWith('/kyc') ||
+    pathname.startsWith('/mock-digilocker');
 
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
-  const [womenMode, setWomenMode] = useState(false);
-  const [womenSettings, setWomenSettings] = useState<Record<string, unknown>>({});
 
   // Load the real inbox once after login so the bell badge reflects unread count.
   // Skipped for registration-incomplete sessions: the restricted onboarding
@@ -61,49 +61,16 @@ export const Navbar: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, restricted]);
 
-  // Women-mode toggle mirrors the mall home boost: persisted via user settings.
-  useEffect(() => {
-    if (!isAuthenticated || restricted) return;
-    let mounted = true;
-    users
-      .getSettings()
-      .then((s) => {
-        if (!mounted || !s) return;
-        setWomenSettings(s as Record<string, unknown>);
-        setWomenMode(Boolean((s as Record<string, unknown>).womenMode));
-      })
-      .catch(() => undefined);
-    return () => {
-      mounted = false;
-    };
-  }, [isAuthenticated, restricted]);
-
-  const handleToggleWomenMode = async () => {
-    const next = !womenMode;
-    setWomenMode(next);
-    try {
-      const saved = await users.updateSettings({ ...womenSettings, womenMode: next });
-      setWomenSettings((saved as Record<string, unknown>) ?? { ...womenSettings, womenMode: next });
-    } catch {
-      setWomenMode((v) => !v);
-    }
-  };
-
   const personaOptions: { id: PersonaType; label: string; icon: string }[] = [
     { id: 'farmer', label: 'Farmer / Kisan (किसान)', icon: '🌾' },
     { id: 'landlord', label: 'Farm Landlord (जमीन मालिक)', icon: '🏡' },
     { id: 'transporter', label: 'Transporter (गाड़ी / लॉजिस्टिक्स)', icon: '🚚' },
     { id: 'seller', label: 'Agri Vyapari (दुकानदार / इनपुट)', icon: '🏪' },
     { id: 'equipmentOwner', label: 'Equipment Owner (यंत्र मालिक)', icon: '🚜' },
-    { id: 'exporter', label: 'International Exporter (अंतर्राष्ट्रीय निर्यातक)', icon: '🚢' },
-    { id: 'directBuyer', label: 'Industrial Buyer (थोक खरीदार)', icon: '🏢' },
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
     { id: 'womenShg', label: 'Mahila Gruh Udyog & SHG (महिला गृह उद्योग)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
-    { id: 'nursery', label: 'Plant Nursery (पौधघर / नर्सरी)', icon: '🌱' },
-    { id: 'coldStorageProvider', label: 'Cold Storage (शीतगृह)', icon: '❄️' },
-    { id: 'gaushalaManager', label: 'Gaushala Sanctuary (गौशाला)', icon: '🐄' },
-    { id: 'customer', label: 'E-Market Customer (उपभोक्ता)', icon: '🛍️' },
+    { id: 'customer', label: 'Agri Market Seller (कृषी बाजार विक्रेता)', icon: '🛍️' },
   ];
 
   const handleSelectPersona = (p: PersonaType) => {
@@ -151,9 +118,11 @@ export const Navbar: React.FC = () => {
             className="flex items-center gap-2.5 group"
             title="Agrovercity OS Home"
           >
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform">
-              <Sprout className="w-6 h-6" />
-            </div>
+            <img
+              src="/app_icon.png"
+              alt="Agrovercity logo"
+              className="w-10 h-10 rounded-2xl shadow-md shadow-emerald-600/20 group-hover:scale-105 transition-transform"
+            />
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-base sm:text-lg tracking-tight text-slate-900 group-hover:text-emerald-700 transition-colors">
@@ -164,7 +133,7 @@ export const Navbar: React.FC = () => {
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 font-medium hidden sm:block">
-                Kisan Setu • Digital Agri Operating System
+                Digital Agri Operating System
               </p>
             </div>
           </Link>
@@ -206,7 +175,7 @@ export const Navbar: React.FC = () => {
                 />
                 <div className="absolute left-1/2 sm:left-0 -translate-x-1/2 sm:translate-x-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-40 max-h-96 overflow-y-auto animate-in fade-in duration-150">
                   <div className="px-4 py-2 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Switch Active Persona (14 Roles)
+                    Switch Active Persona ({visiblePersonaOptions.length} Roles)
                   </div>
                   {visiblePersonaOptions.map((opt) => (
                     <button
@@ -299,39 +268,8 @@ export const Navbar: React.FC = () => {
             )}
           </div>
 
-          {/* Women-Mode Toggle (Mahila Gruh Udyog boost) — settings writes need a full token */}
-          {isAuthenticated && !restricted && (
-            <button
-              onClick={() => void handleToggleWomenMode()}
-              aria-pressed={womenMode}
-              className={cn(
-                'hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all hover-lift',
-                womenMode
-                  ? 'bg-purple-50 border-purple-300 text-purple-800'
-                  : 'border-slate-200 hover:bg-slate-50 text-slate-500'
-              )}
-              title="Women Mode — महिला मोड (boosts Mahila Gruh Udyog products in the mall)"
-            >
-              <Heart className={cn('w-3.5 h-3.5', womenMode ? 'text-purple-600 fill-purple-200' : 'text-slate-400')} />
-              <span className="hidden lg:inline">महिला मोड</span>
-              <span
-                className={cn(
-                  'w-6 h-3.5 rounded-full relative block',
-                  womenMode ? 'bg-purple-500' : 'bg-slate-300'
-                )}
-              >
-                <span
-                  className={cn(
-                    'absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all',
-                    womenMode ? 'left-3' : 'left-0.5'
-                  )}
-                />
-              </span>
-            </button>
-          )}
-
           {/* Kisan Coins Badge */}
-          {isAuthenticated && user && (
+          {!onboardingRoute && isAuthenticated && user && (
             <Link
               to="/community/coins"
               className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100/80 transition-colors"
@@ -342,22 +280,8 @@ export const Navbar: React.FC = () => {
             </Link>
           )}
 
-          {/* Cart Icon */}
-          <Link
-            to="/mall/cart"
-            className="relative p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors"
-            title="Krishi Mall Cart"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            {getTotalItems() > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
-                {getTotalItems()}
-              </span>
-            )}
-          </Link>
-
           {/* Notifications Bell */}
-          {isAuthenticated && (
+          {!onboardingRoute && isAuthenticated && (
             <button
               onClick={() => setNotifOpen(true)}
               className="relative p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors"
@@ -374,6 +298,7 @@ export const Navbar: React.FC = () => {
 
           {/* User Profile / Auth State */}
           {isAuthenticated && user ? (
+            onboardingRoute ? null : (
             <div className="relative">
               <button
                 onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
@@ -513,6 +438,7 @@ export const Navbar: React.FC = () => {
                 </>
               )}
             </div>
+            )
           ) : (
             <Link
               to="/login"

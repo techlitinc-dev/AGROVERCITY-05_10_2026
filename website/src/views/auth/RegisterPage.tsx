@@ -19,6 +19,7 @@ import { apiErrorMessage, auth, registration } from '../../lib/api';
 import { personaHome } from '../../lib/personas';
 import { toSameOriginInternalUrl } from '../../lib/internalRedirect';
 import { SUPPORTED_LANGUAGES } from '../../lib/i18n';
+import { STATE_DISTRICTS, ALL_STATES } from '../../lib/statesDistricts';
 import type { PersonaType } from '../../types';
 import { IdentityVerificationStep } from './IdentityVerificationStep';
 import {
@@ -54,20 +55,12 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Land & Leasing',
   },
   {
-    id: 'transporter',
-    icon: '🚚',
-    title: 'Transporter & Logistics',
-    nativeTitle: 'वाहतूकदार / ट्रांसपोर्टर',
-    desc: 'Find freight loads, place bids, generate digital bilty, and track detention fees.',
-    badge: 'Logistics Fleet',
-  },
-  {
-    id: 'seller',
-    icon: '🏪',
-    title: 'Agri Vyapari (Input Dealer)',
-    nativeTitle: 'कृषि व्यापारी',
-    desc: 'Retail storefront for fertilizers, seeds, machinery, farmer procurement, and POS.',
-    badge: 'Inputs & Retail',
+    id: 'womenShg',
+    icon: '🪔',
+    title: 'Mahila Gruh Udyog & SHG',
+    nativeTitle: 'महिला गृह उद्योग',
+    desc: 'Cottage food products, spices, pickles, SHG monthly savings, and Micro-Mudras.',
+    badge: 'Women Enterprise',
   },
   {
     id: 'equipmentOwner',
@@ -78,22 +71,6 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Krishi Machinery',
   },
   {
-    id: 'exporter',
-    icon: '🚢',
-    title: 'International Exporter',
-    nativeTitle: 'निर्यातदार',
-    desc: 'Global RFQs, APEDA/Phyto certification, shipping containers, and LC finance.',
-    badge: 'Global Trade',
-  },
-  {
-    id: 'directBuyer',
-    icon: '🏢',
-    title: 'Direct Institutional Buyer',
-    nativeTitle: 'थेट खरेदीदार',
-    desc: 'Post institutional demands, contract farming, gate QC inspection, and instant invoices.',
-    badge: 'Bulk Procurement',
-  },
-  {
     id: 'milkSeller',
     icon: '🐄',
     title: 'Milk Vendor / Doodh Vala',
@@ -102,28 +79,20 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Dairy Distribution',
   },
   {
-    id: 'gaushalaManager',
-    icon: '🐮',
-    title: 'Gaushala & Sanctuary Manager',
-    nativeTitle: 'गौशाला व्यवस्थापक',
-    desc: 'Cattle registry, cow adoption programs, 80G donation receipts, and veterinary care.',
-    badge: 'Gauseva & Shelter',
+    id: 'seller',
+    icon: '🏪',
+    title: 'Agri Vyapari (Input Dealer)',
+    nativeTitle: 'कृषि व्यापारी',
+    desc: 'Retail storefront for fertilizers, seeds, machinery, farmer procurement, and POS.',
+    badge: 'Inputs & Retail',
   },
   {
-    id: 'womenShg',
-    icon: '🪔',
-    title: 'Mahila Gruh Udyog & SHG',
-    nativeTitle: 'महिला गृह उद्योग',
-    desc: 'Cottage food products, spices, pickles, SHG monthly savings, and Micro-Mudras.',
-    badge: 'Women Enterprise',
-  },
-  {
-    id: 'nursery',
-    icon: '🌱',
-    title: 'Plant Nursery Owner',
-    nativeTitle: 'नर्सरी मालक / वनस्पती नर्सरी',
-    desc: 'List plants, saplings & seeds, manage monsoon orders, and track payout settlements.',
-    badge: 'Horticulture & Seeds',
+    id: 'transporter',
+    icon: '🚚',
+    title: 'Transporter & Logistics',
+    nativeTitle: 'वाहतूकदार / ट्रांसपोर्टर',
+    desc: 'Find freight loads, place bids, generate digital bilty, and track detention fees.',
+    badge: 'Logistics Fleet',
   },
   {
     id: 'instructor',
@@ -134,38 +103,13 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Agri Education',
   },
   {
-    id: 'coldStorageProvider',
-    icon: '❄️',
-    title: 'Cold Storage & Warehouse Owner',
-    nativeTitle: 'शीतगृह / गोदाम संचालक',
-    desc: 'Manage chamber capacity, inward/release gate passes, and e-NWR pledge receipts.',
-    badge: 'Post-Harvest Storage',
-  },
-  {
     id: 'customer',
     icon: '🛍️',
-    title: 'E-Market Customer',
-    nativeTitle: 'ग्राहक',
-    desc: 'Buy authentic farm-fresh grains, organic honey, spices, seeds, and gardening kits.',
-    badge: 'Consumer E-Mall',
+    title: 'Agri Market Seller',
+    nativeTitle: 'कृषी बाजार विक्रेता',
+    desc: 'Sell farm-fresh produce, grains, spices, and value-added products directly to buyers on the Krishi Mall.',
+    badge: 'Krishi Mall Seller',
   },
-];
-
-const POPULAR_STATES = [
-  'Maharashtra',
-  'Madhya Pradesh',
-  'Punjab',
-  'Gujarat',
-  'Uttar Pradesh',
-  'Rajasthan',
-  'Haryana',
-  'Karnataka',
-  'Andhra Pradesh',
-  'Telangana',
-  'Tamil Nadu',
-  'West Bengal',
-  'Bihar',
-  'Odisha',
 ];
 
 type WizardStep = 'mobile' | 'profile' | 'kyc';
@@ -181,7 +125,7 @@ export const RegisterPage: React.FC = () => {
   const location = useLocation() as { state?: { phone?: string; resume?: string } };
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { login, setUser, isAuthenticated, user: storeUser } = useAuthStore();
+  const { login, logout, setUser, isAuthenticated, user: storeUser } = useAuthStore();
 
   const [step, setStep] = useState<WizardStep>('mobile');
   const [phone, setPhone] = useState(location.state?.phone || '');
@@ -230,7 +174,17 @@ export const RegisterPage: React.FC = () => {
       setIsNewRegistration(true);
       setStep('profile');
     } else if (location.state?.resume === 'kyc' || searchParams.get('retry') === 'kyc') {
-      if (isAuthenticated) setStep('kyc');
+      if (isAuthenticated) {
+        if (regStatus === 'pendingKyc') {
+          setStep('kyc');
+        } else {
+          // Registration already finished (e.g. the first attempt completed
+          // after a callback hiccup sent the user here). The registration
+          // KYC retry would 409 "registration is already complete", so land
+          // them on their dashboard instead — in-app KYC lives under /kyc.
+          navigate(personaHome(storeUser?.activePersona || 'farmer'), { replace: true });
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -363,6 +317,14 @@ export const RegisterPage: React.FC = () => {
 
   const handleAlreadyVerified = (sessionId: string) => {
     navigate(`/kyc/callback?session=${sessionId}&context=registration`);
+  };
+
+  // "Skip for now" — the account stays pendingKyc with a restricted session.
+  // Sign out and drop back to the login page; the next sign-in resumes this
+  // same identity step (the wizard restores pendingKyc sessions at step 3).
+  const handleSkipKyc = () => {
+    logout();
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -614,10 +576,13 @@ export const RegisterPage: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-700 mb-1">State / राज्य</label>
                 <select
                   value={stateName}
-                  onChange={(e) => setStateName(e.target.value)}
+                  onChange={(e) => {
+                    setStateName(e.target.value);
+                    setDistrict('');
+                  }}
                   className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white"
                 >
-                  {POPULAR_STATES.map((s) => (
+                  {ALL_STATES.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -628,14 +593,22 @@ export const RegisterPage: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   District / जिल्हा <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   required
+                  aria-label="District"
                   value={district}
                   onChange={(e) => setDistrict(e.target.value)}
-                  placeholder="e.g. Nashik"
-                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-                />
+                  className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white focus:outline-none focus:border-emerald-600"
+                >
+                  <option value="" disabled>
+                    Select district…
+                  </option>
+                  {(STATE_DISTRICTS[stateName] ?? []).map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Village / Tehsil</label>
@@ -673,7 +646,7 @@ export const RegisterPage: React.FC = () => {
                   Approximate Land Holding (Acres)
                 </label>
                 <div className="flex gap-2 flex-wrap">
-                  {[1, 2.5, 5, 10, 25].map((acres) => (
+                  {[0.5, 1, 2.5, 5, 10, 25].map((acres) => (
                     <button
                       key={acres}
                       type="button"
@@ -684,7 +657,7 @@ export const RegisterPage: React.FC = () => {
                           : 'border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      {acres} {acres === 25 ? '25+ Acres' : 'Acres'}
+                      {acres === 0.5 ? '< 1 Acre' : acres === 25 ? '25+ Acres' : `${acres} Acres`}
                     </button>
                   ))}
                 </div>
@@ -770,6 +743,14 @@ export const RegisterPage: React.FC = () => {
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipKyc}
+                title="You can verify your identity the next time you sign in"
+                className="px-5 py-3 rounded-2xl border border-slate-200 text-slate-500 text-xs font-bold hover:bg-slate-50 hover:text-slate-700 flex items-center gap-1.5"
+              >
+                Skip for now
               </button>
             </div>
           </div>

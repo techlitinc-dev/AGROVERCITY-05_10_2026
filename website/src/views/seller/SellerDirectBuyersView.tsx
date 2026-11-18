@@ -274,7 +274,7 @@ export const SellerDirectBuyersView: React.FC = () => {
           <form onSubmit={handleSendQuote} className="space-y-4">
             <p className="text-xs text-slate-500">
               Submit your direct farmgate/mandi supply availability to <strong>{str(contactBuyer.businessName)}</strong>.
-              Upon acceptance, contract terms and escrow release will be guaranteed by Kisan Setu B2B network.
+              Upon acceptance, contract terms and escrow release will be guaranteed by Agrovercity B2B network.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

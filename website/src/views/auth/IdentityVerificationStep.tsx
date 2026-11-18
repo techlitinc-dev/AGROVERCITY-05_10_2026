@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, FileText, Eye, EyeOff, Landmark, Lock, AlertCircle, CheckCircle2, Fingerprint } from 'lucide-react';
+import { ShieldCheck, FileText, Eye, EyeOff, Landmark, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { apiErrorMessage, kyc, type KycMeResult } from '../../lib/api';
 
 interface IdentityVerificationStepProps {
@@ -30,16 +30,6 @@ export const IdentityVerificationStep: React.FC<IdentityVerificationStepProps> =
   const [consent, setConsent] = useState(false);
   const [me, setMe] = useState<KycMeResult | null>(null);
   const [denied, setDenied] = useState(false);
-
-  // Aadhaar-number OTP path (mock/test provider): Aadhaar → OTP → verified.
-  const [method, setMethod] = useState<'aadhaar' | 'digilocker'>('aadhaar');
-  const [aadhaarNumber, setAadhaarNumber] = useState('');
-  const [aadhaarOtp, setAadhaarOtp] = useState('');
-  const [aadhaarSessionId, setAadhaarSessionId] = useState('');
-  const [devAadhaarOtp, setDevAadhaarOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [aadhaarBusy, setAadhaarBusy] = useState(false);
-  const [aadhaarError, setAadhaarError] = useState<string | null>(null);
 
   const onAlreadyVerifiedRef = React.useRef<(sessionId: string) => void>(() => undefined);
   onAlreadyVerifiedRef.current = onAlreadyVerified;
@@ -89,48 +79,6 @@ export const IdentityVerificationStep: React.FC<IdentityVerificationStepProps> =
     }
   };
 
-  const sendAadhaarOtp = async () => {
-    if (!consent || aadhaarBusy) return;
-    if (aadhaarNumber.length !== 12) {
-      setAadhaarError('Please enter your 12-digit Aadhaar number.');
-      return;
-    }
-    setAadhaarBusy(true);
-    setAadhaarError(null);
-    try {
-      const { session } = await kyc.createSession({
-        context: 'registration',
-        consentAccepted: true,
-        method: 'aadhaar_okyc',
-      });
-      const res = await kyc.aadhaarOtp(session.id, aadhaarNumber);
-      setAadhaarSessionId(session.id);
-      setDevAadhaarOtp(res.devOtp || '');
-      setAadhaarOtp('');
-      setOtpSent(true);
-    } catch (err) {
-      setAadhaarError(apiErrorMessage(err));
-    } finally {
-      setAadhaarBusy(false);
-    }
-  };
-
-  const verifyAadhaarOtp = async () => {
-    if (!aadhaarSessionId || aadhaarOtp.length !== 6 || aadhaarBusy) return;
-    setAadhaarBusy(true);
-    setAadhaarError(null);
-    try {
-      await kyc.aadhaarVerify(aadhaarSessionId, aadhaarOtp);
-      // Single resumption point: the registration callback completes the
-      // journey exactly like the DigiLocker flow.
-      onAlreadyVerified(aadhaarSessionId);
-    } catch (err) {
-      setAadhaarError(apiErrorMessage(err));
-    } finally {
-      setAadhaarBusy(false);
-    }
-  };
-
   const testMode = me?.testMode ?? false;
 
   return (
@@ -173,7 +121,7 @@ export const IdentityVerificationStep: React.FC<IdentityVerificationStepProps> =
             <h5 className="text-xs font-bold">Which documents are requested</h5>
           </div>
           <ul className="text-[11px] text-slate-600 space-y-1 leading-snug">
-            <li>• Aadhaar identity record (DigiLocker or Aadhaar-OTP)</li>
+            <li>• Aadhaar identity record (via DigiLocker)</li>
             <li>• No passwords, no document uploads</li>
           </ul>
         </div>
@@ -236,149 +184,15 @@ export const IdentityVerificationStep: React.FC<IdentityVerificationStepProps> =
         </span>
       </label>
 
-      {aadhaarError && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs text-rose-800 flex items-start gap-2.5 animate-slide-down">
-          <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-          <span>{aadhaarError}</span>
-        </div>
-      )}
-
-      {/* Verification method picker — the Aadhaar-OTP route is only served by
-      the mock/test provider (UIDAI discontinued Aadhaar offline e-KYC; live
-      servers verify via DigiLocker). */}
-      {testMode && (
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              setMethod('aadhaar');
-              setAadhaarError(null);
-            }}
-            className={`p-3.5 rounded-2xl border text-left transition-all ${
-              method === 'aadhaar'
-                ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/30'
-                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/80'
-            }`}
-          >
-            <Fingerprint className="w-4 h-4 text-emerald-600 mb-1" />
-            <h5 className="font-bold text-xs text-slate-900">Aadhaar Number (OTP)</h5>
-            <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-              OTP is sent to your Aadhaar-linked mobile number
-            </p>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMethod('digilocker');
-              setAadhaarError(null);
-            }}
-            className={`p-3.5 rounded-2xl border text-left transition-all ${
-              method === 'digilocker'
-                ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/30'
-                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/80'
-            }`}
-          >
-            <Landmark className="w-4 h-4 text-emerald-600 mb-1" />
-            <h5 className="font-bold text-xs text-slate-900">DigiLocker</h5>
-            <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-              Consent-based sharing through your DigiLocker account
-            </p>
-          </button>
-        </div>
-      )}
-
-      {/* Aadhaar-OTP panel (mock/test provider only) */}
-      {testMode && method === 'aadhaar' && (
-        <div className="space-y-4">
-          {!otpSent ? (
-            <>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Aadhaar Number <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={12}
-                  value={aadhaarNumber}
-                  onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter 12-digit Aadhaar number"
-                  className="w-full px-4 py-3 text-sm font-bold tracking-[0.3em] text-center rounded-2xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20"
-                />
-                <p className="text-[10px] text-slate-400 mt-1.5">
-                  Only the last 4 digits are stored, masked as XXXXXXXX••••. The full number is
-                  never saved.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={!consent || aadhaarNumber.length !== 12 || aadhaarBusy}
-                onClick={sendAadhaarOtp}
-                className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover-lift"
-              >
-                <Fingerprint className="w-4 h-4" />
-                <span>{aadhaarBusy ? 'Sending OTP…' : 'Send OTP to Aadhaar-linked Mobile'}</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Enter 6-digit OTP sent to your Aadhaar-linked mobile
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={aadhaarOtp}
-                  onChange={(e) => setAadhaarOtp(e.target.value.replace(/\D/g, ''))}
-                  placeholder="••••••"
-                  className="w-full px-4 py-3 text-lg font-bold tracking-[0.5em] text-center rounded-2xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20"
-                />
-                {devAadhaarOtp && (
-                  <p className="text-[10px] text-amber-700 font-bold mt-1.5">
-                    Dev mode — your OTP is {devAadhaarOtp}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtpSent(false);
-                    setAadhaarOtp('');
-                    setAadhaarError(null);
-                  }}
-                  className="px-5 py-3 rounded-2xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  disabled={aadhaarOtp.length !== 6 || aadhaarBusy}
-                  onClick={verifyAadhaarOtp}
-                  className="flex-1 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover-lift"
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>{aadhaarBusy ? 'Verifying…' : 'Verify & Continue'}</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {(method === 'digilocker' || !testMode) && (
-        <button
-          type="button"
-          disabled={!consent || busy}
-          onClick={handleVerify}
-          className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover-lift"
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>{busy ? 'Opening DigiLocker…' : `Verify with DigiLocker${testMode ? ' (Test)' : ''}`}</span>
-        </button>
-      )}
+      <button
+        type="button"
+        disabled={!consent || busy}
+        onClick={handleVerify}
+        className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 hover-lift"
+      >
+        <ShieldCheck className="w-4 h-4" />
+        <span>{busy ? 'Opening DigiLocker…' : `Verify with DigiLocker${testMode ? ' (Test)' : ''}`}</span>
+      </button>
 
       {me?.session?.status === 'failed' || me?.session?.status === 'expired' ? (
         <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">

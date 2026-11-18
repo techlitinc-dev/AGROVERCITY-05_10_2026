@@ -1,5 +1,4 @@
 import { del, post, put, readList, readOne } from './http';
-import { MOCK_PRODUCE_LOTS } from './mocks';
 import type { ProduceLot, TradeOffer } from '../../types';
 
 /**
@@ -12,7 +11,7 @@ export type LotPayload = Partial<ProduceLot> & Record<string, unknown>;
 export const lots = {
   /** GET /market/lots */
   list: (params?: Record<string, unknown>): Promise<ProduceLot[]> =>
-    readList<ProduceLot>('/market/lots', { params, mock: MOCK_PRODUCE_LOTS }),
+    readList<ProduceLot>('/market/lots', { params }),
 
   /** GET /market/lots/browse */
   browse: (params?: Record<string, unknown>): Promise<ProduceLot[]> =>
@@ -41,5 +40,5 @@ export const lots = {
 
   /** GET /market/lots/{id}/offers — offers board for a lot. */
   offers: (lotId: string): Promise<TradeOffer[]> =>
-    readList<TradeOffer>(`/market/lots/${lotId}/offers`, { mock: [] }),
+    readList<TradeOffer>(`/market/lots/${lotId}/offers`),
 };

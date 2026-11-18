@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Sprout,
   TrendingUp,
   TrendingDown,
   ArrowRight,
@@ -916,9 +915,11 @@ export const LandingPage: React.FC = () => {
             {/* Col 1: Brand & Mission */}
             <div className="col-span-2 space-y-4">
               <Link to="/" className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md">
-                  <Sprout className="w-5 h-5" />
-                </div>
+                <img
+                  src="/app_icon.png"
+                  alt="Agrovercity logo"
+                  className="w-9 h-9 rounded-xl shadow-md"
+                />
                 <div>
                   <span className="font-extrabold text-base tracking-tight text-white">AGROVERCITY</span>
                   <span className="ml-1 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300">
@@ -927,7 +928,7 @@ export const LandingPage: React.FC = () => {
                 </div>
               </Link>
               <p className="text-slate-400 leading-relaxed text-xs max-w-sm">
-                Kisan Setu • Bharat's Unified Agritech Operating System. Integrating B2B trade,
+                Bharat's Unified Agritech Operating System. Integrating B2B trade,
                 smart bilty transport, dairy tech, land records, KCC loans, PMFBY insurance, and multilingual AI agronomy.
               </p>
             </div>
@@ -973,7 +974,7 @@ export const LandingPage: React.FC = () => {
           {/* Bottom Copyright & Compliance Line */}
           <div className="pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
             <div>
-              © 2026 Agrovercity Kisan Setu Technologies Inc. All rights reserved.
+              © 2026 Agrovercity Technologies Inc. All rights reserved.
             </div>
 
             <div className="flex items-center gap-4">

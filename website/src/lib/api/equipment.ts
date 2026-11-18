@@ -1,5 +1,4 @@
 import { del, post, readList, readOne } from './http';
-import { MOCK_EQUIPMENT } from './mocks';
 import type { EquipmentMachine } from '../../types';
 
 /** Contact snapshot revealed only after the acceptance unlock. */
@@ -59,7 +58,7 @@ export interface EquipmentRequestPayload {
 export const equipment = {
   /** GET /equipment — optional filters: q (substring), type (machineType exact). */
   list: (params?: Record<string, unknown>): Promise<EquipmentMachine[]> =>
-    readList<EquipmentMachine>('/equipment', { params, mock: MOCK_EQUIPMENT }),
+    readList<EquipmentMachine>('/equipment', { params }),
 
   /** GET /equipment/my-bookings — the caller's bookings, newest first. */
   myBookings: (): Promise<EquipmentMyBooking[]> =>

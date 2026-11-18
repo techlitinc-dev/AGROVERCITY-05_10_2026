@@ -170,6 +170,9 @@ export const KycCallbackPage: React.FC = () => {
 
         {state === 'failed' && (
           <>
+            <span className="inline-block px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-black uppercase tracking-wider">
+              Registration Failed
+            </span>
             <div className="w-16 h-16 mx-auto rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-rose-600" />
             </div>
@@ -191,6 +194,9 @@ export const KycCallbackPage: React.FC = () => {
 
         {state === 'denied' && (
           <>
+            <span className="inline-block px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-black uppercase tracking-wider">
+              Registration Failed
+            </span>
             <div className="w-16 h-16 mx-auto rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-amber-600" />
             </div>
@@ -215,6 +221,9 @@ export const KycCallbackPage: React.FC = () => {
 
         {state === 'expired' && (
           <>
+            <span className="inline-block px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-black uppercase tracking-wider">
+              Registration Failed
+            </span>
             <div className="w-16 h-16 mx-auto rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
               <AlertCircle className="w-8 h-8 text-amber-600" />
             </div>

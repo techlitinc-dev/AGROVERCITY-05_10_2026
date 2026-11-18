@@ -1,5 +1,4 @@
 import { post, put, readList, readOne } from './http';
-import { MOCK_MILK_SLIPS } from './mocks';
 import type { MilkCollectionSlip } from '../../types';
 
 /**
@@ -76,7 +75,7 @@ export const dairy = {
   farmerReliability: (farmerId: string): Promise<unknown> =>
     readOne<unknown>(`/dairy/farmers/${farmerId}/reliability`),
 
-  // --- dairy member self-views (Kisan Setu "My Milk & Payments") ---
+  // --- dairy member self-views (Agrovercity "My Milk & Payments") ---
   /** GET /livestock/dairy/farmer/slips — my milk collection slips. */
   farmerSlips: (params?: Record<string, unknown>): Promise<unknown[]> =>
     readList<unknown[]>('/livestock/dairy/farmer/slips', { params }),
@@ -102,7 +101,7 @@ export const dairy = {
 
     /** GET /dairy-manager/milk-slips */
     milkSlips: (): Promise<MilkCollectionSlip[]> =>
-      readList<MilkCollectionSlip>('/dairy-manager/milk-slips', { mock: MOCK_MILK_SLIPS }),
+      readList<MilkCollectionSlip>('/dairy-manager/milk-slips'),
 
     // members
     /** GET /livestock/dairy/members */

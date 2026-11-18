@@ -1,5 +1,4 @@
 import { download, post, readList, readOne } from './http';
-import { MOCK_PURCHASES } from './mocks';
 import type { PurchaseOrder } from '../../types';
 
 /**
@@ -10,11 +9,11 @@ export const purchases = {
   // --- core ---
   /** GET /purchases */
   list: (params?: Record<string, unknown>): Promise<PurchaseOrder[]> =>
-    readList<PurchaseOrder>('/purchases', { params, mock: MOCK_PURCHASES }),
+    readList<PurchaseOrder>('/purchases', { params }),
 
   /** GET /purchases/mine (alias of list with scope=mine where supported) */
   mine: (params?: Record<string, unknown>): Promise<PurchaseOrder[]> =>
-    readList<PurchaseOrder>('/purchases', { params: { ...params, scope: 'mine' }, mock: MOCK_PURCHASES }),
+    readList<PurchaseOrder>('/purchases', { params: { ...params, scope: 'mine' } }),
 
   /** GET /purchases/{id} */
   get: (purchaseId: string): Promise<PurchaseOrder> =>

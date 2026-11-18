@@ -1,5 +1,4 @@
 import { download, del, post, put, readList, readOne } from './http';
-import { MOCK_LAND_LEASES } from './mocks';
 import type { LandLeaseListing } from '../../types';
 
 /** Land & landlord namespace — plots, listings, lease requests/leases, rent, profit. */
@@ -37,7 +36,7 @@ export const land = {
 
   /** GET /land/listings/mine */
   myListings: (): Promise<LandLeaseListing[]> =>
-    readList<LandLeaseListing>('/land/listings/mine', { mock: MOCK_LAND_LEASES }),
+    readList<LandLeaseListing>('/land/listings/mine'),
 
   /** GET /land/listings/{id} */
   listing: (listingId: string): Promise<LandLeaseListing> =>
@@ -300,7 +299,7 @@ export const land = {
 
   /** GET /land/saved-listings */
   savedListings: (): Promise<LandLeaseListing[]> =>
-    readList<LandLeaseListing>('/land/saved-listings', { mock: MOCK_LAND_LEASES }),
+    readList<LandLeaseListing>('/land/saved-listings'),
 
   /** POST /land/listings/{id}/waitlist */
   joinWaitlist: (listingId: string): Promise<unknown> =>

@@ -127,7 +127,7 @@ async def get_record_pdf(record_id: str, user: dict = Depends(_user)):
     story.append(t3)
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph("<i>Digitally signed copy under Maharashtra Land Revenue Code 1966. Verified via Kisan Setu OS.</i>", sub_style))
+    story.append(Paragraph("<i>Digitally signed copy under Maharashtra Land Revenue Code 1966. Verified via Agrovercity Digital Agri OS.</i>", sub_style))
 
     doc.build(story)
     buffer.seek(0)
