@@ -70,45 +70,37 @@ export const Sidebar: React.FC = () => {
       case 'farmer':
         return [
           {
-            title: 'Trade — Buy & Sell',
+            title: 'Farmer Menu',
             items: [
-              { to: '/farmer/lots', label: 'My Produce / माझे उत्पादन', icon: Package },
-              { to: '/farmer/demands', label: 'My Industry / माझी उद्योग', icon: Layers },
-              { to: '/farmer/post-to-buyers', label: 'Post to Buyers / खरेदीदारांना ऑफर', icon: Store },
-              { to: '/farmer/land', label: 'Lease Farm Land / शेतजमीन भाड्याने', icon: Mountain },
-              { to: '/farmer/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
-              { to: '/farmer/export', label: 'Agri Export / कृषी निर्यात', icon: Globe2 },
-              { to: '/farmer/mandi', label: 'Mandi Prices / बाजारभाव', icon: TrendingUp },
-              { to: '/farmer/transport', label: 'Book Gadi / Transport', icon: Truck },
-            ],
-          },
-          {
-            title: 'Kisan Core Hub',
-            items: [
-              { to: '/farmer', label: 'Farmer Cockpit', icon: LayoutDashboard },
+              { to: '/farmer', label: 'Dashboard', icon: LayoutDashboard },
               { to: '/farmer/crops', label: 'My Crops / माझी पिके', icon: Sprout },
               { to: '/farmer/crop-plan', label: 'AI Crop Plan / पीक नियोजन', icon: Sparkles },
-              { to: '/farmer/crop-doctor', label: 'AI Crop Doctor (रोग निदान)', icon: Stethoscope },
-              { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
-              { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
+              { to: '/farmer/crop-doctor', label: 'AI Doctor', icon: Stethoscope },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
-              { to: '/women/directory', label: 'Mahila Bachat Gat', icon: HandCoins },
-            ],
-          },
-          {
-            title: 'Finance & Security',
-            items: [
-              { to: '/farmer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet },
+              { to: '/farmer/lots', label: 'My Produce / माझे उत्पादन', icon: Package },
+              { to: '/farmer/demands', label: 'Vyapari Requirement', icon: Layers },
+              { to: '/farmer/land', label: 'Rent Land', icon: Mountain },
+              { to: '/farmer/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
+              { to: '/farmer/mandi', label: 'Mandi Prices / बाजारभाव', icon: TrendingUp },
+              { to: '/farmer/transport', label: 'Book Vehicle', icon: Truck },
+              { to: '/mall', label: 'Agri Market', icon: ShoppingBag },
+              { to: '/academy', label: 'Courses', icon: GraduationCap },
+              { to: '/community/news', label: 'Agriculture News & Audio', icon: Radio },
+              { to: '/payments', label: 'Payment & Transactions', icon: ArrowLeftRight },
+              { to: '/ratings', label: 'Ratings & Reviews', icon: Star },
+              { to: '/saved', label: 'Saved & Following', icon: Bookmark },
+              { to: '/community/ai', label: 'AI Advisor', icon: Bot },
               { to: '/farmer/schemes', label: 'Government Schemes', icon: Gift },
-              { to: '/farmer/water', label: 'Weather & Water', icon: Droplets },
-            ],
-          },
-          {
-            title: 'Growth & Community',
-            items: [
-              { to: '/farmer/referrals', label: 'Invite & Earn', icon: Users },
-              { to: '/farmer/coins', label: 'Kisan Coins', icon: Sparkles },
+              { to: '/farmer/water', label: 'Climate & Water', icon: Droplets },
+              { to: '/farmer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet },
+              { to: '/farmer/diary', label: 'My Diary', icon: BookOpen },
+              { to: '/community/scan', label: 'AI Crop Scanner', icon: ScanLine },
               { to: '/community/trees', label: 'Tree Plantation', icon: TreePine },
+              { to: '/farmer/referrals', label: 'Invite & Earn', icon: Users },
+              { to: '/ads', label: 'Ads & Promotions', icon: Megaphone },
+              { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
+              { to: '/community/coins', label: 'Coins & Rewards', icon: Sparkles },
+              { to: '/community/women', label: 'Women Hub', icon: HeartHandshake },
             ],
           },
         ];
@@ -397,7 +389,8 @@ export const Sidebar: React.FC = () => {
         </div>
       ))}
 
-      {/* Universal Ecosystem Shortcuts */}
+      {/* Universal Ecosystem Shortcuts — hidden for farmer (every hub already lives in the farmer menu). */}
+      {normalizePersona(activePersona) !== 'farmer' && (
       <div className="space-y-1 pt-2 border-t border-slate-100">
         <h4 className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
           Ecosystem Hubs
@@ -434,36 +427,6 @@ export const Sidebar: React.FC = () => {
           </NavLink>
 
           <NavLink
-            to="/community/ai"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
-                isActive
-                  ? 'bg-emerald-50 text-emerald-900 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              )
-            }
-          >
-            <Bot className="w-4 h-4 text-teal-600" />
-            <span>AI Advisor (Kisan Mitra)</span>
-          </NavLink>
-
-          <NavLink
-            to="/community/scan"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
-                isActive
-                  ? 'bg-emerald-50 text-emerald-900 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              )
-            }
-          >
-            <ScanLine className="w-4 h-4 text-rose-500" />
-            <span>AI Crop Scanner</span>
-          </NavLink>
-
-          <NavLink
             to="/community/news"
             className={({ isActive }) =>
               cn(
@@ -490,7 +453,7 @@ export const Sidebar: React.FC = () => {
             }
           >
             <ArrowLeftRight className="w-4 h-4 text-emerald-600" />
-            <span>Payments & Transactions</span>
+            <span>Payment & Transactions</span>
           </NavLink>
 
           <NavLink
@@ -522,8 +485,189 @@ export const Sidebar: React.FC = () => {
             <Bookmark className="w-4 h-4 text-rose-500" />
             <span>Saved & Following</span>
           </NavLink>
+
+          <NavLink
+            to="/community/ai"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Bot className="w-4 h-4 text-teal-600" />
+            <span>AI Advisor</span>
+          </NavLink>
+
+          <NavLink
+            to="/farmer/schemes"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Gift className="w-4 h-4 text-emerald-600" />
+            <span>Government Schemes</span>
+          </NavLink>
+
+          <NavLink
+            to="/farmer/water"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Droplets className="w-4 h-4 text-sky-600" />
+            <span>Climate & Water</span>
+          </NavLink>
+
+          <NavLink
+            to="/farmer/712"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>My Land Records (7/12)</span>
+          </NavLink>
+
+          <NavLink
+            to="/farmer/diary"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <BookOpen className="w-4 h-4 text-indigo-500" />
+            <span>My Diary</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/scan"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <ScanLine className="w-4 h-4 text-rose-500" />
+            <span>AI Crop Scanner</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/trees"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <TreePine className="w-4 h-4 text-emerald-600" />
+            <span>Tree Plantation</span>
+          </NavLink>
+
+          <NavLink
+            to="/farmer/referrals"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Users className="w-4 h-4 text-amber-500" />
+            <span>Invite & Earn</span>
+          </NavLink>
+
+          <NavLink
+            to="/ads"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Megaphone className="w-4 h-4 text-emerald-600" />
+            <span>Ads & Promotions</span>
+          </NavLink>
+
+          <NavLink
+            to="/farmer/pnl"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <DollarSign className="w-4 h-4 text-emerald-600" />
+            <span>Profit & Loss</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/coins"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>Coins & Rewards</span>
+          </NavLink>
+
+          <NavLink
+            to="/community/women"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
+                isActive
+                  ? 'bg-emerald-50 text-emerald-900 font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              )
+            }
+          >
+            <HeartHandshake className="w-4 h-4 text-rose-500" />
+            <span>Women Hub</span>
+          </NavLink>
         </div>
       </div>
+      )}
     </aside>
   );
 };

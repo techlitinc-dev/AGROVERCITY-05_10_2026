@@ -67,8 +67,14 @@ export const NotificationCenter: React.FC = () => {
                 key={n.id}
                 onClick={() => {
                   markAsRead(n.id);
-                  if (n.link) {
-                    navigate(n.link);
+                  // Tap-to-open: backend ships the target in data.deepLink
+                  // (e.g. /dashboard/p/mandi); /dashboard/p/* resolves via DeepLinkRedirect.
+                  const target =
+                    n.link ??
+                    (typeof n.data?.deepLink === 'string' ? n.data.deepLink : undefined) ??
+                    (typeof n.data?.link === 'string' ? n.data.link : undefined);
+                  if (target) {
+                    navigate(target);
                     setIsOpen(false);
                   }
                 }}

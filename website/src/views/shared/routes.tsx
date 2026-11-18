@@ -13,6 +13,7 @@ const RatingsCenterPage = lazy(() => import('./RatingsCenterPage').then((m) => (
 const ProfilePage = lazy(() => import('./ProfilePage').then((m) => ({ default: m.ProfilePage })));
 const AddressBookPage = lazy(() => import('./AddressBookPage').then((m) => ({ default: m.AddressBookPage })));
 const SavedPage = lazy(() => import('./SavedPage').then((m) => ({ default: m.SavedPage })));
+const AdsPromotionsView = lazy(() => import('./AdsPromotionsView').then((m) => ({ default: m.AdsPromotionsView })));
 const DeepLinkRedirect = lazy(() => import('./DeepLinkRedirect').then((m) => ({ default: m.DeepLinkRedirect })));
 
 /** 13. Shared / cross-persona platform surfaces */
@@ -32,6 +33,7 @@ export const SharedRouteElements = () => (
     <Route path="/profile" element={<ProfilePage />} />
     <Route path="/profile/addresses" element={<AddressBookPage />} />
     <Route path="/saved" element={<SavedPage />} />
+    <Route path="/ads" element={<AdsPromotionsView />} />
     <Route path="/dashboard/p/*" element={<DeepLinkRedirect />} />
   </>
 );

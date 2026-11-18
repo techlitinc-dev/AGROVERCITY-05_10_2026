@@ -736,6 +736,8 @@ export interface AppNotification {
   type: 'trade' | 'transport' | 'payment' | 'mandi' | 'advisory' | 'system';
   read: boolean;
   link?: string;
+  /** Backend payload bag — carries deepLink (e.g. /dashboard/p/mandi) for tap-to-open. */
+  data?: Record<string, unknown>;
   createdAt: string;
 }
 

@@ -32,6 +32,8 @@ interface AuthState {
 const ACCESS_KEY = 'agrovercity_access_token';
 const REFRESH_KEY = 'agrovercity_refresh_token';
 const PERSONA_KEY = 'agrovercity_active_persona';
+const LAST_LOGIN_KEY = 'agrovercity_last_login';
+const LAST_LOGOUT_KEY = 'agrovercity_last_logout';
 const USER_KEY = 'agrovercity_user';
 
 export function normalizeUserProfile(rawUser: any): UserProfile {
@@ -171,6 +173,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     localStorage.setItem(PERSONA_KEY, user.activePersona);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    localStorage.setItem(LAST_LOGIN_KEY, new Date().toISOString());
 
     set({
       user,
@@ -189,6 +192,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (refreshToken) {
       auth.logout(refreshToken).catch(() => undefined);
     }
+    localStorage.setItem(LAST_LOGOUT_KEY, new Date().toISOString());
     localStorage.removeItem(ACCESS_KEY);
     localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(PERSONA_KEY);

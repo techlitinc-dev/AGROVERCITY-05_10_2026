@@ -23,6 +23,7 @@ import {
   DollarSign,
   Calendar,
   BookOpen,
+  Clock,
 } from 'lucide-react';
 import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
@@ -48,6 +49,9 @@ export const Navbar: React.FC = () => {
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  // Log in / log out timestamps recorded by the auth store (navbar chip).
+  const [loginAt] = useState(() => localStorage.getItem('agrovercity_last_login'));
+  const [logoutAt] = useState(() => localStorage.getItem('agrovercity_last_logout'));
 
   // Load the real inbox once after login so the bell badge reflects unread count.
   // Skipped for registration-incomplete sessions: the restricted onboarding
@@ -296,6 +300,31 @@ export const Navbar: React.FC = () => {
           )}
 
           {/* User Profile / Auth State */}
+          {/* Log in / log out time (recorded by the auth store) */}
+          {isAuthenticated && (
+            <div
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 text-slate-500 text-[11px] font-bold"
+              title={`Logged in ${loginAt ? new Date(loginAt).toLocaleString() : '—'} · Last logout ${
+                logoutAt ? new Date(logoutAt).toLocaleString() : '—'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+              <span>
+                In{' '}
+                {loginAt
+                  ? new Date(loginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+                  : '—'}
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                Out{' '}
+                {logoutAt
+                  ? new Date(logoutAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+                  : '—'}
+              </span>
+            </div>
+          )}
+
           {isAuthenticated && user ? (
             onboardingRoute ? null : (
             <div className="relative">

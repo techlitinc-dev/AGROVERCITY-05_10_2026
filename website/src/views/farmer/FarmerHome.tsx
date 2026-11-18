@@ -16,7 +16,8 @@ import {
   Bell,
   Stethoscope,
 } from 'lucide-react';
-import { dashboard, demands, mandi, intelligence, notifications, gamification, apiErrorMessage } from '../../lib/api';
+import { dashboard, demands, mandi, intelligence, notifications, gamification, users, apiErrorMessage } from '../../lib/api';
+import { computeProfileCompletion, type ProfileCompletion } from '../../lib/profileCompletion';
 import { useAuthStore } from '../../stores/authStore';
 import { formatCurrency } from '../../lib/utils';
 import type { AppNotification, BuyerDemand, MandiPrice } from '../../types';
@@ -52,6 +53,8 @@ export const FarmerHome: React.FC = () => {
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [coinBalance, setCoinBalance] = useState<number | null>(null);
+  // Profile completion — fetched best-effort; the nudge renders only while incomplete.
+  const [completion, setCompletion] = useState<ProfileCompletion | null>(null);
   // Buyer/vyapari requirements matched to this farmer's crops — surfaced on the
   // dashboard so a posted requirement is visible without opening the feed.
   const [matchedRequirements, setMatchedRequirements] = useState<BuyerDemand[]>([]);
@@ -68,6 +71,13 @@ export const FarmerHome: React.FC = () => {
           .then((rows) => setMatchedRequirements((rows as BuyerDemand[]).slice(0, 3)))
           .catch(() => undefined)
       );
+  }, []);
+
+  useEffect(() => {
+    users
+      .getMe()
+      .then((u) => setCompletion(computeProfileCompletion(asRecord(u))))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -237,6 +247,30 @@ export const FarmerHome: React.FC = () => {
       {error && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs font-semibold text-rose-800">
           {error}
+        </div>
+      )}
+
+      {/* Profile completion nudge — home page shows it only while incomplete. */}
+      {completion && completion.pct < 100 && (
+        <div className="bg-white rounded-3xl border border-amber-200/80 shadow-xs p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-bold text-sm text-slate-900">Profile {completion.pct}% complete</h3>
+            <Link
+              to="/profile"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1"
+            >
+              Complete Profile <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${completion.color}`}
+              style={{ width: `${completion.pct}%` }}
+            />
+          </div>
+          {completion.missing.length > 0 && (
+            <p className="text-[11px] text-slate-400">Add {completion.missing.join(', ')} to reach 100%</p>
+          )}
         </div>
       )}
 

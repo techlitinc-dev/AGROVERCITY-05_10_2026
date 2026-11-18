@@ -1,9 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   UserRound,
-  Camera,
-  Save,
   ShieldCheck,
   Star,
   Bookmark,
@@ -12,91 +10,35 @@ import {
   CheckCircle2,
   ChevronRight,
   MapPin,
+  Gauge,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Save,
+  Lock,
+  Eye,
 } from 'lucide-react';
-import { apiErrorMessage, kyc, ratings, uploads, users } from '../../lib/api';
-import type { UserProfile } from '../../types';
+import {
+  addresses as addressesApi,
+  addressLabel,
+  addressSummary,
+  apiErrorMessage,
+  kyc,
+  ratings,
+  users,
+  type SavedAddress,
+} from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { cn, formatDateTime, formatNumber } from '../../lib/utils';
-import { asRecord, asRecords, pick, pickNum, pickStr, str } from './records';
+import { asRecord, asRecords, pickNum, pickStr, str } from './records';
+import { AddressPicker } from '../../components/common/AddressPicker';
+import { ModalSheet } from '../../components/common/ModalSheet';
+import { computeProfileCompletion } from '../../lib/profileCompletion';
+import type { UserProfile } from '../../types';
 
 const SOIL_TYPES = ['Black Cotton', 'Red', 'Alluvial', 'Laterite', 'Sandy Loam', 'Clay'];
 const IRRIGATION_TYPES = ['Drip', 'Sprinkler', 'Flood', 'Borewell', 'Canal', 'Rainfed'];
-
-const KYC_BADGE: Record<string, string> = {
-  verified: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-  approved: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-  submitted: 'bg-amber-50 border-amber-200 text-amber-700',
-  pending: 'bg-amber-50 border-amber-200 text-amber-700',
-  in_review: 'bg-amber-50 border-amber-200 text-amber-700',
-  under_review: 'bg-amber-50 border-amber-200 text-amber-700',
-  rejected: 'bg-rose-50 border-rose-200 text-rose-700',
-};
-
-interface ProfileForm {
-  name: string;
-  vernacularName: string;
-  email: string;
-  dateOfBirth: string;
-  gender: string;
-  alternatePhone: string;
-  whatsapp: string;
-  addressLine: string;
-  village: string;
-  tehsil: string;
-  district: string;
-  state: string;
-  pincode: string;
-  landAreaAcres: string;
-  soilType: string;
-  irrigationType: string;
-  activeCrops: string;
-}
-
-const EMPTY_FORM: ProfileForm = {
-  name: '',
-  vernacularName: '',
-  email: '',
-  dateOfBirth: '',
-  gender: '',
-  alternatePhone: '',
-  whatsapp: '',
-  addressLine: '',
-  village: '',
-  tehsil: '',
-  district: '',
-  state: '',
-  pincode: '',
-  landAreaAcres: '',
-  soilType: '',
-  irrigationType: '',
-  activeCrops: '',
-};
-
-const formFromUser = (me: Record<string, unknown>): ProfileForm => ({
-  name: pickStr(me, 'name'),
-  vernacularName: pickStr(me, 'vernacularName'),
-  email: pickStr(me, 'email'),
-  dateOfBirth: pickStr(me, 'dateOfBirth'),
-  gender: pickStr(me, 'gender'),
-  alternatePhone: pickStr(me, 'alternatePhone'),
-  whatsapp: pickStr(me, 'whatsapp'),
-  addressLine: pickStr(me, 'addressLine'),
-  village: pickStr(me, 'village'),
-  tehsil: pickStr(me, 'tehsil'),
-  district: pickStr(me, 'district'),
-  state: pickStr(me, 'state'),
-  pincode: pickStr(me, 'pincode'),
-  landAreaAcres: (() => {
-    const v = pick(me, 'landAreaAcres');
-    return typeof v === 'number' && Number.isFinite(v) ? String(v) : '';
-  })(),
-  soilType: pickStr(me, 'soilType'),
-  irrigationType: pickStr(me, 'irrigationType'),
-  activeCrops: (Array.isArray(me['activeCrops']) ? (me['activeCrops'] as unknown[]) : [])
-    .map((c) => str(c))
-    .filter(Boolean)
-    .join(', '),
-});
 
 const inputCls =
   'w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600';
@@ -107,6 +49,68 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
     {children}
   </div>
 );
+
+/** Editable profile details — everything except the registered full name. */
+interface DetailForm {
+  email: string;
+  dateOfBirth: string;
+  gender: string;
+  whatsapp: string;
+  addressLine: string;
+  village: string;
+  tehsil: string;
+  district: string;
+  state: string;
+  pincode: string;
+  landAreaAcres: string;
+  soilType: string;
+  irrigationType: string;
+}
+
+const EMPTY_DETAILS: DetailForm = {
+  email: '',
+  dateOfBirth: '',
+  gender: '',
+  whatsapp: '',
+  addressLine: '',
+  village: '',
+  tehsil: '',
+  district: '',
+  state: '',
+  pincode: '',
+  landAreaAcres: '',
+  soilType: '',
+  irrigationType: '',
+};
+
+const detailFormFrom = (me: Record<string, unknown>): DetailForm => ({
+  email: pickStr(me, 'email'),
+  dateOfBirth: pickStr(me, 'dateOfBirth'),
+  gender: pickStr(me, 'gender'),
+  whatsapp: pickStr(me, 'whatsapp'),
+  addressLine: pickStr(me, 'addressLine'),
+  village: pickStr(me, 'village'),
+  tehsil: pickStr(me, 'tehsil'),
+  district: pickStr(me, 'district'),
+  state: pickStr(me, 'state'),
+  pincode: pickStr(me, 'pincode'),
+  landAreaAcres: (() => {
+    const v = me['landAreaAcres'];
+    return typeof v === 'number' && Number.isFinite(v) ? String(v) : '';
+  })(),
+  soilType: pickStr(me, 'soilType'),
+  irrigationType: pickStr(me, 'irrigationType'),
+});
+
+const KYC_BADGE: Record<string, string> = {
+  verified: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  approved: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  submitted: 'bg-amber-50 border-amber-200 text-amber-700',
+  pending: 'bg-amber-50 border-amber-200 text-amber-700',
+  in_review: 'bg-amber-50 border-amber-200 text-amber-700',
+  under_review: 'bg-amber-50 border-amber-200 text-amber-700',
+  rejected: 'bg-rose-50 border-rose-200 text-rose-700',
+};
 
 const StarRow: React.FC<{ rating: number }> = ({ rating }) => (
   <span className="inline-flex items-center gap-0.5">
@@ -121,15 +125,21 @@ const StarRow: React.FC<{ rating: number }> = ({ rating }) => (
 
 export const ProfilePage: React.FC = () => {
   const [me, setMe] = useState<Record<string, unknown> | null>(null);
-  const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
   const [photoUrl, setPhotoUrl] = useState('');
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [kycCases, setKycCases] = useState<Record<string, unknown>[] | null>(null);
   const [ratingMine, setRatingMine] = useState<Record<string, unknown> | null>(null);
   const [savedCount, setSavedCount] = useState<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Saved addresses (account-level Zomato-style address book).
+  const [addrRows, setAddrRows] = useState<SavedAddress[]>([]);
+  const [addrLoading, setAddrLoading] = useState(true);
+  const [addrPickerOpen, setAddrPickerOpen] = useState(false);
+  const [addrEditing, setAddrEditing] = useState<SavedAddress | null>(null);
+  const [addrBusyId, setAddrBusyId] = useState<string | null>(null);
+  const [form, setForm] = useState<DetailForm>(EMPTY_DETAILS);
+  const [busy, setBusy] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
 
   useEffect(() => {
     users
@@ -137,7 +147,7 @@ export const ProfilePage: React.FC = () => {
       .then((u) => {
         const rec = asRecord(u);
         setMe(rec);
-        setForm(formFromUser(rec));
+        setForm(detailFormFrom(rec));
         setPhotoUrl(pickStr(rec, 'photoUrl'));
       })
       .catch(() => setMe({}));
@@ -155,63 +165,38 @@ export const ProfilePage: React.FC = () => {
       .catch(() => setSavedCount(null));
   }, []);
 
-  const setField = (key: keyof ProfileForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm((f) => ({ ...f, [key]: e.target.value }));
-
   const flash = (kind: 'ok' | 'err', text: string) => {
     setNotice({ kind, text });
     window.setTimeout(() => setNotice(null), 5000);
   };
 
-  const onPhotoPicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || photoBusy) return;
-    setPhotoBusy(true);
-    try {
-      const uploaded = await uploads.upload(file);
-      const url = pickStr(asRecords(uploaded)[0] ?? {}, 'url');
-      if (!url) throw new Error('upload did not return a url');
-      setPhotoUrl(url);
-    } catch (err) {
-      flash('err', apiErrorMessage(err));
-    } finally {
-      setPhotoBusy(false);
-    }
-  };
+  const setField = (key: keyof DetailForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  // Full name is registered data — everything else here is editable.
   const saveProfile = async () => {
     if (busy) return;
     setBusy(true);
     try {
-      const payload: Record<string, unknown> = {
-        name: form.name.trim() || undefined,
-        vernacularName: form.vernacularName.trim() || undefined,
-        email: form.email.trim() || undefined,
-        dateOfBirth: form.dateOfBirth || undefined,
-        gender: form.gender || undefined,
-        alternatePhone: form.alternatePhone.trim() || undefined,
-        whatsapp: form.whatsapp.trim() || undefined,
-        addressLine: form.addressLine.trim() || undefined,
-        village: form.village.trim() || undefined,
-        tehsil: form.tehsil.trim() || undefined,
-        district: form.district.trim() || undefined,
-        state: form.state.trim() || undefined,
-        pincode: form.pincode.trim() || undefined,
-        landAreaAcres: form.landAreaAcres ? Number(form.landAreaAcres) : undefined,
-        soilType: form.soilType || undefined,
-        irrigationType: form.irrigationType || undefined,
-        activeCrops: form.activeCrops
-          .split(',')
-          .map((c) => c.trim())
-          .filter(Boolean),
-      };
-      const trimmedPhoto = photoUrl.trim();
-      if (trimmedPhoto) payload.photoUrl = trimmedPhoto;
-      const updated = asRecord(await users.updateMe(payload as Partial<UserProfile>));
+      const updated = asRecord(
+        await users.updateMe({
+          email: form.email.trim() || undefined,
+          dateOfBirth: form.dateOfBirth || undefined,
+          gender: form.gender || undefined,
+          whatsapp: form.whatsapp.trim() || undefined,
+          addressLine: form.addressLine.trim() || undefined,
+          village: form.village.trim() || undefined,
+          tehsil: form.tehsil.trim() || undefined,
+          district: form.district.trim() || undefined,
+          state: form.state.trim() || undefined,
+          pincode: form.pincode.trim() || undefined,
+          landAreaAcres: form.landAreaAcres ? Number(form.landAreaAcres) : undefined,
+          soilType: form.soilType || undefined,
+          irrigationType: form.irrigationType || undefined,
+        } as Partial<UserProfile>)
+      );
       setMe(updated);
-      setForm(formFromUser(updated));
-      setPhotoUrl(pickStr(updated, 'photoUrl'));
+      setForm(detailFormFrom(updated));
       flash('ok', 'Profile updated.');
     } catch (err) {
       flash('err', apiErrorMessage(err));
@@ -220,7 +205,56 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
-  const name = form.name.trim() || pickStr(me ?? {}, 'name') || 'Member';
+  // --- Saved addresses handlers (shared AddressPicker does add/edit) ---
+  useEffect(() => {
+    addressesApi
+      .list()
+      .then(setAddrRows)
+      .catch(() => undefined)
+      .finally(() => setAddrLoading(false));
+  }, []);
+
+  const handleAddressSaved = (saved: SavedAddress) => {
+    setAddrRows((prev) => {
+      const exists = prev.some((r) => r.id === saved.id);
+      const next = exists ? prev.map((r) => (r.id === saved.id ? saved : r)) : [...prev, saved];
+      // Mirror the backend default-clearing so the list stays consistent.
+      if (saved.isDefault) return next.map((r) => ({ ...r, isDefault: r.id === saved.id }));
+      return next;
+    });
+    setAddrEditing(null);
+  };
+
+  const handleAddressDelete = async (a: SavedAddress) => {
+    if (!window.confirm(`Delete "${addressLabel(a)}" address?`)) return;
+    setAddrBusyId(a.id);
+    try {
+      await addressesApi.remove(a.id);
+      setAddrRows((prev) => prev.filter((r) => r.id !== a.id));
+      flash('ok', 'Address deleted.');
+    } catch (err) {
+      flash('err', apiErrorMessage(err));
+    } finally {
+      setAddrBusyId(null);
+    }
+  };
+
+  const handleAddressDefault = async (a: SavedAddress) => {
+    if (a.isDefault) return;
+    setAddrBusyId(a.id);
+    try {
+      await addressesApi.update(a.id, { ...a, isDefault: true });
+      setAddrRows((prev) => prev.map((r) => ({ ...r, isDefault: r.id === a.id })));
+      flash('ok', `"${addressLabel(a)}" is now your default address.`);
+    } catch (err) {
+      flash('err', apiErrorMessage(err));
+    } finally {
+      setAddrBusyId(null);
+    }
+  };
+
+  const name = pickStr(me ?? {}, 'name') || 'Member';
+  const vernacularName = pickStr(me ?? {}, 'vernacularName');
   const initials = name
     .split(' ')
     .filter(Boolean)
@@ -232,9 +266,23 @@ export const ProfilePage: React.FC = () => {
     .filter(Boolean);
   const activeProfile = pickStr(me ?? {}, 'activeProfile');
 
+  // View Profile — the details captured at login/registration (read-only).
+  const registrationRows: { label: string; value: string }[] = [
+    { label: 'Full name', value: pickStr(me ?? {}, 'name') },
+    { label: 'Phone', value: pickStr(me ?? {}, 'phone').replace(/^\+91/, '+91 ') },
+    { label: 'Registered personas', value: linkedProfiles.join(', ') },
+    { label: 'Active persona', value: activeProfile },
+    { label: 'Email', value: pickStr(me ?? {}, 'email') },
+    { label: 'Member since', value: formatDateTime(pickStr(me ?? {}, 'createdAt')) },
+    { label: 'KYC status', value: pickStr(me ?? {}, 'kycStatus') },
+  ];
+
   const average = ratingMine ? pickNum(ratingMine, 'average') : 0;
   const reviewCount = ratingMine ? pickNum(ratingMine, 'count') : 0;
   const trustTier = ratingMine ? pickStr(ratingMine, 'trustTier') : '';
+
+  // Profile completion — shared math with the dashboard nudge.
+  const completion = computeProfileCompletion(me);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -268,70 +316,97 @@ export const ProfilePage: React.FC = () => {
 
       {/* Header card */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
-        <div className="flex items-start gap-4">
-          <div className="relative flex-shrink-0">
-            {photoUrl ? (
-              <img src={photoUrl} alt={name} className="w-16 h-16 rounded-2xl object-cover border border-slate-200" />
-            ) : (
-              <div className="w-16 h-16 rounded-2xl bg-emerald-700 text-white font-black text-lg flex items-center justify-center">
-                {initials || 'M'}
-              </div>
-            )}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={photoBusy}
-              title="Change profile photo"
-              className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center shadow hover:bg-slate-900 disabled:opacity-40"
-            >
-              <Camera className="w-3 h-3" />
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onPhotoPicked(e)} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-lg font-extrabold text-slate-900 truncate">
-              {name}
-              {form.vernacularName.trim() && (
-                <span className="text-sm font-bold text-slate-400 ml-2">{form.vernacularName.trim()}</span>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="relative flex-shrink-0">
+              {photoUrl ? (
+                <img src={photoUrl} alt={name} className="w-16 h-16 rounded-2xl object-cover border border-slate-200" />
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-emerald-700 text-white font-black text-lg flex items-center justify-center">
+                  {initials || 'M'}
+                </div>
               )}
-            </p>
-            <p className="text-xs text-slate-500 font-mono">+91 {pickStr(me ?? {}, 'phone').replace(/^\+91/, '')}</p>
-            {linkedProfiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {linkedProfiles.map((p) => (
-                  <span
-                    key={p}
-                    className={cn(
-                      'px-2 py-0.5 rounded-full text-[10px] font-bold border',
-                      p === activeProfile
-                        ? 'bg-emerald-600 border-emerald-600 text-white'
-                        : 'bg-slate-50 border-slate-200 text-slate-600'
-                    )}
-                  >
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </span>
-                ))}
-              </div>
-            )}
-            <p className="text-[11px] text-slate-400 mt-2">
-              Member since {formatDateTime(pickStr(me ?? {}, 'createdAt')) || '—'}
-            </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-lg font-extrabold text-slate-900 truncate">
+                {name}
+                {vernacularName.trim() && (
+                  <span className="text-sm font-bold text-slate-400 ml-2">{vernacularName.trim()}</span>
+                )}
+              </p>
+              <p className="text-xs text-slate-500 font-mono">+91 {pickStr(me ?? {}, 'phone').replace(/^\+91/, '')}</p>
+              {linkedProfiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {linkedProfiles.map((p) => (
+                    <span
+                      key={p}
+                      className={cn(
+                        'px-2 py-0.5 rounded-full text-[10px] font-bold border',
+                        p === activeProfile
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'bg-slate-50 border-slate-200 text-slate-600'
+                      )}
+                    >
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400 mt-2">
+                Member since {formatDateTime(pickStr(me ?? {}, 'createdAt')) || '—'}
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => setViewOpen(true)}
+            className="flex-shrink-0 px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+          >
+            <Eye className="w-3.5 h-3.5" /> View Profile
+          </button>
         </div>
       </div>
 
-      {/* Edit profile */}
+      {/* Profile completion — shown here once complete (the dashboard nudges while incomplete). */}
+      {completion && completion.pct >= 100 && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+              <Gauge className="w-4 h-4 text-emerald-600" /> Profile Completion
+            </h3>
+            <span className="text-sm font-black text-slate-900">{completion.pct}%</span>
+          </div>
+          <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${completion.color}`}
+              style={{ width: `${completion.pct}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-400">
+            {completion.filled} of {completion.total} completed — your profile is complete!
+          </p>
+        </div>
+      )}
+
+      {/* Profile details — everything editable except the registered full name */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
         <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-          <UserRound className="w-4 h-4 text-emerald-600" /> Edit Profile
+          <UserRound className="w-4 h-4 text-emerald-600" /> Profile Details
         </h3>
         {me === null ? (
           <p className="text-xs text-slate-400">Loading your profile…</p>
         ) : (
           <>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Full name</p>
+              <p className="text-xs font-semibold text-slate-800 mt-0.5 flex items-center gap-1.5">
+                {pickStr(me, 'name') || '—'}
+                <Lock className="w-3 h-3 text-slate-400" />
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Set at registration — contact support to change.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Full name">
-                <input type="text" value={form.name} onChange={setField('name')} className={inputCls} />
-              </Field>
               <Field label="Email">
                 <input type="email" value={form.email} onChange={setField('email')} className={inputCls} />
               </Field>
@@ -419,6 +494,128 @@ export const ProfilePage: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Saved addresses — the account-level Zomato-style address book */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+            <MapPin className="w-4 h-4 text-emerald-600" /> Saved Addresses
+          </h3>
+          <button
+            onClick={() => {
+              setAddrEditing(null);
+              setAddrPickerOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add new
+          </button>
+        </div>
+
+        {addrLoading ? (
+          <p className="text-xs text-slate-400">Loading addresses…</p>
+        ) : addrRows.length === 0 ? (
+          <p className="text-xs text-slate-400">
+            No saved addresses yet — add your Home, Farm or Warehouse address once and reuse it
+            across checkout, transport, land and equipment bookings.
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {addrRows.map((a) => (
+              <li
+                key={a.id}
+                className="rounded-2xl border border-slate-200 p-3.5 flex items-start gap-3"
+              >
+                <MapPin className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                      {addressLabel(a)}
+                    </span>
+                    {!!a.isDefault && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold border border-amber-200 flex items-center gap-1">
+                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" /> Default
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-semibold text-slate-800 mt-1 truncate">
+                    {addressSummary(a)}
+                  </p>
+                  {!a.isDefault && (
+                    <button
+                      onClick={() => void handleAddressDefault(a)}
+                      disabled={addrBusyId === a.id}
+                      className="mt-1.5 text-[11px] font-bold text-emerald-700 hover:underline disabled:opacity-50"
+                    >
+                      Set as default
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setAddrEditing(a);
+                      setAddrPickerOpen(true);
+                    }}
+                    className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => void handleAddressDelete(a)}
+                    disabled={addrBusyId === a.id}
+                    className="p-1.5 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-600 disabled:opacity-50"
+                    title="Delete"
+                  >
+                    {addrBusyId === a.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <AddressPicker
+        isOpen={addrPickerOpen}
+        onClose={() => {
+          setAddrPickerOpen(false);
+          setAddrEditing(null);
+        }}
+        onSaved={handleAddressSaved}
+        initial={addrEditing}
+      />
+
+      {/* View Profile — read-only registration/login details */}
+      <ModalSheet
+        isOpen={viewOpen}
+        onClose={() => setViewOpen(false)}
+        title="Registration Details"
+        description="The details used when you registered and signed in — view only"
+        maxWidth="sm"
+      >
+        <dl className="space-y-3">
+          {registrationRows.map((row) => (
+            <div key={row.label} className="flex items-start justify-between gap-3">
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pt-0.5">{row.label}</dt>
+              <dd className="text-xs font-semibold text-slate-800 text-right break-words capitalize">
+                {row.value.trim() || '—'}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <button
+          onClick={() => setViewOpen(false)}
+          className="w-full mt-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"
+        >
+          Close
+        </button>
+      </ModalSheet>
 
       {/* KYC status */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-3">

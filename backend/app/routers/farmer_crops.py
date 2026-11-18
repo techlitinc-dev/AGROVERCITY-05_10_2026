@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from google.cloud import firestore
 from pydantic import BaseModel, Field
 
-from app.core.db import get_doc, query, set_doc
+from app.core.db import get_db, get_doc, set_doc
 from app.core.deps import current_user_id
 from app.services.users import get_user
 
@@ -27,11 +28,25 @@ class CropCyclePatchIn(BaseModel):
 
 @router.get("/crops")
 async def list_crop_cycles(uid: str = Depends(current_user_id)):
-    """The caller's crop cycles (sowing intents + confirmed plans), newest first."""
+    """The caller's crop cycles (sowing intents + confirmed plans), newest first.
+
+    Cycle documents are written without an id field, so the document id is
+    injected here — the stage-update UI PATCHes /crops/{id} and is dead without it."""
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    docs = await query("crop_cycles", [("userId", "==", uid)], limit=500)
+    stream = (
+        get_db()
+        .collection("crop_cycles")
+        .where(filter=firestore.FieldFilter("userId", "==", uid))
+        .limit(500)
+        .stream()
+    )
+    docs: list[dict] = []
+    async for snap in stream:
+        row = snap.to_dict() or {}
+        row.setdefault("id", snap.id)
+        docs.append(row)
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     return {"data": docs, "page": 1, "pageSize": 50, "total": len(docs)}
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, ChevronLeft, ChevronRight, Info, TrendingUp, Truck, CreditCard, Settings2 } from 'lucide-react';
 import { notifications as notificationsApi } from '../../lib/api';
 import type { AppNotification } from '../../types';
@@ -73,10 +74,19 @@ export const NotificationsInbox: React.FC = () => {
     }
   };
 
-  const handleMarkRead = (n: AppNotification) => {
-    if (n.read) return;
-    markAsRead(n.id);
-    setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+  const navigate = useNavigate();
+
+  const handleOpen = (n: AppNotification) => {
+    if (!n.read) {
+      markAsRead(n.id);
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    }
+    // Tap-to-open: data.deepLink (e.g. /dashboard/p/mandi) resolves via DeepLinkRedirect.
+    const target =
+      n.link ??
+      (typeof n.data?.deepLink === 'string' ? n.data.deepLink : undefined) ??
+      (typeof n.data?.link === 'string' ? n.data.link : undefined);
+    if (target) navigate(target);
   };
 
   const handleReadAll = async () => {
@@ -157,7 +167,7 @@ export const NotificationsInbox: React.FC = () => {
           items.map((n) => (
             <button
               key={n.id}
-              onClick={() => handleMarkRead(n)}
+              onClick={() => handleOpen(n)}
               className={cn(
                 'w-full p-4 flex gap-3 text-left hover:bg-slate-50 transition-colors',
                 !n.read && 'bg-emerald-50/40'

@@ -1,62 +1,51 @@
 import React, { useEffect, useState } from 'react';
 import {
   Settings,
-  User,
   LogOut,
-  Save,
   AlertCircle,
   CheckCircle2,
   Download,
   Ban,
   Lock,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import { apiErrorMessage, auth, users } from '../../lib/api';
-import type { UserProfile } from '../../types';
+import { buildCsv, buildXls, downloadTextFile, openPrintableReport } from '../../lib/dataExport';
 import { useAuthStore } from '../../stores/authStore';
 import { cn, formatDateTime } from '../../lib/utils';
 import { asRecord, asRecords, pickStr } from './records';
 
 export const SettingsPage: React.FC = () => {
-  const { user, login, logout } = useAuthStore();
-  const [profile, setProfile] = useState({ name: '', village: '', pincode: '', farmSizeAcres: '' });
+  const { logout } = useAuthStore();
   const [exportStatus, setExportStatus] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
-    if (user) {
-      setProfile({
-        name: user.name || '',
-        village: user.village || '',
-        pincode: user.pincode || '',
-        farmSizeAcres: user.farmSizeAcres ? String(user.farmSizeAcres) : '',
-      });
-    }
     users
       .latestDataExport()
       .then((e) => setExportStatus(asRecord(e)))
       .catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, []);
 
   const flash = (kind: 'ok' | 'err', text: string) => {
     setNotice({ kind, text });
     window.setTimeout(() => setNotice(null), 5000);
   };
 
-  const saveProfile = async () => {
+  const requestExport = async () => {
     if (busy) return;
-    setBusy('profile');
+    setBusy('export');
     try {
-      const updated: UserProfile = await users.updateMe({
-        name: profile.name.trim() || undefined,
-        village: profile.village.trim() || undefined,
-        pincode: profile.pincode.trim() || undefined,
-        farmSizeAcres: profile.farmSizeAcres ? Number(profile.farmSizeAcres) : undefined,
-      } as Partial<UserProfile>);
-      // Keep the auth store in sync with the freshly saved profile.
-      login(updated);
-      flash('ok', 'Profile updated.');
+      // The backend assembles the archive immediately and returns a signed URL.
+      const res = asRecord(await users.requestDataExport());
+      setExportStatus({
+        status: pickStr(res, 'status') || 'ready',
+        url: pickStr(res, 'url'),
+        createdAt: pickStr(res, 'createdAt'),
+      });
+      flash('ok', 'Your data export is ready — download it below (link valid 24 hours).');
     } catch (err) {
       flash('err', apiErrorMessage(err));
     } finally {
@@ -64,18 +53,50 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const requestExport = async () => {
-    if (busy) return;
-    setBusy('export');
+  // Download helpers — generated client-side from the real archive (no deps).
+  const exportUrl = pickStr(exportStatus ?? {}, 'url');
+
+  const loadArchive = async (): Promise<Record<string, unknown> | null> => {
+    if (!exportUrl) return null;
     try {
-      await users.requestDataExport();
-      flash('ok', 'Data export requested — a download link is sent to your registered number within 24 hours.');
-      const latest = await users.latestDataExport().catch(() => null);
-      if (latest) setExportStatus(asRecord(latest));
-    } catch (err) {
-      flash('err', apiErrorMessage(err));
-    } finally {
-      setBusy(null);
+      const res = await fetch(exportUrl);
+      if (!res.ok) return null;
+      return (await res.json()) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+
+  const downloadCsv = async () => {
+    const archive = await loadArchive();
+    if (!archive) {
+      flash('err', 'Could not read the export file — use Download JSON instead.');
+      return;
+    }
+    downloadTextFile(buildCsv(archive), 'agrovercity-data-export.csv', 'text/csv;charset=utf-8');
+  };
+
+  const downloadExcel = async () => {
+    const archive = await loadArchive();
+    if (!archive) {
+      flash('err', 'Could not read the export file — use Download JSON instead.');
+      return;
+    }
+    downloadTextFile(
+      buildXls(archive),
+      'agrovercity-data-export.xls',
+      'application/vnd.ms-excel;charset=utf-8'
+    );
+  };
+
+  const downloadPdf = async () => {
+    const archive = await loadArchive();
+    if (!archive) {
+      flash('err', 'Could not read the export file — use Download JSON instead.');
+      return;
+    }
+    if (!openPrintableReport(archive)) {
+      flash('err', 'Popup blocked — allow popups to print/save the PDF.');
     }
   };
 
@@ -87,7 +108,7 @@ export const SettingsPage: React.FC = () => {
           Settings & Privacy
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Profile, data export, blocked users, and sign-in security across every persona
+          Data export, blocked users, and sign-in security across every persona
         </p>
       </div>
 
@@ -109,81 +130,65 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Profile */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-4">
-        <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
-          <User className="w-4 h-4 text-emerald-600" /> Profile
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Full name</label>
-            <input
-              type="text"
-              value={profile.name}
-              onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Village</label>
-            <input
-              type="text"
-              value={profile.village}
-              onChange={(e) => setProfile((p) => ({ ...p, village: e.target.value }))}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">PIN code</label>
-            <input
-              type="text"
-              value={profile.pincode}
-              onChange={(e) => setProfile((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Farm size (acres)</label>
-            <input
-              type="number"
-              min={0}
-              step={0.1}
-              value={profile.farmSizeAcres}
-              onChange={(e) => setProfile((p) => ({ ...p, farmSizeAcres: e.target.value }))}
-              className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-            />
-          </div>
-        </div>
-        <button
-          onClick={() => void saveProfile()}
-          disabled={busy === 'profile'}
-          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5"
-        >
-          <Save className="w-3.5 h-3.5" /> {busy === 'profile' ? 'Saving…' : 'Save Profile'}
-        </button>
-      </div>
-
       {/* Data export */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-3">
         <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
           <Download className="w-4 h-4 text-emerald-600" /> My Data Export
         </h3>
         <p className="text-xs text-slate-500">
-          Request a complete copy of your data (plots, orders, chats, KYC references) as a downloadable archive.
+          Download a complete copy of your data (plots, orders, chats, KYC references) in the format you need.
         </p>
         {exportStatus && Object.keys(exportStatus).length > 0 && (
           <p className="text-[11px] text-slate-400">
-            Latest request: {pickStr(exportStatus, 'status') || 'requested'} ·{' '}
+            Latest export: {pickStr(exportStatus, 'status') || 'ready'} ·{' '}
             {formatDateTime(pickStr(exportStatus, 'requestedAt', 'createdAt')) || '—'}
           </p>
         )}
-        <button
-          onClick={() => void requestExport()}
-          disabled={busy === 'export'}
-          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs"
-        >
-          {busy === 'export' ? 'Requesting…' : 'Request Data Export'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void requestExport()}
+            disabled={busy === 'export'}
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs"
+          >
+            {busy === 'export' ? 'Preparing…' : exportUrl ? 'Refresh Export' : 'Request Data Export'}
+          </button>
+          {exportUrl && (
+            <>
+              <a
+                href={exportUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:border-emerald-300 text-xs font-bold flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" /> JSON
+              </a>
+              <button
+                onClick={() => void downloadCsv()}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:border-emerald-300 text-xs font-bold flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> CSV
+              </button>
+              <button
+                onClick={() => void downloadExcel()}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:border-emerald-300 text-xs font-bold flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600" /> Excel
+              </button>
+              <button
+                onClick={() => void downloadPdf()}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:border-emerald-300 text-xs font-bold flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 text-rose-500" /> PDF
+              </button>
+            </>
+          )}
+        </div>
+        {exportUrl && (
+          <p className="text-[10px] text-slate-400">
+            CSV/Excel are generated from the export file in your browser — no data leaves this device. PDF opens a
+            print view; choose “Save as PDF” in the print dialog.
+          </p>
+        )}
       </div>
 
       {/* Blocked users */}

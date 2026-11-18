@@ -17,13 +17,13 @@ test('settings page shows only the kept sections', async ({ page }) => {
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
   // Kept sections.
-  for (const heading of ['Profile', 'My Data Export', 'Blocked Users', 'Change MPIN']) {
+  for (const heading of ['My Data Export', 'Blocked Users', 'Change MPIN']) {
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
   await expect(page.getByRole('button', { name: /sign out on this device/i })).toBeVisible();
 
   // Removed sections.
-  for (const heading of ['App Preferences', 'Data Consents', 'Active Sessions', 'Ratings & Reviews']) {
+  for (const heading of ['Profile', 'App Preferences', 'Data Consents', 'Active Sessions', 'Ratings & Reviews']) {
     await expect(page.getByRole('heading', { name: heading })).toHaveCount(0);
   }
 
@@ -49,7 +49,7 @@ test('navbar profile menu has no Billing & Plans entry', async ({ page }) => {
   expect(pageErrors, `page errors: ${pageErrors.join('; ')}`).toEqual([]);
 });
 
-test('settings profile save still works after the removals', async ({ page }) => {
+test('settings page has no editable profile card', async ({ page }) => {
   const watch = new Watch();
   attachWatchers(page, watch);
 
@@ -57,17 +57,9 @@ test('settings profile save still works after the removals', async ({ page }) =>
   await page.goto('/settings');
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  const nameInput = page.locator('input[type="text"]').first();
-  const original = await nameInput.inputValue();
-  try {
-    await nameInput.fill(original.trim() || 'Test Kisan');
-    await page.getByRole('button', { name: /save profile/i }).click();
-    await expect(page.getByText('Profile updated.')).toBeVisible({ timeout: 15_000 });
-  } finally {
-    await nameInput.fill(original);
-    await page.getByRole('button', { name: /save profile/i }).click();
-    await expect(page.getByText('Profile updated.')).toBeVisible({ timeout: 15_000 });
-  }
+  await expect(page.getByRole('heading', { name: 'Profile' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /save profile/i })).toHaveCount(0);
+  await expect(page.locator('input[type="text"]')).toHaveCount(0);
 
   const { pageErrors } = watch.snapshot();
   expect(pageErrors, `page errors: ${pageErrors.join('; ')}`).toEqual([]);

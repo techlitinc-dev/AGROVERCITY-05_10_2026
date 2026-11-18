@@ -5,6 +5,7 @@ import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { NotificationCenter } from '../common/NotificationCenter';
+import { ChatAlerts } from '../common/ChatAlerts';
 import { AiChatbotDrawer } from '../common/AiChatbotDrawer';
 import { KycNudgeModal } from '../common/KycNudgeModal';
 import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
@@ -124,6 +125,7 @@ export const AppShell: React.FC = () => {
 
       {/* Floating Global Micro-Services */}
       <NotificationCenter />
+      <ChatAlerts />
       <AiChatbotDrawer />
       <KycNudgeModal />
 
