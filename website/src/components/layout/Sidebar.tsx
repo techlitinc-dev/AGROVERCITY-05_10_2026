@@ -14,7 +14,6 @@ import {
   FileText,
   Gift,
   Droplets,
-  Building2,
   Store,
   DollarSign,
   Milk,
@@ -37,7 +36,6 @@ import {
   Heart,
   Scale,
   Inbox,
-  User,
   Star,
   Megaphone,
   Search,
@@ -126,10 +124,10 @@ export const Sidebar: React.FC = () => {
             items: [
               // The cockpit hosts the Load Board, Live Trips, Bilty and
               // Trip P&L as tabs — one entry, no duplicate deep-links.
-              { to: '/transporter', label: 'Transporter Cockpit', icon: LayoutDashboard },
-              { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
+              { to: '/transporter', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/transporter/fleet', label: 'Vehicles and Drivers', icon: Wrench },
               { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
-              { to: '/transporter/profile', label: 'Profile', icon: User },
+              { to: '/transporter/connections', label: 'My Connections', icon: Handshake },
             ],
           },
         ];
@@ -139,12 +137,11 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Vyapari Trade',
             items: [
-              { to: '/seller', label: 'Home', icon: LayoutDashboard },
-              { to: '/seller/lots', label: 'Find Produce / शेतमाल शोधा', icon: Search },
-              { to: '/seller/demands', label: 'Post Requirement / मागणी टाका', icon: Megaphone },
-              { to: '/seller/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
-              { to: '/seller/rates', label: 'Mandi Prices / बाजारभाव', icon: TrendingUp },
-              { to: '/seller/profile', label: 'Profile & Verification', icon: Building2 },
+              { to: '/seller', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/seller/lots', label: 'Find Produce', icon: Search },
+              { to: '/seller/demands', label: 'Post Requirement', icon: Megaphone },
+              { to: '/seller/connections', label: 'My Connections', icon: Handshake },
+              { to: '/seller/rates', label: 'Mandi Prices', icon: TrendingUp },
             ],
           },
         ];
@@ -159,7 +156,6 @@ export const Sidebar: React.FC = () => {
               { to: '/equipment/availability', label: 'Availability', icon: Calendar },
               { to: '/equipment/requests', label: 'Booking Requests', icon: FileCheck },
               { to: '/equipment/jobs', label: 'My Jobs', icon: Briefcase },
-              { to: '/profile', label: 'Profile & Verification', icon: User },
             ],
           },
         ];
@@ -174,7 +170,6 @@ export const Sidebar: React.FC = () => {
               { to: '/exporter/rfqs', label: 'My Export Requirements', icon: Ship },
               { to: '/exporter/applications', label: 'Applications Received', icon: Inbox },
               { to: '/exporter/connections', label: 'My Connections', icon: Handshake },
-              { to: '/profile', label: 'Business Profile & Verification', icon: BadgeCheck },
             ],
           },
         ];
@@ -286,7 +281,6 @@ export const Sidebar: React.FC = () => {
               { to: '/directbuyer/requirements', label: 'My Requirements', icon: Layers },
               { to: '/directbuyer/applications', label: 'Applications Received', icon: Inbox },
               { to: '/directbuyer/suppliers', label: 'My Suppliers', icon: Handshake },
-              { to: '/directbuyer/org', label: 'Business Profile & Verification', icon: Building2 },
             ],
           },
         ];
@@ -309,7 +303,6 @@ export const Sidebar: React.FC = () => {
             title: 'Nursery Operations',
             items: [
               { to: '/nursery', label: 'Nursery Cockpit', icon: LayoutDashboard },
-              { to: '/nursery/profile', label: 'Profile & Shop KYC', icon: Building2 },
               { to: '/nursery/inventory', label: 'My Plants / Inventory', icon: Sprout },
               { to: '/nursery/batches', label: 'Batches & Stock In/Out', icon: Package },
               { to: '/nursery/orders', label: 'Orders Received', icon: FileCheck },
@@ -544,6 +537,7 @@ export const Sidebar: React.FC = () => {
             <span>My Land Records (7/12)</span>
           </NavLink>
 
+          {normalizePersona(activePersona) !== 'transporter' && (
           <NavLink
             to="/farmer/diary"
             className={({ isActive }) =>
@@ -558,6 +552,7 @@ export const Sidebar: React.FC = () => {
             <BookOpen className="w-4 h-4 text-indigo-500" />
             <span>My Diary</span>
           </NavLink>
+          )}
 
           <NavLink
             to="/community/scan"

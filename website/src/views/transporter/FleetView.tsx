@@ -294,7 +294,7 @@ export const FleetView: React.FC = () => {
           </Link>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Truck className="w-7 h-7 text-emerald-600" />
-            Fleet & Drivers
+            Vehicles and Drivers
           </h1>
           <p className="text-xs text-slate-500 mt-1">Manage vehicles, document status, and driver assignments</p>
         </div>

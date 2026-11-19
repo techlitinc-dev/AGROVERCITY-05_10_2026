@@ -10,11 +10,13 @@ const TransporterProfileView = lazy(() => import('./TransporterProfileView').the
 const TransporterRatingsView = lazy(() => import('./TransporterRatingsView').then((m) => ({ default: m.TransporterRatingsView })));
 const TransporterAdsView = lazy(() => import('./TransporterAdsView').then((m) => ({ default: m.TransporterAdsView })));
 const TransporterDiaryView = lazy(() => import('./TransporterDiaryView').then((m) => ({ default: m.TransporterDiaryView })));
+const TransporterConnectionsView = lazy(() => import('./TransporterConnectionsView').then((m) => ({ default: m.TransporterConnectionsView })));
 
 /** 3. Transporter Logistics Hub — cockpit (load board / trips / bilty / P&L
- * tabs), fleet, booking requests, profile. Ratings, ads and diary were
- * removed from the persona menu (hubs entries hidden for transporter too);
- * the routes stay reachable for deep links and notifications. */
+ * tabs), vehicles & drivers, booking requests, my connections. Ratings, ads,
+ * diary and profile were removed from the persona menu (hubs entries hidden
+ * for transporter too); those routes stay reachable for deep links and
+ * notifications. */
 export const TransporterRouteElements = () => (
   <>
     <Route path="/transporter" element={<TransporterHome />} />
@@ -25,6 +27,7 @@ export const TransporterRouteElements = () => (
     <Route path="/transporter/settlements" element={<TransporterHome />} />
     <Route path="/transporter/trips/:id" element={<TripDetailView />} />
     <Route path="/transporter/inbox" element={<JobInboxView />} />
+    <Route path="/transporter/connections" element={<TransporterConnectionsView />} />
     <Route path="/transporter/fleet" element={<FleetView />} />
     <Route path="/transporter/compliance" element={<TransportComplianceView />} />
     <Route path="/transporter/profile" element={<TransporterProfileView />} />

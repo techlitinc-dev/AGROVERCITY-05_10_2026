@@ -71,6 +71,38 @@ test('non-farmer sidebar keeps the 18 Ecosystem Hubs in order', async ({ page })
   expect(pageErrors, `page errors: ${pageErrors.join('; ')}`).toEqual([]);
 });
 
+test('seller persona menu shows the five approved labels in order', async ({ page }) => {
+  const watch = new Watch();
+  attachWatchers(page, watch);
+
+  await seedAuth(page.context(), seller);
+  await page.goto('/seller');
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const menuSection = page
+    .locator('aside')
+    .getByText('Vyapari Trade', { exact: true })
+    .locator('xpath=..');
+  await expect(menuSection).toBeVisible();
+
+  const links = menuSection.locator('a');
+  expect(await links.count()).toBe(5);
+  const labels: string[] = [];
+  for (let i = 0; i < (await links.count()); i += 1) {
+    labels.push((await links.nth(i).textContent())?.trim() ?? '');
+  }
+  expect(labels).toEqual([
+    'Dashboard',
+    'Find Produce',
+    'Post Requirement',
+    'My Connections',
+    'Mandi Prices',
+  ]);
+
+  const { pageErrors } = watch.snapshot();
+  expect(pageErrors, `page errors: ${pageErrors.join('; ')}`).toEqual([]);
+});
+
 test('farmer sidebar shows exactly the 29 approved features, no hubs block, no duplicates', async ({ page }) => {
   const watch = new Watch();
   attachWatchers(page, watch);
