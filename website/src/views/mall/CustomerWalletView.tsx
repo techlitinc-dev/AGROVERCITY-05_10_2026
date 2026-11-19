@@ -447,7 +447,7 @@ export const CustomerWalletView: React.FC = () => {
           )}
 
           <p className="text-[11px] text-amber-100 mt-4">
-            Redeem coins for discounts on inputs and deliveries from the Kisan Coins page.
+            Redeem coins for discounts on inputs and deliveries from the Coins & Rewards page.
           </p>
         </div>
       )}

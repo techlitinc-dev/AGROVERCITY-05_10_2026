@@ -106,7 +106,7 @@ export const WishlistView: React.FC = () => {
             to="/mall"
             className="inline-block px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
           >
-            Browse Krishi Mall
+            Browse Agri Market
           </Link>
         </div>
       ) : (

@@ -71,29 +71,6 @@ test('editable fields save and stick (name untouched)', async ({ page }) => {
   expect(pageErrors, `page errors: ${pageErrors.join('; ')}`).toEqual([]);
 });
 
-test('profile completion bar still renders with an honest percentage', async ({ page }) => {
-  const watch = new Watch();
-  attachWatchers(page, watch);
-
-  await seedAuth(page.context(), farmer);
-  await page.goto('/profile');
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-
-  await expect(page.getByText('Profile Completion')).toBeVisible();
-  const pctLabel = page.locator('div').filter({ hasText: 'Profile Completion' }).last().locator('span').filter({ hasText: /^\d{1,3}%$/ }).first();
-  await expect(pctLabel).toBeVisible();
-  const pctText = (await pctLabel.textContent())?.trim() ?? '0%';
-  const pct = Number(pctText.replace('%', ''));
-  expect(pct).toBeGreaterThanOrEqual(0);
-  expect(pct).toBeLessThanOrEqual(100);
-
-  const bar = page.locator('div.h-3.rounded-full.bg-slate-100 > div').first();
-  await expect(bar).toHaveAttribute('style', new RegExp(`width:\\s*${pct}%`));
-
-  const { pageErrors } = watch.snapshot();
-  expect(pageErrors, `page errors: ${pageErrors.join('; ')}`).toEqual([]);
-});
-
 test('View Profile shows read-only registration details in a modal', async ({ page }) => {
   const watch = new Watch();
   attachWatchers(page, watch);

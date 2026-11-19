@@ -335,7 +335,7 @@ export const CartCheckoutView: React.FC = () => {
             order_id: rzpRes.razorpayOrderId,
             amount: rzpRes.amount,
             currency: rzpRes.currency ?? 'INR',
-            name: 'Agrovercity Krishi Mall',
+            name: 'Agrovercity Agri Market',
             description: `Order ${orderId}`,
             theme: { color: '#059669' },
             prefill: {
@@ -491,12 +491,12 @@ export const CartCheckoutView: React.FC = () => {
           <ShoppingCart className="w-8 h-8" />
         </div>
         <h3 className="font-extrabold text-base text-slate-800">Your Cart is Empty</h3>
-        <p className="text-xs text-slate-500">Explore seeds, fertilizers, and farm equipment on Krishi Mall.</p>
+        <p className="text-xs text-slate-500">Explore seeds, fertilizers, and farm equipment on Agri Market.</p>
         <button
           onClick={() => navigate('/mall')}
           className="inline-block px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
         >
-          Browse Krishi Mall
+          Browse Agri Market
         </button>
       </div>
     );

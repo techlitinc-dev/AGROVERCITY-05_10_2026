@@ -70,7 +70,7 @@ const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '
 
 const GREETING: ChatMsg = {
   sender: 'ai',
-  text: 'Namaste Ramesh ji! 🙏 I am your Agrovercity AI Advisor (Kisan Mitra). Ask me anything about crop diseases, mandi price forecasts, fertilizer schedules, or government subsidies!',
+  text: 'Namaste Ramesh ji! 🙏 I am your Agrovercity AI Advisor. Ask me anything about crop diseases, mandi price forecasts, fertilizer schedules, or government subsidies!',
   time: 'Just now',
 };
 
@@ -254,7 +254,7 @@ export const AiChatbotDrawer: React.FC = () => {
         >
           <Bot className="w-6 h-6 animate-pulse" />
           <span className="hidden sm:inline font-bold text-sm tracking-wide">
-            AI Advisor (Kisan Mitra)
+            AI Advisor
           </span>
           <span className="flex h-2.5 w-2.5 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>
@@ -274,7 +274,7 @@ export const AiChatbotDrawer: React.FC = () => {
               </div>
               <div>
                 <h4 className="font-bold text-sm flex items-center gap-1.5">
-                  Kisan Mitra AI <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  AI Advisor <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                 </h4>
                 <p className="text-[11px] text-emerald-100/80">
                   ICAR Certified Agronomy Intelligence
@@ -354,7 +354,7 @@ export const AiChatbotDrawer: React.FC = () => {
             {isTyping && (
               <div className="flex items-center gap-2 text-slate-400 text-xs italic p-2">
                 <Bot className="w-4 h-4 text-emerald-600 animate-spin" />
-                Kisan Mitra is researching ICAR guidelines...
+                AI Advisor is researching ICAR guidelines...
               </div>
             )}
           </div>

@@ -376,7 +376,7 @@ const IntentsCard: React.FC = () => {
   return (
     <PanelShell
       title="SOP-12: Chatbot Intents CMS"
-      subtitle="Curated intent/response registry consumed by the Kisan Mitra fallback engine. Saving rewrites the whole list (PUT /admin/chatbot/intents)."
+      subtitle="Curated intent/response registry consumed by the AI Advisor fallback engine. Saving rewrites the whole list (PUT /admin/chatbot/intents)."
       icon={BookOpenText}
       loading={intentsRes.loading}
       onRefresh={intentsRes.reload}

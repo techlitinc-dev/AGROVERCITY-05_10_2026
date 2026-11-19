@@ -1125,7 +1125,7 @@ const GruhPanel: React.FC<{ flash: (k: 'ok' | 'err', t: string) => void }> = ({ 
         isVeg: prodIsVeg,
         imageUrls: prodImages,
       });
-      flash('ok', `"${prodName.trim()}" added to your catalogue. Publish it to list on the Krishi Mall.`);
+      flash('ok', `"${prodName.trim()}" added to your catalogue. Publish it to list on the Agri Market.`);
       setProdName('');
       setProdMrp('');
       setProdPrice('');
@@ -1238,7 +1238,7 @@ const GruhPanel: React.FC<{ flash: (k: 'ok' | 'err', t: string) => void }> = ({ 
           <Home className="w-4 h-4 text-pink-600" /> Register Your Home Enterprise
         </h3>
         <p className="text-xs text-slate-500">
-          A Gruh Udyog unit lets SHG women list papad, masala, ghee, pickles and handicrafts directly on the Krishi Mall — zero brokerage.
+          A Gruh Udyog unit lets SHG women list papad, masala, ghee, pickles and handicrafts directly on the Agri Market — zero brokerage.
         </p>
         <div className="flex gap-2">
           <input
@@ -1558,7 +1558,7 @@ const GruhPanel: React.FC<{ flash: (k: 'ok' | 'err', t: string) => void }> = ({ 
                         {quantity > 0 ? ` · ${formatNumber(quantity)} item${quantity === 1 ? '' : 's'}` : ''}
                       </p>
                       <p className="text-[11px] text-slate-400">
-                        {pickStr(o, 'buyerName', 'customer') || 'Krishi Mall customer'} ·{' '}
+                        {pickStr(o, 'buyerName', 'customer') || 'Agri Market customer'} ·{' '}
                         {formatDateTime(pickStr(o, 'createdAt')) || '—'}
                       </p>
                     </div>
@@ -1872,7 +1872,7 @@ const GruhPanel: React.FC<{ flash: (k: 'ok' | 'err', t: string) => void }> = ({ 
                     ) : (
                       <button
                         onClick={() =>
-                          void run(`p-${id}`, () => gruhUdyog.publishProduct(id), 'Product is now live on the Krishi Mall!')
+                          void run(`p-${id}`, () => gruhUdyog.publishProduct(id), 'Product is now live on the Agri Market!')
                         }
                         disabled={busy !== null}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-xl"

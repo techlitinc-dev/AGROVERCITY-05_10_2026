@@ -5,27 +5,24 @@ const LandlordHome = lazy(() => import('./LandlordHome').then((m) => ({ default:
 const LandlordListingsView = lazy(() => import('./LandlordListingsView').then((m) => ({ default: m.LandlordListingsView })));
 const LandlordRequestsView = lazy(() => import('./LandlordRequestsView').then((m) => ({ default: m.LandlordRequestsView })));
 const LandlordConnectionsView = lazy(() => import('./LandlordConnectionsView').then((m) => ({ default: m.LandlordConnectionsView })));
-
-/** Land Verification destination — the document-verification surface lives
- * inside My Land Listings (spec §4 keeps it as a simple destination). */
-const LandVerificationRedirect: React.FC = () => <Navigate to="/landlord/listings" replace />;
+const LandlordVerificationView = lazy(() => import('./LandlordVerificationView').then((m) => ({ default: m.LandlordVerificationView })));
 
 /**
  * 2. Farm Landlord — DIRECT-CONNECT farmland-leasing hub.
  *
- * Essential destinations only (spec §4): Home, My Land Listings, Land
- * Verification, Interest Requests, My Connections / Leases, Profile &
- * Verification (shared /profile). Legacy modules (rent collection & ledger,
- * settlements, profit dashboard, plots registry, leads CRM, lease detail
- * management, agreement PDFs) are removed from the primary surface; their
- * routes redirect for compatibility and the old view files remain on disk.
+ * Essential destinations only (spec §4): Dashboard, Post Land Request, Land
+ * Verification, Requirement Requests, My Connections. Legacy modules
+ * (rent collection & ledger, settlements, profit dashboard, plots registry,
+ * leads CRM, lease detail management, agreement PDFs, and the shared
+ * /profile destination) are removed from the primary surface; their routes
+ * redirect for compatibility and the old view files remain on disk.
  */
 export const LandlordRouteElements = () => (
   <>
     {/* Essential direct-connect destinations */}
     <Route path="/landlord" element={<LandlordHome />} />
     <Route path="/landlord/listings" element={<LandlordListingsView />} />
-    <Route path="/landlord/verification" element={<LandVerificationRedirect />} />
+    <Route path="/landlord/verification" element={<LandlordVerificationView />} />
     <Route path="/landlord/requests" element={<LandlordRequestsView />} />
     <Route path="/landlord/connections" element={<LandlordConnectionsView />} />
 

@@ -2,7 +2,7 @@ import { del, post, put, readList, readOne } from './http';
 import type { MallProduct } from '../../types';
 
 /**
- * Krishi Mall namespace — products, cart, orders, wishlist, coupons, addresses.
+ * Agri Market namespace — products, cart, orders, wishlist, coupons, addresses.
  * Razorpay payment helpers included.
  */
 export const mall = {

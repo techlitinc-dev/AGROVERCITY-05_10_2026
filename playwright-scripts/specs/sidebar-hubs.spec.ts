@@ -37,7 +37,7 @@ const EXPECTED_FARMER_MENU = [
   'AI Doctor',
   'Rent Machinery',
   'My Produce / माझे उत्पादन',
-  'Vyapari Requirement',
+  'Vyapari Requirements / व्यापारी मागण्या',
   'Rent Land',
   'My Connections / माझे संपर्क',
   'Mandi Prices / बाजारभाव',

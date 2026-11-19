@@ -27,7 +27,7 @@ interface InterestRow {
   chatRoomId?: string;
 }
 
-/** Interest Requests — review farmer interest and ACCEPT THE CONTACT REQUEST
+/** Requirement Requests — review farmer interest and ACCEPT THE CONTACT REQUEST
  * (terms + MPIN → contact unlock) or decline with a safe reason (spec §9).
  * "Accept Contact Request" never finalizes a lease or marks land leased. */
 export const LandlordRequestsView: React.FC = () => {
@@ -158,7 +158,7 @@ export const LandlordRequestsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <FileCheck className="w-7 h-7 text-emerald-600" />
-            Interest Requests
+            Requirement Requests
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Accepting a contact request shares contacts so you can inspect and negotiate directly — it never
@@ -236,13 +236,13 @@ export const LandlordRequestsView: React.FC = () => {
         )}
       </div>
 
-      <h2 className="text-sm font-black text-slate-900 pt-2">Interest Requests</h2>
+      <h2 className="text-sm font-black text-slate-900 pt-2">Requirement Requests</h2>
       {loading ? (
         <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">Loading requests…</div>
       ) : requests.length === 0 ? (
         <div className="p-12 text-center text-slate-500 bg-white rounded-3xl border border-slate-200 space-y-2">
           <FileCheck className="w-10 h-10 text-slate-300 mx-auto" />
-          <p className="text-sm font-bold">No pending interest requests</p>
+          <p className="text-sm font-bold">No pending requirement requests</p>
           <p className="text-xs text-slate-400">Farmer interest in your listings appears here.</p>
         </div>
       ) : (

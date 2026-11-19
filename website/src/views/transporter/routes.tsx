@@ -12,7 +12,9 @@ const TransporterAdsView = lazy(() => import('./TransporterAdsView').then((m) =>
 const TransporterDiaryView = lazy(() => import('./TransporterDiaryView').then((m) => ({ default: m.TransporterDiaryView })));
 
 /** 3. Transporter Logistics Hub — cockpit (load board / trips / bilty / P&L
- * tabs), fleet, booking requests, ratings, ads, diary, profile. */
+ * tabs), fleet, booking requests, profile. Ratings, ads and diary were
+ * removed from the persona menu (hubs entries hidden for transporter too);
+ * the routes stay reachable for deep links and notifications. */
 export const TransporterRouteElements = () => (
   <>
     <Route path="/transporter" element={<TransporterHome />} />

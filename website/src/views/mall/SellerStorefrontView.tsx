@@ -67,7 +67,7 @@ function toStorefront(payload: unknown, farmerId: string): StorefrontData {
   const lots = Array.isArray(raw.lots) ? (raw.lots as AnyRecord[]) : [];
   return {
     farmerId: str(raw.farmerId, farmerId),
-    farmerName: str(raw.farmerName, 'Krishi Mall Seller'),
+    farmerName: str(raw.farmerName, 'Agri Market Seller'),
     farmerRating: typeof raw.farmerRating === 'number' ? raw.farmerRating : null,
     photoUrl: str(raw.photoUrl),
     location: str(raw.location) || str(raw.district),
@@ -363,13 +363,13 @@ export const SellerStorefrontView: React.FC = () => {
         </div>
         <h3 className="font-extrabold text-base text-slate-800">Shop not found</h3>
         <p className="text-xs text-slate-500">
-          {error ?? 'This seller does not have a storefront on Krishi Mall yet.'}
+          {error ?? 'This seller does not have a storefront on Agri Market yet.'}
         </p>
         <Link
           to="/mall"
           className="inline-block px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
         >
-          Back to Krishi Mall
+          Back to Agri Market
         </Link>
       </div>
     );
@@ -386,7 +386,7 @@ export const SellerStorefrontView: React.FC = () => {
     <div className="max-w-5xl mx-auto space-y-6">
       <Link to="/mall" className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-emerald-700">
         <ChevronLeft className="w-4 h-4" />
-        Back to Krishi Mall
+        Back to Agri Market
       </Link>
 
       {error && (
@@ -600,7 +600,7 @@ export const SellerStorefrontView: React.FC = () => {
           Ratings & Reviews ({store.reviews.length})
         </h2>
         {store.reviews.length === 0 ? (
-          <p className="text-xs text-slate-400">No written reviews yet — reviews from Krishi Mall purchases appear here.</p>
+          <p className="text-xs text-slate-400">No written reviews yet — reviews from Agri Market purchases appear here.</p>
         ) : (
           <div className="space-y-3">
             {store.reviews.map((review, idx) => (

@@ -86,7 +86,7 @@ const STATUS_LABEL: Record<string, string> = {
 /** Farm-land connections shown inside the farmer's My Connections page —
  * interest requests sent on landlord listings plus landlord responses to the
  * farmer's posted land requirements. Mirrors the landlord-side
- * "My Connections / Leases" view (LandlordConnectionsView). Renders nothing
+ * "My Connections" view (LandlordConnectionsView). Renders nothing
  * when the farmer has no land activity so the page is unchanged for everyone
  * else. */
 export const FarmerLandConnectionsSection: React.FC = () => {

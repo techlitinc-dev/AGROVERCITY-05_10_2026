@@ -29,7 +29,7 @@ import {
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { MpinPad } from '../../components/common/MpinPad';
 import { MyIndustrialApplicationsView } from './MyIndustrialApplicationsView';
-import { formatCurrency, formatWeight } from '../../lib/utils';
+import { formatCurrency, formatWeight, buyerAudienceLabel } from '../../lib/utils';
 import {
   DIRECT_CONNECT_TERMS,
   FREQUENCY_LABEL,
@@ -73,7 +73,7 @@ export const VerificationBadges: React.FC<{ summary?: BuyerDemand['buyerSummary'
 
 export const BuyerDemandsView: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<FeedTab>('matches');
+  const [tab, setTab] = useState<FeedTab>('all');
   const [allDemands, setAllDemands] = useState<DemandRow[]>([]);
   const [matchedDemands, setMatchedDemands] = useState<DemandRow[]>([]);
   const [myApplications, setMyApplications] = useState<Lead[]>([]);
@@ -124,7 +124,7 @@ export const BuyerDemandsView: React.FC = () => {
   }, [load]);
 
   // Deep link: /farmer/demands?tab=applications (the old standalone
-  // My Industrial Applications page now lives as a tab on My Industry).
+  // My Industrial Applications page now lives as a tab on Vyapari Requirements).
   useEffect(() => {
     const fromQuery = searchParams.get('tab');
     if (fromQuery === 'applications' || fromQuery === 'all' || fromQuery === 'matches') {
@@ -324,11 +324,14 @@ export const BuyerDemandsView: React.FC = () => {
             </span>
             <div>
               <h4 className="font-extrabold text-base text-slate-900">
-                {demand.buyerSummary?.companyName || demand.buyerCompany || demand.companyName || 'Industrial Buyer'}
+                {demand.buyerSummary?.companyName || demand.buyerCompany || demand.companyName || buyerAudienceLabel(demand.audience)}
               </h4>
-              <p className="text-[11px] text-slate-400">Buyer: {demand.buyerSummary?.name || demand.buyerName}</p>
+              <p className="text-[11px] text-slate-400">{buyerAudienceLabel(demand.audience)}: {demand.buyerSummary?.name || demand.buyerName}</p>
             </div>
             <VerificationBadges summary={demand.buyerSummary} />
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              {buyerAudienceLabel(demand.audience)}
+            </span>
             {recurring ? (
               <span className="text-[10px] font-bold text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <Repeat className="w-3 h-3" /> Recurring · {FREQUENCY_LABEL[demand.frequency ?? 'weekly']}
@@ -438,10 +441,10 @@ export const BuyerDemandsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Layers className="w-7 h-7 text-emerald-600" />
-          My Industry
+          Vyapari Requirements <span className="text-sm font-bold text-slate-500">/ व्यापारी मागण्या</span>
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Industrial buyers post what they need to source. Apply with your quantity, price, availability and supply
+          Vyaparis and industrial buyers post what they need to source. Apply with your quantity, price, availability and supply
           basis — your contact stays private until the buyer reviews and accepts the connection. Sampling, quality,
           price, transport, payment and delivery are settled directly between you two; Agrovercity never holds money.
         </p>
@@ -494,7 +497,7 @@ export const BuyerDemandsView: React.FC = () => {
           <MyIndustrialApplicationsView embedded />
         ) : loading ? (
           <div className="py-10 text-center text-xs font-bold text-slate-400 animate-pulse">
-            Loading industrial buyer requirements…
+            Loading buyer requirements…
           </div>
         ) : feed.length === 0 ? (
           <div className="py-10 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
@@ -518,7 +521,7 @@ export const BuyerDemandsView: React.FC = () => {
           <div className="space-y-4 text-xs">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-extrabold text-base text-slate-900">
-                {detailDemand.buyerSummary?.companyName || detailDemand.buyerCompany || 'Industrial Buyer'}
+                {detailDemand.buyerSummary?.companyName || detailDemand.buyerCompany || buyerAudienceLabel(detailDemand.audience)}
               </span>
               <VerificationBadges summary={detailDemand.buyerSummary} />
             </div>

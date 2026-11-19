@@ -93,7 +93,7 @@ export const DirectoryView: React.FC = () => {
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Find a Self-Help Group in your village — pool monthly savings, borrow interest-free from
-          the group fund, and sell together on the Krishi Mall.
+          the group fund, and sell together on the Agri Market.
         </p>
       </div>
 

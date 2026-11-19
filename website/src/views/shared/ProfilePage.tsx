@@ -660,7 +660,7 @@ export const ProfilePage: React.FC = () => {
           <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
             <Star className="w-4 h-4 text-amber-500" /> Ratings
           </h3>
-          <Link to="/settings#ratings" className="text-[11px] font-bold text-emerald-700 flex items-center gap-0.5">
+          <Link to="/ratings" className="text-[11px] font-bold text-emerald-700 flex items-center gap-0.5">
             All reviews <ChevronRight className="w-3.5 h-3.5" />
           </Link>
         </div>

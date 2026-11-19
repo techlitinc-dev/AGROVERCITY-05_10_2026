@@ -667,7 +667,7 @@ export const CustomerSubscriptionsView: React.FC = () => {
       <p className="text-[11px] text-slate-400">
         Tip: find farmer IDs from{' '}
         <Link to="/mall" className="text-emerald-700 font-bold underline">
-          Krishi Mall
+          Agri Market
         </Link>{' '}
         storefront listings or your accepted quotes.
       </p>

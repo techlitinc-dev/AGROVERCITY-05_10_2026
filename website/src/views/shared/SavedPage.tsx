@@ -329,7 +329,7 @@ export const SavedPage: React.FC = () => {
                     to="/mall"
                     className="inline-block text-xs font-bold text-emerald-700 hover:underline"
                   >
-                    Browse the Krishi Mall →
+                    Browse the Agri Market →
                   </Link>
                 </div>
               ) : (

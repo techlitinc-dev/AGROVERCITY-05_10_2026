@@ -56,7 +56,7 @@ export function toMallProduct(doc: ApiProductDoc): MallProduct {
     stockQty: Number(doc.stock ?? doc.stockQty ?? (doc.inStock === false ? 0 : 10)),
     unit: doc.unit ?? '',
     imageUrl: doc.imageUrl || PRODUCT_PLACEHOLDER_IMAGE,
-    sellerName: doc.sellerName ?? doc.dealerName ?? 'Krishi Mall Seller',
+    sellerName: doc.sellerName ?? doc.dealerName ?? 'Agri Market Seller',
     description: doc.description ?? '',
     specifications: doc.specifications ?? {},
   };

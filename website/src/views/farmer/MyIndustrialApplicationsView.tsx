@@ -4,7 +4,7 @@ import { FileText, Inbox, Star, Flag, RefreshCcw, Undo2, ShieldCheck } from 'luc
 import { getMyLeads, updateLeadStatus, type Lead } from '../../lib/api/leads';
 import { apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { formatCurrency, formatDate, buyerAudienceLabel } from '../../lib/utils';
 import { VerificationBadges } from './BuyerDemandsView';
 import {
   ContactActions,
@@ -27,8 +27,8 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'closed', label: 'Closed' },
 ];
 
-/** Farmer destination #2 — "My Industrial Applications" (spec §3/§12).
- * Also embedded as a tab on My Industry (`embedded` hides the page header). */
+/** Farmer destination #2 — "My Applications" (spec §3/§12).
+ * Also embedded as a tab on Vyapari Requirements (`embedded` hides the page header). */
 export const MyIndustrialApplicationsView: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [demandMap, setDemandMap] = useState<Record<string, BuyerDemand>>({});
@@ -104,10 +104,10 @@ export const MyIndustrialApplicationsView: React.FC<{ embedded?: boolean }> = ({
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
               <FileText className="w-7 h-7 text-emerald-600" />
-              My Industrial Applications
+              My Applications
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Applications you sent on industrial buyer requirements. Your contact stays private until the buyer accepts
+              Applications you sent on buyer requirements. Your contact stays private until the buyer accepts
               the connection.
             </p>
           </div>
@@ -168,7 +168,7 @@ export const MyIndustrialApplicationsView: React.FC<{ embedded?: boolean }> = ({
         <div className="py-12 text-center bg-white rounded-3xl border border-slate-200/80">
           <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-xs font-semibold text-slate-400">
-            No applications here yet. Browse industrial requirements and apply with your quote.
+            No applications here yet. Browse requirements and apply with your quote.
           </p>
           <Link
             to="/farmer/demands"
@@ -183,7 +183,7 @@ export const MyIndustrialApplicationsView: React.FC<{ embedded?: boolean }> = ({
             const demand = lead.demandId ? demandMap[lead.demandId] : undefined;
             const unlocked = Boolean(lead.contactRevealedAt);
             const buyerName =
-              lead.buyerContact?.fullName || demand?.buyerSummary?.companyName || demand?.buyerCompany || 'Industrial buyer';
+              lead.buyerContact?.fullName || demand?.buyerSummary?.companyName || demand?.buyerCompany || buyerAudienceLabel(demand?.audience);
             const recurring = demand && (demand.supplyType === 'recurring' || (demand.frequency ?? 'oneTime') !== 'oneTime');
             return (
               <div key={lead.id} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-3">

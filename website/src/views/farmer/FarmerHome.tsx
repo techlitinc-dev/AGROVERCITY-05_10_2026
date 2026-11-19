@@ -85,7 +85,7 @@ export const FarmerHome: React.FC = () => {
     setLoading(true);
 
     const load = async () => {
-      // Coin balance (Kisan Coins card) — best-effort alongside the home load.
+      // Coin balance (Coins & Rewards card) — best-effort alongside the home load.
       gamification
         .status()
         .then((s) => {
@@ -326,7 +326,7 @@ export const FarmerHome: React.FC = () => {
         <Link to="/farmer/coins">
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-slate-300 h-full">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Kisan Coins</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Coins & Rewards</span>
               <div className="p-2.5 rounded-xl border bg-purple-50 text-purple-700 border-purple-100">
                 <Coins className="w-5 h-5" />
               </div>
@@ -336,7 +336,7 @@ export const FarmerHome: React.FC = () => {
                 {user?.kisanCoins || coinBalance || '—'}
               </span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Redeemable on Krishi Mall</p>
+            <p className="mt-1 text-xs text-slate-500">Redeemable on Agri Market</p>
           </div>
         </Link>
       </div>

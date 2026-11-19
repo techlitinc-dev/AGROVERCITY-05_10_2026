@@ -44,7 +44,7 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: 'Declined',
 };
 
-/** My Connections / Leases — contacted farmers, outcomes, ratings, issues,
+/** My Connections — contacted farmers, outcomes, ratings, issues,
  * and the landlord-only "mark leased" action (spec §4/§12/§13). */
 export const LandlordConnectionsView: React.FC = () => {
   const navigate = useNavigate();
@@ -131,7 +131,7 @@ export const LandlordConnectionsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Handshake className="w-7 h-7 text-emerald-600" />
-            My Connections / Leases
+            My Connections
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Farmers you are in touch with, user-reported outcomes, and the controls to close a listing after
@@ -239,7 +239,7 @@ export const LandlordConnectionsView: React.FC = () => {
         <div className="p-12 text-center text-slate-500 bg-white rounded-3xl border border-slate-200 space-y-2">
           <Handshake className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="text-sm font-bold">No connections yet</p>
-          <p className="text-xs text-slate-400">Accept a contact request from Interest Requests to start connecting.</p>
+          <p className="text-xs text-slate-400">Accept a contact request from Requirement Requests to start connecting.</p>
         </div>
       ) : (
         <div className="space-y-3">

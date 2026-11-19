@@ -106,6 +106,20 @@ export function cn(...classes: (string | boolean | undefined | null)[]): string 
   return classes.filter(Boolean).join(' ');
 }
 
+/** Requirement source label — a demand's `audience` says which buyer persona posted it. */
+export function buyerAudienceLabel(audience: unknown): string {
+  switch (String(audience ?? '')) {
+    case 'vyapari':
+      return 'Vyapari';
+    case 'exporter':
+      return 'Exporter';
+    case 'industrialBuyer':
+      return 'Industrial buyer';
+    default:
+      return 'Buyer';
+  }
+}
+
 /**
  * Indian cropping season auto-detection from a calendar month — mirrors
  * `current_season()` in the backend advisory service.

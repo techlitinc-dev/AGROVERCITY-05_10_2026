@@ -271,12 +271,12 @@ export const Navbar: React.FC = () => {
             )}
           </div>
 
-          {/* Kisan Coins Badge */}
+          {/* Coins & Rewards Badge */}
           {!onboardingRoute && isAuthenticated && user && (
             <Link
               to="/community/coins"
               className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100/80 transition-colors"
-              title="Kisan Coins Rewards Wallet"
+              title="Coins & Rewards"
             >
               <Coins className="w-4 h-4 text-amber-600" />
               <span>{user.kisanCoins}</span>

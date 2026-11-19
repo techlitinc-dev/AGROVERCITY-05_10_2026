@@ -161,7 +161,7 @@ export const SupportCenter: React.FC = () => {
             <Bot className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-sm font-extrabold">Ask Kisan Mitra AI — instant answers, 24×7</p>
+            <p className="text-sm font-extrabold">Ask AI Advisor — instant answers, 24×7</p>
             <p className="text-[11px] text-emerald-200">
               Crop advisory, pest diagnosis, mandi prices and scheme guidance in your language
             </p>

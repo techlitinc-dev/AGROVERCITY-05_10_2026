@@ -78,7 +78,7 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/crop-doctor', label: 'AI Doctor', icon: Stethoscope },
               { to: '/farmer/equipment', label: 'Rent Machinery', icon: Wrench },
               { to: '/farmer/lots', label: 'My Produce / माझे उत्पादन', icon: Package },
-              { to: '/farmer/demands', label: 'Vyapari Requirement', icon: Layers },
+              { to: '/farmer/demands', label: 'Vyapari Requirements / व्यापारी मागण्या', icon: Layers },
               { to: '/farmer/land', label: 'Rent Land', icon: Mountain },
               { to: '/farmer/connections', label: 'My Connections / माझे संपर्क', icon: Handshake },
               { to: '/farmer/mandi', label: 'Mandi Prices / बाजारभाव', icon: TrendingUp },
@@ -110,12 +110,11 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Farmland Leasing',
             items: [
-              { to: '/landlord', label: 'Home', icon: LayoutDashboard },
-              { to: '/landlord/listings', label: 'My Land Listings', icon: Mountain },
+              { to: '/landlord', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/landlord/listings', label: 'Post Land Request', icon: Mountain },
               { to: '/landlord/verification', label: 'Land Verification', icon: BadgeCheck },
-              { to: '/landlord/requests', label: 'Interest Requests', icon: FileCheck },
-              { to: '/landlord/connections', label: 'My Connections / Leases', icon: Handshake },
-              { to: '/profile', label: 'Profile & Verification', icon: User },
+              { to: '/landlord/requests', label: 'Requirement Requests', icon: FileCheck },
+              { to: '/landlord/connections', label: 'My Connections', icon: Handshake },
             ],
           },
         ];
@@ -130,9 +129,6 @@ export const Sidebar: React.FC = () => {
               { to: '/transporter', label: 'Transporter Cockpit', icon: LayoutDashboard },
               { to: '/transporter/fleet', label: 'Fleet & Drivers', icon: Wrench },
               { to: '/transporter/inbox', label: 'Booking Requests', icon: Inbox },
-              { to: '/transporter/ratings', label: 'Ratings', icon: Star },
-              { to: '/transporter/ads', label: 'Ads & Promotions', icon: Megaphone },
-              { to: '/transporter/diary', label: 'Diary', icon: BookOpen },
               { to: '/transporter/profile', label: 'Profile', icon: User },
             ],
           },
@@ -456,6 +452,7 @@ export const Sidebar: React.FC = () => {
             <span>Payment & Transactions</span>
           </NavLink>
 
+          {normalizePersona(activePersona) !== 'transporter' && (
           <NavLink
             to="/ratings"
             className={({ isActive }) =>
@@ -470,6 +467,7 @@ export const Sidebar: React.FC = () => {
             <Star className="w-4 h-4 text-amber-500" />
             <span>Ratings & Reviews</span>
           </NavLink>
+          )}
 
           <NavLink
             to="/saved"
@@ -606,6 +604,7 @@ export const Sidebar: React.FC = () => {
             <span>Invite & Earn</span>
           </NavLink>
 
+          {normalizePersona(activePersona) !== 'transporter' && (
           <NavLink
             to="/ads"
             className={({ isActive }) =>
@@ -620,6 +619,7 @@ export const Sidebar: React.FC = () => {
             <Megaphone className="w-4 h-4 text-emerald-600" />
             <span>Ads & Promotions</span>
           </NavLink>
+          )}
 
           <NavLink
             to="/farmer/pnl"

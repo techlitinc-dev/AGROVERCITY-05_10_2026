@@ -425,7 +425,7 @@ export const LandingPage: React.FC = () => {
               — with AI Crop Doctor for farmers, 7/12 land verification for landlords, per-acre machinery bookings
               for equipment owners, SHG savings circles for women enterprises, FAT/SNF milk billing for vendors,
               digital POS khata for vyaparis, FT-1 digital bilty for transporters, course studios for instructors,
-              and Krishi Mall orders for agri market sellers.
+              and Agri Market orders for agri market sellers.
             </p>
 
             {/* Action Buttons */}
@@ -742,7 +742,7 @@ export const LandingPage: React.FC = () => {
               </div>
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed italic">
                 “Our 42-member women self-help group makes handmade amla candy and mango pickles.
-                Before Agrovercity, we only sold in village fairs. Now our storefront is live on Krishi Mall with FSSAI compliance,
+                Before Agrovercity, we only sold in village fairs. Now our storefront is live on Agri Market with FSSAI compliance,
                 shipping over 2,400 jars across Mumbai and Pune every month!”
               </p>
               <div className="pt-2 border-t border-slate-100 flex items-center gap-3">
@@ -966,7 +966,7 @@ export const LandingPage: React.FC = () => {
               <h4 className="font-bold uppercase tracking-wider text-slate-200 text-[11px]">Fintech & Ops</h4>
               <ul className="space-y-2">
                 <li><Link to="/instructor" className="hover:text-emerald-400 transition-colors">Gurukul Academy Studio</Link></li>
-                <li><Link to="/customer" className="hover:text-emerald-400 transition-colors">Krishi Mall Consumer</Link></li>
+                <li><Link to="/customer" className="hover:text-emerald-400 transition-colors">Agri Market Consumer</Link></li>
               </ul>
             </div>
           </div>

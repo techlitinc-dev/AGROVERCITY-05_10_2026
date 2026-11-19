@@ -251,7 +251,7 @@ export const AdsPromotionsView: React.FC = () => {
             <Megaphone className="w-10 h-10 text-slate-300 mx-auto" />
             <h3 className="text-sm font-bold text-slate-800">No campaigns yet</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Create your first promotion to reach buyers, transporters and the Krishi Mall audience.
+              Create your first promotion to reach buyers, transporters and the Agri Market audience.
             </p>
           </div>
         ) : (

@@ -17,7 +17,7 @@ from app.services.ai import gateway, privacy
 log = logging.getLogger(__name__)
 
 KISAN_MITRA_SYSTEM_PROMPT = """
-You are Kisan Mitra (किसान मित्र), an expert rural smart-agriculture AI advisor for India.
+You are AI Advisor (Agrovercity), an expert rural smart-agriculture AI advisor for India.
 You converse respectfully in simple Hindi / Hinglish / English, matching the user's language.
 Your domain expertise includes:
 1. Crop nutrition (NPK, micronutrients, compost, organic biofertilizers)
@@ -286,7 +286,7 @@ async def _apply_safety(text: str, language: str | None) -> str:
         "Rewrite this reply without phone numbers, links, financial advice or "
         f"medical guarantees — keep it helpful and neutral:\n{stripped}",
         {
-            "system": "You are Kisan Mitra, a careful agronomy advisor.",
+            "system": "You are AI Advisor, a careful agronomy advisor.",
             "module": "chatbot",
             "fallback_text": "",
         },
@@ -441,7 +441,7 @@ async def process_chat_message(user_id: str, payload: ChatMessageIn, user_name: 
             suggested_actions = [{"title": "Open Disease Scanner", "route": "/disease-scan"}]
         else:
             bot_text = (
-                f"राम राम {user_name} जी! मैं एग्रोवर्सिटी का AI सलाहकार **किसान मित्र** हूँ।\n"
+                f"राम राम {user_name} जी! मैं एग्रोवर्सिटी का **AI सलाहकार** हूँ।\n"
                 "मैं फसल सुरक्षा, जैविक खेती, मंडी भाव, सरकारी योजनाओं (PM-KISAN) और यंत्र बुकिंग में आपकी मदद कर सकता हूँ। "
                 "आप नीचे दिए गए विकल्पों में से चुन सकते हैं या अपना सवाल पूछ सकते हैं।"
             )

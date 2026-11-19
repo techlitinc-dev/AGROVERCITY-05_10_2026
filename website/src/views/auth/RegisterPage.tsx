@@ -107,8 +107,8 @@ const ONBOARDING_ROLES: RoleOption[] = [
     icon: '🛍️',
     title: 'Agri Market Seller',
     nativeTitle: 'कृषी बाजार विक्रेता',
-    desc: 'Sell farm-fresh produce, grains, spices, and value-added products directly to buyers on the Krishi Mall.',
-    badge: 'Krishi Mall Seller',
+    desc: 'Sell farm-fresh produce, grains, spices, and value-added products directly to buyers on the Agri Market.',
+    badge: 'Agri Market Seller',
   },
 ];
 

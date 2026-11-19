@@ -99,7 +99,7 @@ export const LandlordHome: React.FC = () => {
           <>
             <ShieldAlert className="w-5 h-5 shrink-0" />
             <span className="flex-1">Complete identity verification (KYC) to list farmland and accept contact requests.</span>
-            <Link to="/profile" className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-bold shrink-0">Verify Now</Link>
+            <Link to="/kyc" className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-bold shrink-0">Verify Now</Link>
           </>
         )}
       </div>
@@ -110,7 +110,7 @@ export const LandlordHome: React.FC = () => {
           <h3 className="text-lg font-black">Add Land</h3>
           <p className="text-xs text-emerald-100 mt-1">List farmland with rent, availability and an optional farm land photo.</p>
           <span className="inline-flex items-center gap-1 text-xs font-bold mt-4 group-hover:gap-2 transition-all">
-            My Land Listings <ArrowRight className="w-3.5 h-3.5" />
+            Post Land Request <ArrowRight className="w-3.5 h-3.5" />
           </span>
         </Link>
         <Link to="/landlord/requests" className="group p-6 rounded-3xl bg-white border-2 border-emerald-600 text-emerald-800 shadow-sm hover:bg-emerald-50 transition-all">
@@ -120,7 +120,7 @@ export const LandlordHome: React.FC = () => {
             {loading ? '…' : `${pending.length} pending`} — accept contact requests to connect with farmers.
           </p>
           <span className="inline-flex items-center gap-1 text-xs font-bold mt-4 group-hover:gap-2 transition-all">
-            Interest Requests <ArrowRight className="w-3.5 h-3.5" />
+            Requirement Requests <ArrowRight className="w-3.5 h-3.5" />
           </span>
         </Link>
       </div>

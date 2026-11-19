@@ -193,7 +193,7 @@ export const MallProductDetailView: React.FC = () => {
     return (
       <div className="max-w-md mx-auto py-16 text-center space-y-4">
         <h3 className="font-extrabold text-base text-slate-800">Product not found</h3>
-        <p className="text-xs text-slate-500">{error ?? 'This listing may have been removed from Krishi Mall.'}</p>
+        <p className="text-xs text-slate-500">{error ?? 'This listing may have been removed from Agri Market.'}</p>
         <Link to="/mall" className="inline-block px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs">
           Back to Catalog
         </Link>
@@ -208,7 +208,7 @@ export const MallProductDetailView: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-6">
       <Link to="/mall" className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-emerald-700">
         <ChevronLeft className="w-4 h-4" />
-        Back to Krishi Mall
+        Back to Agri Market
       </Link>
 
       {error && (

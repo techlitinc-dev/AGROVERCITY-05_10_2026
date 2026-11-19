@@ -50,7 +50,7 @@ const QUICK_LINKS = [
   { to: '/customer/wallet', label: 'Wallet & Coins', icon: Wallet, tone: 'bg-amber-50 text-amber-700 border-amber-100' },
   { to: '/mall/wishlist', label: 'Wishlist', icon: Heart, tone: 'bg-rose-50 text-rose-700 border-rose-100' },
   { to: '/mall/cart', label: 'Cart', icon: ShoppingCart, tone: 'bg-purple-50 text-purple-700 border-purple-100' },
-  { to: '/mall', label: 'Krishi Mall', icon: ShoppingBag, tone: 'bg-slate-50 text-slate-700 border-slate-200' },
+  { to: '/mall', label: 'Agri Market', icon: ShoppingBag, tone: 'bg-slate-50 text-slate-700 border-slate-200' },
 ];
 
 const ORDER_STATUS_TONE: Record<string, string> = {
@@ -227,7 +227,7 @@ export const CustomerHomeView: React.FC = () => {
               to="/mall"
               className="px-4 py-2 rounded-xl bg-white text-emerald-800 font-bold text-xs hover:bg-emerald-50 transition-colors"
             >
-              Shop Krishi Mall
+              Shop Agri Market
             </Link>
             <Link
               to="/customer/orders"

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCw, Pencil, BadgeCheck, ShieldAlert, FileText } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, RefreshCw, Pencil, BadgeCheck, ShieldAlert, FileText, ArrowRight } from 'lucide-react';
 import { land, uploads, apiErrorMessage, addresses as addressesApi, addressLabel, addressSummary, type SavedAddress } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { UserVerificationBadge } from '../../components/common/UserVerificationBadge';
@@ -59,7 +60,7 @@ const STATUS_ACTIONS: { id: string; label: string; cls: string }[] = [
   { id: 'withdrawn', label: 'Withdraw', cls: 'border-rose-200 text-rose-600 hover:bg-rose-50' },
 ];
 
-/** My Land Listings — add/edit farmland, farm land photo, pricing
+/** Post Land Request — add/edit farmland, farm land photo, pricing
  * and availability; pause/reactivate/leased/withdrawn; and the true land
  * verification state (spec §4/§5/§6). Landlords no longer upload title
  * documents here — verification status is set by verification personnel. */
@@ -185,7 +186,7 @@ export const LandlordListingsView: React.FC = () => {
       await load();
     } catch (err) {
       if (isKycError(err)) {
-        setError('Complete your identity verification (KYC) to list farmland — see Profile & Verification.');
+        setError('Complete your identity verification (KYC) to list farmland.');
         setFormOpen(false);
       } else {
         setError(apiErrorMessage(err));
@@ -248,7 +249,7 @@ export const LandlordListingsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <BadgeCheck className="w-7 h-7 text-emerald-600" />
-            My Land Listings
+            Post Land Request
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             List farmland with rent, availability and a farm land photo (optional). "Land Docs Verified" appears only after an actual
@@ -344,6 +345,12 @@ export const LandlordListingsView: React.FC = () => {
                   {verificationChip(l)}
                   <span className="text-[9px] text-slate-400">Visible only to you and verification personnel.</span>
                 </div>
+                <Link
+                  to="/landlord/verification"
+                  className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:underline"
+                >
+                  Open Land Verification <ArrowRight className="w-3 h-3" />
+                </Link>
               </div>
 
               <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">

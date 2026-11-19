@@ -47,7 +47,7 @@ export const MallRouteElements = () => (
     <Route path="/customer/trees" element={<TreePlantationView />} />
     <Route path="/customer/712" element={<LandRecordsView />} />
 
-    {/* Krishi Mall */}
+    {/* Agri Market */}
     <Route path="/mall" element={<KrishiMallCatalogView />} />
     <Route path="/mall/product/:id" element={<MallProductDetailView />} />
     <Route path="/mall/seller/:farmerId" element={<SellerStorefrontView />} />

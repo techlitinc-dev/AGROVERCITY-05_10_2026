@@ -34,7 +34,7 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/land" element={<FarmlandView />} />
     <Route path="/farmer/demands" element={<BuyerDemandsView />} />
     <Route path="/farmer/industrial" element={<BuyerDemandsView />} />
-    {/* My Industrial Applications merged into My Industry as a tab. */}
+    {/* My Industrial Applications merged into Vyapari Requirements as a tab. */}
     <Route path="/farmer/industrial/applications" element={<Navigate to="/farmer/demands?tab=applications" replace />} />
     <Route path="/farmer/post-to-buyers" element={<PostToBuyersView />} />
     <Route path="/farmer/connections" element={<MyConnectionsView persona="farmer" />} />

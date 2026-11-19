@@ -42,7 +42,7 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', category: 'Daily Milk Delivery', icon: '🫗' },
   { id: 'womenShg', title: 'Mahila Gruh Udyog & SHG', category: 'Cottage Industry', icon: '🪔' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
-  { id: 'customer', title: 'Agri Market Seller', category: 'Krishi Mall Seller', icon: '🛍️' },
+  { id: 'customer', title: 'Agri Market Seller', category: 'Agri Market Seller', icon: '🛍️' },
 ];
 
 export const ProfileSwitchPage: React.FC = () => {

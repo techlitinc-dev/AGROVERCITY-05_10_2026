@@ -100,7 +100,7 @@ const translations: Record<Language, Record<string, string>> = {
     'exporter.analytics': 'Trade & Forex Analytics',
 
     // AI & Chat
-    'ai.agronomist': 'AI Agronomist (Kisan Mitra)',
+    'ai.agronomist': 'AI Agronomist',
     'ai.disease_scan': 'AI Scanner',
     'ai.chat_placeholder': 'Ask any crop, soil, pest, or mandi question in your language...',
   },
