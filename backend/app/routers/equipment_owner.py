@@ -248,7 +248,9 @@ async def update_pricing_rules(
 @router.get("/owner/fleet")
 async def owner_fleet(uid: str = Depends(_owner)):
     machines = await query("equipment", [("ownerId", "==", uid)], limit=1000)
-    machines = [m for m in machines if m.get("active", True)]
+    # Owner surface: every machine is listed here — active and inactive —
+    # so the cockpit can manage (re)activation. Discoverability filtering
+    # (active-only) belongs to the public catalog, not the owner's own fleet.
     week_dates = _current_week_dates()
     today = datetime.now(timezone.utc).date()
     data = []
@@ -256,15 +258,15 @@ async def owner_fleet(uid: str = Depends(_owner)):
         slots = await query("equipment_slots", [("equipmentId", "==", machine["id"])], limit=1000)
         booked = [s for s in slots if s.get("status") in ("booked", "pending") and s.get("date") in week_dates]
         data.append({
+            # The owner's own machine doc (id, type, hourlyRate, active,
+            # pricing fields) — owner-side views manage the machine from
+            # these rows; the computed summary keys below stay for
+            # compatibility with existing consumers.
+            **machine,
             "equipmentId": machine["id"],
-            "name": machine["name"],
             "bookedHoursThisWeek": len(booked) * 4,
             "weeklyIncome": sum(s.get("priceRupees", 0) for s in booked),
             "status": "active",
-            "docStatus": machine.get("docStatus"),
-            "rejectionReason": machine.get("rejectionReason"),
-            "insuranceExpiry": machine.get("insuranceExpiry"),
-            "rcExpiry": machine.get("rcExpiry"),
         })
         # E1: insurance expiry reminders 30/7/1 days out (dedupe-safe)
         raw_expiry = machine.get("insuranceExpiry")

@@ -264,3 +264,7 @@ export const markLotSold = async (lotId: string, finalRate?: number): Promise<un
 
 /** True when the API error was an MPIN failure (show the MPIN field / retry). */
 export const isMpinError = (e: unknown): boolean => e instanceof ApiError && e.code === 'WRONG_MPIN';
+
+/** True when the API error is a plan-limit 402 (show the message inside the form, keep it open). */
+export const isEntitlementError = (e: unknown): boolean =>
+  e instanceof ApiError && e.code === 'ENTITLEMENT_EXCEEDED';

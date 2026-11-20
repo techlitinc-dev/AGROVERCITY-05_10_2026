@@ -3,7 +3,7 @@ import { Plus, RefreshCw, Pencil, Power, BadgeCheck, ShieldAlert } from 'lucide-
 import { equipment, equipmentOwner, uploads, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { formatCurrency } from '../../lib/utils';
-import { isKycError } from '../../lib/api/leads';
+import { isKycError, isEntitlementError } from '../../lib/api/leads';
 
 interface MachineRow {
   id: string;
@@ -64,6 +64,7 @@ export const EquipmentMachinesView: React.FC = () => {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,6 +94,7 @@ export const EquipmentMachinesView: React.FC = () => {
   const openAdd = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
+    setFormError(null);
     setFormOpen(true);
   };
 
@@ -120,6 +122,7 @@ export const EquipmentMachinesView: React.FC = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setFormError(null);
     try {
       const payload = {
         name: form.name.trim(),
@@ -150,6 +153,11 @@ export const EquipmentMachinesView: React.FC = () => {
       if (isKycError(err)) {
         setError('Complete your identity verification (KYC) to list equipment — see Profile & Verification.');
         setFormOpen(false);
+      } else if (isEntitlementError(err)) {
+        // Free-plan machine limit — keep the form open with the fields
+        // untouched and show the plan message inline (the page banner sits
+        // behind the modal backdrop, invisible while the form is open).
+        setFormError(apiErrorMessage(err));
       } else {
         setError(apiErrorMessage(err));
       }
@@ -318,6 +326,14 @@ export const EquipmentMachinesView: React.FC = () => {
         maxWidth="md"
       >
         <form onSubmit={(e) => void submit(e)} className="space-y-4">
+          {formError && (
+            <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+              <span>{formError}</span>
+              <button type="button" onClick={() => setFormError(null)} className="font-bold hover:underline shrink-0">
+                Dismiss
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Equipment Name *</label>

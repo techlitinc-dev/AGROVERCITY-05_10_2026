@@ -151,11 +151,11 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Equipment Service',
             items: [
-              { to: '/equipment', label: 'Home', icon: LayoutDashboard },
+              { to: '/equipment', label: 'Dashboard', icon: LayoutDashboard },
               { to: '/equipment/machines', label: 'My Equipment', icon: Wrench },
-              { to: '/equipment/availability', label: 'Availability', icon: Calendar },
-              { to: '/equipment/requests', label: 'Booking Requests', icon: FileCheck },
-              { to: '/equipment/jobs', label: 'My Jobs', icon: Briefcase },
+              { to: '/equipment/availability', label: 'Equipment Schedule', icon: Calendar },
+              { to: '/equipment/requests', label: 'Booking Request', icon: FileCheck },
+              { to: '/equipment/jobs', label: 'Progress Status', icon: Briefcase },
             ],
           },
         ];
