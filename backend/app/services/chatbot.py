@@ -241,31 +241,6 @@ async def _persona_context(user_id: str) -> tuple[str, str]:
         )
     except Exception:  # noqa: BLE001 — snippet is best-effort context
         snippet = ""
-    # xlsx Sr 21.0 — the Woman Hub chatbot reads her garden, livestock and
-    # enterprise data so answers can reference it.
-    compact_persona = str(persona).replace(" ", "").replace("_", "").lower()
-    if compact_persona == "womenhub":
-        try:
-            crops = await query("garden_crops", [("ownerUid", "==", user_id)], limit=50)
-            lines = await query("home_enterprises", [("ownerUid", "==", user_id)], limit=50)
-            animals = await query("livestock_animals", [("ownerId", "==", user_id)], limit=50)
-            bits = []
-            if crops:
-                stages: dict[str, int] = {}
-                for crop in crops:
-                    stage = crop.get("stage", "sowing")
-                    stages[stage] = stages.get(stage, 0) + 1
-                bits.append(
-                    "garden crops: " + ", ".join(f"{v} {k}" for k, v in stages.items())
-                )
-            if lines:
-                bits.append(f"enterprise lines: {len(lines)}")
-            if animals:
-                bits.append(f"livestock animals: {len(animals)}")
-            if bits:
-                snippet = (snippet + "; " if snippet else "") + "; ".join(bits)
-        except Exception:  # noqa: BLE001 — women-hub context is best-effort
-            pass
     return persona, snippet
 
 

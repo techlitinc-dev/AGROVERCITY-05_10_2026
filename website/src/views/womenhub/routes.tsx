@@ -6,7 +6,7 @@ const MyBusinessesView = lazy(() => import('./MyBusinessesView').then((m) => ({ 
 const GardenPlannerView = lazy(() => import('./GardenPlannerView').then((m) => ({ default: m.GardenPlannerView })));
 const EnterpriseIncomeView = lazy(() => import('./EnterpriseIncomeView').then((m) => ({ default: m.EnterpriseIncomeView })));
 const WomanHubOrdersView = lazy(() => import('./OrdersView').then((m) => ({ default: m.WomanHubOrdersView })));
-const WomanHubInsightsView = lazy(() => import('./InsightsView').then((m) => ({ default: m.WomanHubInsightsView })));
+const SellerStoreView = lazy(() => import('./SellerStoreView').then((m) => ({ default: m.SellerStoreView })));
 
 /** Woman Hub persona (womeninstructions.md). */
 export const WomanHubRouteElements = () => (
@@ -16,6 +16,6 @@ export const WomanHubRouteElements = () => (
     <Route path="/womenHub/garden" element={<GardenPlannerView />} />
     <Route path="/womenHub/enterprise" element={<EnterpriseIncomeView />} />
     <Route path="/womenHub/orders" element={<WomanHubOrdersView />} />
-    <Route path="/womenHub/insights" element={<WomanHubInsightsView />} />
+    <Route path="/womenHub/store" element={<SellerStoreView />} />
   </>
 );
