@@ -7,10 +7,14 @@ const MilkSellerDesk = lazy(() =>
 const VendorDesk = lazy(() =>
   import('./VendorDesk').then((m) => ({ default: m.VendorDesk }))
 );
+const MilkVendorDashboard = lazy(() =>
+  import('./MilkVendorDashboard').then((m) => ({ default: m.MilkVendorDashboard }))
+);
 
 /** Milk Vendor (Doodh Vala) Persona Dedicated Routes */
 export const MilkSellerRouteElements = () => (
   <>
+    <Route path="/milkSeller/dashboard" element={<MilkVendorDashboard />} />
     <Route path="/milkSeller" element={<MilkSellerDesk initialTab="deliveries" />} />
     <Route path="/milkSeller/clients" element={<MilkSellerDesk initialTab="clients" />} />
     <Route path="/milkSeller/bills" element={<MilkSellerDesk initialTab="bills" />} />

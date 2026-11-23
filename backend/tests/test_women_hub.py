@@ -733,7 +733,12 @@ async def test_insights_with_data(client, user_store):
         "overdue": 1,
         "fundPaisa": 900_000,
     }
-    assert body["garden"] == {"activePlans": 0, "byStatus": {}, "harvested": 0}
+    assert body["garden"] == {
+        "activePlans": 0,
+        "byStatus": {},
+        "harvested": 0,
+        "yieldPrediction": None,
+    }
     assert body["livestock"] == {"animalCount": 0, "dueVaccinations": 0}
     assert body["enterprise"]["totalMonthlyProfitPaisa"] == 1_000
     assert body["enterprise"]["bestSeller"] == {
@@ -769,7 +774,12 @@ async def test_insights_empty_state_never_500(client, user_store):
     assert body["loanHealth"] == {
         "requested": 0, "active": 0, "repaid": 0, "overdue": 0, "fundPaisa": 0,
     }
-    assert body["garden"] == {"activePlans": 0, "byStatus": {}, "harvested": 0}
+    assert body["garden"] == {
+        "activePlans": 0,
+        "byStatus": {},
+        "harvested": 0,
+        "yieldPrediction": None,
+    }
     assert body["livestock"] == {"animalCount": 0, "dueVaccinations": 0}
     assert body["enterprise"]["bestSeller"] is None
     assert body["enterprise"]["totalMonthlyProfitPaisa"] == 0

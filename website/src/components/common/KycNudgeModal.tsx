@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck } from 'lucide-react';
 import { useAuthStore, isRestrictedRegistration } from '../../stores/authStore';
+import { normalizePersona } from '../../lib/personas';
 
 const dismissedKey = (uid: string) => `kyc_nudge_dismissed_${uid}`;
 
@@ -11,17 +12,20 @@ const dismissedKey = (uid: string) => `kyc_nudge_dismissed_${uid}`;
  * fresh sign-in. Restricted (incomplete-registration) users never render
  * this — AppShell routes them through the registration wizard instead, and
  * legacy/onboarded accounts with no explicit registrationStatus count as
- * fully registered here (they hold full sessions). */
+ * fully registered here (they hold full sessions). The milk vendor persona
+ * never gets the nudge — its dropdown also hides My Profile / KYC
+ * Verification (see Navbar), so the persona stays out of KYC UI entirely. */
 export const KycNudgeModal: React.FC = () => {
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuthStore();
+  const { user, isAuthenticated, activePersona } = useAuthStore();
   const [dismissed, setDismissed] = useState(false);
 
   const needsKyc =
     isAuthenticated &&
     !!user &&
     !isRestrictedRegistration(user) &&
-    user.kycStatus !== 'verified';
+    user.kycStatus !== 'verified' &&
+    normalizePersona(activePersona) !== 'milkSeller';
 
   useEffect(() => {
     if (user && typeof window !== 'undefined') {

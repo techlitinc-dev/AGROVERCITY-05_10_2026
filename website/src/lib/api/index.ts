@@ -91,6 +91,7 @@ export { calls } from './calls';
 export { tree } from './tree';
 export { nursery } from './nursery';
 export { women } from './women';
+export { womenHub } from './womenHub';
 export { search } from './search';
 export { dashboard } from './dashboard';
 export { analytics } from './analytics';

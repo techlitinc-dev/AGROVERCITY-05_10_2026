@@ -24,6 +24,11 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
  */
 export const VendorDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'today' }) => {
   const [tab, setTab] = useState<Tab>(initialTab);
+  // Route changes reuse this mounted component with a new initialTab prop —
+  // re-apply it so sidebar navigation switches the visible tab without a refresh.
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [products, setProducts] = useState<Record<string, unknown>[]>([]);
   const [clients, setClients] = useState<VendorClient[]>([]);

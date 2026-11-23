@@ -156,6 +156,7 @@ export const PERSONAS: PersonaDef[] = [
     onboard: { phone: '+919100000102', name: 'PW Test Milk Vendor' },
     home: '/milkSeller',
     routes: [
+      '/milkSeller/dashboard',
       '/milkSeller',
       '/milkSeller/clients',
       '/milkSeller/bills',
@@ -215,6 +216,7 @@ export const PERSONAS: PersonaDef[] = [
     onboard: { phone: '+919100000104', name: 'PW Test Instructor' },
     home: '/instructor/home',
     routes: [
+      '/instructor/dashboard',
       '/instructor/home',
       '/instructor/courses',
       '/instructor/enrollment-requests',

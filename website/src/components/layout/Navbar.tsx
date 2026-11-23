@@ -376,6 +376,7 @@ export const Navbar: React.FC = () => {
                       <User className="w-4 h-4 text-slate-400" /> Multi-Profile Switcher
                     </Link>
 
+                    {activePersonaId !== 'milkSeller' && (
                     <Link
                       to="/profile"
                       onClick={() => setProfileDropdownOpen(false)}
@@ -383,6 +384,7 @@ export const Navbar: React.FC = () => {
                     >
                       <UserRound className="w-4 h-4 text-slate-400" /> My Profile
                     </Link>
+                    )}
 
                     <Link
                       to="/notifications"
@@ -426,7 +428,7 @@ export const Navbar: React.FC = () => {
                       <Settings className="w-4 h-4 text-slate-400" /> Settings & Privacy
                     </Link>
 
-                    {!restricted && (
+                    {!restricted && activePersonaId !== 'milkSeller' && (
                       <Link
                         to="/kyc"
                         onClick={() => setProfileDropdownOpen(false)}

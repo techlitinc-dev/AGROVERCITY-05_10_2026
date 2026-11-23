@@ -49,11 +49,9 @@ import {
   ClipboardList,
   Briefcase,
   Mountain,
-  BadgeCheck,
   Globe2,
   Plus,
   CalendarCheck,
-  Settings,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn } from '../../lib/utils';
@@ -99,6 +97,8 @@ export const Sidebar: React.FC = () => {
               { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/community/coins', label: 'Coins & Rewards', icon: Sparkles },
               { to: '/community/women', label: 'Women Hub', icon: HeartHandshake },
+              { to: '/farmer/women-hub', label: 'Women Hub Businesses', icon: Store },
+              { to: '/farmer/women-hub/orders', label: 'Women Hub Orders', icon: ShoppingBag },
             ],
           },
         ];
@@ -110,7 +110,6 @@ export const Sidebar: React.FC = () => {
             items: [
               { to: '/landlord', label: 'Dashboard', icon: LayoutDashboard },
               { to: '/landlord/listings', label: 'Post Land Request', icon: Mountain },
-              { to: '/landlord/verification', label: 'Land Verification', icon: BadgeCheck },
               { to: '/landlord/requests', label: 'Requirement Requests', icon: FileCheck },
               { to: '/landlord/connections', label: 'My Connections', icon: Handshake },
             ],
@@ -179,19 +178,14 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Milk Vendor (Doodhwala)',
             items: [
-              { to: '/milkSeller/vendor', label: 'Today', icon: CalendarCheck },
+              { to: '/milkSeller/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/milkSeller/vendor', label: 'Todays Schedule', icon: CalendarCheck },
               { to: '/milkSeller/vendor/clients', label: 'Clients', icon: Users },
               { to: '/milkSeller/vendor/bills', label: 'Bills & Payments', icon: FileText },
-              { to: '/milkSeller/vendor/rates', label: 'Milk & Rates', icon: Milk },
-              { to: '/milkSeller/vendor/settings', label: 'Settings', icon: Settings },
-            ],
-          },
-          {
-            title: 'Legacy Punch-Sheet',
-            items: [
-              { to: '/milkSeller', label: 'Daily Delivery Punch-Sheet', icon: ClipboardList },
-              { to: '/milkSeller/clients', label: 'Customer Passbooks', icon: Users },
-              { to: '/milkSeller/bills', label: 'Monthly Billing & Pay', icon: DollarSign },
+              { to: '/milkSeller/vendor/rates', label: 'Milk and Rates', icon: Milk },
+              { to: '/milkSeller', label: 'Punch Sheet', icon: ClipboardList },
+              { to: '/milkSeller/clients', label: 'Customer Passbook', icon: Users },
+              { to: '/milkSeller/bills', label: 'Monthly Billing and Pay', icon: DollarSign },
               { to: '/milkSeller/analytics', label: 'Delivery Analytics', icon: TrendingUp },
             ],
           },
@@ -267,6 +261,9 @@ export const Sidebar: React.FC = () => {
               { to: '/womenShg/batches', label: 'Production Batches', icon: Package },
               { to: '/womenShg/certs', label: 'FSSAI Certifications', icon: Award },
               { to: '/womenShg/savings', label: 'SHG Savings & Micro-Loan', icon: Landmark },
+              { to: '/women/hub/businesses', label: 'My Business & Management', icon: Briefcase },
+              { to: '/women/hub/garden', label: 'Kitchen Garden Planner', icon: Sprout },
+              { to: '/women/hub/enterprise', label: 'Enterprise Income', icon: HandCoins },
             ],
           },
         ];
@@ -290,7 +287,8 @@ export const Sidebar: React.FC = () => {
           {
             title: 'Gurukul Studio',
             items: [
-              { to: '/instructor', label: 'Academy Studio', icon: GraduationCap },
+              { to: '/instructor/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/instructor', label: 'Academic Studio', icon: GraduationCap },
               { to: '/instructor/courses', label: 'Course Builder', icon: BookOpen },
               { to: '/instructor/enquiries', label: 'Batches & Questions', icon: Users },
             ],

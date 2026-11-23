@@ -4,12 +4,14 @@ import {
   Users,
   PiggyBank,
   CalendarCheck,
+  CalendarDays,
   Sprout,
   Home,
   AlertTriangle,
   ArrowRight,
   Syringe,
   Landmark,
+  Briefcase,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { women } from '../../../lib/api';
@@ -61,6 +63,8 @@ export const DashboardPanel: React.FC<{ goTo: (tab: WomenContentTab) => void }> 
   const enterprise = asRecord(pick(data, 'enterprise'));
   const loans = asRecord(pick(data, 'loans'));
   const joinRequests = asRecord(pick(data, 'joinRequests'));
+  const businesses = asRecord(pick(data, 'businesses'));
+  const calendar = asRecord(pick(data, 'calendar'));
 
   const memberCount = pickNum(deposits, 'memberCount') || pickNum(group ?? {}, 'memberCount');
   const paidCount = pickNum(deposits, 'paidCount');
@@ -217,6 +221,48 @@ export const DashboardPanel: React.FC<{ goTo: (tab: WomenContentTab) => void }> 
           </div>
         </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* My businesses — xlsx A1 widget, sourced from A2 My Business & Management */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+              <Briefcase className="w-4 h-4 text-pink-600" /> My Businesses
+            </h4>
+            <span className="text-[11px] text-slate-400">
+              {formatNumber(pickNum(businesses, 'activeCount'))} active
+            </span>
+          </div>
+          <p className="text-xl font-black text-slate-900">
+            {formatNumber(pickNum(businesses, 'count'))}
+            <span className="text-xs font-bold text-slate-400"> total business</span>
+          </p>
+          <Link
+            to="/women/hub/businesses"
+            className="text-[11px] font-bold text-pink-700 flex items-center gap-1"
+          >
+            Open My Business &amp; Management <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+
+        {/* Indian (Saka) calendar widget — xlsx A1 */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+              <CalendarDays className="w-4 h-4 text-amber-600" /> Indian Calendar
+            </h4>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+              Śaka {formatNumber(pickNum(calendar, 'sakaYear'))}
+            </span>
+          </div>
+          <p className="text-xl font-black text-slate-900">
+            {pickStr(calendar, 'label') || '—'}
+          </p>
+          <p className="text-[11px] text-slate-400">
+            {pickStr(calendar, 'month')} month · day {formatNumber(pickNum(calendar, 'day'))}
+          </p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Vaccination alerts */}

@@ -14,6 +14,9 @@ const CourseCertificatePage = lazy(() =>
 const InstructorConsoleHome = lazy(() =>
   import('./InstructorConsoleHome').then((m) => ({ default: m.InstructorConsoleHome })),
 );
+const InstructorDashboard = lazy(() =>
+  import('./InstructorDashboard').then((m) => ({ default: m.InstructorDashboard })),
+);
 const CourseBuilderPage = lazy(() => import('./CourseBuilderPage').then((m) => ({ default: m.CourseBuilderPage })));
 const CourseBuilderHomePage = lazy(() =>
   import('./CourseBuilderHomePage').then((m) => ({ default: m.CourseBuilderHomePage })),
@@ -54,6 +57,7 @@ export const AcademyRouteElements = () => (
     <Route path="/dashboard/p/courses/:id/learn" element={<LegacyLearnRedirect />} />
     <Route path="/dashboard/p/courses/:id/certificate" element={<LegacyCertificateRedirect />} />
     {/* Instructor console */}
+    <Route path="/instructor/dashboard" element={<InstructorDashboard />} />
     <Route path="/instructor" element={<Navigate to="/instructor/home" replace />} />
     <Route path="/instructor/home" element={<InstructorConsoleHome />} />
     {/* Course Builder — course list + create/publish; editing lives at /instructor/courses/:id/edit */}

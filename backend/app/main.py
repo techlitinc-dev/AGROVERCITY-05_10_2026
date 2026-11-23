@@ -143,6 +143,7 @@ from app.routers import (
     weather,
     wishlist,
     women,
+    women_businesses,
 )
 
 if settings.sentry_dsn:
@@ -293,6 +294,7 @@ app.include_router(tree.router, prefix="/v1")
 app.include_router(ratings.router, prefix="/v1")
 app.include_router(advisory.router, prefix="/v1")
 app.include_router(women.router, prefix="/v1")
+app.include_router(women_businesses.router, prefix="/v1")
 app.include_router(gruh_udyog.router, prefix="/v1")
 app.include_router(climate.router, prefix="/v1")
 app.include_router(post_harvest.router, prefix="/v1")

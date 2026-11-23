@@ -37,6 +37,11 @@ const EMPTY_CLIENT = {
 
 export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'deliveries' }) => {
   const [tab, setTab] = useState<Tab>(initialTab);
+  // Route changes reuse this mounted component with a new initialTab prop —
+  // re-apply it so sidebar navigation switches the visible tab without a refresh.
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
   const [clients, setClients] = useState<Record<string, unknown>[]>([]);
   const [deliveries, setDeliveries] = useState<Record<string, unknown>[]>([]);
   const [bills, setBills] = useState<Record<string, unknown>[]>([]);

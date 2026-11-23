@@ -19,14 +19,17 @@ Money is integer paisa everywhere.
 # Deferred(2026-10-03, phase-08): M26 women SHG-readiness AI — flag slot
 # `women.shg_readiness` reserved in platform_config/ai (services/ai/config_store).
 """
+import csv
+import io
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from app.core.db import get_doc, query, set_doc
+from app.core.db import delete_doc, get_doc, query, set_doc
 from app.core.deps import current_user_id
 from app.data.women_seed import GARDEN_PLAN_TEMPLATES
 from app.models.emarket import UserProductCreate
@@ -43,9 +46,23 @@ SHG_MEETINGS = "shg_meetings"
 SHG_JOIN_REQUESTS = "shg_join_requests"
 SHG_LOANS = "shg_loans"
 GARDEN_PLANS = "garden_plans"
+GARDEN_CROPS = "garden_crops"
 HOME_ENTERPRISES = "home_enterprises"
+HOME_ENTERPRISE_MONTHS = "home_enterprise_months"
+HOME_ENTERPRISE_EXPENSES = "home_enterprise_expenses"
 HERD_COLLECTION = "livestock_animals"
 VACCINATIONS_COLLECTION = "vaccination_schedules"
+
+# xlsx Sr 4.0 — exact kitchen-garden growth-stage pipeline.
+GARDEN_STAGES = ("sowing", "sprout", "vegetative", "flowering", "harvest")
+GARDEN_STAGE_TRANSITIONS = {
+    "sowing": {"sprout"},
+    "sprout": {"vegetative"},
+    "vegetative": {"flowering"},
+    "flowering": {"harvest"},
+    "harvest": set(),
+}
+REMINDER_TYPES = ("water", "fertilizer")
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -95,6 +112,44 @@ class EnterpriseIn(BaseModel):
     product: str = Field(min_length=1, max_length=120)
     monthlyProfitPaisa: int = Field(gt=0)
     revenuePaisa: int | None = Field(default=None, ge=0)
+    # xlsx Sr 5.0 — product line detail: quantity + price.
+    quantity: str = Field(default="", max_length=60)
+    pricePaisa: int | None = Field(default=None, ge=0)
+
+
+class EnterpriseMonthIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    revenuePaisa: int = Field(ge=0)
+    costPaisa: int = Field(ge=0)
+
+
+class EnterpriseExpenseIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    note: str = Field(default="", max_length=200)
+    amountPaisa: int = Field(gt=0)
+
+
+class GardenCropIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    nutrition: str = Field(default="", max_length=200)
+    planId: str | None = Field(default=None, max_length=80)
+    season: str = Field(default="", max_length=60)
+    sownOn: str = Field(default="")
+
+
+class GardenStageIn(BaseModel):
+    stage: str = Field(min_length=1)
+
+
+class GardenReminderIn(BaseModel):
+    type: str = Field(min_length=1)  # water | fertilizer (xlsx Sr 4.0)
+    dueDate: str = Field(min_length=4, max_length=10)
+
+
+class GardenYieldIn(BaseModel):
+    date: str = Field(min_length=4, max_length=10)
+    quantity: float = Field(ge=0)
+    unit: str = Field(default="kg", max_length=20)
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -449,6 +504,8 @@ async def create_enterprise_line(body: EnterpriseIn, uid: str = Depends(_farmer)
         "product": body.product,
         "monthlyProfitPaisa": body.monthlyProfitPaisa,
         "revenuePaisa": body.revenuePaisa,
+        "quantity": body.quantity,
+        "pricePaisa": body.pricePaisa,
         "createdAt": _now(),
     }
     await set_doc(HOME_ENTERPRISES, line_id, doc)
@@ -1056,6 +1113,8 @@ async def women_dashboard(uid: str = Depends(_farmer)):
     garden = _garden_summary(uid, plans)
     due = _due_vaccinations(livestock_rows, within_days=30)[:10]
     enterprise_lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
+    businesses = await query("women_businesses", [("ownerUid", "==", uid)], limit=200)
+    calendar = _indian_calendar(date.today())
     if group is None:
         return {
             "group": None,
@@ -1078,6 +1137,11 @@ async def women_dashboard(uid: str = Depends(_farmer)):
                 ),
                 "lineCount": len(enterprise_lines),
             },
+            "businesses": {
+                "count": len(businesses),
+                "activeCount": len([b for b in businesses if b.get("status") == "active"]),
+            },
+            "calendar": calendar,
             "loans": {"pendingCount": 0, "activeCount": 0, "myActive": None},
             "joinRequests": {"pendingCount": 0},
         }
@@ -1144,6 +1208,11 @@ async def women_dashboard(uid: str = Depends(_farmer)):
             ),
             "lineCount": len(enterprise_lines),
         },
+        "businesses": {
+            "count": len(businesses),
+            "activeCount": len([b for b in businesses if b.get("status") == "active"]),
+        },
+        "calendar": calendar,
         "loans": {
             "pendingCount": len([loan for loan in loans if loan.get("status") == "requested"]),
             "activeCount": len([loan for loan in loans if loan.get("status") == "approved"]),
@@ -1271,6 +1340,7 @@ async def women_insights(uid: str = Depends(_farmer)):
             "activePlans": by_status.get("active", 0),
             "byStatus": by_status,
             "harvested": by_status.get("harvested", 0),
+            "yieldPrediction": await _garden_yield_prediction(uid),
         },
         "livestock": {
             "animalCount": len(livestock_rows),
@@ -1282,3 +1352,423 @@ async def women_insights(uid: str = Depends(_farmer)):
             "suggestion": suggestion,
         },
     }
+
+
+async def _garden_yield_prediction(uid: str) -> dict | None:
+    """xlsx Sr 9.0 — garden yield prediction.
+
+    Deterministic in-app estimate: average total yield per harvested crop
+    name, extrapolated over that name's currently growing (not yet harvested)
+    crops. None until at least one crop has a yield log entry.
+    """
+    crops = await query(GARDEN_CROPS, [("ownerUid", "==", uid)], limit=500)
+    totals: dict[str, list[float]] = {}
+    active_counts: dict[str, int] = {}
+    for crop in crops:
+        name = crop.get("name", "")
+        entries = crop.get("yieldLog") or []
+        if entries:
+            totals.setdefault(name, []).append(
+                sum(float(e.get("quantity", 0)) for e in entries)
+            )
+        if crop.get("stage", "sowing") != "harvest":
+            active_counts[name] = active_counts.get(name, 0) + 1
+    if not totals:
+        return None
+    per_crop: dict[str, float] = {}
+    predicted_total = 0.0
+    for name, crop_totals in totals.items():
+        avg = sum(crop_totals) / len(crop_totals)
+        active = active_counts.get(name, 0)
+        per_crop[name] = round(avg * max(active, 1), 1)
+        predicted_total += avg * max(active, 1)
+    return {"perCropKg": per_crop, "totalKg": round(predicted_total, 1)}
+
+
+# =========================================================================
+# Kitchen-garden crop tracker (xlsx Sr 4.0)
+# growth stages + seasonal planner + water/fertilizer reminders + yield log
+# =========================================================================
+
+
+SAKA_MONTHS = (
+    "Chaitra",
+    "Vaishakha",
+    "Jyeshtha",
+    "Ashadha",
+    "Shravana",
+    "Bhadrapada",
+    "Ashwin",
+    "Kartik",
+    "Margashirsha",
+    "Pausha",
+    "Magha",
+    "Phalguna",
+)
+
+
+def _indian_calendar(today: date) -> dict:
+    """Approximate Indian national (Saka) calendar date — computed in-app.
+
+    Month starts follow the standard Chaitra-1 = Mar 22 (Mar 21 in leap
+    years) rule with fixed month lengths; accurate to ±1 day.
+    """
+    leap = today.year % 4 == 0 and (today.year % 100 != 0 or today.year % 400 == 0)
+    if today >= date(today.year, 3, 21 if leap else 22):
+        year = today.year - 78
+        start = date(today.year, 3, 21 if leap else 22)
+    else:
+        year = today.year - 79
+        prev_leap = (today.year - 1) % 4 == 0 and (
+            (today.year - 1) % 100 != 0 or (today.year - 1) % 400 == 0
+        )
+        start = date(today.year - 1, 3, 21 if prev_leap else 22)
+    year_leap = start.year % 4 == 0 and (start.year % 100 != 0 or start.year % 400 == 0)
+    lengths = (31 if year_leap else 30, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 30)
+    day = start
+    for idx, length in enumerate(lengths):
+        nxt = day + timedelta(days=length)
+        if day <= today < nxt:
+            return {
+                "sakaYear": year,
+                "month": SAKA_MONTHS[idx],
+                "day": (today - day).days + 1,
+                "label": f"{SAKA_MONTHS[idx]} {(today - day).days + 1}, {year} Śaka",
+            }
+        day = nxt
+    return {"sakaYear": year, "month": SAKA_MONTHS[11], "day": 30, "label": f"Phalguna 30, {year} Śaka"}
+
+
+def _due_garden_reminders(crops: list[dict], within_days: int = 7) -> list[dict]:
+    today = date.today()
+    horizon = today + timedelta(days=within_days)
+    due = []
+    for crop in crops:
+        for reminder in crop.get("reminders") or []:
+            if reminder.get("doneAt"):
+                continue
+            raw = reminder.get("dueDate", "")
+            try:
+                due_date = date.fromisoformat(raw)
+            except (ValueError, TypeError):
+                continue
+            if today <= due_date <= horizon:
+                due.append(
+                    {
+                        "cropId": crop["id"],
+                        "cropName": crop.get("name", ""),
+                        "type": reminder.get("type", ""),
+                        "dueDate": raw,
+                        "daysLeft": (due_date - today).days,
+                    }
+                )
+    due.sort(key=lambda item: item["dueDate"])
+    return due
+
+
+async def _owned_crop(crop_id: str, uid: str) -> dict:
+    crop = await get_doc(GARDEN_CROPS, crop_id)
+    if crop is None or crop.get("ownerUid") != uid:
+        _error(404, "CROP_NOT_FOUND", "crop not found")
+    return crop
+
+
+@router.get("/garden-crops")
+async def list_garden_crops(uid: str = Depends(_farmer)):
+    """Her crops with the xlsx growth-stage tracker, seasonal tag, reminders
+    and yield log. Reminders due in the next 7 days feed the dashboard."""
+    crops = await query(GARDEN_CROPS, [("ownerUid", "==", uid)], limit=500)
+    crops.sort(key=lambda c: (c.get("sownOn") or c.get("createdAt", "")))
+    return {
+        "items": crops,
+        "stages": list(GARDEN_STAGES),
+        "dueReminders": _due_garden_reminders(crops),
+        "calendar": _indian_calendar(date.today()),
+    }
+
+
+@router.post("/garden-crops", status_code=201)
+async def add_garden_crop(
+    body: GardenCropIn,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    uid: str = Depends(_farmer),
+):
+    scope = f"women.garden_crop.{uid}"
+    replayed = await idempotency.replay(scope, idempotency_key)
+    if replayed is not None:
+        return replayed
+    if body.planId:
+        plan = await get_doc(GARDEN_PLANS, body.planId)
+        if plan is None:
+            _error(404, "GARDEN_PLAN_NOT_FOUND", "garden plan not found")
+    crop_id = f"gc_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id": crop_id,
+        "ownerUid": uid,
+        "planId": body.planId,
+        "name": body.name,
+        "nutrition": body.nutrition,
+        "season": body.season,
+        "sownOn": body.sownOn or date.today().isoformat(),
+        "stage": "sowing",
+        "reminders": [],
+        "yieldLog": [],
+        "createdAt": _now(),
+    }
+    await set_doc(GARDEN_CROPS, crop_id, doc)
+    if idempotency_key:
+        await idempotency.store(scope, idempotency_key, doc)
+    return doc
+
+
+@router.post("/garden-crops/{crop_id}/stage")
+async def advance_crop_stage(crop_id: str, body: GardenStageIn, uid: str = Depends(_farmer)):
+    crop = await _owned_crop(crop_id, uid)
+    current = crop.get("stage", "sowing")
+    target = body.stage
+    if target not in GARDEN_STAGE_TRANSITIONS.get(current, set()):
+        _error(
+            409,
+            "INVALID_GARDEN_STAGE",
+            f"crop cannot move from {current} to {target}",
+        )
+    crop["stage"] = target
+    if target == "harvest" and not crop.get("harvestedOn"):
+        crop["harvestedOn"] = date.today().isoformat()
+    await set_doc(GARDEN_CROPS, crop_id, crop)
+    return crop
+
+
+@router.post("/garden-crops/{crop_id}/reminders", status_code=201)
+async def add_crop_reminder(
+    crop_id: str, body: GardenReminderIn, uid: str = Depends(_farmer)
+):
+    crop = await _owned_crop(crop_id, uid)
+    if body.type not in REMINDER_TYPES:
+        _error(422, "INVALID_REMINDER_TYPE", f"type must be one of {REMINDER_TYPES}")
+    reminder = {
+        "id": f"rem_{uuid.uuid4().hex[:8]}",
+        "type": body.type,
+        "dueDate": body.dueDate,
+        "doneAt": None,
+        "createdAt": _now(),
+    }
+    crop["reminders"] = list(crop.get("reminders") or []) + [reminder]
+    await set_doc(GARDEN_CROPS, crop_id, crop)
+    return reminder
+
+
+@router.post("/garden-crops/{crop_id}/reminders/{reminder_id}/done")
+async def complete_crop_reminder(
+    crop_id: str, reminder_id: str, uid: str = Depends(_farmer)
+):
+    crop = await _owned_crop(crop_id, uid)
+    reminders = crop.get("reminders") or []
+    reminder = next((r for r in reminders if r.get("id") == reminder_id), None)
+    if reminder is None:
+        _error(404, "REMINDER_NOT_FOUND", "reminder not found")
+    reminder["doneAt"] = _now()
+    crop["reminders"] = reminders
+    await set_doc(GARDEN_CROPS, crop_id, crop)
+    return reminder
+
+
+@router.post("/garden-crops/{crop_id}/yield", status_code=201)
+async def log_crop_yield(crop_id: str, body: GardenYieldIn, uid: str = Depends(_farmer)):
+    crop = await _owned_crop(crop_id, uid)
+    entry = {
+        "date": body.date,
+        "quantity": body.quantity,
+        "unit": body.unit,
+        "loggedAt": _now(),
+    }
+    crop["yieldLog"] = list(crop.get("yieldLog") or []) + [entry]
+    await set_doc(GARDEN_CROPS, crop_id, crop)
+    return entry
+
+
+@router.delete("/garden-crops/{crop_id}", status_code=204)
+async def delete_garden_crop(crop_id: str, uid: str = Depends(_farmer)):
+    await _owned_crop(crop_id, uid)
+    await delete_doc(GARDEN_CROPS, crop_id)
+    return Response(status_code=204)
+
+
+# =========================================================================
+# Home-enterprise income ledger (xlsx Sr 5.0)
+# quantity/price lines + monthly revenue−cost per product + expenses +
+# auto-calculated monthly total + profit graph + export
+# =========================================================================
+
+
+async def _owned_enterprise_line(line_id: str, uid: str) -> dict:
+    line = await get_doc(HOME_ENTERPRISES, line_id)
+    if line is None or line.get("ownerUid") != uid:
+        _error(404, "ENTERPRISE_LINE_NOT_FOUND", "product line not found")
+    return line
+
+
+async def _enterprise_month_doc(line_id: str, month: str) -> dict | None:
+    return await get_doc(HOME_ENTERPRISE_MONTHS, f"{line_id}_{month}")
+
+
+@router.post("/home-enterprise/{line_id}/entries", status_code=201)
+async def upsert_enterprise_month(
+    line_id: str, body: EnterpriseMonthIn, uid: str = Depends(_farmer)
+):
+    """Monthly revenue & cost for one product line — profit = revenue − cost."""
+    await _owned_enterprise_line(line_id, uid)
+    profit = body.revenuePaisa - body.costPaisa
+    doc = {
+        "id": f"{line_id}_{body.month}",
+        "lineId": line_id,
+        "ownerUid": uid,
+        "month": body.month,
+        "revenuePaisa": body.revenuePaisa,
+        "costPaisa": body.costPaisa,
+        "profitPaisa": profit,
+        "updatedAt": _now(),
+    }
+    await set_doc(HOME_ENTERPRISE_MONTHS, doc["id"], doc)
+    return doc
+
+
+@router.post("/home-enterprise/{line_id}/expenses", status_code=201)
+async def add_enterprise_expense(
+    line_id: str, body: EnterpriseExpenseIn, uid: str = Depends(_farmer)
+):
+    await _owned_enterprise_line(line_id, uid)
+    expense_id = f"exp_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id": expense_id,
+        "lineId": line_id,
+        "ownerUid": uid,
+        "month": body.month,
+        "note": body.note,
+        "amountPaisa": body.amountPaisa,
+        "createdAt": _now(),
+    }
+    await set_doc(HOME_ENTERPRISE_EXPENSES, expense_id, doc)
+    return doc
+
+
+@router.delete("/home-enterprise/expenses/{expense_id}", status_code=204)
+async def delete_enterprise_expense(expense_id: str, uid: str = Depends(_farmer)):
+    expense = await get_doc(HOME_ENTERPRISE_EXPENSES, expense_id)
+    if expense is None or expense.get("ownerUid") != uid:
+        _error(404, "EXPENSE_NOT_FOUND", "expense not found")
+    await delete_doc(HOME_ENTERPRISE_EXPENSES, expense_id)
+    return Response(status_code=204)
+
+
+def _ledger_for_month(lines: list[dict], months_docs: list[dict], expenses: list[dict], month: str | None) -> dict:
+    month_docs = [m for m in months_docs if month is None or m.get("month") == month]
+    month_expenses = [e for e in expenses if month is None or e.get("month") == month]
+    per_line = []
+    for line in lines:
+        doc = next((m for m in month_docs if m.get("lineId") == line["id"]), None)
+        line_expenses = [e for e in month_expenses if e.get("lineId") == line["id"]]
+        expense_total = sum(int(e.get("amountPaisa", 0)) for e in line_expenses)
+        per_line.append(
+            {
+                "lineId": line["id"],
+                "product": line.get("product", ""),
+                "quantity": line.get("quantity", ""),
+                "pricePaisa": line.get("pricePaisa"),
+                "monthlyProfitPaisa": line.get("monthlyProfitPaisa"),
+                "revenuePaisa": (doc or {}).get("revenuePaisa"),
+                "costPaisa": (doc or {}).get("costPaisa"),
+                "profitPaisa": (doc or {}).get("profitPaisa"),
+                "expenses": [
+                    {
+                        "id": e["id"],
+                        "note": e.get("note", ""),
+                        "amountPaisa": e.get("amountPaisa", 0),
+                        "month": e.get("month", ""),
+                    }
+                    for e in line_expenses
+                ],
+                "expenseTotalPaisa": expense_total,
+            }
+        )
+    revenue_total = sum(int(m.get("revenuePaisa", 0)) for m in month_docs)
+    cost_total = sum(int(m.get("costPaisa", 0)) for m in month_docs)
+    expense_total = sum(int(e.get("amountPaisa", 0)) for e in month_expenses)
+    return {
+        "month": month,
+        "lines": per_line,
+        "revenueTotalPaisa": revenue_total,
+        "costTotalPaisa": cost_total,
+        "expenseTotalPaisa": expense_total,
+        # xlsx: auto-calculated monthly total profit (revenue − cost − expenses).
+        "totalProfitPaisa": revenue_total - cost_total - expense_total,
+    }
+
+
+@router.get("/home-enterprise/ledger")
+async def enterprise_ledger(
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    uid: str = Depends(_farmer),
+):
+    lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
+    months_docs = await query(HOME_ENTERPRISE_MONTHS, [("ownerUid", "==", uid)], limit=500)
+    expenses = await query(HOME_ENTERPRISE_EXPENSES, [("ownerUid", "==", uid)], limit=500)
+    return _ledger_for_month(lines, months_docs, expenses, month)
+
+
+@router.get("/home-enterprise/graph")
+async def enterprise_profit_graph(uid: str = Depends(_farmer)):
+    """Monthly total-profit series for the profit graph (last 6 months)."""
+    lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
+    months_docs = await query(HOME_ENTERPRISE_MONTHS, [("ownerUid", "==", uid)], limit=500)
+    expenses = await query(HOME_ENTERPRISE_EXPENSES, [("ownerUid", "==", uid)], limit=500)
+    series = []
+    for key in _last_months(6):
+        ledger = _ledger_for_month(lines, months_docs, expenses, key)
+        series.append({"month": key, "totalProfitPaisa": ledger["totalProfitPaisa"]})
+    return {"series": series}
+
+
+@router.get("/home-enterprise/export")
+async def export_enterprise_ledger(
+    month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    uid: str = Depends(_farmer),
+):
+    """Export ledger — CSV download of the monthly income ledger."""
+    lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
+    months_docs = await query(HOME_ENTERPRISE_MONTHS, [("ownerUid", "==", uid)], limit=500)
+    expenses = await query(HOME_ENTERPRISE_EXPENSES, [("ownerUid", "==", uid)], limit=500)
+    ledger = _ledger_for_month(lines, months_docs, expenses, month)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["product", "quantity", "month", "revenue_paisa", "cost_paisa", "profit_paisa", "expenses_paisa"])
+    for line in ledger["lines"]:
+        writer.writerow(
+            [
+                line["product"],
+                line["quantity"],
+                ledger["month"] or "all",
+                line.get("revenuePaisa") or 0,
+                line.get("costPaisa") or 0,
+                line.get("profitPaisa") or 0,
+                line["expenseTotalPaisa"],
+            ]
+        )
+    writer.writerow([])
+    writer.writerow(
+        [
+            "TOTAL",
+            "",
+            ledger["month"] or "all",
+            ledger["revenueTotalPaisa"],
+            ledger["costTotalPaisa"],
+            ledger["totalProfitPaisa"] + ledger["expenseTotalPaisa"],
+            ledger["expenseTotalPaisa"],
+        ]
+    )
+    filename = f"enterprise-ledger-{ledger['month'] or 'all'}.csv"
+    return PlainTextResponse(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
