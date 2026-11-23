@@ -265,12 +265,10 @@ export const Sidebar: React.FC = () => {
               { to: '/community/news', label: 'Agri News', icon: Radio },
               { to: '/community/trees', label: 'Tree Hub', icon: TreePine },
               { to: '/mall', label: 'Agri Market / Shopping', icon: ShoppingBag },
-              { to: '/farmer/pnl', label: 'Finance CEO', icon: DollarSign },
               { to: '/farmer/referrals', label: 'Refer & Earn', icon: Gift },
               { to: '/community/coins', label: 'Coin Rewards / Krushi Ratna', icon: Sparkles },
               { to: '/farmer/712', label: '7/12 & Land Records', icon: FileSpreadsheet },
               { to: '/community/scan', label: 'Chatbot & AI Crop Scanner', icon: Bot },
-              { to: '/notifications', label: 'Notifications', icon: Inbox },
             ],
           },
         ];

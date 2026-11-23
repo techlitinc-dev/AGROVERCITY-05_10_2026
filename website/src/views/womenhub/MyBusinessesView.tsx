@@ -15,25 +15,6 @@ import { apiErrorMessage, womenHub } from '../../lib/api';
 import { formatPaisa } from '../../lib/utils';
 import { asRecord, asRecords, pick, pickNum, pickStr, Rec } from '../shared/records';
 
-/** xlsx Sr 7.0 — woman's order pipeline. */
-const ORDER_PIPELINE = ['accepted', 'packed', 'pickup', 'in_transit', 'delivered'];
-const ORDER_LABELS: Record<string, string> = {
-  placed: 'Placed',
-  accepted: 'Accepted',
-  packed: 'Packed',
-  pickup: 'Pickup',
-  in_transit: 'In Transit',
-  delivered: 'Delivered',
-  cancelled: 'Cancelled',
-  // e-market (Krishi Mall) statuses — read-only here, managed on the seller desk
-  paid: 'Paid',
-  confirmed: 'Confirmed',
-  shipped: 'Shipped',
-  out_for_delivery: 'Out for Delivery',
-  closed: 'Closed',
-  returned: 'Returned',
-};
-
 const EMPTY_FORM = {
   name: '',
   category: '',
@@ -47,7 +28,7 @@ const EMPTY_FORM = {
 /**
  * My Business & Management (womenhub 21nov.xlsx Sr 2.0) — create multiple
  * businesses, search her own list, edit/pause/delete, and manage per-business
- * products, orders, enquiries and ratings.
+ * products, enquiries and ratings. Orders live in My Orders & Track (Sr 7.0).
  */
 export const MyBusinessesView: React.FC = () => {
   const [items, setItems] = useState<Rec[] | null>(null);
@@ -57,7 +38,7 @@ export const MyBusinessesView: React.FC = () => {
   const [form, setForm] = useState<Rec | null>(null); // create/edit payload
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Rec | null>(null);
-  const [tab, setTab] = useState<'products' | 'orders' | 'enquiries' | 'ratings'>('products');
+  const [tab, setTab] = useState<'products' | 'enquiries' | 'ratings'>('products');
   const [productForm, setProductForm] = useState<Rec | null>(null);
   const [respondFor, setRespondFor] = useState<Rec | null>(null);
   const [response, setResponse] = useState('');
@@ -167,18 +148,6 @@ export const MyBusinessesView: React.FC = () => {
     }
   };
 
-  const advanceOrder = async (order: Rec, status: string) => {
-    if (!detail) return;
-    setError(null);
-    try {
-      await womenHub.setOrderStatus(pickStr(order, 'id'), status);
-      const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
-      await openDetail(businessId);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    }
-  };
-
   const submitResponse = async () => {
     if (!respondFor || !detail || busy) return;
     setBusy(true);
@@ -211,7 +180,6 @@ export const MyBusinessesView: React.FC = () => {
 
   const business = detail ? asRecord(pick(detail, 'business')) : null;
   const products = detail ? asRecords(pick(detail, 'products')) : [];
-  const orders = detail ? asRecords(pick(detail, 'orders')) : [];
   const enquiries = detail ? asRecords(pick(detail, 'enquiries')) : [];
   const ratings = detail ? asRecords(pick(detail, 'ratings')) : [];
 
@@ -228,7 +196,8 @@ export const MyBusinessesView: React.FC = () => {
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Create and manage your businesses — tiffin/dabba service, tailoring, pickle-papad unit
-            and more. Each business gets its own products, orders, enquiries and ratings.
+            and more. Each business gets its own products, enquiries and ratings — orders are
+            tracked in My Orders &amp; Track.
           </p>
         </div>
         <button
@@ -314,7 +283,6 @@ export const MyBusinessesView: React.FC = () => {
               {(
                 [
                   ['products', `Products (${products.length})`],
-                  ['orders', `Orders (${orders.length})`],
                   ['enquiries', `Enquiries (${enquiries.length})`],
                   ['ratings', `Ratings (${ratings.length})`],
                 ] as const
@@ -379,51 +347,6 @@ export const MyBusinessesView: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
-
-            {tab === 'orders' && (
-              <div className="space-y-2">
-                {orders.length === 0 ? (
-                  <p className="text-xs text-slate-400">No orders yet.</p>
-                ) : (
-                  orders.map((o) => {
-                    const status = pickStr(o, 'status');
-                    const isEmarket = pickStr(o, 'source') === 'e_market';
-                    const next = isEmarket
-                      ? undefined
-                      : ORDER_PIPELINE[ORDER_PIPELINE.indexOf(status) + 1];
-                    return (
-                      <div
-                        key={pickStr(o, 'id')}
-                        className="border border-slate-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2"
-                      >
-                        <div>
-                          <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                            {pickStr(o, 'productName')} × {pickNum(o, 'quantity')}
-                            {isEmarket && (
-                              <span className="px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-[10px] font-bold text-sky-700">
-                                E-market
-                              </span>
-                            )}
-                          </p>
-                          <p className="text-[11px] text-slate-500">
-                            {pickStr(o, 'buyerName') || 'Buyer'} · {formatPaisa(pickNum(o, 'totalPaisa'))} ·{' '}
-                            <span className="font-bold">{ORDER_LABELS[status] || status}</span>
-                          </p>
-                        </div>
-                        {next && (
-                          <button
-                            onClick={() => advanceOrder(o, next)}
-                            className="px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white text-[11px] font-bold rounded-lg"
-                          >
-                            Mark {ORDER_LABELS[next]}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })
                 )}
               </div>
             )}
