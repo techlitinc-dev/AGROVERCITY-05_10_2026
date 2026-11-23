@@ -41,6 +41,7 @@ from app.routers import (
     ads,
     advisory,
     agent_rules,
+    agri_market_seller,
     ai_power,
     analytics,
     app_config,
@@ -285,6 +286,7 @@ app.include_router(tree.router, prefix="/v1")
 app.include_router(ratings.router, prefix="/v1")
 app.include_router(advisory.router, prefix="/v1")
 app.include_router(women_hub.router, prefix="/v1")
+app.include_router(agri_market_seller.router, prefix="/v1")
 app.include_router(climate.router, prefix="/v1")
 app.include_router(post_harvest.router, prefix="/v1")
 app.include_router(uploads.router, prefix="/v1")

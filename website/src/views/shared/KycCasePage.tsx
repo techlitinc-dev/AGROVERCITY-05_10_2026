@@ -15,6 +15,7 @@ const PERSONA_LABELS: { id: PersonaType; label: string }[] = [
   { id: 'equipmentOwner', label: 'Equipment Owner' },
   { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala' },
   { id: 'womenHub', label: 'Woman Hub' },
+  { id: 'agriMarketSeller', label: 'Agri Market Seller' },
   { id: 'directBuyer', label: 'Industrial Buyer' },
   { id: 'instructor', label: 'Instructor' },
 ];

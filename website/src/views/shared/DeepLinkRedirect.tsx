@@ -28,6 +28,8 @@ const resolveDeepLink = (splat: string, activePersona: string): string | null =>
     case 'womenHub':
     case 'womanHub':
       return '/womenHub';
+    case 'agriMarketSeller':
+      return '/agriMarketSeller';
     case 'myContracts':
     case 'contracts':
       // Farmer supply-contracts page was removed; buyers keep their contract desk.

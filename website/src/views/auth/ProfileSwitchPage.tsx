@@ -18,6 +18,7 @@ const PERSONA_HOME: Record<PersonaType, string> = {
   vet: '/vet',
   fpoManager: '/fpoManager',
   womenHub: '/womenHub',
+  agriMarketSeller: '/agriMarketSeller',
   broker: '/broker',
   dairyManager: '/dairyManager',
   instructor: '/instructor',
@@ -40,6 +41,7 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'equipmentOwner', title: 'Equipment Owner', category: 'Machinery Services', icon: '🚜' },
   { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', category: 'Daily Milk Delivery', icon: '🫗' },
   { id: 'womenHub', title: 'Woman Hub', category: 'Home Enterprise', icon: '🪔' },
+  { id: 'agriMarketSeller', title: 'Agri Market Seller', category: 'E-Market Shop', icon: '🛍️' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
 ];
 

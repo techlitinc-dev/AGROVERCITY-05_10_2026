@@ -73,12 +73,13 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm10', commodity: 'Groundnut', variety: 'Bold #TG37A', mandi: 'Gondal', state: 'Gujarat', category: 'oilseeds', modalPrice: 6150, msp: 6377, trendPercentage: 1.1, arrivalsQ: 5600 },
 ];
 
-/** The 8 finalized personas the landing FAQ is organized around. */
+/** The 9 finalized personas the landing FAQ is organized around. */
 const FAQ_PERSONAS: { id: PersonaType; label: string; icon: string }[] = [
   { id: 'farmer', label: 'Farmer', icon: '🌾' },
   { id: 'landlord', label: 'Landlord', icon: '🏡' },
   { id: 'equipmentOwner', label: 'Equipment', icon: '🚜' },
   { id: 'womenHub', label: 'Woman Hub', icon: '🪔' },
+  { id: 'agriMarketSeller', label: 'Agri Market Seller', icon: '🛍️' },
   { id: 'transporter', label: 'Transporter', icon: '🚚' },
   { id: 'seller', label: 'Vyapari', icon: '🏪' },
   { id: 'milkSeller', label: 'Milk Vendor', icon: '🫗' },
@@ -194,6 +195,20 @@ const FAQ_DATA: FaqItem[] = [
     q: 'Can I issue certificates to students who complete my batches?',
     a: 'Yes. Completed batches generate verifiable digital certificates carrying your academy name, the course, and a unique batch ID. Students can download and share them, and employers can verify them instantly on the platform.',
   },
+  {
+    id: 'agriMarketSeller-1',
+    persona: 'agriMarketSeller',
+    tags: ['shop', 'products', 'stock', 'orders'],
+    q: 'How do I run my shop on the Agri Market?',
+    a: 'List products with photos, price and stock, track every in/out movement with low-stock alerts, and receive orders with one-tap accept → process → pack → ship → deliver. Invoices download from each order, and payouts reconcile with the platform settlement ledger.',
+  },
+  {
+    id: 'agriMarketSeller-2',
+    persona: 'agriMarketSeller',
+    tags: ['enquiry', 'quotation', 'bulk pricing'],
+    q: 'Can I quote custom prices for bulk enquiries?',
+    a: 'Yes — farmer enquiries arrive with the requested quantity and product context. Respond, convert the enquiry to a numbered quotation with discounts, taxes, delivery and validity, and an accepted quotation becomes an order automatically. Quantity slabs and min/max order quantities are set per product.',
+  },
 ];
 
 export const LandingPage: React.FC = () => {
@@ -302,6 +317,14 @@ export const LandingPage: React.FC = () => {
       route: '/womenHub',
     },
     {
+      id: 'agriMarketSeller',
+      title: 'Agri Market Seller',
+      hindiTitle: 'कृषी बाजार विक्रेता',
+      category: 'fintech',
+      icon: '🛍️',
+      route: '/agriMarketSeller',
+    },
+    {
       id: 'instructor',
       title: 'Gurukul Academy Instructor',
       hindiTitle: 'कृषि गुरुकुल शिक्षक',
@@ -384,7 +407,7 @@ export const LandingPage: React.FC = () => {
             {/* Subtitle */}
             <p className="text-base sm:text-xl text-emerald-100/80 leading-relaxed max-w-3xl mx-auto font-medium">
               From Soil to Supermarket, Dairy to Cargo Port. A unified digital ecosystem uniting
-              <strong className="text-white font-bold"> Farmers, Farm Landlords, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, and Instructors </strong>
+              <strong className="text-white font-bold"> Farmers, Farm Landlords, Equipment Owners, Milk Vendors, Agri Vyaparis, Agri Market Sellers, Transporters, and Instructors </strong>
               — with AI Crop Doctor for farmers, 7/12 land verification for landlords, per-acre machinery bookings
               for equipment owners, FAT/SNF milk billing for vendors,
               digital POS khata for vyaparis, FT-1 digital bilty for transporters, course studios for instructors,
@@ -882,6 +905,8 @@ export const LandingPage: React.FC = () => {
                 <li><Link to="/landlord" className="hover:text-emerald-400 transition-colors">Farm Landlord</Link></li>
                 <li><Link to="/equipment" className="hover:text-emerald-400 transition-colors">Custom Machinery (CHC)</Link></li>
                 <li><Link to="/womenHub" className="hover:text-emerald-400 transition-colors">Woman Hub</Link></li>
+                <li><Link to="/mall" className="hover:text-emerald-400 transition-colors">Krishi Mall</Link></li>
+                <li><Link to="/agriMarketSeller" className="hover:text-emerald-400 transition-colors">Agri Market Seller</Link></li>
               </ul>
             </div>
 

@@ -63,6 +63,14 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Home Enterprise',
   },
   {
+    id: 'agriMarketSeller',
+    icon: '🛍️',
+    title: 'Agri Market Seller',
+    nativeTitle: 'कृषी बाजार विक्रेता',
+    desc: 'Run your e-market shop — products, stock, orders, offers, payouts and customer reviews.',
+    badge: 'E-Market Shop',
+  },
+  {
     id: 'equipmentOwner',
     icon: '🚜',
     title: 'Equipment Owner & CHC',

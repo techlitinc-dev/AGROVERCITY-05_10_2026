@@ -170,6 +170,23 @@ ACCESS_MAP["womenHub"] = {
     "agriNews",
     "referEarn",
 }
+ACCESS_MAP["agriMarketSeller"] = {
+    "agriMarketSellerDashboard",
+    "agriMarketSellerProducts",
+    "agriMarketSellerStock",
+    "agriMarketSellerOrders",
+    "agriMarketSellerEnquiries",
+    "agriMarketSellerQuotations",
+    "agriMarketSellerOffers",
+    "agriMarketSellerReviews",
+    "agriMarketSellerReports",
+    "marketplace",
+    "finance",
+    "krishiRatna",
+    "gyanHub",
+    "agriNews",
+    "referEarn",
+}
 ACCESS_MAP["nursery"] = {
     "nurseryHome",
     "nurseryProfile",
@@ -212,5 +229,6 @@ DEFAULT_HOME: dict[str, str] = {
     "insuranceProvider": "insuranceProviderHome",
     "coldStorageProvider": "coldStorageHome",
     "womenHub": "/womenHub",
+    "agriMarketSeller": "/agriMarketSeller",
     "nursery": "/nursery",
 }

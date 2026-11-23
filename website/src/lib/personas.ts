@@ -49,6 +49,10 @@ export const PERSONA_ALIASES: Record<string, PersonaType> = {
   womanHub: 'womenHub',
   womanhub: 'womenHub',
   'woman hub': 'womenHub',
+  agriMarketSeller: 'agriMarketSeller',
+  agrimarketseller: 'agriMarketSeller',
+  agri_market_seller: 'agriMarketSeller',
+  'agri market seller': 'agriMarketSeller',
   exporter: 'exporter',
   directBuyer: 'directBuyer',
   directbuyer: 'directBuyer',
@@ -105,6 +109,7 @@ export const ALL_PERSONAS: { id: PersonaType; label: string; icon: string }[] = 
   { id: 'equipmentOwner', label: 'Equipment Owner', icon: '🚜' },
   { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala', icon: '🫗' },
   { id: 'womenHub', label: 'Woman Hub', icon: '🪔' },
+  { id: 'agriMarketSeller', label: 'Agri Market Seller', icon: '🛍️' },
   { id: 'instructor', label: 'Gurukul Instructor', icon: '🎓' },
 ];
 
@@ -138,6 +143,7 @@ export const PERSONA_HOME: Record<PersonaType, string> = {
   milkSeller: '/milkSeller',
   vet: '/vet',
   womenHub: '/womenHub',
+  agriMarketSeller: '/agriMarketSeller',
   broker: '/broker',
   dairyManager: '/dairyManager',
   instructor: '/instructor',

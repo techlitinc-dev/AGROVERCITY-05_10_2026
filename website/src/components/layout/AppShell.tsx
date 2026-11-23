@@ -32,6 +32,7 @@ const PERSONA_ROUTE_PREFIXES: Record<string, PersonaType> = {
   gaushalaManager: 'gaushalaManager',
   womenHub: 'womenHub',
   womanHub: 'womenHub',
+  agriMarketSeller: 'agriMarketSeller',
   instructor: 'instructor',
   coldStorageProvider: 'coldStorageProvider',
   nursery: 'nursery',

@@ -20,6 +20,7 @@ import {
   GraduationCap,
   Sparkles,
   ShoppingBag,
+  ShoppingCart,
   HeartHandshake,
   Bot,
   ScanLine,
@@ -265,6 +266,44 @@ export const Sidebar: React.FC = () => {
               { to: '/instructor', label: 'Academic Studio', icon: GraduationCap },
               { to: '/instructor/courses', label: 'Course Builder', icon: BookOpen },
               { to: '/instructor/enquiries', label: 'Batches & Questions', icon: Users },
+            ],
+          },
+        ];
+
+      case 'agriMarketSeller':
+        return [
+          {
+            title: 'Agri Market Seller',
+            items: [
+              { to: '/agriMarketSeller', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/agriMarketSeller/shop', label: 'Shop Profile', icon: Store },
+              { to: '/agriMarketSeller/products', label: 'My Products', icon: Package },
+              { to: '/agriMarketSeller/stock', label: 'Stock Management', icon: Boxes },
+              { to: '/agriMarketSeller/orders', label: 'Orders Received', icon: ShoppingBag },
+              { to: '/agriMarketSeller/enquiries', label: 'Enquiry Management', icon: Handshake },
+              { to: '/agriMarketSeller/quotations', label: 'Quotation Management', icon: FileText },
+              { to: '/agriMarketSeller/coupons', label: 'Offers & Discounts', icon: Tag },
+              { to: '/agriMarketSeller/earnings', label: 'Earnings & Payouts', icon: Landmark },
+              { to: '/agriMarketSeller/reviews', label: 'Customer Reviews', icon: Star },
+              { to: '/agriMarketSeller/reports', label: 'Sales Reports', icon: ClipboardList },
+              { to: '/agriMarketSeller/insights', label: 'AI Analysis', icon: TrendingUp },
+            ],
+          },
+          {
+            title: 'Shop & Grow',
+            items: [
+              { to: '/ads', label: 'Advertisement Manager', icon: Megaphone },
+              { to: '/mall', label: 'E-Market Shopping', icon: ShoppingCart },
+              { to: '/farmer/diary', label: 'Farm Diary', icon: BookOpen },
+              { to: '/academy', label: 'Gyansetu Learning Hub', icon: GraduationCap },
+              { to: '/community/news', label: 'Agri News', icon: Radio },
+              { to: '/farmer/referrals', label: 'Refer & Earn', icon: Gift },
+              { to: '/community/coins', label: 'Coin Rewards / Krushi Ratna', icon: Sparkles },
+              { to: '/community/trees', label: 'Tree Hub', icon: TreePine },
+              { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
+              { to: '/farmer/712', label: '7/12 & Land Records', icon: FileSpreadsheet },
+              { to: '/community/scan', label: 'Chatbot & AI Crop Scanner', icon: Bot },
+              { to: '/notifications', label: 'Notification Center', icon: Inbox },
             ],
           },
         ];
