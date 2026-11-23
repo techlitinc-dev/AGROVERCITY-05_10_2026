@@ -22,7 +22,6 @@ const PERSONA_HOME: Record<PersonaType, string> = {
   dairyManager: '/dairyManager',
   instructor: '/instructor',
   directBuyer: '/directBuyer',
-  customer: '/customer',
   bankManager: '/bankManager',
   insuranceProvider: '/insuranceProvider',
   coldStorageProvider: '/coldStorageProvider',
@@ -42,7 +41,6 @@ const ALL_PERSONAS: { id: PersonaType; title: string; category: string; icon: st
   { id: 'milkSeller', title: 'Milk Vendor / Doodh Vala', category: 'Daily Milk Delivery', icon: '🫗' },
   { id: 'womenHub', title: 'Woman Hub', category: 'Home Enterprise', icon: '🪔' },
   { id: 'instructor', title: 'Gurukul Instructor', category: 'Education & Training', icon: '🎓' },
-  { id: 'customer', title: 'Agri Market Seller', category: 'Agri Market Seller', icon: '🛍️' },
 ];
 
 export const ProfileSwitchPage: React.FC = () => {

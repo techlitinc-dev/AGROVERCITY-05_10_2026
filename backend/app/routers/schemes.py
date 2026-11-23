@@ -49,7 +49,7 @@ async def _viewer(uid: str = Depends(current_user_id)) -> dict:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    require_role(user, "farmer", "farmLandlord", "customer")
+    require_role(user, "farmer", "farmLandlord")
     return user
 
 

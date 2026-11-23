@@ -15,7 +15,7 @@ const NurseryDiaryView = lazy(() => import('./NurseryDiaryView').then((m) => ({ 
 const NurseryChatbotView = lazy(() => import('./NurseryChatbotView').then((m) => ({ default: m.NurseryChatbotView })));
 
 // Shared utilities
-const CustomerHomeView = lazy(() => import('../mall/CustomerHomeView').then((m) => ({ default: m.CustomerHomeView })));
+const NurseryShopView = lazy(() => import('../mall/KrishiMallCatalogView').then((m) => ({ default: m.KrishiMallCatalogView })));
 const PnlDashboardView = lazy(() => import('../farmer/PnlDashboardView').then((m) => ({ default: m.PnlDashboardView })));
 const SellerAdsView = lazy(() => import('../seller/SellerAdsView').then((m) => ({ default: m.SellerAdsView })));
 const CourseCatalogView = lazy(() => import('../academy/CourseCatalogView').then((m) => ({ default: m.CourseCatalogView })));
@@ -48,7 +48,7 @@ export const NurseryRouteElements = () => (
     <Route path="/nursery/finance" element={<PnlDashboardView />} />
 
     {/* Shared Ecosystem & Utilities */}
-    <Route path="/nursery/shop" element={<CustomerHomeView />} />
+    <Route path="/nursery/shop" element={<NurseryShopView />} />
     <Route path="/nursery/chatbot" element={<NurseryChatbotView />} />
     <Route path="/nursery/gyan" element={<CourseCatalogView />} />
     <Route path="/nursery/news" element={<AgriNewsChannelsView />} />

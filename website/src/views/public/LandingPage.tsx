@@ -73,7 +73,7 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm10', commodity: 'Groundnut', variety: 'Bold #TG37A', mandi: 'Gondal', state: 'Gujarat', category: 'oilseeds', modalPrice: 6150, msp: 6377, trendPercentage: 1.1, arrivalsQ: 5600 },
 ];
 
-/** The 9 finalized personas the landing FAQ is organized around. */
+/** The 8 finalized personas the landing FAQ is organized around. */
 const FAQ_PERSONAS: { id: PersonaType; label: string; icon: string }[] = [
   { id: 'farmer', label: 'Farmer', icon: '🌾' },
   { id: 'landlord', label: 'Landlord', icon: '🏡' },
@@ -83,7 +83,6 @@ const FAQ_PERSONAS: { id: PersonaType; label: string; icon: string }[] = [
   { id: 'seller', label: 'Vyapari', icon: '🏪' },
   { id: 'milkSeller', label: 'Milk Vendor', icon: '🫗' },
   { id: 'instructor', label: 'Instructor', icon: '🎓' },
-  { id: 'customer', label: 'Customer', icon: '🛍️' },
 ];
 
 interface FaqItem {
@@ -195,20 +194,6 @@ const FAQ_DATA: FaqItem[] = [
     q: 'Can I issue certificates to students who complete my batches?',
     a: 'Yes. Completed batches generate verifiable digital certificates carrying your academy name, the course, and a unique batch ID. Students can download and share them, and employers can verify them instantly on the platform.',
   },
-  {
-    id: 'customer-1',
-    persona: 'customer',
-    tags: ['traceable', 'qr code', 'farm to home', 'organic'],
-    q: 'Is the produce I buy really coming directly from farmers?',
-    a: 'Every product carries a farm-traceable QR code showing the farmer and farm it came from, the harvest date, and any lab test results. What you see on the label is what reached your door.',
-  },
-  {
-    id: 'customer-2',
-    persona: 'customer',
-    tags: ['subscription', 'basket', 'delivery', 'upi'],
-    q: 'Can I set up weekly milk and vegetable subscriptions?',
-    a: 'Yes — subscribe once to milk, vegetables, or curated baskets. The vendor’s digital punch-sheet auto-bills you weekly with UPI payment links, and you can pause, resume, or skip deliveries anytime from your phone.',
-  },
 ];
 
 export const LandingPage: React.FC = () => {
@@ -225,7 +210,7 @@ export const LandingPage: React.FC = () => {
   const [personaCategory, setPersonaCategory] = useState<'all' | 'producers' | 'trade' | 'dairy' | 'fintech'>('all');
   const [personaSearch, setPersonaSearch] = useState('');
 
-  // FAQ state — searchable accordion filtered by the 9 finalized personas
+  // FAQ state — searchable accordion filtered by the 8 finalized personas
   const [openFaqId, setOpenFaqId] = useState<string | null>(FAQ_DATA[0].id);
   const [faqSearch, setFaqSearch] = useState('');
   const [faqPersona, setFaqPersona] = useState<'all' | PersonaType>('all');
@@ -324,14 +309,6 @@ export const LandingPage: React.FC = () => {
       icon: '🎓',
       route: '/instructor',
     },
-    {
-      id: 'customer',
-      title: 'E-Market Consumer',
-      hindiTitle: 'उपभोक्ता / खरीददार',
-      category: 'fintech',
-      icon: '🛍️',
-      route: '/customer',
-    },
   ];
 
   const handleLaunchPersona = (p: PersonaCardInfo) => {
@@ -407,7 +384,7 @@ export const LandingPage: React.FC = () => {
             {/* Subtitle */}
             <p className="text-base sm:text-xl text-emerald-100/80 leading-relaxed max-w-3xl mx-auto font-medium">
               From Soil to Supermarket, Dairy to Cargo Port. A unified digital ecosystem uniting
-              <strong className="text-white font-bold"> Farmers, Farm Landlords, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, Instructors, and Agri Market Sellers </strong>
+              <strong className="text-white font-bold"> Farmers, Farm Landlords, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, and Instructors </strong>
               — with AI Crop Doctor for farmers, 7/12 land verification for landlords, per-acre machinery bookings
               for equipment owners, FAT/SNF milk billing for vendors,
               digital POS khata for vyaparis, FT-1 digital bilty for transporters, course studios for instructors,
@@ -930,7 +907,6 @@ export const LandingPage: React.FC = () => {
               <h4 className="font-bold uppercase tracking-wider text-slate-200 text-[11px]">Fintech & Ops</h4>
               <ul className="space-y-2">
                 <li><Link to="/instructor" className="hover:text-emerald-400 transition-colors">Gurukul Academy Studio</Link></li>
-                <li><Link to="/customer" className="hover:text-emerald-400 transition-colors">Agri Market Consumer</Link></li>
               </ul>
             </div>
           </div>

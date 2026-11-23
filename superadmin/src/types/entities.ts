@@ -206,7 +206,7 @@ export interface NurseryPlant {
   moderationStatus?: 'approved' | 'pending' | 'rejected' | 'taken_down';
 }
 
-// 6. eMarket Customer Entities
+// 6. Marketplace & Audit Entities
 export interface MarketplaceOrder {
   id: string;
   userId: string;
@@ -225,19 +225,6 @@ export interface MarketplaceOrder {
   }>;
   createdAt?: string;
   trackingNumber?: string;
-}
-
-export interface MarketplaceProduct {
-  id: string;
-  name: string;
-  category: string;
-  price: number;
-  originalPrice?: number;
-  stock: number;
-  inStock?: boolean;
-  sellerId?: string;
-  sellerName?: string;
-  status?: string;
 }
 
 export interface AuditLogEntry {

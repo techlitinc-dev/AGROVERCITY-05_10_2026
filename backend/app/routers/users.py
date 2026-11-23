@@ -49,7 +49,7 @@ PLATFORM_PERSONAS = (
     "farmer", "landlord", "transporter", "seller", "equipmentOwner", "exporter",
     "directBuyer", "broker", "dairyManager", "milkSeller", "vet", "fpoManager",
     "womenHub", "instructor", "bankManager", "insuranceProvider",
-    "coldStorageProvider", "gaushalaManager", "nursery", "customer", "superadmin",
+    "coldStorageProvider", "gaushalaManager", "nursery", "superadmin",
 )
 
 

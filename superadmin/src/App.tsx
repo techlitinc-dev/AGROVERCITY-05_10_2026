@@ -14,7 +14,6 @@ import { FpoHubView } from './views/FpoHubView';
 import { GurukulAdminView } from './views/GurukulAdminView';
 import { ColdStorageView } from './views/ColdStorageView';
 import { NurseryView } from './views/NurseryView';
-import { CustomerView } from './views/CustomerView';
 import { RbacView } from './views/RbacView';
 
 const MainShell: React.FC = () => {
@@ -41,7 +40,6 @@ const MainShell: React.FC = () => {
             {activeTab === 'gurukul' && <GurukulAdminView />}
             {activeTab === 'cold_storage' && <ColdStorageView />}
             {activeTab === 'nursery' && <NurseryView />}
-            {activeTab === 'customer' && <CustomerView />}
             {activeTab === 'rbac' && <RbacView />}
           </div>
         </main>

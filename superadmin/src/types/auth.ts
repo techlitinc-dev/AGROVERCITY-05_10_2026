@@ -42,11 +42,6 @@ export type Permission =
   | 'nursery:verify'
   | 'nursery:moderate_plants'
   | 'nursery:manage_sapling_requests'
-  // eMarket Customer
-  | 'customer:read'
-  | 'customer:refund_orders'
-  | 'customer:moderate_products'
-  | 'customer:moderate_ads'
   // RBAC
   | 'rbac:manage_users'
   | 'rbac:view_audit';
@@ -57,7 +52,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'transporter:read', 'transporter:verify_fleet', 'transporter:override_trip', 'transporter:suspend',
     'vyapari:read', 'vyapari:approve_rates', 'vyapari:manage_deals', 'vyapari:verify_buyer', 'vyapari:escrow_release',
     'nursery:read', 'nursery:verify', 'nursery:moderate_plants', 'nursery:manage_sapling_requests',
-    'customer:read', 'customer:refund_orders', 'customer:moderate_products', 'customer:moderate_ads',
     'rbac:manage_users', 'rbac:view_audit',
   ],
   operations_lead: [
@@ -65,7 +59,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'transporter:read', 'transporter:verify_fleet', 'transporter:override_trip', 'transporter:suspend',
     'vyapari:read', 'vyapari:manage_deals', 'vyapari:verify_buyer',
     'nursery:read', 'nursery:verify', 'nursery:manage_sapling_requests',
-    'customer:read', 'customer:moderate_products',
     'rbac:view_audit',
   ],
   finance_admin: [
@@ -73,7 +66,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'transporter:read',
     'vyapari:read', 'vyapari:approve_rates', 'vyapari:escrow_release',
     'nursery:read',
-    'customer:read', 'customer:refund_orders',
     'rbac:view_audit',
   ],
   compliance_officer: [
@@ -81,19 +73,16 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'transporter:read', 'transporter:verify_fleet', 'transporter:suspend',
     'vyapari:read', 'vyapari:verify_buyer',
     'nursery:read', 'nursery:verify',
-    'customer:read',
     'rbac:view_audit',
   ],
   agronomist: [
     'farmer:read', 'farmer:moderate_lots', 'farmer:soil_advisory',
     'nursery:read', 'nursery:moderate_plants', 'nursery:manage_sapling_requests',
-    'customer:read',
     'rbac:view_audit',
   ],
   content_moderator: [
     'farmer:read',
     'nursery:read', 'nursery:moderate_plants',
-    'customer:read', 'customer:moderate_products', 'customer:moderate_ads',
     'rbac:view_audit',
   ],
 };

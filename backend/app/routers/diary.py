@@ -44,7 +44,7 @@ async def _farmer_or_landlord(uid: str = Depends(current_user_id)) -> str:
     user = await get_user(uid)
     if user is None:
         _error(404, "NOT_FOUND", "user not found")
-    require_role(user, "farmer", "farmLandlord", "nursery", "seller", "transporter", "transport", "customer")
+    require_role(user, "farmer", "farmLandlord", "nursery", "seller", "transporter", "transport")
     return uid
 
 

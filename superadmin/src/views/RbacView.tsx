@@ -86,11 +86,6 @@ export const RbacView: React.FC = () => {
     { code: 'nursery:verify', label: 'Accredit Plant Nurseries', module: 'Nursery' },
     { code: 'nursery:moderate_plants', label: 'Moderate Plant Inventory Listings', module: 'Nursery' },
     { code: 'nursery:manage_sapling_requests', label: 'Allocate & Dispatch Tree Requests', module: 'Nursery' },
-    // eMarket Customer
-    { code: 'customer:read', label: 'View Customer Orders & Catalog', module: 'eMarket Customer' },
-    { code: 'customer:refund_orders', label: 'Issue Order Refunds & Grievances', module: 'eMarket Customer' },
-    { code: 'customer:moderate_products', label: 'Curate Marketplace Input Products', module: 'eMarket Customer' },
-    { code: 'customer:moderate_ads', label: 'Approve Advertisement Campaigns', module: 'eMarket Customer' },
     // Governance
     { code: 'rbac:manage_users', label: 'Manage Admin Users & Roles', module: 'Governance' },
     { code: 'rbac:view_audit', label: 'Inspect Immutable Audit Trail', module: 'Governance' },

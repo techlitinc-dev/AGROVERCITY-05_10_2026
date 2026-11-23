@@ -15,7 +15,6 @@ export type PersonaType =
   | 'exporter'
   | 'instructor'
   | 'directBuyer'
-  | 'customer'
   | 'bankManager'
   | 'insuranceProvider'
   | 'coldStorageProvider'

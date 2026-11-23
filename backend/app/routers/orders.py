@@ -33,7 +33,7 @@ from app.services.users import get_user
 
 router = APIRouter(tags=["orders"])
 
-MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller", "customer", "directBuyer", "nursery")
+MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller", "directBuyer", "nursery")
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):

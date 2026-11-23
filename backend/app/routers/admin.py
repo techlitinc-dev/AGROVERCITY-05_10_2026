@@ -718,7 +718,6 @@ async def emarket_analytics(user: dict = Depends(admin_user)):
     return {
         "gmv": gmv,
         "totalOrders": total_orders,
-        "totalCustomers": sum(1 for u in users_list if "customer" in u.get("linkedProfiles", [])),
         "totalSellers": sum(1 for u in users_list if "seller" in u.get("linkedProfiles", [])),
         "aov": round(gmv / total_orders, 2) if total_orders else 0.0,
         "monthlyGmv": [{"month": m, "amount": monthly_gmv[m]} for m in months],

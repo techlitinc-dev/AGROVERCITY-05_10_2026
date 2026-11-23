@@ -204,37 +204,6 @@ export const Sidebar: React.FC = () => {
           },
         ];
 
-      case 'customer':
-        return [
-          {
-            title: 'Agri Market',
-            items: [
-              { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
-              { to: '/mall', label: 'Shop Fresh & Inputs', icon: ShoppingBag },
-              { to: '/customer/produce', label: 'Farm-Fresh Produce', icon: Sprout },
-              { to: '/customer/quotes', label: 'My Quotes & Negotiations', icon: Tag },
-              { to: '/customer/procurements', label: 'FarmGate Procurements', icon: FileSpreadsheet },
-              { to: '/customer/seasonal', label: 'Seasonal & Nutrition Guide', icon: Leaf },
-              { to: '/customer/orders', label: 'My Orders & Delivery', icon: Package },
-              { to: '/customer/demands', label: 'Purchase Requests', icon: ClipboardList },
-              { to: '/customer/subscriptions', label: 'Subscription Veggie Box', icon: Calendar },
-              { to: '/mall/wishlist', label: 'Saved Wishlist', icon: Heart },
-            ],
-          },
-          {
-            title: 'Household & Finance',
-            items: [
-              { to: '/customer/diary', label: 'Household Diary', icon: BookOpen },
-              { to: '/customer/finance', label: 'Finance CEO (Household)', icon: Landmark },
-              { to: '/customer/wallet', label: 'Wallet & Cashback', icon: DollarSign },
-              { to: '/customer/coins', label: 'Coin Rewards (Krushi Ratna)', icon: Sparkles },
-              { to: '/customer/trees', label: 'Tree Plantation', icon: TreePine },
-              { to: '/customer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet },
-              { to: '/customer/news', label: 'Agri News & Stories', icon: Radio },
-            ],
-          },
-        ];
-
       case 'coldStorageProvider':
         return [
           {

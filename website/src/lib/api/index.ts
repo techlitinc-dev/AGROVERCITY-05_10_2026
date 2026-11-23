@@ -68,7 +68,6 @@ export { livestock } from './livestock';
 export { courses } from './courses';
 export { teachers } from './teachers';
 export { mall } from './mall';
-export { customer } from './customer';
 export { gamification } from './gamification';
 export { referrals } from './referrals';
 export { content } from './content';
@@ -136,7 +135,6 @@ export const api = {
   getMandiPrices: mandi.prices,
 
   // Lots
-  getProduceLots: lots.list,
   createProduceLot: (lotData: Partial<ProduceLot>) => lots.create(lotData),
 
   // Demands

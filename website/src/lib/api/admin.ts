@@ -561,8 +561,6 @@ export const admin = {
     overview: (): Promise<unknown> => readOne<unknown>('/admin/overview'),
     /** GET /admin/analytics/summary */
     analyticsSummary: (): Promise<unknown> => readOne<unknown>('/admin/analytics/summary'),
-    /** GET /admin/analytics/emarket */
-    analyticsEmarket: (): Promise<unknown> => readOne<unknown>('/admin/analytics/emarket'),
     /** GET /admin/north-star */
     northStar: (): Promise<unknown> => readOne<unknown>('/analytics/north-star'),
     /** POST /admin/broadcast | /admin/broadcasts */

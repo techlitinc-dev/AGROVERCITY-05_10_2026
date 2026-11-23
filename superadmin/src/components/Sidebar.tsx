@@ -33,7 +33,6 @@ export type ActiveTab =
   | 'gurukul'
   | 'cold_storage'
   | 'nursery'
-  | 'customer'
   | 'rbac';
 
 interface SidebarProps {
@@ -120,12 +119,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
       label: '19. Nursery & Agroforestry',
       sub: 'Saplings, Accreditations & Trees',
       icon: Flower2,
-    },
-    {
-      id: 'customer',
-      label: '20. eMarket Customer Mall',
-      sub: 'Fresh Cart Orders, Catalog & Refunds',
-      icon: ShoppingBag,
     },
   ];
 

@@ -7,8 +7,7 @@ through the API the website calls:
           saved mandis, follows, diary breadth, payments ledger + refund
           request, pending ratings, equipment booking history, lot ads
           lifecycle, chatbot photo input, carbon estimates, tree search.
-  ACT 2 — Sunita Shah (customer): purchase requests, seller storefront.
-  ACT 3 — Kavita Jadhav (farmer): academy learner surfaces (recommendations,
+  ACT 2 — Kavita Jadhav (farmer): academy learner surfaces (recommendations,
           instructors).
 
 Firestore + firebase-auth + redis are faked by conftest; the AI gateway is
@@ -375,58 +374,7 @@ async def test_act1_ramesh_carbon_and_tree_search(client, user_store):
 # --------------------------------------------------------------------------- ACT 2
 
 
-async def test_act2_sunita_purchase_request(client, user_store):
-    """Sunita posts a purchase request for her weekly onion need, then withdraws one."""
-    token = seed_user(user_store, uid="uid-cust", active_profile="customer")
-    payload = {
-        "crop": "Onion", "variety": "Nashik Red", "grade": "A",
-        "quantityQuintals": 5, "targetMinPrice": 1600, "targetMaxPrice": 1900,
-        "recurringFrequency": "Weekly", "deliveryWindow": "Needed by 2026-10-25",
-        "district": "Pune", "notes": "Home delivery preferred",
-    }
-    created = await client.post("/v1/customer/demands", json=payload, headers=auth(token))
-    assert created.status_code == 201, created.text
-    demand_id = created.json()["id"]
-
-    listing = await client.get("/v1/customer/demands", headers=auth(token))
-    assert any(d["id"] == demand_id for d in listing.json()["data"])
-
-    withdrawn = await client.delete(f"/v1/customer/demands/{demand_id}", headers=auth(token))
-    assert withdrawn.status_code in (200, 204)
-
-
-async def test_act2_sunita_browses_seller_storefront(client, user_store):
-    """Sunita opens a seller's storefront from a product page and sees verified lots."""
-    cust = seed_user(user_store, uid="uid-cust", active_profile="customer")
-    farmer = seed_user(user_store, uid="uid-farmer2", active_profile="farmer",
-                       name="Ramesh Patil")
-    user_store["market_lots/lot9"] = {
-        "id": "lot9", "farmerId": farmer and "uid-farmer2", "crop": "Tomato",
-        "status": "open", "quantityQuintals": 12, "expectedRate": 2400,
-        "harvestDate": "2026-10-18", "createdAt": "2026-10-19T09:00:00+05:30",
-    }
-    user_store["kyc_cases/kyc_f1"] = {
-        "caseId": "kyc_f1", "userId": "uid-farmer2", "persona": "farmer", "status": "verified",
-        "docs": [{"docId": "d1", "type": "pan", "status": "verified",
-                  "reviewedAt": "2026-09-01T00:00:00+00:00"}],
-    }
-
-    resp = await client.get("/v1/customer/storefronts/uid-farmer2", headers=auth(cust))
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["farmerName"] == "Ramesh Patil"
-    assert body["lots"][0]["crop"] == "Tomato"
-    assert body["lots"][0]["pricePaisa"] == 240000
-    assert body["credentials"][0]["type"] == "pan"
-
-    missing = await client.get("/v1/customer/storefronts/uid-nobody", headers=auth(cust))
-    assert missing.status_code == 404
-
-
-# --------------------------------------------------------------------------- ACT 3
-
-
-async def test_act3_kavita_academy_surfaces(client, user_store):
+async def test_act2_kavita_academy_surfaces(client, user_store):
     """Kavita sees course recommendations and the instructor directory."""
     token = seed_user(user_store, uid="uid-kavita", active_profile="farmer")
     user_store["teacher_profiles/t1"] = {

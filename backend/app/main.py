@@ -20,7 +20,6 @@ from app.data.insurance_seed import seed_insurance_rates, seed_insurance_schemes
 from app.data.livestock_seed import seed_livestock
 from app.data.schemes_seed import seed_schemes
 from app.data.tree_seed import seed_tree
-from app.data.seasonal_seed import seed_seasonal
 from app.data.superadmin_seed import seed_superadmin
 from app.services.ai.config_store import seed_ai_config
 from app.services.billing import seed_plans
@@ -57,15 +56,12 @@ from app.routers import (
     contracts,
     courses,
     coupons,
-    customer_hub,
-    customer_seasonal,
     dairy_manager,
     dairy_hub,
     dashboard,
     demands,
     diary,
     direct_buyer,
-    emarket_customer,
     exporter,
     equipment,
     equipment_owner,
@@ -223,9 +219,6 @@ app.include_router(payments.router, prefix="/v1")
 app.include_router(chat.router, prefix="/v1")
 app.include_router(calls.router, prefix="/v1")
 app.include_router(direct_buyer.router, prefix="/v1")
-app.include_router(emarket_customer.router, prefix="/v1")
-app.include_router(customer_hub.router, prefix="/v1")
-app.include_router(customer_seasonal.router, prefix="/v1")
 app.include_router(product_alerts.router, prefix="/v1")
 app.include_router(exporter.router, prefix="/v1")
 app.include_router(dairy_manager.router, prefix="/v1")
@@ -407,7 +400,6 @@ async def startup():
         seed_gyan,
         seed_livestock,
         seed_tree,
-        seed_seasonal,
         seed_cold_storage,
         seed_courses,
         seed_ai_config,

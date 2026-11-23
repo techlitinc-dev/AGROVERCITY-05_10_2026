@@ -245,7 +245,6 @@ async def tasks_summary(
 
     wants_farmer = _wants("farmer")
     wants_instructor = _wants("instructor")
-    wants_customer = _wants("customer")
 
     from app.services.settlements import _config, course_gmv_pct
 
@@ -260,13 +259,6 @@ async def tasks_summary(
             query("course_assignments", [("instructorId", "==", uid)], limit=500),
             query("course_enquiries", [("instructorId", "==", uid)], limit=500),
             _config(),
-        ]
-    if wants_customer:
-        jobs += [
-            query("customer_demands", [("customerId", "==", uid)], limit=500),
-            query("customer_quotes", [("customerId", "==", uid)], limit=500),
-            query("customer_orders", [("customerId", "==", uid)], limit=500),
-            query("customer_favorite_suppliers", [("customerId", "==", uid)], limit=100),
         ]
     results = list(await asyncio.gather(*jobs)) if jobs else []
     cursor = 0
@@ -364,100 +356,4 @@ async def tasks_summary(
                 source_id=f"{uid}:enquiries",
             )
 
-    # WS-03 task 3.40: e-market customer summary grid items (real collections)
-    # + actionable tasks for quotes awaiting a response and pending inspections.
-    if wants_customer:
-        now = datetime.now(timezone.utc)
-        month_prefix = now.strftime("%Y-%m")
-        week_ago = (now - timedelta(days=7)).isoformat()
-
-        demands = results[cursor]
-        quotes = results[cursor + 1]
-        orders = results[cursor + 2]
-        favorites = results[cursor + 3]
-        cursor += 4
-
-        open_demands = sum(1 for d in demands if d.get("status", "open") == "open")
-
-        quotes_awaiting = sum(
-            1 for q in quotes if q.get("status") in ("pending", "countered", "quote_pending")
-        )
-
-        child_orders = [o for o in orders if not o.get("isParent")]
-        orders_in_transit = sum(
-            1
-            for o in child_orders
-            if o.get("status") not in ("delivered", "settled", "cancelled", "disputed")
-        )
-        inspections_pending = [
-            o
-            for o in child_orders
-            if o.get("status") == "delivered"
-            and o.get("deliveredAt")
-            and not o.get("inspection")
-        ]
-        spend_month_paisa = sum(
-            int(o.get("orderValuePaisa") or 0)
-            for o in child_orders
-            if (o.get("createdAt") or "")[:7] == month_prefix
-        )
-
-        favorite_farmers = {f.get("farmerId") for f in favorites if f.get("farmerId")}
-        new_lots = 0
-        if favorite_farmers:
-            lots = await query("market_lots", [("status", "==", "open")], limit=1000)
-            new_lots = sum(
-                1
-                for lot in lots
-                if lot.get("farmerId") in favorite_farmers
-                and (lot.get("createdAt") or "") >= week_ago
-            )
-
-        customer_bucket = grouped.setdefault("customer", {"moduleCounts": {}, "topUrgent": []})
-        customer_bucket["summaryItems"] = {
-            "openDemands": {"count": open_demands, "deepLink": "/dashboard/p/demands"},
-            "quotesAwaiting": {"count": quotes_awaiting, "deepLink": "/dashboard/p/quotes"},
-            "ordersInTransit": {"count": orders_in_transit, "deepLink": "/dashboard/p/orderTracking"},
-            "inspectionsPending": {
-                "count": len(inspections_pending),
-                "deepLink": "/dashboard/p/orderTracking",
-            },
-            "spendThisMonthPaisa": {
-                "paisa": spend_month_paisa,
-                "deepLink": "/dashboard/p/orderTracking",
-            },
-            "favoriteFarmersNewLots": {
-                "count": new_lots,
-                "deepLink": "/dashboard/p/favorites",
-            },
-        }
-        if quotes_awaiting:
-            await tasks_service.emit_task(
-                uid,
-                persona="customer",
-                module="emarket",
-                kind="quotes_awaiting",
-                title_en="Quotes awaiting your response",
-                title_hi="उद्धरण आपके उत्तर की प्रतीक्षा में हैं",
-                subtitle=f"{quotes_awaiting} quote(s) open for negotiation",
-                priority="today",
-                deep_link="/dashboard/p/quotes",
-                source_id=f"{uid}:emarket:quotes",
-            )
-        if inspections_pending:
-            first_pending = sorted(
-                inspections_pending, key=lambda o: o.get("deliveredAt") or ""
-            )[0]
-            await tasks_service.emit_task(
-                uid,
-                persona="customer",
-                module="emarket",
-                kind="inspection_pending",
-                title_en="Inspect your delivered order",
-                title_hi="अपनी डिलीवर हुई ऑर्डर की जांच करें",
-                subtitle="Delivery awaiting inspection within the 72h window",
-                priority="urgent",
-                deep_link=f"/dashboard/p/orders/{first_pending['id']}/inspect",
-                source_id=f"{uid}:emarket:inspection",
-            )
     return {"personas": grouped}

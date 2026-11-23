@@ -12,13 +12,12 @@ import {
   Plus,
   ShieldCheck,
   ShoppingCart,
-  Sprout,
   Tag,
   Trash2,
 } from 'lucide-react';
-import { apiErrorMessage, customer, gamification, mall, addressLabel, type SavedAddress } from '../../lib/api';
+import { apiErrorMessage, gamification, mall, addressLabel, type SavedAddress } from '../../lib/api';
 import { AddressPicker } from '../../components/common/AddressPicker';
-import { useCartStore, type ProduceLogisticsMode } from '../../stores/cartStore';
+import { useCartStore } from '../../stores/cartStore';
 import { useAuthStore } from '../../stores/authStore';
 import { formatCurrency, formatPaisa, newIdempotencyKey } from '../../lib/utils';
 import {
@@ -69,7 +68,7 @@ const BNPL_INSTALLMENTS = 2;
 const DEFAULT_DELIVERY_SLOTS = ['7–10 AM', '10–1 PM', '4–7 PM'];
 
 export const CartCheckoutView: React.FC = () => {
-  const { items, updateQty, removeItem, clearCart, getSubtotal, produceLines, updateProduceQty, updateProduceLogistics, removeProduceLine, clearProduceCart, getProduceSubtotalPaisa } = useCartStore();
+  const { items, updateQty, removeItem, clearCart, getSubtotal } = useCartStore();
   const user = useAuthStore((s) => s.user);
 
   const [rows, setRows] = useState<ApiCartRow[]>([]);
@@ -103,39 +102,7 @@ export const CartCheckoutView: React.FC = () => {
     paymentNote: string | null;
   } | null>(null);
 
-  // FarmGate produce cart (multi-farmer /customer/cart/checkout).
-  const [produceCheckout, setProduceCheckout] = useState<{
-    parentOrderId: string;
-    orders: Array<Record<string, unknown>>;
-  } | null>(null);
-  const [produceBusy, setProduceBusy] = useState(false);
-
   const navigate = useNavigate();
-
-  const handleProduceCheckout = async () => {
-    if (produceBusy || produceLines.length === 0) return;
-    setProduceBusy(true);
-    setError(null);
-    try {
-      const res = (await customer.checkout({
-        lines: produceLines.map((l) => ({
-          farmerId: l.farmerId,
-          lotId: l.lotId,
-          qty: l.qtyQuintals,
-          logisticsMode: l.logisticsMode,
-        })),
-      })) as { parentOrderId?: string; orders?: Array<Record<string, unknown>> };
-      clearProduceCart();
-      setProduceCheckout({
-        parentOrderId: str(res.parentOrderId),
-        orders: Array.isArray(res.orders) ? res.orders : [],
-      });
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    } finally {
-      setProduceBusy(false);
-    }
-  };
 
   // --- cart: server is the source of truth; store stays as the optimistic mirror ---
   useEffect(() => {
@@ -434,7 +401,7 @@ export const CartCheckoutView: React.FC = () => {
         )}
         <div className="pt-4 flex justify-center gap-3">
           <Link
-            to={`/customer/orders/${orderResult.orderId}`}
+            to={`/mall/orders/${orderResult.orderId}`}
             className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
           >
             <ShieldCheck className="w-4 h-4" />
@@ -451,38 +418,7 @@ export const CartCheckoutView: React.FC = () => {
     );
   }
 
-  const empty = !loadingCart && rows.length === 0 && items.length === 0 && produceLines.length === 0;
-
-  if (produceCheckout) {
-    return (
-      <div className="max-w-md mx-auto py-12 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-md">
-          <Sprout className="w-8 h-8" />
-        </div>
-        <h2 className="text-2xl font-black text-slate-900">Procurement Placed!</h2>
-        <p className="text-xs text-slate-500">
-          <strong>{produceCheckout.orders.length}</strong> farmer order
-          {produceCheckout.orders.length === 1 ? '' : 's'} confirmed under consolidation{' '}
-          <strong>#{produceCheckout.parentOrderId.replace(/^ord_/, '').toUpperCase()}</strong>. Deposits and
-          inspection windows are tracked on the procurements page.
-        </p>
-        <div className="pt-4 flex justify-center gap-3">
-          <Link
-            to="/customer/procurements"
-            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
-          >
-            Track Procurements
-          </Link>
-          <Link
-            to="/customer/produce"
-            className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs"
-          >
-            Browse More Produce
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const empty = !loadingCart && rows.length === 0 && items.length === 0;
 
   if (empty) {
     return (
@@ -635,101 +571,6 @@ export const CartCheckoutView: React.FC = () => {
               </div>
             )}
           </div>
-
-          {/* FarmGate produce cart (multi-farmer checkout) */}
-          {produceLines.length > 0 && (
-            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-6 border border-emerald-200/80 shadow-xs space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-bold text-sm text-emerald-900 flex items-center gap-1.5">
-                  <Sprout className="w-4 h-4 text-emerald-600" />
-                  Produce Cart ({produceLines.length} lot{produceLines.length === 1 ? '' : 's'})
-                </h3>
-                <Link to="/customer/produce" className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800">
-                  + Add more lots
-                </Link>
-              </div>
-
-              <div className="divide-y divide-emerald-100">
-                {produceLines.map((line) => (
-                  <div key={line.lotId} className="py-3 space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-bold text-xs text-slate-900 leading-tight">
-                          {line.crop}
-                          {line.grade ? ` · ${line.grade}` : ''}
-                        </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          {line.farmerName || 'Farmer'} · {formatPaisa(line.pricePaisa)}/quintal
-                          {line.harvestDate ? ` · harvested ${line.harvestDate.slice(0, 10)}` : ''}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeProduceLine(line.lotId)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition-colors shrink-0"
-                        aria-label="Remove lot"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center border border-emerald-200 rounded-xl bg-white p-1">
-                        <button
-                          type="button"
-                          onClick={() => updateProduceQty(line.lotId, Math.round((line.qtyQuintals - 0.5) * 2) / 2)}
-                          className="p-1 text-slate-500 hover:text-slate-800"
-                          aria-label="Decrease quintals"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="px-2 text-xs font-bold text-slate-800">{line.qtyQuintals} q</span>
-                        <button
-                          type="button"
-                          onClick={() => updateProduceQty(line.lotId, Math.round((line.qtyQuintals + 0.5) * 2) / 2)}
-                          className="p-1 text-slate-500 hover:text-slate-800"
-                          aria-label="Increase quintals"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <select
-                        value={line.logisticsMode}
-                        onChange={(e) =>
-                          updateProduceLogistics(line.lotId, e.target.value as ProduceLogisticsMode)
-                        }
-                        className="px-2.5 py-1.5 rounded-xl bg-white border border-emerald-200 text-[11px] font-bold text-slate-700 focus:outline-none"
-                      >
-                        <option value="customer_pickup">I pick up</option>
-                        <option value="farmer_delivery">Farmer delivers</option>
-                        <option value="platform_transport">Platform transport</option>
-                      </select>
-                      <span className="ml-auto text-xs font-black text-emerald-800">
-                        {formatPaisa(Math.round(line.pricePaisa * line.qtyQuintals))}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-emerald-200">
-                <div>
-                  <p className="text-[11px] text-emerald-700 font-semibold">
-                    Total · {produceLines.length} farmer{produceLines.length === 1 ? '' : 's'}
-                  </p>
-                  <p className="text-lg font-black text-emerald-900">{formatPaisa(getProduceSubtotalPaisa())}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleProduceCheckout()}
-                  disabled={produceBusy}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center gap-1.5 disabled:opacity-60"
-                >
-                  <Sprout className="w-4 h-4" />
-                  {produceBusy ? 'Placing procurement…' : 'Checkout Produce'}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Delivery Address */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">

@@ -162,57 +162,6 @@ async def release_due_escrow_job(x_cron_secret: str | None = Header(None, alias=
     return await release_due_escrows()
 
 
-@router.post("/customer-escrow/release-due")
-async def release_due_customer_escrow_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
-    """FarmGate deposit auto-release: held customer_order escrows whose 72h
-    inspection window closed without a dispute (same shape as escrow/release-due)."""
-    _check_cron_secret(x_cron_secret)
-    from app.routers.emarket_customer import release_due_customer_escrows
-
-    return await release_due_customer_escrows()
-
-
-async def run_subscription_planner() -> dict:
-    """WS-03 task 3.31 — standing-demand planner: every active
-    customer_subscriptions doc whose nextRunAt has passed gets one quote
-    (status quote_pending, subscriptionId set) through the normal quote →
-    escrow → inspection pipeline — escrow is never bypassed. nextRunAt then
-    advances by the frequency (daily +1d, weekly +7d, seasonal +90d), so an
-    immediate second run generates 0."""
-    from app.routers.emarket_customer import (
-        FREQUENCY_DELTAS,
-        create_subscription_quote,
-    )
-
-    now = datetime.now(timezone.utc)
-    subs = await query("customer_subscriptions", [("status", "==", "active")], limit=1000)
-    generated = 0
-    for sub in subs:
-        next_run_at = sub.get("nextRunAt") or ""
-        try:
-            due = datetime.fromisoformat(next_run_at)
-            if due.tzinfo is None:
-                due = due.replace(tzinfo=timezone.utc)
-        except ValueError:
-            due = None
-        if due is None or due > now:
-            continue
-        await create_subscription_quote(sub)
-        frequency = sub.get("frequency") or "weekly"
-        sub["nextRunAt"] = (now + FREQUENCY_DELTAS.get(frequency, FREQUENCY_DELTAS["weekly"])).isoformat()
-        sub["updatedAt"] = now.isoformat()
-        await set_doc("customer_subscriptions", sub["id"], sub)
-        generated += 1
-    return {"generated": generated}
-
-
-@router.post("/subscriptions/planner/run")
-async def run_subscription_planner_job(x_cron_secret: str | None = Header(None, alias="X-Cron-Secret")):
-    """WS-03 task 3.31: recurring quote generation for due customer subscriptions."""
-    _check_cron_secret(x_cron_secret)
-    return await run_subscription_planner()
-
-
 async def run_standing_demands_planner() -> dict:
     """P1-22 (spec B2): Recurring direct-buyer standing-demands planner:
     every open standing_orders doc whose nextRunAt has passed generates

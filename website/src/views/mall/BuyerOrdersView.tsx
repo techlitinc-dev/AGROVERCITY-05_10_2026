@@ -97,7 +97,7 @@ const displayStatus = (status: string): string =>
 
 // ---------------------------------------------------------------- list view
 
-export const CustomerOrdersView: React.FC = () => {
+export const BuyerOrdersView: React.FC = () => {
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -167,7 +167,7 @@ export const CustomerOrdersView: React.FC = () => {
           {orders.map((order) => (
             <Link
               key={order.id}
-              to={`/customer/orders/${order.id}`}
+              to={`/mall/orders/${order.id}`}
               className="block bg-white rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-emerald-200 transition-all p-5"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -204,7 +204,7 @@ export const CustomerOrdersView: React.FC = () => {
 
 // ---------------------------------------------------------------- detail view
 
-export const CustomerOrderDetailView: React.FC = () => {
+export const BuyerOrderDetailView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { addItem } = useCartStore();
@@ -392,7 +392,7 @@ export const CustomerOrderDetailView: React.FC = () => {
       <div className="max-w-md mx-auto py-16 text-center space-y-4">
         <h3 className="font-extrabold text-base text-slate-800">Order not found</h3>
         <p className="text-xs text-slate-500">{error ?? 'It may belong to another account.'}</p>
-        <Link to="/customer/orders" className="inline-block px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl">
+        <Link to="/mall/orders" className="inline-block px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl">
           Back to Orders
         </Link>
       </div>
@@ -401,7 +401,7 @@ export const CustomerOrderDetailView: React.FC = () => {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <Link to="/customer/orders" className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-emerald-700">
+      <Link to="/mall/orders" className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-emerald-700">
         <ArrowLeft className="w-4 h-4" />
         All Orders
       </Link>

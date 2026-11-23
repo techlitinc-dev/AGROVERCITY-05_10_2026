@@ -55,17 +55,6 @@ TIER_MATRIX = [
     ("directBuyer", "free", 0, {"contracts_active": 1, "qcSubmits": 0, "orgMembers": 0}),
     ("directBuyer", "pro", 4999, {"contracts_active": 5, "orgMembers": 0}),
     ("directBuyer", "enterprise", 24999, {}),
-    ("emarketCustomer", "free", 0, {}),
-    # SR 1/SR 23: e-market customer premium ladder: ₹9 first-month intro, then
-    # ₹99/mo or ₹999/yr. The free row stays paywall-free; paid tiers add
-    # delivery/member perks via TIER_FEATURES.
-    ("emarketCustomer", "first_month_intro", 9, {}),
-    ("emarketCustomer", "premium_monthly", 99, {"free_delivery_above": 499}),
-    ("emarketCustomer", "premium_yearly", 999, {"free_delivery_above": 499}),
-    # WS-03 step 7 (task 3.35): bulk/institutional e-market buyers — one
-    # consolidated GST invoice per period + credit_terms ledger (C9). Paid plan
-    # registered through the normal matrix (see the vet_free note above).
-    ("emarket", "business", 999, {"creditTermsDays": 30}),
     ("bankManager", "console", 2000, {"seats": 2}),
     # WS-03 step 6: partner-institution per-seat licensing (Enterprise only).
     ("bankManager", "enterprise", 2000, {"seats": 50, "perSeatPaisa": 200000}),
@@ -142,27 +131,16 @@ TIER_FEATURES = {
     ],
     "bankManager_enterprise": ["partnerBankSeats", "originationFee", "apiAccess"],
     "vet_pro": ["vetCampaigns", "vetScheduleEditor"],
-    "emarket_business": ["consolidated_gst_invoice", "credit_terms"],
-    "emarketCustomer_first_month_intro": ["free_delivery_above", "member_prices"],
-    "emarketCustomer_premium_monthly": ["free_delivery_above", "priority_slots", "member_prices"],
-    "emarketCustomer_premium_yearly": [
-        "free_delivery_above",
-        "priority_slots",
-        "member_prices",
-        "priority_support",
-    ],
 }
 
 
 PLAN_INTERVALS = {
     # yearly billing intervals; every plan without an entry bills monthly
     "transport_starter_annual": "year",
-    "emarketCustomer_premium_yearly": "year",
 }
 PLAN_PROMOS = {
     # one-time first-month trials (flag only; redemption tracking is billing-v2)
     "farmer_first_month": True,
-    "emarketCustomer_first_month_intro": True,
 }
 
 

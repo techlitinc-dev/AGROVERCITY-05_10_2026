@@ -102,14 +102,6 @@ const ONBOARDING_ROLES: RoleOption[] = [
     desc: 'Publish paid courses, audio & video podcasts, run batches, and issue certificates.',
     badge: 'Agri Education',
   },
-  {
-    id: 'customer',
-    icon: '🛍️',
-    title: 'Agri Market Seller',
-    nativeTitle: 'कृषी बाजार विक्रेता',
-    desc: 'Sell farm-fresh produce, grains, spices, and value-added products directly to buyers on the Agri Market.',
-    badge: 'Agri Market Seller',
-  },
 ];
 
 type WizardStep = 'mobile' | 'profile' | 'kyc';

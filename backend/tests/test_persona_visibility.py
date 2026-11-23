@@ -27,12 +27,11 @@ async def test_get_profiles_surface(client, user_store):
     assert body["linkedProfiles"] == ["farmer", "seller"]
     assert body["activeProfile"] == "farmer"
     personas = {p["persona"]: p for p in body["personas"]}
-    assert len(personas) >= 20
+    assert len(personas) >= 19
     assert personas["farmer"] == {
         "persona": "farmer", "linked": True, "active": True, "primary": True, "disabled": False,
     }
     assert personas["seller"]["linked"] is True
-    assert personas["customer"]["linked"] is False
     # GET /users/me echoes the stored list too
     me = await client.get("/v1/users/me", headers=auth(token))
     assert me.json()["disabledProfiles"] == []
@@ -78,7 +77,7 @@ async def test_disable_active_falls_back_to_enabled_persona(client, user_store):
         user_store,
         uid="uid-1",
         active_profile="seller",
-        linkedProfiles=["farmer", "seller", "customer"],
+        linkedProfiles=["farmer", "seller", "instructor"],
         primaryProfile="farmer",
     )
     await client.put(
@@ -88,7 +87,7 @@ async def test_disable_active_falls_back_to_enabled_persona(client, user_store):
         "/v1/users/me/profiles/seller/visibility", json={"enabled": False}, headers=auth(token)
     )
     assert resp.status_code == 200
-    assert resp.json()["activeProfile"] == "customer"
+    assert resp.json()["activeProfile"] == "instructor"
 
 
 async def test_last_enabled_persona_guard(client, user_store):

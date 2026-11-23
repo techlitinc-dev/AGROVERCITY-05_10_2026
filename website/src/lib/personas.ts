@@ -52,7 +52,6 @@ export const PERSONA_ALIASES: Record<string, PersonaType> = {
   exporter: 'exporter',
   directBuyer: 'directBuyer',
   directbuyer: 'directBuyer',
-  customer: 'customer',
   bankManager: 'bankManager',
   bankmanager: 'bankManager',
   insuranceProvider: 'insuranceProvider',
@@ -107,7 +106,6 @@ export const ALL_PERSONAS: { id: PersonaType; label: string; icon: string }[] = 
   { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala', icon: '🫗' },
   { id: 'womenHub', label: 'Woman Hub', icon: '🪔' },
   { id: 'instructor', label: 'Gurukul Instructor', icon: '🎓' },
-  { id: 'customer', label: 'Agri Market Seller', icon: '🛍️' },
 ];
 
 // v2 personas (UI removed for v1, backend contract unchanged):
@@ -144,7 +142,6 @@ export const PERSONA_HOME: Record<PersonaType, string> = {
   dairyManager: '/dairyManager',
   instructor: '/instructor',
   directBuyer: '/directBuyer',
-  customer: '/customer',
   bankManager: '/bankManager',
   insuranceProvider: '/insuranceProvider',
   coldStorageProvider: '/coldStorageProvider',

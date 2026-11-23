@@ -73,7 +73,6 @@ export const Navbar: React.FC = () => {
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
     { id: 'womenHub', label: 'Woman Hub (महिला हब)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
-    { id: 'customer', label: 'Agri Market Seller (कृषी बाजार विक्रेता)', icon: '🛍️' },
   ];
 
   const handleSelectPersona = (p: PersonaType) => {
@@ -96,14 +95,6 @@ export const Navbar: React.FC = () => {
       { to: '/nursery/orders', label: 'Orders Received', icon: FileCheck },
       { to: '/nursery/offers', label: 'Offers & Discounts', icon: Tag },
       { to: '/nursery/payouts', label: 'Earnings & Payouts', icon: DollarSign },
-    ],
-    customer: [
-      { to: '/customer', label: 'Customer Cockpit', icon: LayoutDashboard },
-      { to: '/customer/produce', label: 'Farm-Fresh Produce', icon: Sprout },
-      { to: '/customer/orders', label: 'My Orders & Delivery', icon: Package },
-      { to: '/customer/subscriptions', label: 'Subscription Veggie Box', icon: Calendar },
-      { to: '/customer/diary', label: 'Household Diary', icon: BookOpen },
-      { to: '/customer/finance', label: 'Finance CEO (Household)', icon: Landmark },
     ],
   };
   const activePersonaId = normalizePersona(activePersona);

@@ -18,7 +18,6 @@ VALID_PROFILES = {
     "instructor",
     "dairyManager",
     "milkSeller",
-    "customer",
     "directBuyer",
     "exporter",
     "bankManager",

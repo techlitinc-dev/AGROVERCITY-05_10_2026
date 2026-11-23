@@ -206,7 +206,6 @@ DEFAULT_HOME: dict[str, str] = {
     "instructor": "instructorHome",
     "dairyManager": "dairyManagerHome",
     "milkSeller": "milkSellerHome",
-    "customer": "emarketHome",
     "directBuyer": "directBuyerHome",
     "exporter": "exporterHome",
     "bankManager": "bankManagerHome",

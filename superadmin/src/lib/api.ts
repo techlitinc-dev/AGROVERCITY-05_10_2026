@@ -14,7 +14,6 @@ import {
   TreeRequest,
   NurseryPlant,
   MarketplaceOrder,
-  MarketplaceProduct,
   AuditLogEntry,
   AgriNewsItem,
   LiveChannel,
@@ -475,61 +474,11 @@ class ApiService {
   }
 
   // --------------------------------------------------------------------------
-  // 6. EMARKET CUSTOMER OPERATIONS
+  // Marketplace mall orders (shared across personas)
   // --------------------------------------------------------------------------
   async getMarketplaceOrders(): Promise<MarketplaceOrder[]> {
     const res = await this.client.get('/admin/marketplace/orders');
     return res.data?.data || res.data || [];
-  }
-
-  async refundMarketplaceOrder(orderId: string, reason: string): Promise<any> {
-    const res = await this.client.post(
-      `/admin/marketplace/orders/${orderId}/refund`,
-      { reason },
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
-  }
-
-  async getMarketplaceProducts(): Promise<MarketplaceProduct[]> {
-    const res = await this.client.get('/admin/marketplace/products');
-    return res.data?.data || res.data || [];
-  }
-
-  async getMarketplaceCategories(): Promise<any[]> {
-    try {
-      const res = await this.client.get('/admin/marketplace/categories');
-      return res.data?.data || res.data || [];
-    } catch {
-      return [];
-    }
-  }
-
-  async getAds(): Promise<any[]> {
-    try {
-      const res = await this.client.get('/admin/ads');
-      return res.data?.data || res.data || [];
-    } catch {
-      return [];
-    }
-  }
-
-  async approveAd(adId: string, reason: string): Promise<any> {
-    const res = await this.client.post(
-      `/admin/ads/${adId}/approve`,
-      {},
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
-  }
-
-  async rejectAd(adId: string, reason: string): Promise<any> {
-    const res = await this.client.post(
-      `/admin/ads/${adId}/reject`,
-      { reason },
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
   }
 
   // --------------------------------------------------------------------------

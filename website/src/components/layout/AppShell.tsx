@@ -35,7 +35,6 @@ const PERSONA_ROUTE_PREFIXES: Record<string, PersonaType> = {
   instructor: 'instructor',
   coldStorageProvider: 'coldStorageProvider',
   nursery: 'nursery',
-  customer: 'customer',
 };
 
 /** Routes anyone may view without an active session. */

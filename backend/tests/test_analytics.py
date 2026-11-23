@@ -190,7 +190,6 @@ async def test_admin_emarket_analytics(client, emarket):
     body = resp.json()
     assert body["gmv"] == 760
     assert body["totalOrders"] == 3
-    assert body["totalCustomers"] == 1
     assert body["totalSellers"] == 1
     assert body["aov"] == round(760 / 3, 2)
     by_month = {m["month"]: m["amount"] for m in body["monthlyGmv"]}
