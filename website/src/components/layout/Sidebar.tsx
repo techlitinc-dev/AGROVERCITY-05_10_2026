@@ -95,6 +95,8 @@ export const Sidebar: React.FC = () => {
               { to: '/ads', label: 'Ads & Promotions', icon: Megaphone },
               { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/community/coins', label: 'Coins & Rewards', icon: Sparkles },
+              { to: '/farmer/women-hub', label: 'Woman Hub Businesses', icon: Store },
+              { to: '/farmer/women-hub/orders', label: 'Woman Hub Orders', icon: ShoppingBag },
             ],
           },
         ];
@@ -242,6 +244,33 @@ export const Sidebar: React.FC = () => {
               { to: '/coldStorageProvider/facilities', label: 'Chambers & Temperature', icon: Snowflake },
               { to: '/coldStorageProvider/bookings', label: 'Inward & Release Bookings', icon: Boxes },
               { to: '/coldStorageProvider/fees', label: 'Rent Ledger & e-NWR Fees', icon: DollarSign },
+            ],
+          },
+        ];
+
+      case 'womenHub':
+        return [
+          {
+            title: 'Woman Hub',
+            items: [
+              { to: '/womenHub', label: 'Dashboard', icon: LayoutDashboard },
+              { to: '/womenHub/businesses', label: 'My Business & Management', icon: Briefcase },
+              { to: '/womenHub/garden', label: 'Kitchen Garden Planner', icon: Sprout },
+              { to: '/womenHub/enterprise', label: 'Enterprise Income', icon: Store },
+              { to: '/womenHub/orders', label: 'My Orders & Track', icon: Package },
+              { to: '/womenHub/insights', label: 'AI Analysis', icon: TrendingUp },
+              { to: '/community/demands', label: 'Requirements / Demand Board', icon: Megaphone },
+              { to: '/farmer/diary', label: 'Diary', icon: BookOpen },
+              { to: '/ads', label: 'Give Advertisement', icon: Tag },
+              { to: '/community/news', label: 'Agri News', icon: Radio },
+              { to: '/community/trees', label: 'Tree Hub', icon: TreePine },
+              { to: '/mall', label: 'Agri Market / Shopping', icon: ShoppingBag },
+              { to: '/farmer/pnl', label: 'Finance CEO', icon: DollarSign },
+              { to: '/farmer/referrals', label: 'Refer & Earn', icon: Gift },
+              { to: '/community/coins', label: 'Coin Rewards / Krushi Ratna', icon: Sparkles },
+              { to: '/farmer/712', label: '7/12 & Land Records', icon: FileSpreadsheet },
+              { to: '/community/scan', label: 'Chatbot & AI Crop Scanner', icon: Bot },
+              { to: '/notifications', label: 'Notifications', icon: Inbox },
             ],
           },
         ];

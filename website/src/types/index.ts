@@ -11,6 +11,7 @@ export type PersonaType =
   | 'milkSeller'
   | 'vet'
   | 'fpoManager'
+  | 'womenHub'
   | 'exporter'
   | 'instructor'
   | 'directBuyer'

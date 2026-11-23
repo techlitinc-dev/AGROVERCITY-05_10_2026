@@ -73,11 +73,12 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm10', commodity: 'Groundnut', variety: 'Bold #TG37A', mandi: 'Gondal', state: 'Gujarat', category: 'oilseeds', modalPrice: 6150, msp: 6377, trendPercentage: 1.1, arrivalsQ: 5600 },
 ];
 
-/** The 8 finalized personas the landing FAQ is organized around. */
+/** The 9 finalized personas the landing FAQ is organized around. */
 const FAQ_PERSONAS: { id: PersonaType; label: string; icon: string }[] = [
   { id: 'farmer', label: 'Farmer', icon: '🌾' },
   { id: 'landlord', label: 'Landlord', icon: '🏡' },
   { id: 'equipmentOwner', label: 'Equipment', icon: '🚜' },
+  { id: 'womenHub', label: 'Woman Hub', icon: '🪔' },
   { id: 'transporter', label: 'Transporter', icon: '🚚' },
   { id: 'seller', label: 'Vyapari', icon: '🏪' },
   { id: 'milkSeller', label: 'Milk Vendor', icon: '🫗' },
@@ -306,6 +307,14 @@ export const LandingPage: React.FC = () => {
       category: 'dairy',
       icon: '🫗',
       route: '/milkSeller',
+    },
+    {
+      id: 'womenHub',
+      title: 'Woman Hub',
+      hindiTitle: 'महिला हब',
+      category: 'producers',
+      icon: '🪔',
+      route: '/womenHub',
     },
     {
       id: 'instructor',
@@ -895,6 +904,7 @@ export const LandingPage: React.FC = () => {
                 <li><Link to="/farmer" className="hover:text-emerald-400 transition-colors">Kisan / Farmer</Link></li>
                 <li><Link to="/landlord" className="hover:text-emerald-400 transition-colors">Farm Landlord</Link></li>
                 <li><Link to="/equipment" className="hover:text-emerald-400 transition-colors">Custom Machinery (CHC)</Link></li>
+                <li><Link to="/womenHub" className="hover:text-emerald-400 transition-colors">Woman Hub</Link></li>
               </ul>
             </div>
 

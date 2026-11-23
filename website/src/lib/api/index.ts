@@ -89,6 +89,7 @@ export { uploads } from './uploads';
 export { calls } from './calls';
 export { tree } from './tree';
 export { nursery } from './nursery';
+export { womenHub } from './womenHub';
 export { search } from './search';
 export { dashboard } from './dashboard';
 export { analytics } from './analytics';

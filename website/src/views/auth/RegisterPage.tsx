@@ -55,6 +55,14 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Land & Leasing',
   },
   {
+    id: 'womenHub',
+    icon: '🪔',
+    title: 'Woman Hub',
+    nativeTitle: 'महिला हब',
+    desc: 'Tiffin service, tailoring, pickle-papad unit — run businesses, kitchen garden, enterprise income, orders and insights.',
+    badge: 'Home Enterprise',
+  },
+  {
     id: 'equipmentOwner',
     icon: '🚜',
     title: 'Equipment Owner & CHC',

@@ -71,6 +71,7 @@ export const Navbar: React.FC = () => {
     { id: 'seller', label: 'Agri Vyapari (दुकानदार / इनपुट)', icon: '🏪' },
     { id: 'equipmentOwner', label: 'Equipment Owner (यंत्र मालिक)', icon: '🚜' },
     { id: 'milkSeller', label: 'Milk Vendor / Doodh Vala (दूध विक्रेता)', icon: '🫗' },
+    { id: 'womenHub', label: 'Woman Hub (महिला हब)', icon: '🪔' },
     { id: 'instructor', label: 'Gurukul Instructor (शिक्षक)', icon: '🎓' },
     { id: 'customer', label: 'Agri Market Seller (कृषी बाजार विक्रेता)', icon: '🛍️' },
   ];

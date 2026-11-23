@@ -48,7 +48,7 @@ _ME_DEFAULTS = {
 PLATFORM_PERSONAS = (
     "farmer", "landlord", "transporter", "seller", "equipmentOwner", "exporter",
     "directBuyer", "broker", "dairyManager", "milkSeller", "vet", "fpoManager",
-    "instructor", "bankManager", "insuranceProvider",
+    "womenHub", "instructor", "bankManager", "insuranceProvider",
     "coldStorageProvider", "gaushalaManager", "nursery", "customer", "superadmin",
 )
 
