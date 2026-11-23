@@ -37,11 +37,6 @@ export type Permission =
   | 'vyapari:manage_deals'
   | 'vyapari:verify_buyer'
   | 'vyapari:escrow_release'
-  // Mahila Graha Udyog
-  | 'mahila:read'
-  | 'mahila:verify_shg'
-  | 'mahila:verify_cert'
-  | 'mahila:disburse_subsidy'
   // Nursery
   | 'nursery:read'
   | 'nursery:verify'
@@ -61,7 +56,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'farmer:read', 'farmer:modify', 'farmer:moderate_lots', 'farmer:approve_rates', 'farmer:soil_advisory',
     'transporter:read', 'transporter:verify_fleet', 'transporter:override_trip', 'transporter:suspend',
     'vyapari:read', 'vyapari:approve_rates', 'vyapari:manage_deals', 'vyapari:verify_buyer', 'vyapari:escrow_release',
-    'mahila:read', 'mahila:verify_shg', 'mahila:verify_cert', 'mahila:disburse_subsidy',
     'nursery:read', 'nursery:verify', 'nursery:moderate_plants', 'nursery:manage_sapling_requests',
     'customer:read', 'customer:refund_orders', 'customer:moderate_products', 'customer:moderate_ads',
     'rbac:manage_users', 'rbac:view_audit',
@@ -70,7 +64,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'farmer:read', 'farmer:moderate_lots', 'farmer:approve_rates',
     'transporter:read', 'transporter:verify_fleet', 'transporter:override_trip', 'transporter:suspend',
     'vyapari:read', 'vyapari:manage_deals', 'vyapari:verify_buyer',
-    'mahila:read',
     'nursery:read', 'nursery:verify', 'nursery:manage_sapling_requests',
     'customer:read', 'customer:moderate_products',
     'rbac:view_audit',
@@ -79,7 +72,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'farmer:read', 'farmer:approve_rates',
     'transporter:read',
     'vyapari:read', 'vyapari:approve_rates', 'vyapari:escrow_release',
-    'mahila:read', 'mahila:disburse_subsidy',
     'nursery:read',
     'customer:read', 'customer:refund_orders',
     'rbac:view_audit',
@@ -88,7 +80,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'farmer:read', 'farmer:modify',
     'transporter:read', 'transporter:verify_fleet', 'transporter:suspend',
     'vyapari:read', 'vyapari:verify_buyer',
-    'mahila:read', 'mahila:verify_shg', 'mahila:verify_cert',
     'nursery:read', 'nursery:verify',
     'customer:read',
     'rbac:view_audit',
@@ -96,7 +87,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
   agronomist: [
     'farmer:read', 'farmer:moderate_lots', 'farmer:soil_advisory',
     'nursery:read', 'nursery:moderate_plants', 'nursery:manage_sapling_requests',
-    'mahila:read',
     'customer:read',
     'rbac:view_audit',
   ],
@@ -104,7 +94,6 @@ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
     'farmer:read',
     'nursery:read', 'nursery:moderate_plants',
     'customer:read', 'customer:moderate_products', 'customer:moderate_ads',
-    'mahila:read',
     'rbac:view_audit',
   ],
 };
@@ -131,7 +120,7 @@ export const ROLE_INFO: Record<AdminRole, { title: string; color: string; descri
   compliance_officer: {
     title: 'Compliance Officer',
     color: 'purple',
-    description: 'KYC legal verification, SHG & FSSAI credentials, fraud suspensions',
+    description: 'KYC legal verification, FSSAI credentials, fraud suspensions',
     badgeClass: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
   },
   agronomist: {

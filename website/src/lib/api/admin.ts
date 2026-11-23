@@ -1,4 +1,4 @@
-import { del, patch, post, put, readItems, readList, readOne } from './http';
+import { del, patch, post, put, readList, readOne } from './http';
 
 /**
  * Admin namespace — SOP-01…27 grouped admin calls.
@@ -453,18 +453,6 @@ export const admin = {
     /** POST /admin/ngos/{id}/verify */
     verifyNgo: (ngoId: string, reason?: Reason): Promise<unknown> =>
       post<unknown>(`/admin/ngos/${ngoId}/verify`, undefined, audit(reason)),
-    /** GET /admin/shgs */
-    shgs: (): Promise<unknown[]> => readList<unknown[]>('/admin/shgs'),
-    /** POST /admin/shgs/{id}/verify */
-    verifyShg: (shgId: string, reason?: Reason): Promise<unknown> =>
-      post<unknown>(`/admin/shgs/${shgId}/verify`, undefined, audit(reason)),
-    /** POST /admin/shgs/{id}/reject */
-    rejectShg: (shgId: string, payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
-      post<unknown>(`/admin/shgs/${shgId}/reject`, payload, audit(reason)),
-    /** GET /admin/shgs/{id}/deposits */
-    shgDeposits: (shgId: string): Promise<unknown[]> => readList<unknown[]>(`/admin/shgs/${shgId}/deposits`),
-    /** GET /admin/shgs/{id}/enterprises */
-    shgEnterprises: (shgId: string): Promise<unknown[]> => readList<unknown[]>(`/admin/shgs/${shgId}/enterprises`),
     /** GET /admin/nurseries */
     nurseries: (): Promise<unknown[]> => readList<unknown[]>('/admin/nurseries'),
     /** POST /admin/nurseries/{id}/verify */
@@ -546,36 +534,7 @@ export const admin = {
       post<unknown>(`/admin/sapling-requests/${requestId}/review`, payload, audit(reason)),
   },
 
-  // ===== SOP-23/24 women economy =====
-  women: {
-    /** GET /admin/women/shgs/queue */
-    shgQueue: (): Promise<unknown[]> => readList<unknown[]>('/admin/women/shgs/queue'),
-    /** POST /admin/women/shgs/{id}/verify */
-    verifyShg: (shgId: string, reason?: Reason): Promise<unknown> =>
-      post<unknown>(`/admin/women/shgs/${shgId}/verify`, undefined, audit(reason)),
-    /** POST /admin/women/shg/verify */
-    verifyShgLegacy: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
-      post<unknown>('/admin/women/shg/verify', payload, audit(reason)),
-    /** POST /admin/women/subsidies/disburse */
-    disburseSubsidy: (payload: Record<string, unknown>, reason?: Reason): Promise<unknown> =>
-      post<unknown>('/admin/women/subsidies/disburse', payload, audit(reason)),
-    /** GET /admin/women/enterprise-products */
-    enterpriseProducts: (): Promise<unknown[]> =>
-      readList<unknown[]>('/admin/women/enterprise-products'),
-    /** GET /admin/women/shg */
-    shgs: (): Promise<unknown[]> => readList<unknown[]>('/admin/women/shg'),
-    /** GET /admin/women/enterprises */
-    enterprises: (): Promise<unknown[]> => readList<unknown[]>('/admin/women/enterprises'),
-    /** GET /admin/women/impact-report */
-    impactReport: (): Promise<unknown> => readOne<unknown>('/admin/women/impact-report'),
-    /** GET /admin/women/loans */
-    loans: (): Promise<unknown[]> => readItems<unknown[]>('/admin/women/loans'),
-    /** GET /admin/women/deposit-compliance?month=YYYY-MM */
-    depositCompliance: (month: string): Promise<unknown[]> =>
-      readItems<unknown[]>('/admin/women/deposit-compliance', { params: { month } }),
-  },
-
-  // ===== SOP-24 women billing / subscription kill-switch =====
+  // ===== Billing config =====
   billing: {
     /** GET /admin/billing/config */
     config: (): Promise<unknown> => readOne<unknown>('/admin/billing/config'),

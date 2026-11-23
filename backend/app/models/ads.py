@@ -18,7 +18,6 @@ class AdTargetType(str, Enum):
     lot = "lot"
     vehicle = "vehicle"
     equipment = "equipment"
-    women_offer = "women_offer"
 
 
 class AdCampaignStatus(str, Enum):

@@ -164,50 +164,7 @@ export interface BuyerContract {
   acceptancesCount?: number;
 }
 
-// 4. Mahila Graha Udyog Entities
-export interface WomenShg {
-  id: string;
-  name: string;
-  village?: string;
-  district?: string;
-  memberCount: number;
-  leaderName?: string;
-  phone?: string;
-  loanFundPaisa?: number;
-  monthlyDepositPaisa?: number;
-  status: 'pending' | 'verified' | 'active' | 'suspended';
-  createdAt?: string;
-}
-
-export interface GruhCert {
-  id: string;
-  unitId: string;
-  unitName?: string;
-  ownerUid?: string;
-  ownerName?: string;
-  type: string;
-  number?: string;
-  documentUrl?: string;
-  status: 'pending' | 'verified' | 'rejected';
-  reviewedAt?: string;
-  reviewedBy?: string;
-  reviewReason?: string;
-  createdAt?: string;
-}
-
-export interface WomenEnterpriseProduct {
-  id: string;
-  unitId?: string;
-  unitName?: string;
-  name: string;
-  category: string;
-  priceRupees: number;
-  stock: number;
-  status: 'draft' | 'live' | 'paused' | 'moderated';
-  fssaiVerified?: boolean;
-}
-
-// 5. Nursery Entities
+// 4. Nursery Entities
 export interface TreeNursery {
   id: string;
   name: string;

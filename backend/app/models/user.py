@@ -26,7 +26,6 @@ VALID_PROFILES = {
     "coldStorageProvider",
     "vet",
     "fpoManager",
-    "womenShg",
     "gaushalaManager",
     "superadmin",
 }
@@ -79,10 +78,6 @@ PROFILE_ALIASES: dict[str, str] = {
     "fpo manager": "fpoManager",
     "fpo": "fpoManager",
     "fpoManager": "fpoManager",
-    "womenshg": "womenShg",
-    "women_shg": "womenShg",
-    "women shg": "womenShg",
-    "womenShg": "womenShg",
     "gaushalamanager": "gaushalaManager",
     "gaushala_manager": "gaushalaManager",
     "gaushala manager": "gaushalaManager",
@@ -177,7 +172,6 @@ class UserUpdateRequest(BaseModel):
 class UserSettingsUpdate(BaseModel):
     language: str | None = None
     preferredLanguage: str | None = None
-    womenMode: bool | None = None
     highContrast: bool | None = None
     darkMode: bool | None = None
     discoverable: bool | None = None

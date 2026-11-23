@@ -8,8 +8,8 @@ through the API the website calls:
           request, pending ratings, equipment booking history, lot ads
           lifecycle, chatbot photo input, carbon estimates, tree search.
   ACT 2 — Sunita Shah (customer): purchase requests, seller storefront.
-  ACT 3 — Kavita Jadhav (womenShg member): kitchen-garden templates & plans,
-          academy learner surfaces (recommendations, instructors).
+  ACT 3 — Kavita Jadhav (farmer): academy learner surfaces (recommendations,
+          instructors).
 
 Firestore + firebase-auth + redis are faked by conftest; the AI gateway is
 monkeypatched — nothing here touches the network.
@@ -426,32 +426,9 @@ async def test_act2_sunita_browses_seller_storefront(client, user_store):
 # --------------------------------------------------------------------------- ACT 3
 
 
-async def test_act3_kavita_kitchen_garden_plan(client, user_store):
-    """Kavita builds a kitchen-garden plan from seeded nutrition templates."""
-    token = seed_user(user_store, uid="uid-kavita", active_profile="womenShg")
-
-    templates = await client.get("/v1/women/garden-templates", headers=auth(token))
-    assert templates.status_code == 200
-    items = templates.json().get("items") or templates.json().get("data") or []
-    assert items, "seeded garden templates should be served"
-
-    created = await client.post(
-        "/v1/women/garden-plans",
-        json={"category": "Leafy Greens",
-              "items": [{"name": "Spinach (Palak)", "areaSqm": 2, "daysToHarvest": 45}]},
-        headers=auth(token),
-    )
-    assert created.status_code in (200, 201), created.text
-
-    plans = await client.get("/v1/women/garden-plans", headers=auth(token))
-    assert plans.status_code == 200
-    rows = plans.json().get("items") or plans.json().get("data") or []
-    assert any(p.get("category") == "Leafy Greens" for p in rows)
-
-
 async def test_act3_kavita_academy_surfaces(client, user_store):
     """Kavita sees course recommendations and the instructor directory."""
-    token = seed_user(user_store, uid="uid-kavita", active_profile="womenShg")
+    token = seed_user(user_store, uid="uid-kavita", active_profile="farmer")
     user_store["teacher_profiles/t1"] = {
         "id": "t1", "userId": "uid-t1", "name": "Dr. Archana Kale",
         "specialization": ["agronomy"], "isVerified": True,

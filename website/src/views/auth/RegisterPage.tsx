@@ -55,14 +55,6 @@ const ONBOARDING_ROLES: RoleOption[] = [
     badge: 'Land & Leasing',
   },
   {
-    id: 'womenShg',
-    icon: '🪔',
-    title: 'Mahila Gruh Udyog & SHG',
-    nativeTitle: 'महिला गृह उद्योग',
-    desc: 'Cottage food products, spices, pickles, SHG monthly savings, and Micro-Mudras.',
-    badge: 'Women Enterprise',
-  },
-  {
     id: 'equipmentOwner',
     icon: '🚜',
     title: 'Equipment Owner & CHC',

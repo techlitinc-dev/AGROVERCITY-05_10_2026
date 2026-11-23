@@ -4,7 +4,6 @@ import {
   Bell,
   CloudRain,
   Coins,
-  Flower2,
   Heart,
   Leaf,
   Package,
@@ -17,14 +16,14 @@ import {
   Wallet,
   Wind,
 } from 'lucide-react';
-import { apiErrorMessage, dashboard, mall, users } from '../../lib/api';
+import { apiErrorMessage, dashboard, mall } from '../../lib/api';
 import { customerHub, type CustomerHomePayload, type CustomerProductCard, type CustomerRecommendationsPayload } from '../../lib/api/customerHub';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
 import { cn } from '../../lib/utils';
 import type { MallProduct } from '../../types';
 import { MallProductCard } from './MallProductCard';
-import { asRecord, formatDateTime, num, str, toMallProduct, PRODUCT_PLACEHOLDER_IMAGE, type ApiProductDoc } from './mallMappers';
+import { formatDateTime, num, str, toMallProduct, PRODUCT_PLACEHOLDER_IMAGE, type ApiProductDoc } from './mallMappers';
 
 interface WeatherDay {
   day?: string;
@@ -104,8 +103,6 @@ export const CustomerHomeView: React.FC = () => {
   const [recs, setRecs] = useState<CustomerRecommendationsPayload | null>(null);
   const [rawDocs, setRawDocs] = useState<ApiProductDoc[]>([]);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
-  const [settings, setSettings] = useState<Record<string, unknown>>({});
-  const [womenMode, setWomenMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bannerError, setBannerError] = useState<string | null>(null);
 
@@ -129,44 +126,16 @@ export const CustomerHomeView: React.FC = () => {
       setLoading(false);
     };
     void load();
-
-    users
-      .getSettings()
-      .then((s) => {
-        if (!mounted) return;
-        setSettings(asRecord(s));
-        setWomenMode(Boolean(s?.womenMode));
-      })
-      .catch(() => undefined);
     return () => {
       mounted = false;
     };
   }, []);
 
-  // Women mode lifts gruh-udyog (SHG / women-led) listings to the top of the shelf.
   const recommended = useMemo(() => {
-    const entries = rawDocs.map((d) => ({
-      product: toMallProduct(d),
-      gruh: str(d.source) === 'gruh_udyog',
-    }));
-    entries.sort((a, b) => {
-      if (womenMode && a.gruh !== b.gruh) return a.gruh ? -1 : 1;
-      return b.product.rating - a.product.rating || b.product.ratingCount - a.product.ratingCount;
-    });
-    return entries.map((e) => e.product).slice(0, 8);
-  }, [rawDocs, womenMode]);
-
-  const handleToggleWomenMode = async () => {
-    const next = !womenMode;
-    setWomenMode(next);
-    try {
-      const saved = await users.updateSettings({ ...settings, womenMode: next });
-      setSettings(asRecord(saved));
-    } catch (e) {
-      setWomenMode((v) => !v);
-      setBannerError(apiErrorMessage(e));
-    }
-  };
+    const entries = rawDocs.map((d) => toMallProduct(d));
+    entries.sort((a, b) => b.rating - a.rating || b.ratingCount - a.ratingCount);
+    return entries.slice(0, 8);
+  }, [rawDocs]);
 
   const handleToggleWishlist = async (product: MallProduct) => {
     const wasSaved = wishlistIds.has(product.id);
@@ -423,45 +392,6 @@ export const CustomerHomeView: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Women mode — prioritise SHG & gruh udyog content */}
-      <div className="bg-white rounded-3xl border border-purple-100 shadow-xs p-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Flower2 className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-slate-800">Women mode</p>
-            <p className="text-[11px] text-slate-400">
-              Prioritise SHG &amp; gruh udyog products in your recommendations
-              {womenMode && (
-                <>
-                  {' · '}
-                  <Link to="/community/women" className="text-purple-700 font-bold hover:underline">
-                    Explore the women hub
-                  </Link>
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => void handleToggleWomenMode()}
-          aria-label="Toggle women mode"
-          aria-pressed={womenMode}
-          className="shrink-0"
-        >
-          <span className={cn('w-9 h-5 rounded-full relative flex-shrink-0 block', womenMode ? 'bg-purple-500' : 'bg-slate-300')}>
-            <span
-              className={cn(
-                'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all',
-                womenMode ? 'left-[18px]' : 'left-0.5'
-              )}
-            />
-          </span>
-        </button>
-      </div>
 
       {/* Mandi rates strip */}
       {(home.mandiRates?.length ?? 0) > 0 && (

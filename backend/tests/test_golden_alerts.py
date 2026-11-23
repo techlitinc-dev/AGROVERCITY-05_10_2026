@@ -25,10 +25,10 @@ async def test_regression_fires_sentry_and_sets_banner(client, user_store, monke
     monkeypatch.setattr("sentry_sdk.capture_message", fake_capture)
 
     # Baseline 0.95, now 0.80 → a 15pt drop (> 5pt).
-    user_store["ai_golden_baselines/women.shg_readiness.v1"] = {
-        "questionSetId": "women.shg_readiness.v1", "accuracy": 0.95,
+    user_store["ai_golden_baselines/churn.signal.v1"] = {
+        "questionSetId": "churn.signal.v1", "accuracy": 0.95,
     }
-    alert = await golden_alerts.record_golden_accuracy("women.shg_readiness.v1", 0.80)
+    alert = await golden_alerts.record_golden_accuracy("churn.signal.v1", 0.80)
     assert alert is True
     assert captured and "regression" in captured[0][0].lower()
 

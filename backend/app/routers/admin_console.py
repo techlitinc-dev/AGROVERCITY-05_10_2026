@@ -1254,30 +1254,3 @@ async def referral_fraud(user: dict = Depends(require_admin_role("superadmin", "
     fraud_holds = await query("fraud_queue", [("status", "==", "open")], limit=1000)
     return {"coupons": coupons, "fraudHolds": fraud_holds}
 
-
-@router.get("/shgs")
-async def list_shgs(status: str = Query("pending"), user: dict = Depends(require_admin_role("superadmin", "operations_lead", "finance_admin"))):
-    filters = [("status", "==", status)] if status and status != "all" else None
-    return {"data": _sorted(await query("women_shgs", filters, limit=1000))}
-
-
-@router.post("/shgs/{shg_id}/verify")
-async def verify_shg(shg_id: str, ctx: dict = Depends(admin_mutation_context), _role: dict = Depends(require_admin_role("superadmin", "operations_lead", "finance_admin"))):
-    return await _decide_status("women_shgs", shg_id, "verified", "shg", ctx)
-
-
-@router.post("/shgs/{shg_id}/reject")
-async def reject_shg(shg_id: str, body: ReasonBody, ctx: dict = Depends(admin_mutation_context), _role: dict = Depends(require_admin_role("superadmin", "operations_lead", "finance_admin"))):
-    if not (body.reason or "").strip():
-        _err(422, "VALIDATION_ERROR", "a rejection reason is required")
-    return await _decide_status("women_shgs", shg_id, "rejected", "shg", ctx)
-
-
-@router.get("/shgs/{shg_id}/deposits")
-async def shg_deposits(shg_id: str, user: dict = Depends(require_admin_role("superadmin", "operations_lead", "finance_admin"))):
-    return {"data": await query("shg_deposits", [("shgId", "==", shg_id)], limit=500)}
-
-
-@router.get("/shgs/{shg_id}/enterprises")
-async def shg_enterprises(shg_id: str, user: dict = Depends(require_admin_role("superadmin", "operations_lead", "finance_admin"))):
-    return {"data": await query("home_enterprises", [("shgId", "==", shg_id)], limit=500)}

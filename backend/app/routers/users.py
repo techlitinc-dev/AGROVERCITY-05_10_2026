@@ -48,7 +48,7 @@ _ME_DEFAULTS = {
 PLATFORM_PERSONAS = (
     "farmer", "landlord", "transporter", "seller", "equipmentOwner", "exporter",
     "directBuyer", "broker", "dairyManager", "milkSeller", "vet", "fpoManager",
-    "womenShg", "instructor", "bankManager", "insuranceProvider",
+    "instructor", "bankManager", "insuranceProvider",
     "coldStorageProvider", "gaushalaManager", "nursery", "customer", "superadmin",
 )
 
@@ -248,7 +248,6 @@ async def get_my_settings(uid: str = Depends(current_user_id)):
     return {
         "language": pref_lang,
         "preferredLanguage": pref_lang,
-        "womenMode": user.get("womenMode", False),
         "highContrast": user.get("highContrast", False),
         "darkMode": user.get("darkMode", False),
         "discoverable": user.get("discoverable", True),

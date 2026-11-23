@@ -4,7 +4,6 @@ import type { PersonaType, UserProfile } from '../../types';
 export interface UserSettings {
   language?: string;
   preferredLanguage?: string;
-  womenMode?: boolean;
   highContrast?: boolean;
   darkMode?: boolean;
   /** Account visibility — false hides the profile from search/discovery. */

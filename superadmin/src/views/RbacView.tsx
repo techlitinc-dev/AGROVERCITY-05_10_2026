@@ -81,11 +81,6 @@ export const RbacView: React.FC = () => {
     { code: 'vyapari:manage_deals', label: 'Escalate Deals & Arbitrate Disputes', module: 'Vyapari' },
     { code: 'vyapari:verify_buyer', label: 'Verify Institutional Buyer Trade Licenses', module: 'Vyapari' },
     { code: 'vyapari:escrow_release', label: 'Clear Escrow Balances to Farmers', module: 'Vyapari' },
-    // Mahila Graha Udyog
-    { code: 'mahila:read', label: 'View SHGs & Enterprise Products', module: 'Mahila Graha Udyog' },
-    { code: 'mahila:verify_shg', label: 'Approve Self-Help Group Accreditation', module: 'Mahila Graha Udyog' },
-    { code: 'mahila:verify_cert', label: 'Authenticate FSSAI & Udyam Marks', module: 'Mahila Graha Udyog' },
-    { code: 'mahila:disburse_subsidy', label: 'Disburse DBT Subsidies & Loans', module: 'Mahila Graha Udyog' },
     // Nursery
     { code: 'nursery:read', label: 'View Nurseries & Sapling Pools', module: 'Nursery' },
     { code: 'nursery:verify', label: 'Accredit Plant Nurseries', module: 'Nursery' },

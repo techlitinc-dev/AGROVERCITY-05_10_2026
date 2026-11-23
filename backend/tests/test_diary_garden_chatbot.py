@@ -1,10 +1,9 @@
-"""SR 12 / SR 25 / SR 18 — diary breadth, kitchen-garden contract, chatbot image input.
+"""SR 12 / SR 18 — diary breadth, chatbot image input.
 
 The Gemini/AI layer is fully mocked via monkeypatching of the gateway functions
 (same pattern as tests/test_chatbot.py) — no test here ever hits the network.
 """
 from app.core.config import settings
-from app.data.women_seed import GARDEN_PLAN_TEMPLATES
 from app.services.ai import gateway
 from tests.test_diary import auth, seed_user
 
@@ -141,79 +140,6 @@ async def test_chatbot_message_with_live_image_vision_failure_falls_back(client,
     assert resp.json()["text"] == "Text-only answer."
     # the model still knows a photo was attached (unreadable note), no crash
     assert "attached a farm photo" in captured["generate_prompt"]
-
-
-# ------------------------------ SR 25: kitchen garden ------------------------------
-
-
-async def test_garden_templates_returns_seeded_catalog(client, user_store):
-    token = seed_user(user_store)
-    resp = await client.get("/v1/women/garden-templates", headers=auth(token))
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert len(data) == len(GARDEN_PLAN_TEMPLATES)
-    categories = {t["category"] for t in data}
-    assert {"Leafy Greens", "Vegetables", "Trees/Perennials"} <= categories
-    spinach = next(item for t in data for item in t["items"] if item["name"] == "Spinach")
-    assert spinach["nutrition"]
-    assert spinach["daysToHarvest"] > 0
-    assert spinach["companion"]
-    assert spinach["vernacularName"]
-
-
-async def test_garden_templates_prefers_firestore_rows(client, user_store):
-    token = seed_user(user_store)
-    user_store["garden_plans/gp_custom"] = {
-        "id": "gp_custom",
-        "template": True,
-        "order": 9,
-        "category": "Herbs",
-        "items": [{"name": "Tulsi", "vernacularName": "तुळस", "daysToHarvest": 30}],
-    }
-    resp = await client.get("/v1/women/garden-templates", headers=auth(token))
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert len(data) == 1
-    assert data[0]["category"] == "Herbs"
-
-
-async def test_garden_plan_create_roundtrip_with_items(client, user_store):
-    token = seed_user(user_store)
-    body = {
-        "category": "Leafy Greens",
-        "items": [
-            {
-                "name": "Spinach",
-                "vernacularName": "पालक",
-                "nutrition": "Iron, Vitamin A, Folate",
-                "companion": "Tomato, Cauliflower",
-                "daysToHarvest": 45,
-            }
-        ],
-    }
-    resp = await client.post("/v1/women/garden-plans", json=body, headers=auth(token))
-    assert resp.status_code == 201
-    doc = resp.json()
-    assert doc["category"] == "Leafy Greens"
-    assert doc["template"] is False
-    assert doc["ownerUid"] == "uid-1"
-    assert doc["items"][0]["name"] == "Spinach"
-    assert doc["items"][0]["daysToHarvest"] == 45
-    assert doc["items"][0]["nutrition"]
-
-    listing = await client.get("/v1/women/garden-plans", headers=auth(token))
-    assert doc["id"] in [p["id"] for p in listing.json()["data"]]
-
-    update = await client.put(
-        f"/v1/women/garden-plans/{doc['id']}",
-        json={**body, "items": body["items"] + [{"name": "Coriander", "daysToHarvest": 40}]},
-        headers=auth(token),
-    )
-    assert update.status_code == 200
-    assert len(update.json()["items"]) == 2
-
-
-# ------------------------------ SR 12: diary breadth ------------------------------
 
 
 async def test_diary_farm_activity_with_trade_fields_roundtrip(client, user_store):

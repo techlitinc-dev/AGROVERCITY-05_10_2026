@@ -10,9 +10,6 @@ import {
   BuyerOrg,
   B2BDeal,
   BuyerContract,
-  WomenShg,
-  GruhCert,
-  WomenEnterpriseProduct,
   TreeNursery,
   TreeRequest,
   NurseryPlant,
@@ -411,88 +408,7 @@ class ApiService {
   }
 
   // --------------------------------------------------------------------------
-  // 4. MAHILA GRAHA UDYOG OPERATIONS
-  // --------------------------------------------------------------------------
-  async getShgQueue(): Promise<WomenShg[]> {
-    const res = await this.client.get('/admin/women/shgs/queue');
-    return res.data?.data || res.data || [];
-  }
-
-  async verifyShg(shgId: string, reason: string): Promise<any> {
-    const res = await this.client.post(
-      `/admin/women/shgs/${shgId}/verify`,
-      {},
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
-  }
-
-  async getGruhCertificationsQueue(): Promise<GruhCert[]> {
-    const res = await this.client.get('/admin/gruh/certifications/queue');
-    return res.data?.data || res.data || [];
-  }
-
-  async verifyGruhCertification(certId: string, reason: string): Promise<any> {
-    const res = await this.client.post(
-      `/admin/gruh/certifications/${certId}/verify`,
-      {},
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
-  }
-
-  async rejectGruhCertification(certId: string, reason: string): Promise<any> {
-    const res = await this.client.post(
-      `/admin/gruh/certifications/${certId}/reject`,
-      { reason },
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
-  }
-
-  async getWomenEnterpriseProducts(): Promise<WomenEnterpriseProduct[]> {
-    const res = await this.client.get('/admin/women/enterprise-products');
-    return res.data?.data || res.data || [];
-  }
-
-  async getWomenEnterprises(): Promise<any[]> {
-    try {
-      const res = await this.client.get('/admin/women/enterprises');
-      return res.data?.data || res.data || [];
-    } catch {
-      return [];
-    }
-  }
-
-  async getWomenLoans(): Promise<any[]> {
-    try {
-      const res = await this.client.get('/admin/women/loans');
-      return res.data?.data || res.data || [];
-    } catch {
-      return [];
-    }
-  }
-
-  async disburseWomenSubsidy(payload: any, reason: string): Promise<any> {
-    const res = await this.client.post(
-      '/admin/women/subsidies/disburse',
-      payload,
-      { headers: { 'X-Audit-Reason': reason } }
-    );
-    return res.data;
-  }
-
-  async getWomenImpactReport(): Promise<any> {
-    try {
-      const res = await this.client.get('/admin/women/impact-report');
-      return res.data;
-    } catch {
-      return null;
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // 5. NURSERY OPERATIONS
+  // 4. NURSERY OPERATIONS
   // --------------------------------------------------------------------------
   async getNurseries(): Promise<TreeNursery[]> {
     const res = await this.client.get('/admin/nurseries');

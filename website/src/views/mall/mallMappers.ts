@@ -1,8 +1,8 @@
 import type { MallProduct } from '../../types';
 
 /**
- * The mall catalog API (`GET /products`) returns raw seller/gruh-udyog product
- * docs (`discountedPrice`, `reviewsCount`, `inStock`, optional `imageUrl`),
+ * The mall catalog API (`GET /products`) returns raw seller product docs
+ * (`discountedPrice`, `reviewsCount`, `inStock`, optional `imageUrl`),
  * while the shared `MallProduct` type (and cartStore) speaks `price`,
  * `ratingCount` and `stockQty`. These helpers bridge the two shapes once so
  * every mall view maps data the same way.
@@ -32,8 +32,6 @@ export interface ApiProductDoc {
   imageUrl?: string;
   sellerId?: string;
   source?: string;
-  unitId?: string;
-  gruhProductId?: string;
   specifications?: Record<string, string>;
   [key: string]: unknown;
 }

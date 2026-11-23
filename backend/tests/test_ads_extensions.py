@@ -1,11 +1,10 @@
-"""Ad campaign extensions — own-listing targets for lots, vehicles, equipment
-and women-hub offers, plus pause/resume/edit/delete round-trips.
+"""Ad campaign extensions — own-listing targets for lots, vehicles, equipment,
+plus pause/resume/edit/delete round-trips.
 
 Covers the SR 9 gap: ads could only target course/workshop/external/product/
 demand. Produce lots (market_lots.farmerId), transport vehicles
-(vehicles.ownerId), equipment fleet (equipment.ownerId) and gruh udyog
-offers/products (gruh_udyog_offers|gruh_udyog_products.ownerUid) are now
-valid own-listing targets with ownership enforcement (403 FORBIDDEN).
+(vehicles.ownerId) and equipment fleet (equipment.ownerId) are now valid
+own-listing targets with ownership enforcement (403 FORBIDDEN).
 """
 from app.services.tokens import create_access_token
 
@@ -59,25 +58,12 @@ async def test_create_vehicle_target_ad(client, user_store):
     assert ad["targetId"] == "veh_1"
 
 
-async def test_create_equipment_and_women_offer_target_ads(client, user_store):
+async def test_create_equipment_target_ad(client, user_store):
     token = seed_caller(user_store)
     user_store["equipment/eq_1"] = {"id": "eq_1", "ownerId": UID, "name": "Rotavator"}
-    user_store["gruh_udyog_offers/guo_1"] = {
-        "id": "guo_1", "ownerUid": UID, "productId": "gup_1", "status": "active",
-    }
-    user_store["gruh_udyog_products/gup_1"] = {
-        "id": "gup_1", "ownerUid": UID, "name": "Papad 500g", "status": "live",
-    }
 
     ad = await _create_ad(client, token, targetType="equipment", targetId="eq_1")
     assert ad["targetType"] == "equipment"
-
-    ad = await _create_ad(client, token, targetType="women_offer", targetId="guo_1")
-    assert ad["targetType"] == "women_offer"
-
-    # a gruh udyog product doc is also an acceptable women_offer target
-    ad = await _create_ad(client, token, targetType="women_offer", targetId="gup_1")
-    assert ad["targetId"] == "gup_1"
 
 
 async def test_owned_target_rejected_for_non_owner(client, user_store):

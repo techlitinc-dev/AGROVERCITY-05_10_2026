@@ -343,24 +343,6 @@ async def test_sop_gamification_ledger_and_ratings_404(client, user_store):
     assert resp.status_code == 404
 
 
-async def test_sop_women_shg_paths(client, user_store):
-    user_store["shg_groups/shg-1"] = {
-        "id": "shg-1",
-        "name": "Durga SHG",
-        "status": "pending",
-        "corpusRupees": 40000,
-        "createdAt": "2026-10-01T00:00:00+00:00",
-    }
-    # doc-24a queue path
-    resp = await client.get("/v1/admin/women/shgs/queue", headers=ADMIN_HEADERS)
-    assert resp.status_code == 200
-    assert resp.json()["total"] == 1
-    # doc-24b list path
-    resp = await client.get("/v1/admin/women/shg", headers=ADMIN_HEADERS)
-    assert resp.status_code == 200
-    assert resp.json()["total"] == 1
-
-
 # ---------------------------------------------------------------------------
 # admin_sop_platform (SOP-25/26 + POST /threads)
 # ---------------------------------------------------------------------------

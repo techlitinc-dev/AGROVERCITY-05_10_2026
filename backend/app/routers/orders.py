@@ -76,18 +76,12 @@ async def _restore_stock(order: dict):
         await _restore_module_stock(product, item["quantity"])
 
 
-# Module inventory lives in the nursery / gruh-udyog collections; a mall order
-# against a module listing must move that stock too. Everything here is
-# defensive — a missing module doc never breaks placement or cancellation.
+# Module inventory lives in the nursery collection; a mall order against a
+# module listing must move that stock too. Everything here is defensive — a
+# missing module doc never breaks placement or cancellation.
 async def _decrement_module_stock(product: dict | None, quantity: int) -> None:
     if product is None:
         return
-    gruh_product_id = product.get("gruhProductId")
-    if gruh_product_id:
-        gruh_product = await get_doc("gruh_udyog_products", str(gruh_product_id))
-        if gruh_product is not None and isinstance(gruh_product.get("stock"), int):
-            gruh_product["stock"] = max(0, gruh_product["stock"] - quantity)
-            await set_doc("gruh_udyog_products", str(gruh_product_id), gruh_product)
     if product.get("nurseryId"):
         plant = await get_doc("nursery_plants", product["id"])
         if plant is not None and isinstance(plant.get("stock"), int):
@@ -106,12 +100,6 @@ async def _decrement_module_stock(product: dict | None, quantity: int) -> None:
 async def _restore_module_stock(product: dict | None, quantity: int) -> None:
     if product is None:
         return
-    gruh_product_id = product.get("gruhProductId")
-    if gruh_product_id:
-        gruh_product = await get_doc("gruh_udyog_products", str(gruh_product_id))
-        if gruh_product is not None and isinstance(gruh_product.get("stock"), int):
-            gruh_product["stock"] += quantity
-            await set_doc("gruh_udyog_products", str(gruh_product_id), gruh_product)
     if product.get("nurseryId"):
         plant = await get_doc("nursery_plants", product["id"])
         if plant is not None and isinstance(plant.get("stock"), int):
@@ -129,9 +117,9 @@ async def _restore_module_stock(product: dict | None, quantity: int) -> None:
 async def _notify_order_seller(order: dict, products: dict[str, dict]) -> None:
     """New-order task + notification for every seller behind the order's items.
 
-    Seller id resolution is defensive: mall sellers expose `sellerId`, gruh-udyog
-    listings carry `unitId` (+ `gruhProductId`) and nursery listings `nurseryId`;
-    the owner user id is the same value on each module's docs.
+    Seller id resolution is defensive: mall sellers expose `sellerId` and
+    nursery listings `nurseryId`; the owner user id is the same value on each
+    module's docs.
     """
     seen: set[str] = set()
     total_qty = sum(int(i.get("quantity") or 0) for i in order.get("items", []))
@@ -139,7 +127,6 @@ async def _notify_order_seller(order: dict, products: dict[str, dict]) -> None:
         product = products.get(item.get("productId") or "") or {}
         seller_id = (
             product.get("sellerId")
-            or product.get("unitId")
             or product.get("nurseryId")
         )
         if not seller_id or seller_id in seen:
@@ -397,7 +384,7 @@ async def place_order(body: PlaceOrderRequest, uid: str = Depends(_order_user)):
     for product in products.values():
         if product.get("nurseryId") and not order.get("nurseryId"):
             order["nurseryId"] = product["nurseryId"]
-        seller_id = product.get("sellerId") or product.get("unitId")
+        seller_id = product.get("sellerId")
         if seller_id and not order.get("sellerId"):
             order["sellerId"] = seller_id
     if body.plantTree:

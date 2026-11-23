@@ -35,7 +35,7 @@ export function unwrapList<T>(payload: unknown): T[] {
   return payload as T[];
 }
 
-/** `payload.items` unwrap for the newer `{items: [...]}` envelope (women hub, ratings). */
+/** `payload.items` unwrap for the newer `{items: [...]}` envelope (ratings, admin desks). */
 export function unwrapItems<T>(payload: unknown): T[] {
   if (
     payload !== null &&
@@ -93,7 +93,7 @@ export async function readList<T>(url: string, opts: ReadOpts = {}): Promise<T[]
   }
 }
 
-/** Read endpoints that return the `{items: [...]}` envelope (women hub, ratings). */
+/** Read endpoints that return the `{items: [...]}` envelope (ratings, admin desks). */
 export async function readItems<T>(url: string, opts: ReadOpts = {}): Promise<T[]> {
   try {
     const res = await apiClient.get(url, { params: opts.params });

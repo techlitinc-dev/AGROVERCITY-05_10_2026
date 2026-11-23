@@ -1,23 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, Check, Heart, Home, Search, ShoppingBag, ShoppingCart } from 'lucide-react';
-import { apiErrorMessage, gruhUdyog, mall } from '../../lib/api';
+import { AlertCircle, Check, Heart, Search, ShoppingBag, ShoppingCart } from 'lucide-react';
+import { apiErrorMessage, mall } from '../../lib/api';
 import { useCartStore } from '../../stores/cartStore';
 import type { MallProduct } from '../../types';
 import { MallProductCard } from './MallProductCard';
-import { asRecords, str, toMallProduct, type ApiProductDoc } from './mallMappers';
+import { toMallProduct, type ApiProductDoc } from './mallMappers';
 
 const BASE_CATEGORIES = ['All', 'Seeds', 'Fertilizers', 'Crop Protection', 'Tools & Machinery', 'Organic Produce', 'Cattle Feed'];
 
 export const KrishiMallCatalogView: React.FC = () => {
   const [products, setProducts] = useState<MallProduct[]>([]);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
-  const [gruhCategories, setGruhCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [womenLed, setWomenLed] = useState(false);
   const [addedAlert, setAddedAlert] = useState<string | null>(null);
   const [wishlistAlert, setWishlistAlert] = useState<string | null>(null);
   const [addingId, setAddingId] = useState<string | null>(null);
@@ -31,10 +29,7 @@ export const KrishiMallCatalogView: React.FC = () => {
       setError(null);
       try {
         const [productDocs, wishlistItems] = await Promise.all([
-          // Women-led chip narrows the catalog to gruh-udyog + women-enterprise listings.
-          mall.products(
-            womenLed ? { source: 'gruh_udyog,women_enterprise' } : undefined
-          ),
+          mall.products(),
           mall.wishlist().catch(() => [] as MallProduct[]),
         ]);
         if (!mounted) return;
@@ -47,23 +42,10 @@ export const KrishiMallCatalogView: React.FC = () => {
       }
     };
     void load();
-
-    // Gruh-udyog categories ride along best-effort — they never block the catalog.
-    gruhUdyog
-      .categories()
-      .then((cats) => {
-        if (!mounted) return;
-        setGruhCategories(
-          asRecords(cats)
-            .map((c) => str(c.category))
-            .filter(Boolean)
-        );
-      })
-      .catch(() => undefined);
     return () => {
       mounted = false;
     };
-  }, [womenLed]);
+  }, []);
 
   const categories = useMemo(() => {
     const fromData = products.map((p) => p.category).filter((c) => !BASE_CATEGORIES.includes(c));
@@ -205,52 +187,6 @@ export const KrishiMallCatalogView: React.FC = () => {
             </button>
           ))}
         </div>
-
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-          <button
-            onClick={() => {
-              setWomenLed((v) => !v);
-              setSelectedCategory('All');
-            }}
-            className={`px-3.5 py-2 text-xs font-semibold rounded-2xl whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-              womenLed
-                ? 'bg-pink-600 text-white font-bold shadow-xs'
-                : 'bg-white border border-pink-200 text-pink-700 hover:bg-pink-50'
-            }`}
-          >
-            <Heart className={`w-3.5 h-3.5 ${womenLed ? 'fill-white' : ''}`} />
-            Women-led
-          </button>
-          {womenLed && (
-            <span className="self-center text-[10px] text-pink-600 font-bold">
-              Showing SHG &amp; gruh udyog products only
-            </span>
-          )}
-        </div>
-
-        {gruhCategories.length > 0 && (
-          <div className="flex items-start gap-2">
-            <span className="flex items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-1.5 rounded-xl whitespace-nowrap">
-              <Home className="w-3 h-3" />
-              Gruh Udyog
-            </span>
-            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-              {gruhCategories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 text-[11px] font-semibold rounded-2xl whitespace-nowrap transition-colors ${
-                    selectedCategory === cat
-                      ? 'bg-purple-600 text-white font-bold'
-                      : 'bg-white border border-purple-100 text-purple-700 hover:bg-purple-50'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Products Grid */}

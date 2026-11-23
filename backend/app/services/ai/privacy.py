@@ -3,7 +3,7 @@ numbers, or emails ever leave for a model provider. IDs are HMAC-hashed."""
 import hashlib
 import hmac
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.core.db import get_doc, query
@@ -511,33 +511,6 @@ def build_kyc_risk_state(
     )
 
 
-def _month_index(month: str) -> int | None:
-    try:
-        year, mon = str(month).split("-")[:2]
-        return int(year) * 12 + int(mon)
-    except (TypeError, ValueError):
-        return None
-
-
-def _trailing_savings_streak(months: list[str]) -> int:
-    """Consecutive deposit months ending at the latest recorded month."""
-    indexes = sorted({idx for idx in (_month_index(m) for m in months) if idx is not None})
-    if not indexes:
-        return 0
-    now = datetime.now(timezone.utc)
-    current = now.year * 12 + now.month
-    # Ignore a stale ledger whose latest entry is older than last month.
-    if indexes[-1] < current - 1:
-        return 0
-    streak = 1
-    for previous, following in zip(reversed(indexes[:-1]), reversed(indexes)):
-        if following - previous == 1:
-            streak += 1
-        else:
-            break
-    return streak
-
-
 def _days_since(raw, now: datetime) -> int:
     if not raw:
         return 0
@@ -548,48 +521,6 @@ def _days_since(raw, now: datetime) -> int:
     except ValueError:
         return 0
     return max(0, (now - stamp).days)
-
-
-async def build_shg_readiness_state(shg_id: str) -> dict:
-    """M26 state builder: real SHG ledger signals only — savings regularity,
-    meeting attendance rate, enterprise-income trend, record-keeping. The SHG id
-    is HMAC-hashed; no member names / phones / emails (rule 11), ≤1500 tokens."""
-    group = await get_doc("shg_groups", str(shg_id)) or {}
-    deposits = await query(f"shg_groups/{shg_id}/deposits", [], limit=1000)
-    meetings = await query("shg_meetings", [("groupId", "==", str(shg_id))], limit=1000)
-    member_uid = str(group.get("memberUid") or "")
-    enterprises = (
-        await query("home_enterprises", [("ownerUid", "==", member_uid)], limit=200)
-        if member_uid
-        else []
-    )
-
-    savings_streak = _trailing_savings_streak(
-        [str(d.get("month") or "") for d in deposits if d.get("month")]
-    )
-    total_marked = present = 0
-    for meeting in meetings:
-        attendance = meeting.get("attendance") or []
-        total_marked += len(attendance)
-        present += sum(1 for a in attendance if isinstance(a, dict) and a.get("present"))
-    attendance_rate = round(present / total_marked, 3) if total_marked else 0.0
-
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-    income_entries = sum(
-        1 for e in enterprises if str(e.get("createdAt") or "") >= cutoff
-    )
-
-    return sanitize_state(
-        {
-            "shgHash": hash_user_id(str(shg_id)),
-            "savings_regularity": round(min(1.0, savings_streak / 12.0), 2),
-            "meeting_attendance_rate": attendance_rate,
-            "enterprise_income_trend": round(min(1.0, income_entries / 6.0), 2),
-            "savings_streak_months": savings_streak,
-            "enterprise_income_entries_90d": income_entries,
-            "record_keeping": bool(deposits) and bool(meetings),
-        }
-    )
 
 
 async def build_churn_state(user_id: str, now: datetime | None = None) -> dict:

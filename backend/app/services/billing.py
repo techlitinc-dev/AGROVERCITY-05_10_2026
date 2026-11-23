@@ -16,12 +16,6 @@ TIER_MATRIX = [
     # First-month promo: ₹9 one-time trial for the farmer SaaS starter pack
     # (redeem-once is a future billing concern; the plan row itself is priced).
     ("farmer", "first_month", 9, {}),
-    # WomenHub SHG persona: core savings-group loop is free; ₹9 first-month
-    # promo (same shape as the farmer's), then ₹99/mo or ₹999/yr.
-    ("womenShg", "free", 0, {}),
-    ("womenShg", "first_month", 9, {}),
-    ("womenShg", "monthly", 99, {}),
-    ("womenShg", "yearly", 999, {}),
     ("farmLandlord", "free", 0, {"plots": 1, "activeLeases": 1, "listings": 5}),
     ("farmLandlord", "pro", 299, {"listings": 100}),
     # Direct-connect: fleet size is not paywalled — every transport plan allows
@@ -62,9 +56,9 @@ TIER_MATRIX = [
     ("directBuyer", "pro", 4999, {"contracts_active": 5, "orgMembers": 0}),
     ("directBuyer", "enterprise", 24999, {}),
     ("emarketCustomer", "free", 0, {}),
-    # SR 1/SR 23: e-market customer premium ladder (same shape as the womenShg
-    # promo): ₹9 first-month intro, then ₹99/mo or ₹999/yr. The free row stays
-    # paywall-free; paid tiers add delivery/member perks via TIER_FEATURES.
+    # SR 1/SR 23: e-market customer premium ladder: ₹9 first-month intro, then
+    # ₹99/mo or ₹999/yr. The free row stays paywall-free; paid tiers add
+    # delivery/member perks via TIER_FEATURES.
     ("emarketCustomer", "first_month_intro", 9, {}),
     ("emarketCustomer", "premium_monthly", 99, {"free_delivery_above": 499}),
     ("emarketCustomer", "premium_yearly", 999, {"free_delivery_above": 499}),
@@ -163,13 +157,11 @@ TIER_FEATURES = {
 PLAN_INTERVALS = {
     # yearly billing intervals; every plan without an entry bills monthly
     "transport_starter_annual": "year",
-    "womenShg_yearly": "year",
     "emarketCustomer_premium_yearly": "year",
 }
 PLAN_PROMOS = {
     # one-time first-month trials (flag only; redemption tracking is billing-v2)
     "farmer_first_month": True,
-    "womenShg_first_month": True,
     "emarketCustomer_first_month_intro": True,
 }
 

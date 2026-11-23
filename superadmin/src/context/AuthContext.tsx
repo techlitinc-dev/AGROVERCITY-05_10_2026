@@ -7,7 +7,7 @@ export const KNOWN_OPERATORS: Array<{ id: string; name: string; phone: string; r
   { id: 'admin-super', name: 'Super Admin Root', phone: '+919000000001', role: 'superadmin', title: 'Chief System Administrator' },
   { id: 'admin-ops', name: 'Vikram Shinde', phone: '+919000000002', role: 'operations_lead', title: 'Head of Rural Logistics & Nurseries' },
   { id: 'admin-finance', name: 'Ramesh Kulkarni', phone: '+919000000003', role: 'finance_admin', title: 'Chief Financial Officer' },
-  { id: 'admin-compliance', name: 'Pooja Deshmukh', phone: '+919000000004', role: 'compliance_officer', title: 'Legal & SHG Compliance Officer' },
+  { id: 'admin-compliance', name: 'Pooja Deshmukh', phone: '+919000000004', role: 'compliance_officer', title: 'Legal & FSSAI Compliance Officer' },
   { id: 'admin-agronomy', name: 'Dr. Arvind Joshi', phone: '+919000000005', role: 'agronomist', title: 'Chief Agricultural Scientist' },
   { id: 'admin-moderator', name: 'Sunita Patil', phone: '+919000000006', role: 'content_moderator', title: 'Catalog & Public Grievance Lead' },
 ];

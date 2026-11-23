@@ -75,12 +75,11 @@ async def test_settings_discoverable_roundtrip(client, user_store):
     # Re-enabling works and other toggles are untouched
     resp = await client.put(
         "/v1/users/me/settings",
-        json={"discoverable": True, "womenMode": True},
+        json={"discoverable": True},
         headers=auth(token),
     )
     assert resp.status_code == 200
     resp = await client.get("/v1/users/me/settings", headers=auth(token))
     body = resp.json()
     assert body["discoverable"] is True
-    assert body["womenMode"] is True
     assert body["highContrast"] is False

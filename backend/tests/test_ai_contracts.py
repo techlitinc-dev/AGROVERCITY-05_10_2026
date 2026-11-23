@@ -30,22 +30,21 @@ async def test_gateway_response_conforms(client, user_store):
         from app.services.ai import gateway
 
         decision = await gateway.decide(
-            {"savings_streak_months": 6, "meeting_attendance_rate": 0.5,
-             "enterprise_income_entries_90d": 3, "record_keeping": True},
-            "women.shg_readiness.v1",
-            module="women_shg_readiness",
+            {"inactivity_days": 20, "pending_offer": True},
+            "churn.signal.v1",
+            module="churn_signal",
         )
-        contracts.validate_answers("women.shg_readiness.v1", decision.answers)
+        contracts.validate_answers("churn.signal.v1", decision.answers)
     finally:
         monkeypatch.undo()
 
 
 def test_schema_violation_raises():
     with pytest.raises(contracts.ContractViolation):
-        contracts.validate_answers("women.shg_readiness.v1", {"readiness": 0.5})  # missing gap
+        contracts.validate_answers("churn.signal.v1", {"churn_risk": 0.5})  # missing best_hook
 
     with pytest.raises(contracts.ContractViolation):
-        contracts.validate_answers("women.shg_readiness.v1", {"readiness": "high", "gap": "record_keeping"})
+        contracts.validate_answers("churn.signal.v1", {"churn_risk": "high", "best_hook": "course_reminder"})
 
     with pytest.raises(contracts.ContractViolation):
         contracts.validate_answers("does.not.exist.v1", {})

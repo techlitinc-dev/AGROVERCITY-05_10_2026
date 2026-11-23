@@ -1016,49 +1016,6 @@ register(
 )
 
 
-# Brief M26 (phase-08 WS-01) — women SHG readiness. Scores the SHG's readiness
-# for a group loan from real ledger signals and names the biggest gap. Annotates
-# the SHG leader dashboard only (never auto-applies); `suggest`. Deterministic
-# fallback computes from rules: savings streak, meeting attendance, income
-# entries in the last 90 days.
-SHG_READINESS_CRITERIA = (
-    "savings_regularity",
-    "meeting_attendance",
-    "enterprise_income",
-    "record_keeping",
-)
-
-
-def _shg_readiness_fallback(state: dict) -> dict:
-    """Deterministic SHG-readiness score + biggest gap (M26, SDR step 5)."""
-    streak = _as_float(state.get("savings_streak_months"))
-    attendance = _as_float(state.get("meeting_attendance_rate"))
-    income_entries = _as_int(state.get("enterprise_income_entries_90d"))
-    record_keeping = bool(state.get("record_keeping"))
-
-    components = {
-        "savings_regularity": round(min(1.0, streak / 12.0), 2),
-        "meeting_attendance": round(min(1.0, max(0.0, attendance)), 2),
-        "enterprise_income": round(min(1.0, income_entries / 6.0), 2),
-        "record_keeping": 1.0 if record_keeping else 0.3,
-    }
-    readiness = round(sum(components.values()) / len(components), 2)
-    gap = min(SHG_READINESS_CRITERIA, key=lambda key: (components[key], key))
-    return {"readiness": readiness, "gap": gap, "factors": components}
-
-
-register(
-    QuestionSet(
-        id="women.shg_readiness.v1",
-        version="v1",
-        schema={"readiness": 0.0, "gap": "record_keeping", "factors": {}},
-        confidence_threshold=0.75,
-        automation_level="suggest",
-        fallback_fn=_shg_readiness_fallback,
-    )
-)
-
-
 # Brief M28 (phase-08 WS-01) — churn signal. Scores how likely a dormant user is
 # to churn and picks the best re-engagement hook. `suggest`: the nightly job
 # decides whether to emit a re-engagement task; the user always chooses.

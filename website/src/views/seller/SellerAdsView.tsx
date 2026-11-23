@@ -16,19 +16,18 @@ import {
   Play,
   Trash2,
 } from 'lucide-react';
-import { ads, demands, gruhUdyog, lots, seller, apiErrorMessage } from '../../lib/api';
+import { ads, demands, lots, seller, apiErrorMessage } from '../../lib/api';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
 import { cardCls, inputCls, labelCls, primaryBtnCls, ghostBtnCls, rec, str, arr, num, type Rec } from './shared';
 
-type AdTargetType = 'demand' | 'product' | 'lot' | 'women_offer' | 'external';
+type AdTargetType = 'demand' | 'product' | 'lot' | 'external';
 
 const TARGET_TYPE_LABELS: Record<AdTargetType, string> = {
   demand: 'My Demand Postings (Crop Wanted)',
   product: 'My Storefront Products',
   lot: 'My Produce Lots',
-  women_offer: 'Women-hub Offers',
   external: 'External Link / General Promotion',
 };
 
@@ -37,7 +36,6 @@ export const SellerAdsView: React.FC = () => {
   const [myDemands, setMyDemands] = useState<Rec[]>([]);
   const [myProducts, setMyProducts] = useState<Rec[]>([]);
   const [myLots, setMyLots] = useState<Rec[]>([]);
-  const [myWomenOffers, setMyWomenOffers] = useState<Rec[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,40 +60,27 @@ export const SellerAdsView: React.FC = () => {
           ? myProducts
           : t === 'lot'
             ? myLots
-            : t === 'women_offer'
-              ? myWomenOffers
-              : [],
-    [myDemands, myProducts, myLots, myWomenOffers],
+            : [],
+    [myDemands, myProducts, myLots],
   );
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [allAds, allDemands, allProducts, allLots, myUnits] = await Promise.all([
+      const [allAds, allDemands, allProducts, allLots] = await Promise.all([
         ads.mine().catch(() => []),
         demands.list({ status: 'all' }).catch(() => []),
         seller.products().catch(() => []),
         lots.list().catch(() => []),
-        gruhUdyog.myUnits().catch(() => []),
       ]);
-      const unitList = arr(myUnits);
-      const womenProducts = unitList.length
-        ? (
-            await Promise.all(
-              unitList.map((u) => gruhUdyog.products(str(rec(u).id)).catch(() => [])),
-            )
-          ).flat()
-        : [];
       setAdsList(arr(allAds).map(rec));
       const demList = arr(allDemands).map(rec);
       const prodList = arr(allProducts).map(rec);
       const lotList = arr(allLots).map(rec);
-      const womenList = arr(womenProducts).map(rec);
       setMyDemands(demList);
       setMyProducts(prodList);
       setMyLots(lotList);
-      setMyWomenOffers(womenList);
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -128,9 +113,6 @@ export const SellerAdsView: React.FC = () => {
     }
     if (t === 'lot') {
       return `#${id}: ${str(item.crop, 'Lot')} (${num(item.quantityQuintals)} Qt @ ${formatCurrency(num(item.expectedRate))})`;
-    }
-    if (t === 'women_offer') {
-      return `#${id}: ${str(item.title, 'Women-hub offer')}`;
     }
     return `#${id}`;
   };

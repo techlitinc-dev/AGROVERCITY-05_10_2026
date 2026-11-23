@@ -391,7 +391,6 @@ async def decide(question_set_id: str, state: dict) -> tuple[dict, float]:
     if question_set_id == "dispute.triage.v1":
         return _dispute_triage_answers(state)
     if question_set_id in (
-        "women.shg_readiness.v1",
         "churn.signal.v1",
         "agent.rule_match.v1",
         "trade.offer_score.v1",

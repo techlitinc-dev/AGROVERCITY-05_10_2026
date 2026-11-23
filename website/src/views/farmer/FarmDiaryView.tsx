@@ -47,7 +47,7 @@ const CATEGORIES_BY_TYPE: Record<DiaryEntryType, string[]> = {
   equipment: ['Rent', 'Maintenance', 'Fuel', 'Other'],
   lesson: ['Course', 'Workshop', 'Other'],
   order: ['Advance', 'Delivery', 'Other'],
-  household: ['Gruh Udyog', 'SHG', 'Other'],
+  household: ['Groceries', 'Health', 'Education', 'Other'],
 };
 
 /** Types that carry a buy/sell tag and counterparty. */

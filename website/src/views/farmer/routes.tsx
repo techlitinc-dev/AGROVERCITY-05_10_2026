@@ -23,9 +23,6 @@ const AiCropDoctorView = lazy(() => import('./AiCropDoctorView').then((m) => ({ 
 const MyConnectionsView = lazy(() => import('../trade/MyConnectionsView').then((m) => ({ default: m.MyConnectionsView })));
 const PostToBuyersView = lazy(() => import('./PostToBuyersView').then((m) => ({ default: m.PostToBuyersView })));
 const FarmlandView = lazy(() => import('./FarmlandView').then((m) => ({ default: m.FarmlandView })));
-const WomenHubDirectoryView = lazy(() => import('./WomenHubDirectoryView').then((m) => ({ default: m.WomenHubDirectoryView })));
-const WomenHubBusinessProfileView = lazy(() => import('./WomenHubBusinessProfileView').then((m) => ({ default: m.WomenHubBusinessProfileView })));
-const WomenHubOrdersView = lazy(() => import('./WomenHubOrdersView').then((m) => ({ default: m.WomenHubOrdersView })));
 
 /** 1. Farmer / Kisan Hub (18 journeys) */
 export const FarmerRouteElements = () => (
@@ -56,9 +53,6 @@ export const FarmerRouteElements = () => (
     <Route path="/farmer/schemes" element={<GovtSchemesView />} />
     <Route path="/farmer/water" element={<WaterClimateView />} />
     <Route path="/farmer/referrals" element={<ReferralsView />} />
-    <Route path="/farmer/women-hub" element={<WomenHubDirectoryView />} />
-    <Route path="/farmer/women-hub/businesses/:id" element={<WomenHubBusinessProfileView />} />
-    <Route path="/farmer/women-hub/orders" element={<WomenHubOrdersView />} />
     <Route path="/farmer/coins" element={<KisanCoinsView />} />
     {/* My Milk & Payments is a milk-vendor desk feature — removed from the
         farmer persona (manual-test finding); the route redirects for compat. */}

@@ -21,7 +21,6 @@ import {
   Sparkles,
   ShoppingBag,
   HeartHandshake,
-  HandCoins,
   Bot,
   ScanLine,
   Radio,
@@ -96,9 +95,6 @@ export const Sidebar: React.FC = () => {
               { to: '/ads', label: 'Ads & Promotions', icon: Megaphone },
               { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign },
               { to: '/community/coins', label: 'Coins & Rewards', icon: Sparkles },
-              { to: '/community/women', label: 'Women Hub', icon: HeartHandshake },
-              { to: '/farmer/women-hub', label: 'Women Hub Businesses', icon: Store },
-              { to: '/farmer/women-hub/orders', label: 'Women Hub Orders', icon: ShoppingBag },
             ],
           },
         ];
@@ -246,24 +242,6 @@ export const Sidebar: React.FC = () => {
               { to: '/coldStorageProvider/facilities', label: 'Chambers & Temperature', icon: Snowflake },
               { to: '/coldStorageProvider/bookings', label: 'Inward & Release Bookings', icon: Boxes },
               { to: '/coldStorageProvider/fees', label: 'Rent Ledger & e-NWR Fees', icon: DollarSign },
-            ],
-          },
-        ];
-
-      case 'womenShg':
-        return [
-          {
-            title: 'Mahila Gruh Udyog',
-            items: [
-              { to: '/womenShg', label: 'Enterprise Dashboard', icon: LayoutDashboard },
-              { to: '/women/directory', label: 'Bachat Gat Directory', icon: Users },
-              { to: '/womenShg/products', label: 'Cottage Catalog', icon: Store },
-              { to: '/womenShg/batches', label: 'Production Batches', icon: Package },
-              { to: '/womenShg/certs', label: 'FSSAI Certifications', icon: Award },
-              { to: '/womenShg/savings', label: 'SHG Savings & Micro-Loan', icon: Landmark },
-              { to: '/women/hub/businesses', label: 'My Business & Management', icon: Briefcase },
-              { to: '/women/hub/garden', label: 'Kitchen Garden Planner', icon: Sprout },
-              { to: '/women/hub/enterprise', label: 'Enterprise Income', icon: HandCoins },
             ],
           },
         ];
@@ -642,21 +620,6 @@ export const Sidebar: React.FC = () => {
           >
             <Sparkles className="w-4 h-4 text-amber-500" />
             <span>Coins & Rewards</span>
-          </NavLink>
-
-          <NavLink
-            to="/community/women"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all',
-                isActive
-                  ? 'bg-emerald-50 text-emerald-900 font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              )
-            }
-          >
-            <HeartHandshake className="w-4 h-4 text-rose-500" />
-            <span>Women Hub</span>
           </NavLink>
         </div>
       </div>

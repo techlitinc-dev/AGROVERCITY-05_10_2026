@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  Award,
   Check,
   ChevronLeft,
   Heart,
-  Home,
   MessageCircle,
   Minus,
   Plus,
@@ -15,7 +13,7 @@ import {
   Star,
   Store,
 } from 'lucide-react';
-import { apiErrorMessage, gruhUdyog, mall } from '../../lib/api';
+import { apiErrorMessage, mall } from '../../lib/api';
 import { useCartStore } from '../../stores/cartStore';
 import { formatCurrency } from '../../lib/utils';
 import type { MallProduct } from '../../types';
@@ -29,22 +27,11 @@ interface ReviewItem {
   createdAt?: string;
 }
 
-interface UnitInfo {
-  name?: string;
-  category?: string;
-  village?: string;
-  district?: string;
-  state?: string;
-  shgName?: string;
-  description?: string;
-}
-
 export const MallProductDetailView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [raw, setRaw] = useState<ApiProductDoc | null>(null);
   const [product, setProduct] = useState<MallProduct | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
-  const [unit, setUnit] = useState<UnitInfo | null>(null);
   const [certificate, setCertificate] = useState<Record<string, unknown> | null>(null);
   const [certError, setCertError] = useState<string | null>(null);
   const [inWishlist, setInWishlist] = useState(false);
@@ -98,23 +85,6 @@ export const MallProductDetailView: React.FC = () => {
       mounted = false;
     };
   }, [id]);
-
-  // Gruh-udyog brand card — only for home-enterprise sourced listings.
-  const unitId = str(raw?.unitId);
-  const isGruhUdyog = str(raw?.source) === 'gruh_udyog' && unitId.length > 0;
-  useEffect(() => {
-    if (!isGruhUdyog) return;
-    let mounted = true;
-    gruhUdyog
-      .unit(unitId)
-      .then((payload) => {
-        if (mounted) setUnit(asRecord(payload) as UnitInfo);
-      })
-      .catch(() => undefined);
-    return () => {
-      mounted = false;
-    };
-  }, [isGruhUdyog, unitId]);
 
   const loadCertificate = async () => {
     if (!id) return;
@@ -221,12 +191,6 @@ export const MallProductDetailView: React.FC = () => {
         {/* Image */}
         <div className="bg-white rounded-3xl overflow-hidden border border-slate-200/80 shadow-xs">
           <img src={product.imageUrl} alt={product.title} className="w-full h-80 object-cover" />
-          {isGruhUdyog && (
-            <div className="px-4 py-2 bg-purple-50 border-t border-purple-100 text-[11px] font-bold text-purple-700 flex items-center gap-1.5">
-              <Home className="w-3.5 h-3.5" />
-              Home Enterprise (Gruh Udyog) product
-            </div>
-          )}
         </div>
 
         {/* Info */}
@@ -388,28 +352,6 @@ export const MallProductDetailView: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Gruh Udyog unit brand card */}
-      {isGruhUdyog && (
-        <div className="bg-purple-50 border border-purple-100 rounded-3xl p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shrink-0">
-            <Home className="w-6 h-6" />
-          </div>
-          <div className="flex-1">
-            <p className="text-[10px] font-bold text-purple-500 uppercase tracking-wide">Gruh Udyog Unit</p>
-            <h3 className="font-black text-sm text-slate-900">{unit?.name ?? 'Verified home enterprise'}</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              {[unit?.category, [unit?.village, unit?.district].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
-              {unit?.shgName ? ` · SHG: ${unit.shgName}` : ''}
-            </p>
-            {unit?.description && <p className="text-[11px] text-slate-600 mt-1">{unit.description}</p>}
-          </div>
-          <span className="px-3 py-1.5 rounded-full bg-white border border-purple-100 text-[10px] font-bold text-purple-700 flex items-center gap-1 shrink-0">
-            <Award className="w-3 h-3" />
-            Women-led enterprise
-          </span>
-        </div>
-      )}
 
       {/* Specifications */}
       {specs.length > 0 && (

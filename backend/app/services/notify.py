@@ -89,15 +89,6 @@ DEEP_LINKS: dict[str, str] = {
     "equipment_refund": "/dashboard/p/equipment",
     "equipment_contract": "/dashboard/p/equipment",
     "equipment_dispute": "/dashboard/p/equipment",
-    # WomenHub (SHG savings group, join requests, in-group loans, reminders)
-    "deposit_due": "/womenShg/savings",
-    "vaccination_due": "/womenShg",
-    "shg_join_request": "/womenShg/savings",
-    "shg_join_approved": "/womenShg/savings",
-    "shg_join_declined": "/womenShg/savings",
-    "shg_loan_requested": "/womenShg/savings",
-    "shg_loan_approved": "/womenShg/savings",
-    "shg_loan_repaid": "/womenShg/savings",
     # Vyapari hub — lot moderation, pickup reminders, saved-search alerts
     "lot_moderated": "/dashboard/p/myLots",
     "pickup_reminder_24h": "/dashboard/p/purchases",
@@ -107,14 +98,7 @@ DEEP_LINKS: dict[str, str] = {
 
 # Notification type -> preference category (task 2.9). Default "trade".
 TYPE_CATEGORY: dict[str, str] = {
-    "deposit_due": "payments",
     "vaccination_due": "tasks",
-    "shg_join_request": "social",
-    "shg_join_approved": "social",
-    "shg_join_declined": "social",
-    "shg_loan_requested": "payments",
-    "shg_loan_approved": "payments",
-    "shg_loan_repaid": "payments",
     "chat_message": "social",
     "chat_unlocked": "social",
     "rated": "social",

@@ -16,7 +16,7 @@ Act 5  Vijay rates Ramesh (fair_price, on_time), Ramesh replies, Vijay exports
        direct-buyer directory for a verified hotel buyer.
 
 Uses the shared conftest fixtures (in-memory Firestore monkeypatch) exactly
-like tests/test_women_hub_roleplay.py: `client`, `user_store`, `seed_user`,
+like tests/test_roleplay_common_features.py: `client`, `user_store`, `seed_user`,
 `auth`.
 """
 from datetime import datetime, timedelta, timezone

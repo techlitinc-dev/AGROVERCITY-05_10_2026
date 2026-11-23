@@ -29,8 +29,6 @@ DEFAULT_AI_CONFIG = {
         # Brief M21 (WS-05) — government-scheme matching. The rules engine
         # decides eligibility; the model only ranks + explains. `suggest`.
         "schemes_match": True,
-        # Phase-08 WS-01 — M26 women SHG-readiness AI (real SHG data, suggest).
-        "women_shg_readiness": True,
         # Phase-08 WS-01 — M28 receipt/weigh-slip scan (vision, confirm-only).
         "receipt_scan": True,
         # Phase-08 WS-01 — M28 churn re-engagement (nightly, suggest).
@@ -53,7 +51,6 @@ DEFAULT_AI_CONFIG = {
         "courses.recommend.v1": 0.75,
         "courses.grade_suggest.v1": 0.75,
         "schemes.match.v1": 0.75,
-        "women.shg_readiness.v1": 0.75,
         "churn.signal.v1": 0.75,
         "agent.rule_match.v1": 0.75,
     },
@@ -72,7 +69,6 @@ DEFAULT_AI_CONFIG = {
         "courses.grade_suggest.v1": "require_confirm",
         # M21 matching annotates the discovery list only — never auto-applies.
         "schemes.match.v1": "suggest",
-        "women.shg_readiness.v1": "suggest",
         "churn.signal.v1": "suggest",
         "agent.rule_match.v1": "suggest",
     },

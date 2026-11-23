@@ -12,7 +12,7 @@ from app.services.users import get_user
 
 router = APIRouter(tags=["marketplace"])
 
-MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller", "customer", "directBuyer", "nursery", "womenShg")
+MARKET_ROLES = ("farmer", "farmLandlord", "transport", "seller", "customer", "directBuyer", "nursery")
 
 
 def _error(status_code: int, code: str, message: str, field_errors: dict | None = None):
@@ -77,7 +77,7 @@ async def list_products(
     if category:
         docs = [d for d in docs if category.lower() in d.get("category", "").lower()]
     if source:
-        # Comma-separated allow-list, e.g. source=gruh_udyog,women_enterprise.
+        # Comma-separated allow-list, e.g. source=nursery,resale.
         sources = {s.strip() for s in source.split(",") if s.strip()}
         docs = [d for d in docs if d.get("source") in sources]
     if query:

@@ -36,18 +36,16 @@ def _now() -> str:
 _AD_TARGET_COLLECTIONS = {"product": "products", "demand": "demands"}
 
 # Own-listing targets: the target doc must exist AND belong to the caller.
-# women_offer accepts either a gruh_udyog offer or a gruh_udyog product doc.
 _AD_OWNED_TARGETS: dict[str, list[tuple[str, str]]] = {
     "lot": [("market_lots", "farmerId")],
     "vehicle": [("vehicles", "ownerId")],
     "equipment": [("equipment", "ownerId")],
-    "women_offer": [("gruh_udyog_offers", "ownerUid"), ("gruh_udyog_products", "ownerUid")],
 }
 
 
 async def _validate_ad_target(target_type: str, target_id: str, uid: str) -> None:
     """Own-listing targeting: a product/demand target must point at a real doc;
-    lot/vehicle/equipment/women_offer targets must also belong to the caller."""
+    lot/vehicle/equipment targets must also belong to the caller."""
     owned = _AD_OWNED_TARGETS.get(str(target_type))
     if owned:
         if not target_id:

@@ -192,7 +192,7 @@ async def test_put_me_settings_marathi(client):
     # Update to Marathi
     resp = await client.put(
         "/v1/users/me/settings",
-        json={"language": "mr", "womenMode": True},
+        json={"language": "mr"},
         headers=_auth(token),
     )
     assert resp.status_code == 200
@@ -207,7 +207,6 @@ async def test_put_me_settings_marathi(client):
     resp = await client.get("/v1/users/me/settings", headers=_auth(token))
     assert resp.json()["preferredLanguage"] == "mr"
     assert resp.json()["language"] == "mr"
-    assert resp.json()["womenMode"] is True
 
 
 async def test_put_me_preferred_language(client):

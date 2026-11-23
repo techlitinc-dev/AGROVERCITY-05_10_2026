@@ -27,7 +27,7 @@ async def test_get_profiles_surface(client, user_store):
     assert body["linkedProfiles"] == ["farmer", "seller"]
     assert body["activeProfile"] == "farmer"
     personas = {p["persona"]: p for p in body["personas"]}
-    assert len(personas) >= 21
+    assert len(personas) >= 20
     assert personas["farmer"] == {
         "persona": "farmer", "linked": True, "active": True, "primary": True, "disabled": False,
     }

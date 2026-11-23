@@ -9,7 +9,7 @@ and userflow.md personas:
 - Superadmin Dispute Settlement (disputes money movement: refunds, escrow release)
 - Admin SOP Platform & Operations (mandi rates, transport pricing, penalties, coins, nursery verify,
   product certificates, security policy, settlement hold, users export, land records export,
-  financial report, water usage, FPO financials, women impact, chatbot satisfaction, sapling survival,
+  financial report, water usage, FPO financials, chatbot satisfaction, sapling survival,
   biofuel trees, dairy rate charts, notification templates)
 - Insurance Provider (compliance stats export CSV/JSON)
 - Cold Storage Provider & Admin (facility verification, booking audit, rent accrual ledger)
@@ -404,10 +404,6 @@ async def test_admin_sop_writes_and_oversight(client, user_store):
     fpo_fin = await client.get(f"/v1/admin/fpo/{fpo_id}/financials", headers=headers)
     assert fpo_fin.status_code == 200
     assert fpo_fin.json()["turnoverRupees"] >= 5000000
-
-    # P2-30: Women impact report
-    w_rep = await client.get("/v1/admin/women/impact-report", headers=headers)
-    assert w_rep.status_code == 200
 
     # P2-31: Chatbot satisfaction
     csat_resp = await client.get("/v1/admin/chatbot/satisfaction", headers=headers)

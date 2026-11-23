@@ -121,14 +121,6 @@ class NurseryRoleProfile(BaseModel):
     serviceArea: str = ""
 
 
-class WomenShgRoleProfile(BaseModel):
-    shgName: str = ""
-    groupRole: str = "member"  # "president" | "secretary" | "treasurer" | "member"
-    enterpriseType: str = ""
-    skills: list[str] = []
-    settlementUpi: str | None = None
-
-
 ROLE_PROFILE_MODELS: dict[str, type[BaseModel]] = {
     "transport": TransportRoleProfile,
     "transporter": TransportRoleProfile,
@@ -147,5 +139,4 @@ ROLE_PROFILE_MODELS: dict[str, type[BaseModel]] = {
     "exporter": ExporterRoleProfile,
     "bankManager": BankManagerRoleProfile,
     "nursery": NurseryRoleProfile,
-    "womenShg": WomenShgRoleProfile,
 }

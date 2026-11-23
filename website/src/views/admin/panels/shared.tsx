@@ -37,7 +37,7 @@ export const asRow = (d: unknown): Row | null =>
 const ID_KEYS = [
   'id', 'docId', 'uid', 'userId', 'claimId', 'orderId', 'bookingId', 'lotId',
   'contractId', 'disputeId', 'rateId', 'vehicleId', 'equipmentId', 'fpoId',
-  'shgId', 'settlementId', 'courseId', 'sessionId', 'ticketId', 'approvalId',
+  'settlementId', 'courseId', 'sessionId', 'ticketId', 'approvalId',
   'reportId', 'itemId', 'keyId', 'requestId', 'testId', 'applicationId',
   'accountId', 'leaseId', 'listingId', 'poolId', 'storageId', 'facilityId',
   'newsId', 'workshopId', 'channelId', 'expertId', 'ngoId', 'nurseryId',

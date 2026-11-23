@@ -73,12 +73,11 @@ const BENCHMARK_MANDI: CommodityBenchmark[] = [
   { id: 'm10', commodity: 'Groundnut', variety: 'Bold #TG37A', mandi: 'Gondal', state: 'Gujarat', category: 'oilseeds', modalPrice: 6150, msp: 6377, trendPercentage: 1.1, arrivalsQ: 5600 },
 ];
 
-/** The 9 finalized personas the landing FAQ is organized around. */
+/** The 8 finalized personas the landing FAQ is organized around. */
 const FAQ_PERSONAS: { id: PersonaType; label: string; icon: string }[] = [
   { id: 'farmer', label: 'Farmer', icon: '🌾' },
   { id: 'landlord', label: 'Landlord', icon: '🏡' },
   { id: 'equipmentOwner', label: 'Equipment', icon: '🚜' },
-  { id: 'womenShg', label: 'Women Hub', icon: '🪔' },
   { id: 'transporter', label: 'Transporter', icon: '🚚' },
   { id: 'seller', label: 'Vyapari', icon: '🏪' },
   { id: 'milkSeller', label: 'Milk Vendor', icon: '🫗' },
@@ -138,20 +137,6 @@ const FAQ_DATA: FaqItem[] = [
     tags: ['damage claim', 'repair', 'security deposit'],
     q: 'What happens if my tractor or harvester is damaged during a job?',
     a: 'Every booking carries a damage security deposit from the farmer. You file a claim with geotagged photos from the field; our damage desk mediates within 48 hours and compensates you from the deposit, so repairs never come out of your pocket.',
-  },
-  {
-    id: 'women-1',
-    persona: 'womenShg',
-    tags: ['shg savings', 'bachat', 'micro loan', 'mudra', 'credit score'],
-    q: 'How do SHG monthly savings and micro-loans work on the platform?',
-    a: 'Your bachat gat runs as a digital savings circle — members get auto-reminders, and every contribution updates the group passbook instantly. The SHG’s savings history builds a group credit score that unlocks Micro-Mudra working-capital loans at 1–1.5% per month, with zero middlemen.',
-  },
-  {
-    id: 'women-2',
-    persona: 'womenShg',
-    tags: ['fssai', 'pickles', 'papad', 'gruh udyog', 'cottage food'],
-    q: 'What do I need to legally sell pickles, papad and masala online?',
-    a: 'Register your gruh udyog, upload your FSSAI registration (free for small cottage producers), and list products with batch dates. Agrovercity auto-generates compliant labels and invoices for cottage-scale sales, so your home enterprise sells across India worry-free.',
   },
   {
     id: 'transporter-1',
@@ -323,14 +308,6 @@ export const LandingPage: React.FC = () => {
       route: '/milkSeller',
     },
     {
-      id: 'womenShg',
-      title: 'Mahila Gruh Udyog & SHG',
-      hindiTitle: 'महिला गृह उद्योग एवं स्वयं सहायता',
-      category: 'producers',
-      icon: '🪔',
-      route: '/womenShg',
-    },
-    {
       id: 'instructor',
       title: 'Gurukul Academy Instructor',
       hindiTitle: 'कृषि गुरुकुल शिक्षक',
@@ -421,9 +398,9 @@ export const LandingPage: React.FC = () => {
             {/* Subtitle */}
             <p className="text-base sm:text-xl text-emerald-100/80 leading-relaxed max-w-3xl mx-auto font-medium">
               From Soil to Supermarket, Dairy to Cargo Port. A unified digital ecosystem uniting
-              <strong className="text-white font-bold"> Farmers, Farm Landlords, Women Hub Enterprises, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, Instructors, and Agri Market Sellers </strong>
+              <strong className="text-white font-bold"> Farmers, Farm Landlords, Equipment Owners, Milk Vendors, Agri Vyaparis, Transporters, Instructors, and Agri Market Sellers </strong>
               — with AI Crop Doctor for farmers, 7/12 land verification for landlords, per-acre machinery bookings
-              for equipment owners, SHG savings circles for women enterprises, FAT/SNF milk billing for vendors,
+              for equipment owners, FAT/SNF milk billing for vendors,
               digital POS khata for vyaparis, FT-1 digital bilty for transporters, course studios for instructors,
               and Agri Market orders for agri market sellers.
             </p>
@@ -733,28 +710,6 @@ export const LandingPage: React.FC = () => {
                 </div>
               </div>
             </div>
-
-            <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4 hover-lift">
-              <div className="flex items-center gap-1 text-amber-400">
-                {[...Array(5)].map((_, i) => (
-                  <Star key={i} className="w-4 h-4 fill-amber-400" />
-                ))}
-              </div>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed italic">
-                “Our 42-member women self-help group makes handmade amla candy and mango pickles.
-                Before Agrovercity, we only sold in village fairs. Now our storefront is live on Agri Market with FSSAI compliance,
-                shipping over 2,400 jars across Mumbai and Pune every month!”
-              </p>
-              <div className="pt-2 border-t border-slate-100 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-rose-700 text-white font-bold text-sm flex items-center justify-center">
-                  RD
-                </div>
-                <div>
-                  <h5 className="font-extrabold text-xs text-slate-900">Smt. Rekha Sharma</h5>
-                  <p className="text-[11px] text-slate-400">President, Saraswati SHG • Ujjain, MP</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -940,7 +895,6 @@ export const LandingPage: React.FC = () => {
                 <li><Link to="/farmer" className="hover:text-emerald-400 transition-colors">Kisan / Farmer</Link></li>
                 <li><Link to="/landlord" className="hover:text-emerald-400 transition-colors">Farm Landlord</Link></li>
                 <li><Link to="/equipment" className="hover:text-emerald-400 transition-colors">Custom Machinery (CHC)</Link></li>
-                <li><Link to="/womenShg" className="hover:text-emerald-400 transition-colors">Mahila Gruh Udyog</Link></li>
               </ul>
             </div>
 
