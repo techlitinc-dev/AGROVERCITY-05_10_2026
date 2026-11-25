@@ -177,7 +177,7 @@ export const FacilitiesManager: React.FC = () => {
           </Link>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Building2 className="w-7 h-7 text-emerald-600" />
-            Warehouses & Chambers
+            Chambers &amp; Temperature
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Register WDRA facilities, tune capacity and rent rates, and expand chamber inventory

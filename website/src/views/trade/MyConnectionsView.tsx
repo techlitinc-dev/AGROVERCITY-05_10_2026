@@ -121,7 +121,7 @@ export const MyConnectionsView: React.FC<Props> = ({ persona }) => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Handshake className="w-7 h-7 text-emerald-600" />
-          My Connections
+          My Connections{persona === 'farmer' ? ' / माझे संपर्क' : ''}
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           {persona === 'farmer'

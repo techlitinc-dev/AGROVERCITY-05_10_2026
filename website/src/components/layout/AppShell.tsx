@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Navbar } from './Navbar';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
+import { PageIdentityBar } from './PageIdentityBar';
 import { NotificationCenter } from '../common/NotificationCenter';
 import { ChatAlerts } from '../common/ChatAlerts';
 import { AiChatbotDrawer } from '../common/AiChatbotDrawer';
@@ -117,6 +118,7 @@ export const AppShell: React.FC = () => {
         <div className="flex-1 flex max-w-7xl w-full mx-auto">
           <Sidebar />
           <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 pb-24 lg:pb-12 overflow-x-hidden">
+            <PageIdentityBar />
             <Outlet />
           </main>
         </div>

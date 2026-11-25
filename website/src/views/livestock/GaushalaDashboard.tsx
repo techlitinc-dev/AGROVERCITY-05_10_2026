@@ -11,6 +11,7 @@ import {
   PieChart as PieIcon,
 } from 'lucide-react';
 import { livestock, apiErrorMessage } from '../../lib/api';
+import { useAuthStore } from '../../stores/authStore';
 import { StatCard } from '../../components/common/StatCard';
 import { formatCurrency } from '../../lib/utils';
 import { asRec, nameOf, numOf, recArr, strOf } from './helpers';
@@ -24,6 +25,7 @@ const MODULE_LINKS = [
 ];
 
 export const GaushalaDashboard: React.FC = () => {
+  const { user } = useAuthStore();
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [noProfile, setNoProfile] = useState(false);
   const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
@@ -76,7 +78,7 @@ export const GaushalaDashboard: React.FC = () => {
         <div className="border-b border-slate-200 pb-4">
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Building2 className="w-7 h-7 text-emerald-600" />
-            Gaushala Manager Desk
+            Namaste{user?.name ? `, ${user.name}` : ''} — Gaushala & Sanctuary
           </h1>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center space-y-4 max-w-xl mx-auto">
@@ -110,7 +112,7 @@ export const GaushalaDashboard: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Building2 className="w-7 h-7 text-emerald-600" />
-            {strOf(profile?.name, 'Gaushala Trust Desk')}
+            Namaste{user?.name ? `, ${user.name}` : ''} — Gaushala & Sanctuary
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             {strOf(profile?.trustName) || 'Gaushala transparency workspace'} — herd care, adoptions, 80G donations & expenses

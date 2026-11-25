@@ -27,8 +27,10 @@ import {
   Star,
 } from 'lucide-react';
 import { nursery } from '../../lib/api';
+import { useAuthStore } from '../../stores/authStore';
 
 export const NurseryHome: React.FC = () => {
+  const { user } = useAuthStore();
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [stockAlertCount, setStockAlertCount] = useState(0);
@@ -82,7 +84,7 @@ export const NurseryHome: React.FC = () => {
               )}
             </div>
             <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white">
-              {String(profile?.nurseryName || 'Green Agro Nursery')}
+              Namaste{user?.name ? `, ${user.name}` : ''} — Plant Nursery
             </h1>
             <p className="text-emerald-100 text-sm max-w-xl">
               Manage your sapling inventory, track plant propagation batches, fulfill farmer orders, and maximize horticulture sales.

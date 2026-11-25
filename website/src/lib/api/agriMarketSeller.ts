@@ -9,6 +9,9 @@ export const agriMarketSeller = {
   shop: (): Promise<unknown> => readOne<Record<string, unknown>>('/agri-market-seller/shop'),
   saveShop: (payload: Record<string, unknown>): Promise<unknown> =>
     put<unknown>('/agri-market-seller/shop', payload),
+  /** GET /agri-market-seller/shops — public directory of added seller shops
+   *  (safe fields only; any logged-in user, shown on the Agri Market page). */
+  shops: (): Promise<unknown[]> => readItems<unknown>('/agri-market-seller/shops'),
 
   // Sr 2 — Dashboard
   dashboard: (): Promise<unknown> => readOne<Record<string, unknown>>('/agri-market-seller/dashboard'),

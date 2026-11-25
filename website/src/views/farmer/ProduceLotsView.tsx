@@ -364,7 +364,7 @@ export const ProduceLotsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Package className="w-7 h-7 text-emerald-600" />
-            My Produce
+            My Produce / माझे उत्पादन
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Post your produce — verified Vyaparis find it and contact you directly (call / WhatsApp / chat).

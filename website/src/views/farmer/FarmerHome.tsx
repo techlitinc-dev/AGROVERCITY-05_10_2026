@@ -213,7 +213,7 @@ export const FarmerHome: React.FC = () => {
               ) : null}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Ram Ram{user?.name ? `, ${user.name.split(' ')[0]}` : ''} Ji! 🌾
+              Namaste{user?.name ? `, ${user.name}` : ''} — Farmer / Kisan
             </h1>
             <p className="text-xs sm:text-sm text-emerald-100/90 max-w-xl">
               {rates.length > 0 ? (

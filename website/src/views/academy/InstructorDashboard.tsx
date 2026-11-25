@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, GraduationCap, MessagesSquare } from 'lucide-react';
 import { teachers } from '../../lib/api';
+import { useAuthStore } from '../../stores/authStore';
 import { formatCurrency, formatDateTime } from '../../lib/utils';
 import { asRec, nameOf, numOf, recArr, strOf } from './helpers';
 
@@ -25,6 +26,7 @@ interface LoadState {
  * Sections fail independently so one bad API never blanks the page.
  */
 export const InstructorDashboard: React.FC = () => {
+  const { user } = useAuthStore();
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [courses, setCourses] = useState<Record<string, unknown>[]>([]);
   const [students, setStudents] = useState<Record<string, unknown>[]>([]);
@@ -117,7 +119,7 @@ export const InstructorDashboard: React.FC = () => {
       <header>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <GraduationCap className="h-5 w-5 text-emerald-600" />
-          {nameOf(profile, 'Gurukul Instructor')}
+          Namaste{user?.name ? `, ${user.name}` : ''} — Gurukul Instructor
         </h1>
         <p className="text-sm text-slate-500">Gurukul Dashboard — your teaching at a glance.</p>
       </header>

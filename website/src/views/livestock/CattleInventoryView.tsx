@@ -66,7 +66,7 @@ export const CattleInventoryView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Beef className="w-7 h-7 text-emerald-600" />
-            Cattle Inventory
+            Cattle Herd Registry
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Herd register — arrivals, adoptions-out, transfers and mortalities

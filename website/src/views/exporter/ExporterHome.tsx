@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Globe2, FileText, Inbox, Handshake, Loader2, Plus, ArrowRight } from 'lucide-react';
 import { exporter } from '../../lib/api/exporter';
 import { apiErrorMessage } from '../../lib/api';
+import { useAuthStore } from '../../stores/authStore';
 import type { ExportApplication, ExportRfq } from '../../types';
 import { ExportStatusBadge } from '../export/shared';
 
@@ -13,6 +14,7 @@ import { ExportStatusBadge } from '../export/shared';
  */
 export const ExporterHome: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [rfqs, setRfqs] = useState<ExportRfq[]>([]);
   const [connections, setConnections] = useState<ExportApplication[]>([]);
   const [newApplications, setNewApplications] = useState<ExportApplication[]>([]);
@@ -59,7 +61,7 @@ export const ExporterHome: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Globe2 className="w-7 h-7 text-emerald-600" />
-            Export Sourcing Home
+            Namaste{user?.name ? `, ${user.name}` : ''} — Agri Exporter
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Post structured crop requirements, compare farmer applications, and connect directly.

@@ -56,6 +56,7 @@ from app.services.users import get_user
 router = APIRouter(tags=["women-hub"])
 
 BUSINESSES = "women_businesses"
+CUSTOMERS = "women_business_customers"
 PRODUCTS = "women_business_products"
 ENQUIRIES = "women_business_enquiries"
 ORDERS = "women_business_orders"
@@ -79,81 +80,6 @@ GARDEN_STAGE_TRANSITIONS = {
 }
 REMINDER_TYPES = ("water", "fertilizer")
 
-# xlsx Sr 4.0 — nutrition-focused seed list (spinach, methi, tomato, carrot,
-# drumstick ... with iron/vitamin tags). Firestore `template: true` garden
-# plan docs override this catalog when present.
-VEGETABLE_CATALOG = (
-    {
-        "id": "veg_spinach",
-        "category": "Leafy Greens",
-        "items": [
-            {
-                "name": "Spinach",
-                "vernacularName": "पालक",
-                "nutrition": "Iron, Vitamin A, Folate",
-                "companion": "Tomato, Cauliflower",
-                "daysToHarvest": 45,
-            }
-        ],
-        "order": 1,
-    },
-    {
-        "id": "veg_methi",
-        "category": "Leafy Greens",
-        "items": [
-            {
-                "name": "Methi",
-                "vernacularName": "मेथी",
-                "nutrition": "Iron, Fibre, Vitamin C",
-                "companion": "Coriander",
-                "daysToHarvest": 30,
-            }
-        ],
-        "order": 2,
-    },
-    {
-        "id": "veg_tomato",
-        "category": "Vegetables",
-        "items": [
-            {
-                "name": "Tomato",
-                "vernacularName": "टमाटर",
-                "nutrition": "Vitamin C, Lycopene, Potassium",
-                "companion": "Spinach, Onion",
-                "daysToHarvest": 90,
-            }
-        ],
-        "order": 3,
-    },
-    {
-        "id": "veg_carrot",
-        "category": "Vegetables",
-        "items": [
-            {
-                "name": "Carrot",
-                "vernacularName": "गाजर",
-                "nutrition": "Vitamin A (beta-carotene), Fibre",
-                "companion": "Tomato, Peas",
-                "daysToHarvest": 75,
-            }
-        ],
-        "order": 4,
-    },
-    {
-        "id": "veg_drumstick",
-        "category": "Trees/Perennials",
-        "items": [
-            {
-                "name": "Drumstick",
-                "vernacularName": "शेवगा",
-                "nutrition": "Iron, Calcium, Vitamin C",
-                "companion": "Curry leaf",
-                "daysToHarvest": 180,
-            }
-        ],
-        "order": 5,
-    },
-)
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -259,6 +185,12 @@ class GardenCropIn(BaseModel):
     sownOn: str = Field(default="")
 
 
+class GardenCropEditIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    nutrition: str = Field(default="", max_length=200)
+    season: str = Field(default="", max_length=60)
+
+
 class GardenStageIn(BaseModel):
     stage: str = Field(min_length=1)
 
@@ -272,6 +204,24 @@ class GardenYieldIn(BaseModel):
     date: str = Field(min_length=4, max_length=10)
     quantity: float = Field(ge=0)
     unit: str = Field(default="kg", max_length=20)
+
+
+class BusinessCustomerIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    phone: str = Field(default="", max_length=20)
+    area: str = Field(default="", max_length=120)
+    note: str = Field(default="", max_length=500)
+
+
+class BusinessCustomerRecordIn(BaseModel):
+    date: str = Field(min_length=4, max_length=10)
+    note: str = Field(default="", max_length=500)
+    amountPaisa: int = Field(default=0)
+    # Khata ledger: "sale" = goods given on credit (revenue; optional cost so
+    # profit = sale − cost), "payment" = cash received. Legacy records with no
+    # type are treated as sales.
+    type: str = Field(default="sale", pattern="^(sale|payment)$")
+    costPaisa: int = Field(default=0, ge=0)
 
 
 class EnterpriseIn(BaseModel):
@@ -531,16 +481,28 @@ async def my_businesses(
     q: str | None = Query(None),
     uid: str = Depends(_woman),
 ):
-    """Her businesses + search bar over her own businesses (xlsx Sr 2.0)."""
+    """Her businesses + search bar over her own businesses (xlsx Sr 2.0).
+
+    Matches name/category/description plus service area, working days,
+    location and her product names — so a keyword she associates with the
+    business (e.g. "papad") actually finds it.
+    """
     docs = await query(BUSINESSES, [("ownerUid", "==", uid)], limit=200)
     if q:
         needle = q.strip().lower()
+        product_hits = {
+            p.get("businessId")
+            for p in await query(PRODUCTS, [("ownerUid", "==", uid)], limit=500)
+            if p.get("businessId") and needle in (p.get("name") or "").lower()
+        }
         docs = [
             d
             for d in docs
-            if needle in (d.get("name") or "").lower()
-            or needle in (d.get("category") or "").lower()
-            or needle in (d.get("description") or "").lower()
+            if d.get("id") in product_hits
+            or any(
+                needle in (d.get(field) or "").lower()
+                for field in ("name", "category", "description", "serviceArea", "workingDays", "location")
+            )
         ]
     docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
     return {"items": [_business_card(d) | {"description": d.get("description", "")} for d in docs]}
@@ -615,6 +577,8 @@ async def delete_business(business_id: str, uid: str = Depends(_woman)):
         await delete_doc(ORDERS, order["id"])
     for review in await query(REVIEWS, [("businessId", "==", business_id)], limit=500):
         await delete_doc(REVIEWS, review["id"])
+    for customer in await query(CUSTOMERS, [("businessId", "==", business_id)], limit=500):
+        await delete_doc(CUSTOMERS, customer["id"])
     await delete_doc(BUSINESSES, business["id"])
     return Response(status_code=204)
 
@@ -751,6 +715,163 @@ async def respond_enquiry(enquiry_id: str, body: EnquiryRespondIn, uid: str = De
         deepLink="/farmer/women-hub/orders",
     )
     return _enquiry_visible(enquiry, business, uid)
+
+
+# ---------------------------------------------------------------------------
+# Business customers (xlsx Sr 2.0 add-on) — directory + dated record ledger
+# per business. A record = date + note + amount (paisa); editable/deletable.
+# Records are typed: "sale" (goods given on credit, optional cost → profit)
+# or "payment" (cash received); remaining = sales − payments.
+# ---------------------------------------------------------------------------
+
+def _customer_summary(customer: dict) -> dict:
+    """Khata totals for one customer. Records with no type count as sales."""
+    sales = cost = paid = 0
+    for r in customer.get("records") or []:
+        if r.get("type", "sale") == "payment":
+            paid += int(r.get("amountPaisa", 0))
+        else:
+            sales += int(r.get("amountPaisa", 0))
+            cost += int(r.get("costPaisa", 0))
+    return {
+        "salesPaisa": sales,
+        "costPaisa": cost,
+        "profitPaisa": sales - cost,
+        "paidPaisa": paid,
+        "remainingPaisa": sales - paid,
+    }
+
+
+async def _my_customer(business_id: str, customer_id: str, uid: str) -> dict:
+    await _my_business(business_id, uid)  # 404 unless she owns the business
+    customer = await get_doc(CUSTOMERS, customer_id)
+    if customer is None or customer.get("businessId") != business_id:
+        _error(404, "CUSTOMER_NOT_FOUND", "customer not found")
+    return customer
+
+
+@router.get("/women/businesses/{business_id}/customers")
+async def list_customers(business_id: str, uid: str = Depends(_woman)):
+    """Her customer directory for one business, records newest first.
+    Each customer carries a khata `summary`; `totals` sums the business."""
+    await _my_business(business_id, uid)
+    docs = await query(CUSTOMERS, [("businessId", "==", business_id)], limit=500)
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    totals = {"salesPaisa": 0, "costPaisa": 0, "profitPaisa": 0, "paidPaisa": 0, "remainingPaisa": 0}
+    for d in docs:
+        if d.get("records"):
+            d["records"].sort(key=lambda r: r.get("date", ""), reverse=True)
+        d["summary"] = _customer_summary(d)
+        for key in totals:
+            totals[key] += d["summary"][key]
+    return {"items": docs, "totals": totals}
+
+
+@router.post("/women/businesses/{business_id}/customers", status_code=201)
+async def add_customer(business_id: str, body: BusinessCustomerIn, uid: str = Depends(_woman)):
+    await _my_business(business_id, uid)
+    customer_id = f"cus_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "id": customer_id,
+        "businessId": business_id,
+        "ownerUid": uid,
+        "name": body.name,
+        "phone": body.phone,
+        "area": body.area,
+        "note": body.note,
+        "records": [],
+        "createdAt": _now(),
+    }
+    await set_doc(CUSTOMERS, customer_id, doc)
+    return doc
+
+
+@router.put("/women/businesses/{business_id}/customers/{customer_id}")
+async def update_customer(
+    business_id: str, customer_id: str, body: BusinessCustomerIn, uid: str = Depends(_woman)
+):
+    customer = await _my_customer(business_id, customer_id, uid)
+    customer.update(
+        {
+            "name": body.name,
+            "phone": body.phone,
+            "area": body.area,
+            "note": body.note,
+            "updatedAt": _now(),
+        }
+    )
+    await set_doc(CUSTOMERS, customer_id, customer)
+    return customer
+
+
+@router.delete("/women/businesses/{business_id}/customers/{customer_id}", status_code=204)
+async def delete_customer(business_id: str, customer_id: str, uid: str = Depends(_woman)):
+    customer = await _my_customer(business_id, customer_id, uid)
+    await delete_doc(CUSTOMERS, customer["id"])
+    return Response(status_code=204)
+
+
+@router.post("/women/businesses/{business_id}/customers/{customer_id}/records", status_code=201)
+async def add_customer_record(
+    business_id: str, customer_id: str, body: BusinessCustomerRecordIn, uid: str = Depends(_woman)
+):
+    customer = await _my_customer(business_id, customer_id, uid)
+    record = {
+        "id": f"rec_{uuid.uuid4().hex[:10]}",
+        "date": body.date,
+        "note": body.note,
+        "amountPaisa": body.amountPaisa,
+        "type": body.type,
+        "costPaisa": body.costPaisa if body.type == "sale" else 0,
+        "createdAt": _now(),
+    }
+    customer.setdefault("records", []).append(record)
+    customer["updatedAt"] = _now()
+    await set_doc(CUSTOMERS, customer_id, customer)
+    return record
+
+
+@router.put("/women/businesses/{business_id}/customers/{customer_id}/records/{record_id}")
+async def update_customer_record(
+    business_id: str,
+    customer_id: str,
+    record_id: str,
+    body: BusinessCustomerRecordIn,
+    uid: str = Depends(_woman),
+):
+    customer = await _my_customer(business_id, customer_id, uid)
+    records = customer.get("records") or []
+    record = next((r for r in records if r.get("id") == record_id), None)
+    if record is None:
+        _error(404, "RECORD_NOT_FOUND", "record not found")
+    record.update(
+        {
+            "date": body.date,
+            "note": body.note,
+            "amountPaisa": body.amountPaisa,
+            "type": body.type,
+            "costPaisa": body.costPaisa if body.type == "sale" else 0,
+            "updatedAt": _now(),
+        }
+    )
+    customer["updatedAt"] = _now()
+    await set_doc(CUSTOMERS, customer_id, customer)
+    return record
+
+
+@router.delete("/women/businesses/{business_id}/customers/{customer_id}/records/{record_id}", status_code=204)
+async def delete_customer_record(
+    business_id: str, customer_id: str, record_id: str, uid: str = Depends(_woman)
+):
+    customer = await _my_customer(business_id, customer_id, uid)
+    records = customer.get("records") or []
+    kept = [r for r in records if r.get("id") != record_id]
+    if len(kept) == len(records):
+        _error(404, "RECORD_NOT_FOUND", "record not found")
+    customer["records"] = kept
+    customer["updatedAt"] = _now()
+    await set_doc(CUSTOMERS, customer_id, customer)
+    return Response(status_code=204)
 
 
 # =========================================================================
@@ -1099,12 +1220,10 @@ async def garden_plans(uid: str = Depends(_woman)):
 async def garden_templates(uid: str = Depends(_woman)):
     """Nutrition-tagged vegetable catalog for the picker (xlsx Sr 4.0).
 
-    Reads seeded `template: true` docs from the `garden_plans` collection;
-    falls back to the in-module catalog when unseeded.
+    Serves only seeded `template: true` docs from the `garden_plans`
+    collection — empty until templates are added (no built-in static catalog).
     """
     docs = [d for d in await query(GARDEN_PLANS, [("template", "==", True)], limit=50)]
-    if not docs:
-        docs = [dict(t, template=True) for t in VEGETABLE_CATALOG]
     docs.sort(key=lambda d: (d.get("order", 99), d.get("createdAt", "")))
     return {"data": docs}
 
@@ -1264,6 +1383,19 @@ async def add_garden_crop(
     if idempotency_key:
         await idempotency.store(scope, idempotency_key, doc)
     return doc
+
+
+@router.put("/women/garden-crops/{crop_id}")
+async def update_garden_crop(crop_id: str, body: GardenCropEditIn, uid: str = Depends(_woman)):
+    """Edit a crop's name / nutrition tag / season (xlsx Sr 4.0 edit option).
+    Stage, reminders and yield log are managed by their own endpoints."""
+    crop = await _owned_crop(crop_id, uid)
+    crop["name"] = body.name
+    crop["nutrition"] = body.nutrition
+    crop["season"] = body.season
+    crop["updatedAt"] = _now()
+    await set_doc(GARDEN_CROPS, crop_id, crop)
+    return crop
 
 
 @router.post("/women/garden-crops/{crop_id}/stage")
@@ -1453,9 +1585,28 @@ async def delete_enterprise_expense(expense_id: str, uid: str = Depends(_woman))
     return Response(status_code=204)
 
 
-def _ledger_for_month(lines: list[dict], months_docs: list[dict], expenses: list[dict], month: str | None) -> dict:
-    month_docs = [m for m in months_docs if month is None or m.get("month") == month]
-    month_expenses = [e for e in expenses if month is None or e.get("month") == month]
+def _ledger_for_month(
+    lines: list[dict],
+    months_docs: list[dict],
+    expenses: list[dict],
+    month: str | None,
+    from_month: str | None = None,
+    to_month: str | None = None,
+) -> dict:
+    """Monthly ledger totals. `month` pins one month; `from_month`/`to_month`
+    (YYYY-MM) sum every month inside the inclusive range."""
+
+    def in_range(m: str | None) -> bool:
+        if month is not None:
+            return m == month
+        if from_month is not None and (m or "") < from_month:
+            return False
+        if to_month is not None and (m or "") > to_month:
+            return False
+        return True
+
+    month_docs = [m for m in months_docs if in_range(m.get("month"))]
+    month_expenses = [e for e in expenses if in_range(e.get("month"))]
     per_line = []
     for line in lines:
         doc = next((m for m in month_docs if m.get("lineId") == line["id"]), None)
@@ -1500,12 +1651,25 @@ def _ledger_for_month(lines: list[dict], months_docs: list[dict], expenses: list
 @router.get("/women/home-enterprise/ledger")
 async def enterprise_ledger(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    from_date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$", alias="from"),
+    to_date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$", alias="to"),
     uid: str = Depends(_woman),
 ):
+    """Auto-calculated totals for one month (`month`) or an inclusive
+    from/to date range (month-granular — entries are stored per month)."""
+    if from_date and to_date and from_date > to_date:
+        _error(422, "INVALID_DATE_RANGE", "from date must be on or before to date")
     lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
     months_docs = await query(HOME_ENTERPRISE_MONTHS, [("ownerUid", "==", uid)], limit=500)
     expenses = await query(HOME_ENTERPRISE_EXPENSES, [("ownerUid", "==", uid)], limit=500)
-    return _ledger_for_month(lines, months_docs, expenses, month)
+    return _ledger_for_month(
+        lines,
+        months_docs,
+        expenses,
+        month,
+        (from_date or "")[:7] or None,
+        (to_date or "")[:7] or None,
+    )
 
 
 @router.get("/women/home-enterprise/graph")
@@ -1524,13 +1688,25 @@ async def enterprise_profit_graph(uid: str = Depends(_woman)):
 @router.get("/women/home-enterprise/export")
 async def export_enterprise_ledger(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    from_date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$", alias="from"),
+    to_date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$", alias="to"),
     uid: str = Depends(_woman),
 ):
     """Export ledger — CSV download of the monthly income ledger."""
+    if from_date and to_date and from_date > to_date:
+        _error(422, "INVALID_DATE_RANGE", "from date must be on or before to date")
     lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
     months_docs = await query(HOME_ENTERPRISE_MONTHS, [("ownerUid", "==", uid)], limit=500)
     expenses = await query(HOME_ENTERPRISE_EXPENSES, [("ownerUid", "==", uid)], limit=500)
-    ledger = _ledger_for_month(lines, months_docs, expenses, month)
+    ledger = _ledger_for_month(
+        lines,
+        months_docs,
+        expenses,
+        month,
+        (from_date or "")[:7] or None,
+        (to_date or "")[:7] or None,
+    )
+    range_label = ledger["month"] or (f"{from_date}–{to_date}" if from_date and to_date else "all")
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["product", "quantity", "month", "revenue_paisa", "cost_paisa", "profit_paisa", "expenses_paisa"])
@@ -1539,7 +1715,7 @@ async def export_enterprise_ledger(
             [
                 line["product"],
                 line["quantity"],
-                ledger["month"] or "all",
+                range_label,
                 line.get("revenuePaisa") or 0,
                 line.get("costPaisa") or 0,
                 line.get("profitPaisa") or 0,
@@ -1593,13 +1769,20 @@ def _garden_stage_summary(crops: list[dict]) -> dict:
 @router.get("/women/dashboard")
 async def women_hub_dashboard(uid: str = Depends(_woman)):
     """xlsx Sr 1.0 — one home screen: garden growth stages, total business,
-    enterprise profit total, notifications, Indian calendar, reminders."""
+    enterprise profit total, customer khata totals, notifications, Indian
+    calendar, reminders."""
     crops = await query(GARDEN_CROPS, [("ownerUid", "==", uid)], limit=500)
     businesses = await query(BUSINESSES, [("ownerUid", "==", uid)], limit=200)
     enterprise_lines = await query(HOME_ENTERPRISES, [("ownerUid", "==", uid)], limit=200)
+    customers = await query(CUSTOMERS, [("ownerUid", "==", uid)], limit=2000)
     notifications = await query("notifications", [("userId", "==", uid)], limit=50)
     notifications.sort(key=lambda n: n.get("createdAt", ""), reverse=True)
     due_reminders = _due_garden_reminders(crops)
+    khata = {"salesPaisa": 0, "costPaisa": 0, "profitPaisa": 0, "paidPaisa": 0, "remainingPaisa": 0}
+    for customer in customers:
+        summary = _customer_summary(customer)
+        for key in khata:
+            khata[key] += summary[key]
     return {
         "garden": _garden_stage_summary(crops),
         "businesses": {
@@ -1611,6 +1794,14 @@ async def women_hub_dashboard(uid: str = Depends(_woman)):
                 int(line.get("monthlyProfitPaisa", 0)) for line in enterprise_lines
             ),
             "lineCount": len(enterprise_lines),
+        },
+        "customers": {
+            "count": len(customers),
+            "totalSalesPaisa": khata["salesPaisa"],
+            "totalCostPaisa": khata["costPaisa"],
+            "totalProfitPaisa": khata["profitPaisa"],
+            "totalCashReceivedPaisa": khata["paidPaisa"],
+            "totalRemainingPaisa": khata["remainingPaisa"],
         },
         "notifications": {
             "items": [

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuthStore } from '../../stores/authStore';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Truck,
@@ -60,6 +61,7 @@ const bookingWeight = (b: TransportBooking): number => b.weightQuintals ?? b.car
 /** 3. Transporter Logistics Hub — load board, trips, bilty, settlements. */
 export const TransporterHome: React.FC = () => {
   const location = useLocation();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabId>(TAB_FOR_PATH[location.pathname] ?? 'loads');
 
   const [dashboard, setDashboard] = useState<Rec>({});
@@ -301,7 +303,7 @@ export const TransporterHome: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Truck className="w-7 h-7 text-emerald-600" />
-            Transporter Logistics Cockpit (FT Desk)
+            Namaste{user?.name ? `, ${user.name}` : ''} — Transporter / Gadi
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Freight load auction board, trip execution, digital bilty — fares settle directly with the farmer

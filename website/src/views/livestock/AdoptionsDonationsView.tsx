@@ -147,7 +147,7 @@ export const AdoptionsDonationsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <HeartHandshake className="w-7 h-7 text-emerald-600" />
-            Adoptions & Donations
+            80G Donations &amp; Adoptions
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Approval queues — verify payments, then approve/acknowledge to auto-issue 80G receipts

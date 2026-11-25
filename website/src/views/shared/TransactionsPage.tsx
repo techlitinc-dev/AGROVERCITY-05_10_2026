@@ -187,7 +187,7 @@ export const TransactionsPage: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <ArrowLeftRight className="w-7 h-7 text-emerald-600" />
-          Payments & Transactions
+          Payment &amp; Transactions
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Every payment you have sent or received across orders, rentals, dairy and payouts

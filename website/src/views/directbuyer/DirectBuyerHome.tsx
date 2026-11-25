@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuthStore } from '../../stores/authStore';
 import {
   Building2,
   Layers,
@@ -26,6 +27,7 @@ import type { BuyerDemand } from '../../types';
  * and business-verification status. No escrow/payment/QC controls — sourcing
  * connections only. */
 export const DirectBuyerHome: React.FC = () => {
+  const { user } = useAuthStore();
   const [requirements, setRequirements] = useState<BuyerDemand[]>([]);
   const [applications, setApplications] = useState<Lead[]>([]);
   const [verification, setVerification] = useState<{ identityVerified?: boolean; businessVerified?: boolean }>({});
@@ -71,7 +73,7 @@ export const DirectBuyerHome: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Building2 className="w-7 h-7 text-emerald-600" />
-            Industrial Buyer Desk
+            Namaste{user?.name ? `, ${user.name}` : ''} — Industrial / Direct Buyer
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Publish sourcing requirements, compare farmer applications, and unlock direct contact with the suppliers

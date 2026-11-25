@@ -106,7 +106,7 @@ export const InstructorConsoleHome: React.FC = () => {
         <div className="border-b border-slate-200 pb-4">
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <GraduationCap className="w-7 h-7 text-emerald-600" />
-            Gurukul Instructor Console
+            Academic Studio
           </h1>
         </div>
         <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-10 text-center max-w-xl mx-auto space-y-3">

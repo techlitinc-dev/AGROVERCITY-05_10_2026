@@ -447,3 +447,47 @@ async def test_persona_access_rules(client, user_store):
 
     shop = await client.get("/v1/agri-market-seller/shop", headers=auth(seller_token))
     assert shop.status_code == 200
+
+
+# ------------------------------------------------------- public shops directory
+
+
+async def test_public_shops_directory_lists_shops_without_bank_fields(client, user_store):
+    stoken = _seed_seller(user_store, active_profile="agriMarketSeller")
+    await client.put(
+        "/v1/agri-market-seller/shop",
+        json={
+            "shopName": "Amit Agro Shop",
+            "bankName": "SBI Baramati",
+            "bankAccountNumber": "12345678901",
+            "bankIfsc": "SBIN0001234",
+            "deliveryArea": "Baramati, Pune",
+            "pickupAddress": "Shop 4, Mandi Road, Baramati",
+            "documentIds": ["doc_pan", "doc_gst"],
+        },
+        headers=auth(stoken),
+    )
+    ftoken = _seed_farmer(user_store)
+    resp = await client.get("/v1/agri-market-seller/shops", headers=auth(ftoken))
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    card = items[0]
+    assert card["shopName"] == "Amit Agro Shop"
+    assert card["sellerName"] == "Amit Agro"
+    assert card["deliveryArea"] == "Baramati, Pune"
+    assert card["pickupAddress"] == "Shop 4, Mandi Road, Baramati"
+    assert card["createdAt"]
+    # bank details and documents never leak into the public directory
+    for banned in ("bankName", "bankAccountNumber", "bankIfsc", "documentIds"):
+        assert banned not in card
+
+
+async def test_public_shops_directory_empty_and_requires_login(client, user_store):
+    ftoken = _seed_farmer(user_store)
+    resp = await client.get("/v1/agri-market-seller/shops", headers=auth(ftoken))
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+    anon = await client.get("/v1/agri-market-seller/shops")
+    assert anon.status_code in (401, 403)

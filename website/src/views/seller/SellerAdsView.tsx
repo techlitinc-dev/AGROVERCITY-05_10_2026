@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Megaphone,
   Plus,
@@ -32,6 +33,7 @@ const TARGET_TYPE_LABELS: Record<AdTargetType, string> = {
 };
 
 export const SellerAdsView: React.FC = () => {
+  const location = useLocation();
   const [adsList, setAdsList] = useState<Rec[]>([]);
   const [myDemands, setMyDemands] = useState<Rec[]>([]);
   const [myProducts, setMyProducts] = useState<Rec[]>([]);
@@ -211,7 +213,7 @@ export const SellerAdsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
             <Megaphone className="w-7 h-7 text-emerald-600" />
-            Ad Manager & Demand Promotion Engine
+            {location.pathname.startsWith('/nursery') ? 'Ad Manager' : 'Ads & Promotions'}
           </h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">
             Broadcast purchase requirements and procurement ads directly to farmer feeds and APMC ticker boards.

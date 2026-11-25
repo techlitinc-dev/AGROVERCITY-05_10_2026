@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   GraduationCap,
   Play,
@@ -36,6 +36,7 @@ import { ContactInstructorModal } from './ContactInstructorModal';
  *           instructor grants access manually after direct payment)
  */
 export const CourseCatalogView: React.FC = () => {
+  const location = useLocation();
   const { activePersona } = useAuthStore();
   const isFarmerPersona = normalizePersona(activePersona) === 'farmer';
   const [catalog, setCatalog] = useState<Record<string, unknown>[]>([]);
@@ -220,7 +221,7 @@ export const CourseCatalogView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <GraduationCap className="w-7 h-7 text-emerald-600" />
-            Learn
+            {location.pathname.startsWith('/nursery') ? 'Gyansetu Learning' : 'Courses'}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Practical farming courses by verified instructors. Free courses enrol instantly; paid

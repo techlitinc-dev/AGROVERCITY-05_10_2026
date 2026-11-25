@@ -456,17 +456,13 @@ async def test_rate_business_updates_card_rating(client, user_store):
 # ---------------------------------------------------------------- garden planner (A3)
 
 
-async def test_garden_templates_catalog_has_nutrition_tags(client, user_store):
+async def test_garden_templates_served_only_from_firestore(client, user_store):
+    """Static catalog removed (womenhub): the templates endpoint serves only
+    seeded `template: true` garden-plan docs — empty until templates exist."""
     token = _seed_woman(user_store)
     resp = await client.get("/v1/women/garden-templates", headers=auth(token))
     assert resp.status_code == 200
-    names = {
-        item["name"]
-        for doc in resp.json()["data"]
-        for item in doc.get("items", [])
-    }
-    # xlsx Sr 4.0 seed list: spinach, methi, tomato, carrot, drumstick
-    assert {"Spinach", "Methi", "Tomato", "Carrot", "Drumstick"} <= names
+    assert resp.json()["data"] == []
 
 
 async def test_garden_plans_create_and_list(client, user_store):
@@ -695,3 +691,124 @@ async def test_dashboard_widgets_garden_enterprise_notifications_reminders(clien
     assert len(body["reminders"]) == 1
     assert body["reminders"][0]["type"] == "fertilizer"
 
+
+
+# ---------------------------------------------------------------- business customers khata
+
+
+async def _customer(client, token, business_id, name="Kavita"):
+    resp = await client.post(
+        f"/v1/women/businesses/{business_id}/customers",
+        json={"name": name, "phone": "9822011103", "area": "Baramati", "note": "weekly tiffin"},
+        headers=auth(token),
+    )
+    assert resp.status_code == 201
+    return resp.json()
+
+
+async def _record(client, token, business_id, customer_id, **overrides):
+    payload = {"date": "2026-11-24", "note": "", "amountPaisa": 0, "type": "sale", "costPaisa": 0}
+    payload.update(overrides)
+    resp = await client.post(
+        f"/v1/women/businesses/{business_id}/customers/{customer_id}/records",
+        json=payload,
+        headers=auth(token),
+    )
+    assert resp.status_code == 201
+    return resp.json()
+
+
+async def test_customer_khata_summary_sale_cost_payment(client, user_store):
+    """sale = revenue with optional cost (profit = sale − cost),
+    payment = cash received, remaining = sales − payments."""
+    token = _seed_woman(user_store)
+    business = await _create_business(client, token)
+    customer = await _customer(client, token, business["id"])
+
+    await _record(client, token, business["id"], customer["id"], amountPaisa=50000, costPaisa=30000)
+    await _record(client, token, business["id"], customer["id"], amountPaisa=20000, costPaisa=5000)
+    await _record(client, token, business["id"], customer["id"], type="payment", amountPaisa=40000)
+
+    resp = await client.get(f"/v1/women/businesses/{business['id']}/customers", headers=auth(token))
+    body = resp.json()
+    summary = body["items"][0]["summary"]
+    assert summary["salesPaisa"] == 70000
+    assert summary["costPaisa"] == 35000
+    assert summary["profitPaisa"] == 35000
+    assert summary["paidPaisa"] == 40000
+    assert summary["remainingPaisa"] == 30000
+    # business-level totals mirror the single customer
+    assert body["totals"]["salesPaisa"] == 70000
+    assert body["totals"]["profitPaisa"] == 35000
+    assert body["totals"]["paidPaisa"] == 40000
+    assert body["totals"]["remainingPaisa"] == 30000
+
+
+async def test_customer_record_defaults_and_validation(client, user_store):
+    token = _seed_woman(user_store)
+    business = await _create_business(client, token)
+    customer = await _customer(client, token, business["id"])
+
+    # legacy payload without type → treated as a sale
+    legacy = await client.post(
+        f"/v1/women/businesses/{business['id']}/customers/{customer['id']}/records",
+        json={"date": "2026-11-24", "note": "old entry", "amountPaisa": 10000},
+        headers=auth(token),
+    )
+    assert legacy.status_code == 201
+    assert legacy.json()["type"] == "sale"
+
+    # payments never carry cost
+    payment = await _record(client, token, business["id"], customer["id"], type="payment", amountPaisa=5000, costPaisa=999)
+    assert payment["costPaisa"] == 0
+
+    # bogus type rejected
+    bad = await client.post(
+        f"/v1/women/businesses/{business['id']}/customers/{customer['id']}/records",
+        json={"date": "2026-11-24", "amountPaisa": 100, "type": "gift"},
+        headers=auth(token),
+    )
+    assert bad.status_code == 422
+
+
+async def test_customer_record_edit_updates_summary(client, user_store):
+    token = _seed_woman(user_store)
+    business = await _create_business(client, token)
+    customer = await _customer(client, token, business["id"])
+    record = await _record(client, token, business["id"], customer["id"], amountPaisa=10000, costPaisa=4000)
+
+    edited = await client.put(
+        f"/v1/women/businesses/{business['id']}/customers/{customer['id']}/records/{record['id']}",
+        json={"date": "2026-11-24", "note": "corrected", "amountPaisa": 15000, "type": "sale", "costPaisa": 6000},
+        headers=auth(token),
+    )
+    assert edited.status_code == 200
+
+    body = (await client.get(f"/v1/women/businesses/{business['id']}/customers", headers=auth(token))).json()
+    summary = body["items"][0]["summary"]
+    assert summary["salesPaisa"] == 15000
+    assert summary["profitPaisa"] == 9000
+    assert summary["remainingPaisa"] == 15000
+
+
+async def test_dashboard_includes_customer_khata_totals(client, user_store):
+    """Dashboard aggregates revenue / profit / cash received / remaining
+    across all her businesses' customers."""
+    token = _seed_woman(user_store)
+    business_a = await _create_business(client, token)
+    business_b = await _create_business(client, token, name="Sunita Tailoring", category="tailoring")
+
+    customer_a = await _customer(client, token, business_a["id"], name="Kavita")
+    customer_b = await _customer(client, token, business_b["id"], name="Asha")
+    await _record(client, token, business_a["id"], customer_a["id"], amountPaisa=50000, costPaisa=20000)
+    await _record(client, token, business_a["id"], customer_a["id"], type="payment", amountPaisa=30000)
+    await _record(client, token, business_b["id"], customer_b["id"], amountPaisa=10000, costPaisa=4000)
+
+    body = (await client.get("/v1/women/dashboard", headers=auth(token))).json()
+    customers = body["customers"]
+    assert customers["count"] == 2
+    assert customers["totalSalesPaisa"] == 60000
+    assert customers["totalCostPaisa"] == 24000
+    assert customers["totalProfitPaisa"] == 36000
+    assert customers["totalCashReceivedPaisa"] == 30000
+    assert customers["totalRemainingPaisa"] == 30000

@@ -46,7 +46,7 @@ export const ReceiptsRegister: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <ReceiptIndianRupee className="w-7 h-7 text-emerald-600" />
-            80G Receipts Register
+            Receipts Register
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Immutable tax receipts issued against verified adoption & donation payments

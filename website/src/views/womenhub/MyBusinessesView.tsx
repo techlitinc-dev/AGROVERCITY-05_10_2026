@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   BadgeCheck,
   Briefcase,
-  MessageSquare,
+  ImagePlus,
   Pencil,
   Play,
   Plus,
@@ -11,7 +11,7 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
-import { apiErrorMessage, womenHub } from '../../lib/api';
+import { apiErrorMessage, uploads, womenHub } from '../../lib/api';
 import { formatPaisa } from '../../lib/utils';
 import { asRecord, asRecords, pick, pickNum, pickStr, Rec } from '../shared/records';
 
@@ -28,7 +28,7 @@ const EMPTY_FORM = {
 /**
  * My Business & Management (womenhub 21nov.xlsx Sr 2.0) — create multiple
  * businesses, search her own list, edit/pause/delete, and manage per-business
- * products, enquiries and ratings. Orders live in My Orders & Track (Sr 7.0).
+ * products and customers (with dated record ledger).
  */
 export const MyBusinessesView: React.FC = () => {
   const [items, setItems] = useState<Rec[] | null>(null);
@@ -38,14 +38,22 @@ export const MyBusinessesView: React.FC = () => {
   const [form, setForm] = useState<Rec | null>(null); // create/edit payload
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Rec | null>(null);
-  const [tab, setTab] = useState<'products' | 'enquiries' | 'ratings'>('products');
+  const [tab, setTab] = useState<'products' | 'customers'>('products');
   const [productForm, setProductForm] = useState<Rec | null>(null);
-  const [respondFor, setRespondFor] = useState<Rec | null>(null);
-  const [response, setResponse] = useState('');
+  const [customers, setCustomers] = useState<Rec[]>([]);
+  const [customerTotals, setCustomerTotals] = useState<Rec | null>(null);
+  const [customerForm, setCustomerForm] = useState<Rec | null>(null);
+  const [recordForm, setRecordForm] = useState<Rec | null>(null);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [customerFilter, setCustomerFilter] = useState<'all' | 'pending' | 'settled'>('all');
+  const [photoBusy, setPhotoBusy] = useState(false);
 
+  const loadedFor = useRef<string | null>(null);
   const load = useCallback(async (search = '') => {
+    const key = search.trim();
     try {
-      setItems(asRecords(await womenHub.myBusinesses(search.trim())));
+      setItems(asRecords(await womenHub.myBusinesses(key)));
+      loadedFor.current = key;
     } catch (err) {
       setError(apiErrorMessage(err));
       setItems([]);
@@ -56,14 +64,68 @@ export const MyBusinessesView: React.FC = () => {
     void load();
   }, [load]);
 
+  // Live search: reload once the query settles. Skip when an explicit
+  // Enter / Search-button load already covered this exact term.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (loadedFor.current !== q.trim()) void load(q);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [q, load]);
+
   const openDetail = async (id: string) => {
     setError(null);
     try {
       setDetail(asRecord(await womenHub.businessDetail(id)));
       setTab('products');
+      setCustomerQuery('');
+      setCustomerFilter('all');
+      await loadCustomers(id);
     } catch (err) {
       setError(apiErrorMessage(err));
     }
+  };
+
+  const loadCustomers = async (businessId: string) => {
+    try {
+      const data = asRecord(await womenHub.customers(businessId));
+      setCustomers(asRecords(pick(data, 'items')));
+      setCustomerTotals(asRecord(pick(data, 'totals')));
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
+  };
+
+  const run = async (fn: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** POST /uploads — pick a photo from the device and store its signed URL
+   * in the form's `photo` field (same value the old URL box produced). */
+  const pickPhoto = (file: File | undefined, apply: (url: string) => void) => {
+    if (!file || photoBusy) return;
+    setPhotoBusy(true);
+    setError(null);
+    void (async () => {
+      try {
+        const uploaded = asRecord(await uploads.upload(file, { folder: 'women-hub', purpose: 'business-photo' }));
+        const url = pickStr(uploaded, 'url');
+        if (url) apply(url);
+      } catch (err) {
+        setError(apiErrorMessage(err));
+      } finally {
+        setPhotoBusy(false);
+      }
+    })();
   };
 
   const saveBusiness = async () => {
@@ -148,21 +210,63 @@ export const MyBusinessesView: React.FC = () => {
     }
   };
 
-  const submitResponse = async () => {
-    if (!respondFor || !detail || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await womenHub.respondEnquiry(pickStr(respondFor, 'id'), response.trim());
-      setRespondFor(null);
-      setResponse('');
-      const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
-      await openDetail(businessId);
-    } catch (err) {
-      setError(apiErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+  const saveCustomer = () => {
+    if (!customerForm || !detail || busy) return;
+    const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
+    const cid = pickStr(customerForm, 'id');
+    void run(async () => {
+      const payload = {
+        name: pickStr(customerForm, 'name'),
+        phone: pickStr(customerForm, 'phone'),
+        area: pickStr(customerForm, 'area'),
+        note: pickStr(customerForm, 'note'),
+      };
+      if (cid) await womenHub.updateCustomer(businessId, cid, payload);
+      else await womenHub.addCustomer(businessId, payload);
+      setCustomerForm(null);
+      await loadCustomers(businessId);
+    });
+  };
+
+  const removeCustomer = (c: Rec) => {
+    if (!detail) return;
+    const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
+    if (!window.confirm(`Delete customer "${pickStr(c, 'name')}" and all their records?`)) return;
+    void run(async () => {
+      await womenHub.deleteCustomer(businessId, pickStr(c, 'id'));
+      await loadCustomers(businessId);
+    });
+  };
+
+  const saveRecord = () => {
+    if (!recordForm || !detail || busy) return;
+    const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
+    const customerId = pickStr(recordForm, 'customerId');
+    const rid = pickStr(recordForm, 'recordId');
+    void run(async () => {
+      const type = pickStr(recordForm, 'type') || 'sale';
+      const payload = {
+        date: pickStr(recordForm, 'date'),
+        note: pickStr(recordForm, 'note'),
+        amountPaisa: Math.round((Number(pickStr(recordForm, 'amount')) || 0) * 100),
+        type,
+        costPaisa:
+          type === 'sale' ? Math.round((Number(pickStr(recordForm, 'cost')) || 0) * 100) : 0,
+      };
+      if (rid) await womenHub.updateCustomerRecord(businessId, customerId, rid, payload);
+      else await womenHub.addCustomerRecord(businessId, customerId, payload);
+      setRecordForm(null);
+      await loadCustomers(businessId);
+    });
+  };
+
+  const removeRecord = (customerId: string, recordId: string) => {
+    if (!detail) return;
+    const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
+    void run(async () => {
+      await womenHub.deleteCustomerRecord(businessId, customerId, recordId);
+      await loadCustomers(businessId);
+    });
   };
 
   const startEdit = (b: Rec) => {
@@ -180,8 +284,18 @@ export const MyBusinessesView: React.FC = () => {
 
   const business = detail ? asRecord(pick(detail, 'business')) : null;
   const products = detail ? asRecords(pick(detail, 'products')) : [];
-  const enquiries = detail ? asRecords(pick(detail, 'enquiries')) : [];
-  const ratings = detail ? asRecords(pick(detail, 'ratings')) : [];
+
+  const needle = customerQuery.trim().toLowerCase();
+  const filteredCustomers = customers.filter((c) => {
+    if (needle) {
+      const hay = `${pickStr(c, 'name')} ${pickStr(c, 'phone')} ${pickStr(c, 'area')}`.toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    const remaining = pickNum(asRecord(pick(c, 'summary')), 'remainingPaisa');
+    if (customerFilter === 'pending') return remaining > 0;
+    if (customerFilter === 'settled') return remaining <= 0;
+    return true;
+  });
 
   const field =
     'w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-pink-600';
@@ -196,8 +310,7 @@ export const MyBusinessesView: React.FC = () => {
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Create and manage your businesses — tiffin/dabba service, tailoring, pickle-papad unit
-            and more. Each business gets its own products, enquiries and ratings — orders are
-            tracked in My Orders &amp; Track.
+            and more. Each business gets its own products and customer records.
           </p>
         </div>
         <button
@@ -283,8 +396,7 @@ export const MyBusinessesView: React.FC = () => {
               {(
                 [
                   ['products', `Products (${products.length})`],
-                  ['enquiries', `Enquiries (${enquiries.length})`],
-                  ['ratings', `Ratings (${ratings.length})`],
+                  ['customers', `Customers (${customers.length})`],
                 ] as const
               ).map(([key, label]) => (
                 <button
@@ -351,62 +463,239 @@ export const MyBusinessesView: React.FC = () => {
               </div>
             )}
 
-            {tab === 'enquiries' && (
-              <div className="space-y-2">
-                {enquiries.length === 0 ? (
-                  <p className="text-xs text-slate-400">No enquiries yet.</p>
+            {tab === 'customers' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => setCustomerForm({ id: '', name: '', phone: '', area: '', note: '' })}
+                    className="px-3 py-2 bg-pink-50 border border-pink-200 text-pink-700 font-bold text-[11px] rounded-xl flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Customer
+                  </button>
+                  {customerTotals && customers.length > 0 && (
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                      Business khata · sales {formatPaisa(pickNum(customerTotals, 'salesPaisa'))} · profit{' '}
+                      {formatPaisa(pickNum(customerTotals, 'profitPaisa'))} · cash received{' '}
+                      {formatPaisa(pickNum(customerTotals, 'paidPaisa'))} · remaining{' '}
+                      {formatPaisa(pickNum(customerTotals, 'remainingPaisa'))}
+                    </p>
+                  )}
+                </div>
+                {customers.length === 0 ? (
+                  <p className="text-xs text-slate-400">
+                    No customers yet — add your regular buyers to keep their records here.
+                  </p>
                 ) : (
-                  enquiries.map((e) => (
-                    <div key={pickStr(e, 'id')} className="border border-slate-200 rounded-2xl p-3 space-y-1">
-                      <p className="text-xs font-bold text-slate-900">
-                        {pickStr(e, 'productName') || 'General'} — {pickStr(e, 'quantity')}
-                        <span
-                          className={`ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            pickStr(e, 'status') === 'responded'
-                              ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                              : 'bg-amber-50 border border-amber-200 text-amber-700'
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative flex-1 min-w-[180px]">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          value={customerQuery}
+                          onChange={(e) => setCustomerQuery(e.target.value)}
+                          placeholder="Search customer by name, phone or area…"
+                          className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-pink-600"
+                        />
+                      </div>
+                      {(
+                        [
+                          ['all', 'All'],
+                          ['pending', 'Pending payment'],
+                          ['settled', 'Settled'],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => setCustomerFilter(key)}
+                          className={`px-3 py-2 rounded-xl text-[11px] font-bold border ${
+                            customerFilter === key
+                              ? 'bg-pink-600 border-pink-600 text-white'
+                              : 'border-slate-300 text-slate-500 hover:border-pink-300 hover:text-pink-700'
                           }`}
                         >
-                          {pickStr(e, 'status')}
-                        </span>
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        {pickStr(e, 'fromName') || 'Customer'}: {pickStr(e, 'message')}
-                      </p>
-                      {pickStr(e, 'response') && (
-                        <p className="text-[11px] text-emerald-700">Response: {pickStr(e, 'response')}</p>
-                      )}
-                      {pickStr(e, 'status') === 'pending' && (
-                        <button
-                          onClick={() => setRespondFor(e)}
-                          className="px-3 py-1.5 bg-pink-50 border border-pink-200 text-pink-700 text-[11px] font-bold rounded-lg flex items-center gap-1"
-                        >
-                          <MessageSquare className="w-3 h-3" /> Respond
+                          {label}
                         </button>
-                      )}
+                      ))}
                     </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {tab === 'ratings' && (
-              <div className="space-y-2">
-                {ratings.length === 0 ? (
-                  <p className="text-xs text-slate-400">No ratings yet.</p>
-                ) : (
-                  ratings.map((r) => (
-                    <div key={pickStr(r, 'id')} className="border border-slate-200 rounded-2xl p-3">
-                      <p className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                        <Star className="w-3.5 h-3.5 text-amber-500" /> {pickNum(r, 'rating')} ·{' '}
-                        {pickStr(r, 'fromName') || 'Customer'}
+                    {filteredCustomers.length === 0 && (
+                      <p className="text-[11px] text-slate-400">
+                        No customers match{needle ? ` “${customerQuery.trim()}”` : ''}
+                        {customerFilter !== 'all'
+                          ? ` with filter “${customerFilter === 'pending' ? 'Pending payment' : 'Settled'}”`
+                          : ''}
+                        .
                       </p>
-                      {pickStr(r, 'review') && (
-                        <p className="text-[11px] text-slate-500 mt-0.5">{pickStr(r, 'review')}</p>
-                      )}
-                    </div>
-                  ))
+                    )}
+                  </>
                 )}
+                {filteredCustomers.map((c) => {
+                    const records = asRecords(pick(c, 'records'));
+                    const summary = asRecord(pick(c, 'summary'));
+                    const remaining = pickNum(summary, 'remainingPaisa');
+                    return (
+                      <div key={pickStr(c, 'id')} className="border border-slate-200 rounded-2xl p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">{pickStr(c, 'name')}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {[pickStr(c, 'phone'), pickStr(c, 'area')].filter(Boolean).join(' · ')}
+                            </p>
+                            {pickStr(c, 'note') && (
+                              <p className="text-[11px] text-slate-400 mt-0.5">{pickStr(c, 'note')}</p>
+                            )}
+                          </div>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <button
+                              onClick={() =>
+                                setCustomerForm({
+                                  id: pickStr(c, 'id'),
+                                  name: pickStr(c, 'name'),
+                                  phone: pickStr(c, 'phone'),
+                                  area: pickStr(c, 'area'),
+                                  note: pickStr(c, 'note'),
+                                })
+                              }
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-pink-600"
+                              title="Edit customer"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => removeCustomer(c)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600"
+                              title="Delete customer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Khata summary — sales / profit / cash received / remaining */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <p className="text-[10px] text-slate-400 font-bold">Sales</p>
+                            <p className="text-xs font-extrabold text-slate-900">
+                              {formatPaisa(pickNum(summary, 'salesPaisa'))}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <p className="text-[10px] text-slate-400 font-bold">Profit</p>
+                            <p
+                              className={`text-xs font-extrabold ${
+                                pickNum(summary, 'profitPaisa') >= 0 ? 'text-emerald-700' : 'text-rose-600'
+                              }`}
+                            >
+                              {formatPaisa(pickNum(summary, 'profitPaisa'))}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <p className="text-[10px] text-slate-400 font-bold">Cash received</p>
+                            <p className="text-xs font-extrabold text-emerald-700">
+                              {formatPaisa(pickNum(summary, 'paidPaisa'))}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <p className="text-[10px] text-slate-400 font-bold">Remaining</p>
+                            <p
+                              className={`text-xs font-extrabold ${
+                                remaining > 0 ? 'text-amber-700' : 'text-slate-900'
+                              }`}
+                            >
+                              {formatPaisa(remaining)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                            Records ({records.length})
+                          </p>
+                          <button
+                            onClick={() =>
+                              setRecordForm({
+                                customerId: pickStr(c, 'id'),
+                                recordId: '',
+                                type: 'sale',
+                                date: new Date().toISOString().slice(0, 10),
+                                note: '',
+                                amount: '',
+                                cost: '',
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-pink-50 border border-pink-200 text-pink-700 text-[10px] font-bold flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Add record
+                          </button>
+                        </div>
+                        {records.length === 0 ? (
+                          <p className="text-[11px] text-slate-400">No records yet.</p>
+                        ) : (
+                          records.map((r) => {
+                            const isPayment = pickStr(r, 'type') === 'payment';
+                            return (
+                              <div key={pickStr(r, 'id')} className="flex items-start justify-between gap-2 text-[11px] border-t border-slate-100 pt-1.5">
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-700">
+                                    <span
+                                      className={`mr-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                                        isPayment
+                                          ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                                          : 'bg-purple-50 border border-purple-200 text-purple-700'
+                                      }`}
+                                    >
+                                      {isPayment ? 'Cash payment' : 'Sale'}
+                                    </span>
+                                    {pickStr(r, 'date')}
+                                    {pickNum(r, 'amountPaisa') > 0 && (
+                                      <span className={`ml-2 ${isPayment ? 'text-emerald-700' : 'text-slate-900'}`}>
+                                        {formatPaisa(pickNum(r, 'amountPaisa'))}
+                                      </span>
+                                    )}
+                                    {!isPayment && pickNum(r, 'costPaisa') > 0 && (
+                                      <span className="ml-2 font-normal text-slate-400">
+                                        cost {formatPaisa(pickNum(r, 'costPaisa'))}
+                                      </span>
+                                    )}
+                                  </p>
+                                  {pickStr(r, 'note') && <p className="text-slate-500">{pickStr(r, 'note')}</p>}
+                                </div>
+                                <div className="flex gap-1 flex-shrink-0">
+                                  <button
+                                    onClick={() =>
+                                      setRecordForm({
+                                        customerId: pickStr(c, 'id'),
+                                        recordId: pickStr(r, 'id'),
+                                        type: isPayment ? 'payment' : 'sale',
+                                        date: pickStr(r, 'date'),
+                                        note: pickStr(r, 'note'),
+                                        amount: pickNum(r, 'amountPaisa')
+                                          ? String(pickNum(r, 'amountPaisa') / 100)
+                                          : '',
+                                        cost: pickNum(r, 'costPaisa')
+                                          ? String(pickNum(r, 'costPaisa') / 100)
+                                          : '',
+                                      })
+                                    }
+                                    className="p-1 rounded-lg text-slate-400 hover:text-pink-600"
+                                    title="Edit record"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => removeRecord(pickStr(c, 'id'), pickStr(r, 'id'))}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600"
+                                    title="Delete record"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -435,10 +724,25 @@ export const MyBusinessesView: React.FC = () => {
           {items === null ? (
             <p className="text-xs text-slate-400">Loading businesses…</p>
           ) : items.length === 0 ? (
-            <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-8 text-center">
-              No businesses yet — tap "Create Business" to add your tiffin service, tailoring or
-              pickle-papad unit.
-            </p>
+            q.trim() ? (
+              <div className="bg-white rounded-3xl border border-slate-200/80 p-8 text-center space-y-3">
+                <p className="text-xs text-slate-500">
+                  No businesses match{' '}
+                  <span className="font-bold text-slate-700">&ldquo;{q.trim()}&rdquo;</span>.
+                </p>
+                <button
+                  onClick={() => setQ('')}
+                  className="px-3 py-1.5 border border-slate-300 text-slate-600 font-bold text-[11px] rounded-lg hover:border-pink-300 hover:text-pink-700"
+                >
+                  Clear search
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 bg-white rounded-3xl border border-slate-200/80 p-8 text-center">
+                No businesses yet — tap &quot;Create Business&quot; to add your tiffin service,
+                tailoring or pickle-papad unit.
+              </p>
+            )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {items.map((b) => (
@@ -497,12 +801,44 @@ export const MyBusinessesView: React.FC = () => {
               value={pickStr(form, 'description')}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
-            <input
-              className={field}
-              placeholder="Photo URL"
-              value={pickStr(form, 'photo')}
-              onChange={(e) => setForm({ ...form, photo: e.target.value })}
-            />
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Photo</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  id="wh-biz-photo-input"
+                  onChange={(e) => {
+                    pickPhoto(e.target.files?.[0], (url) => setForm((f) => (f ? { ...f, photo: url } : f)));
+                    e.target.value = '';
+                  }}
+                />
+                <label
+                  htmlFor="wh-biz-photo-input"
+                  className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  {photoBusy ? 'Uploading…' : pickStr(form, 'photo') ? 'Change Photo' : 'Upload Photo'}
+                </label>
+                {pickStr(form, 'photo') && (
+                  <>
+                    <img
+                      src={pickStr(form, 'photo')}
+                      alt="Business"
+                      className="h-12 w-12 rounded-xl object-cover border border-slate-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, photo: '' })}
+                      className="text-[11px] font-bold text-rose-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
             <input
               className={field}
               placeholder="Service area"
@@ -526,7 +862,11 @@ export const MyBusinessesView: React.FC = () => {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={() => void saveBusiness()}
-                disabled={busy}
+                disabled={
+                  busy ||
+                  pickStr(form, 'name').trim().length < 2 ||
+                  pickStr(form, 'category').trim().length < 2
+                }
                 className="px-4 py-2.5 bg-pink-600 hover:bg-pink-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl"
               >
                 {busy ? 'Saving…' : editingId ? 'Save Changes' : 'Create Business'}
@@ -557,16 +897,51 @@ export const MyBusinessesView: React.FC = () => {
               value={pickStr(productForm, 'name')}
               onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
             />
-            <input
-              className={field}
-              placeholder="Photo URL"
-              value={pickStr(productForm, 'photo')}
-              onChange={(e) => setProductForm({ ...productForm, photo: e.target.value })}
-            />
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Photo</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  id="wh-prod-photo-input"
+                  onChange={(e) => {
+                    pickPhoto(e.target.files?.[0], (url) =>
+                      setProductForm((f) => (f ? { ...f, photo: url } : f))
+                    );
+                    e.target.value = '';
+                  }}
+                />
+                <label
+                  htmlFor="wh-prod-photo-input"
+                  className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  {photoBusy ? 'Uploading…' : pickStr(productForm, 'photo') ? 'Change Photo' : 'Upload Photo'}
+                </label>
+                {pickStr(productForm, 'photo') && (
+                  <>
+                    <img
+                      src={pickStr(productForm, 'photo')}
+                      alt="Product"
+                      className="h-12 w-12 rounded-xl object-cover border border-slate-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({ ...productForm, photo: '' })}
+                      className="text-[11px] font-bold text-rose-600 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <input
                 className={field}
                 type="number"
+                min={0}
                 placeholder="Price (₹)"
                 value={pickStr(productForm, 'pricePaisa')}
                 onChange={(e) => setProductForm({ ...productForm, pricePaisa: e.target.value })}
@@ -574,6 +949,7 @@ export const MyBusinessesView: React.FC = () => {
               <input
                 className={field}
                 type="number"
+                min={0}
                 placeholder="Stock"
                 value={pickStr(productForm, 'stock')}
                 onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}
@@ -582,7 +958,7 @@ export const MyBusinessesView: React.FC = () => {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={() => void saveProduct()}
-                disabled={busy}
+                disabled={busy || pickStr(productForm, 'name').trim().length < 2}
                 className="px-4 py-2.5 bg-pink-600 hover:bg-pink-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl"
               >
                 {busy ? 'Saving…' : 'Save Product'}
@@ -598,30 +974,121 @@ export const MyBusinessesView: React.FC = () => {
         </div>
       )}
 
-      {respondFor && (
+      {customerForm && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-5 space-y-3">
-            <h2 className="font-bold text-slate-900">Respond to Requirement</h2>
-            <p className="text-[11px] text-slate-500">
-              {pickStr(respondFor, 'fromName')} asked: {pickStr(respondFor, 'message')}
-            </p>
+            <h2 className="font-bold text-slate-900">
+              {pickStr(customerForm, 'id') ? 'Edit Customer' : 'Add Customer'}
+            </h2>
+            <input
+              className={field}
+              placeholder="Customer name"
+              value={pickStr(customerForm, 'name')}
+              onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                className={field}
+                placeholder="Phone"
+                value={pickStr(customerForm, 'phone')}
+                onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+              />
+              <input
+                className={field}
+                placeholder="Village / area"
+                value={pickStr(customerForm, 'area')}
+                onChange={(e) => setCustomerForm({ ...customerForm, area: e.target.value })}
+              />
+            </div>
             <textarea
               className={field}
-              rows={3}
-              placeholder="Your response (price, availability…)"
-              value={response}
-              onChange={(e) => setResponse(e.target.value)}
+              rows={2}
+              placeholder="Note (preferences, credit…)"
+              value={pickStr(customerForm, 'note')}
+              onChange={(e) => setCustomerForm({ ...customerForm, note: e.target.value })}
             />
             <div className="flex gap-2 pt-1">
               <button
-                onClick={() => void submitResponse()}
-                disabled={busy || !response.trim()}
+                onClick={() => void saveCustomer()}
+                disabled={busy || !pickStr(customerForm, 'name').trim()}
                 className="px-4 py-2.5 bg-pink-600 hover:bg-pink-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl"
               >
-                {busy ? 'Sending…' : 'Send Response'}
+                {busy ? 'Saving…' : pickStr(customerForm, 'id') ? 'Save Changes' : 'Add Customer'}
               </button>
               <button
-                onClick={() => setRespondFor(null)}
+                onClick={() => setCustomerForm(null)}
+                className="px-4 py-2.5 border border-slate-300 text-slate-600 font-bold text-xs rounded-xl"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recordForm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-5 space-y-3">
+            <h2 className="font-bold text-slate-900">
+              {pickStr(recordForm, 'recordId') ? 'Edit Record' : 'Add Record'}
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                Entry type
+                <select
+                  className={field}
+                  value={pickStr(recordForm, 'type') || 'sale'}
+                  onChange={(e) => setRecordForm({ ...recordForm, type: e.target.value })}
+                >
+                  <option value="sale">Sale (goods on credit)</option>
+                  <option value="payment">Cash payment received</option>
+                </select>
+              </label>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                Date
+                <input
+                  className={field}
+                  type="date"
+                  value={pickStr(recordForm, 'date')}
+                  onChange={(e) => setRecordForm({ ...recordForm, date: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className={`grid gap-2 ${pickStr(recordForm, 'type') !== 'payment' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <input
+                className={field}
+                type="number"
+                placeholder={pickStr(recordForm, 'type') === 'payment' ? 'Cash received (₹)' : 'Sale amount (₹)'}
+                value={pickStr(recordForm, 'amount')}
+                onChange={(e) => setRecordForm({ ...recordForm, amount: e.target.value })}
+              />
+              {pickStr(recordForm, 'type') !== 'payment' && (
+                <input
+                  className={field}
+                  type="number"
+                  placeholder="Your cost (₹, optional)"
+                  value={pickStr(recordForm, 'cost')}
+                  onChange={(e) => setRecordForm({ ...recordForm, cost: e.target.value })}
+                />
+              )}
+            </div>
+            <textarea
+              className={field}
+              rows={2}
+              placeholder="Note — what was ordered / delivered…"
+              value={pickStr(recordForm, 'note')}
+              onChange={(e) => setRecordForm({ ...recordForm, note: e.target.value })}
+            />
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => void saveRecord()}
+                disabled={busy || !pickStr(recordForm, 'date')}
+                className="px-4 py-2.5 bg-pink-600 hover:bg-pink-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl"
+              >
+                {busy ? 'Saving…' : pickStr(recordForm, 'recordId') ? 'Save Changes' : 'Add Record'}
+              </button>
+              <button
+                onClick={() => setRecordForm(null)}
                 className="px-4 py-2.5 border border-slate-300 text-slate-600 font-bold text-xs rounded-xl"
               >
                 Cancel

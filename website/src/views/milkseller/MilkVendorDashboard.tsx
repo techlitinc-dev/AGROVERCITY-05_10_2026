@@ -9,6 +9,7 @@ import {
   Users,
 } from 'lucide-react';
 import { milkVendor } from '../../lib/api';
+import { useAuthStore } from '../../stores/authStore';
 import { EmptyState, ErrorBanner, SectionCard, btnGhost, rec, recArr, str, num, todayStr, fmtMl, fmtPaisa } from './vendor/shared';
 
 const QUICK_LINKS = [
@@ -33,6 +34,7 @@ interface SectionState {
  * the page.
  */
 export const MilkVendorDashboard: React.FC = () => {
+  const { user } = useAuthStore();
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [today, setToday] = useState<Record<string, unknown> | null>(null);
   const [clients, setClients] = useState<Record<string, unknown>[]>([]);
@@ -88,7 +90,7 @@ export const MilkVendorDashboard: React.FC = () => {
       <header>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <Milk className="h-5 w-5 text-emerald-600" />
-          {str(profile?.businessName) || 'Milk Vendor'}
+          Namaste{user?.name ? `, ${user.name}` : ''} — Milk Vendor / Doodh Vala
         </h1>
         <p className="text-sm text-slate-500">
           Dashboard — your day and your money at a glance · {todayStr()}

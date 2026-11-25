@@ -137,7 +137,7 @@ export const RentFeesView: React.FC = () => {
         </Link>
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <ScrollText className="w-7 h-7 text-emerald-600" />
-          Rent & Platform Fees
+          Rent Ledger &amp; e-NWR Fees
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Rent accrued on inwarded lots (collected at the gate) and per-booking SaaS fees (₹50) payable via Razorpay

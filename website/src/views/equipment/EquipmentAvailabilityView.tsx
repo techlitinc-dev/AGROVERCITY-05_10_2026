@@ -103,7 +103,7 @@ export const EquipmentAvailabilityView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <CalendarDays className="w-7 h-7 text-emerald-600" />
-            Availability
+            Equipment Schedule
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             The next 7 days per machine — available windows, requested/accepted bookings.

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Milk,
   Plus,
@@ -35,7 +36,15 @@ const EMPTY_CLIENT = {
   notes: '',
 };
 
+const DESK_TITLE_BY_PATH: Record<string, string> = {
+  '/milkSeller': 'Punch Sheet',
+  '/milkSeller/clients': 'Customer Passbook',
+  '/milkSeller/bills': 'Monthly Billing and Pay',
+  '/milkSeller/analytics': 'Delivery Analytics',
+};
+
 export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'deliveries' }) => {
+  const location = useLocation();
   const [tab, setTab] = useState<Tab>(initialTab);
   // Route changes reuse this mounted component with a new initialTab prop —
   // re-apply it so sidebar navigation switches the visible tab without a refresh.
@@ -347,7 +356,7 @@ export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'd
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Milk className="w-7 h-7 text-emerald-600" />
-            Milk Seller Desk
+            {DESK_TITLE_BY_PATH[location.pathname] || 'Milk Seller Desk'}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Doorstep milk delivery business — clients, daily entries, punch-card calendars, monthly bills & collections

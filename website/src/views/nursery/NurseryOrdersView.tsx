@@ -185,7 +185,7 @@ export const NurseryOrdersView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
             <FileCheck className="w-6 h-6 text-emerald-700" />
-            Orders Received & Fulfillment
+            Orders Received
           </h1>
           <p className="text-xs text-slate-500">
             Accept farmer purchase orders, package saplings, assign logistics couriers, and generate tax invoices.

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, CalendarDays, Landmark, Sprout, Store } from 'lucide-react';
+import { CalendarDays, HandCoins, Landmark, Sprout, Store, Users, Wallet } from 'lucide-react';
 import { apiErrorMessage, womenHub } from '../../lib/api';
 import { formatCurrency } from '../../lib/utils';
 
@@ -16,8 +16,13 @@ interface DashboardPayload {
   garden?: { byStage?: Record<string, number>; recent?: CropRecent[] };
   businesses?: { count: number; activeCount: number };
   enterprise?: { totalMonthlyProfitPaisa: number; lineCount: number };
-  notifications?: {
-    items: { id: string; title: string; body: string; type: string; read: boolean; createdAt: string }[];
+  customers?: {
+    count: number;
+    totalSalesPaisa: number;
+    totalCostPaisa: number;
+    totalProfitPaisa: number;
+    totalCashReceivedPaisa: number;
+    totalRemainingPaisa: number;
   };
   calendar?: { label: string; sakaYear: number; month: string; day: number };
   reminders?: { cropId: string; cropName: string; type: string; dueDate: string; daysLeft: number }[];
@@ -62,41 +67,19 @@ export const WomanHubDashboardView: React.FC = () => {
 
   const byStage = data.garden?.byStage ?? {};
   const recent = data.garden?.recent ?? [];
-  const notifications = data.notifications?.items ?? [];
   const reminders = data.reminders ?? [];
+  const khata = data.customers;
 
   return (
     <div className="space-y-4">
-      {/* Indian calendar + notifications header row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <CalendarDays className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Indian calendar</p>
-            <p className="text-sm font-black text-slate-900">{data.calendar?.label ?? '—'}</p>
-          </div>
+      {/* Indian calendar header */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 flex items-center gap-4">
+        <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+          <CalendarDays className="w-5 h-5" />
         </div>
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Bell className="w-4 h-4 text-emerald-600" />
-            <p className="text-xs font-bold text-slate-700">Notifications</p>
-          </div>
-          {notifications.length === 0 ? (
-            <p className="text-[11px] text-slate-400">No alerts yet.</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {notifications.slice(0, 4).map((n) => (
-                <li key={n.id} className="text-[11px] text-slate-600">
-                  <span className="font-bold text-slate-800">{n.title}</span> — {n.body}
-                </li>
-              ))}
-            </ul>
-          )}
-          <Link to="/notifications" className="text-[11px] font-bold text-emerald-700 hover:underline">
-            View all
-          </Link>
+        <div>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Indian calendar</p>
+          <p className="text-sm font-black text-slate-900">{data.calendar?.label ?? '—'}</p>
         </div>
       </div>
 
@@ -164,6 +147,65 @@ export const WomanHubDashboardView: React.FC = () => {
               Open ledger
             </Link>
           </p>
+        </div>
+      </div>
+
+      {/* Customer khata — revenue, profit, cash received, pending payments */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-pink-600" />
+            <p className="text-xs font-bold text-slate-700">
+              Customer khata{khata ? ` (${khata.count} customers)` : ''}
+            </p>
+          </div>
+          <Link to="/womenHub/businesses" className="text-[11px] font-bold text-emerald-700 hover:underline">
+            Manage customers
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total revenue</p>
+            <p className="text-lg font-black text-slate-900">
+              {formatCurrency((khata?.totalSalesPaisa ?? 0) / 100)}
+            </p>
+            <p className="text-[10px] text-slate-400">all customer sales</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total profit</p>
+            <p
+              className={`text-lg font-black ${
+                (khata?.totalProfitPaisa ?? 0) >= 0 ? 'text-emerald-700' : 'text-rose-600'
+              }`}
+            >
+              {formatCurrency((khata?.totalProfitPaisa ?? 0) / 100)}
+            </p>
+            <p className="text-[10px] text-slate-400">sales − cost</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <div className="flex items-center gap-1">
+              <Wallet className="w-3 h-3 text-emerald-600" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cash received</p>
+            </div>
+            <p className="text-lg font-black text-emerald-700">
+              {formatCurrency((khata?.totalCashReceivedPaisa ?? 0) / 100)}
+            </p>
+            <p className="text-[10px] text-slate-400">cash payments collected</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-3">
+            <div className="flex items-center gap-1">
+              <HandCoins className="w-3 h-3 text-amber-600" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Remaining payment</p>
+            </div>
+            <p
+              className={`text-lg font-black ${
+                (khata?.totalRemainingPaisa ?? 0) > 0 ? 'text-amber-700' : 'text-slate-900'
+              }`}
+            >
+              {formatCurrency((khata?.totalRemainingPaisa ?? 0) / 100)}
+            </p>
+            <p className="text-[10px] text-slate-400">pending from customers</p>
+          </div>
         </div>
       </div>
 

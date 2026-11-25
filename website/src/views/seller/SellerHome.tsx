@@ -66,7 +66,7 @@ export const SellerHome: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Handshake className="w-7 h-7 text-emerald-600" />
-            Namaste{me.name ? `, ${me.name.split(' ')[0]}` : ''} — Agri Vyapari
+            Namaste{me.name ? `, ${me.name}` : ''} — Agri Vyapari
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Find farmer produce or post a buying requirement — connect directly, deal directly.

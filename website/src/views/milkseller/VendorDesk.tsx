@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { CalendarCheck2, FileText, Milk, Settings, Users } from 'lucide-react';
 import { milkVendor, VendorClient } from '../../lib/api';
 import { TodayTab } from './vendor/TodayTab';
@@ -22,7 +23,15 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
  * Milk Vendor (Doodhwala) desk — private client billing: Today entry, client
  * management, bills & external payments, products/rates, and settings.
  */
+const DESK_TITLE_BY_PATH: Record<string, string> = {
+  '/milkSeller/vendor': 'Todays Schedule',
+  '/milkSeller/vendor/clients': 'Clients',
+  '/milkSeller/vendor/bills': 'Bills & Payments',
+  '/milkSeller/vendor/rates': 'Milk and Rates',
+};
+
 export const VendorDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'today' }) => {
+  const location = useLocation();
   const [tab, setTab] = useState<Tab>(initialTab);
   // Route changes reuse this mounted component with a new initialTab prop —
   // re-apply it so sidebar navigation switches the visible tab without a refresh.
@@ -89,7 +98,7 @@ export const VendorDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'today
       <header>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <Milk className="h-5 w-5 text-emerald-600" />
-          {str(safeProfile.businessName) || 'Milk Vendor'}
+          {DESK_TITLE_BY_PATH[location.pathname] || str(safeProfile.businessName) || 'Milk Vendor'}
         </h1>
         <p className="text-sm text-slate-500">
           Private client billing — your customers need no Agrovercity account.

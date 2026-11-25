@@ -80,6 +80,11 @@ export const dashboard = {
   /** GET /users/me/dashboard/{type} — per-persona dashboard payload. */
   persona: (type: PersonaType): Promise<unknown> => readOne<unknown>(`/users/me/dashboard/${type}`),
 
+  /** GET /ai-analysis — persona-scoped overall analysis + suggestions
+   *  (active profile by default; pass a persona to analyse another one). */
+  aiAnalysis: (persona?: string): Promise<unknown> =>
+    readOne<unknown>('/ai-analysis', { params: { persona: persona || undefined } }),
+
   // --- fan-out helpers ---
   /** GET /weather */
   weather: (params?: Record<string, unknown>): Promise<unknown> => readOne<unknown>('/weather', { params }),

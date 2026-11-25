@@ -167,7 +167,7 @@ export const EquipmentRequestsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <FileCheck className="w-7 h-7 text-emerald-600" />
-            Booking Requests
+            Booking Request
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Accept with your MPIN to share contacts, or decline with a reason. Everything after that is

@@ -89,7 +89,7 @@ export const EquipmentJobsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Briefcase className="w-7 h-7 text-emerald-600" />
-            My Jobs
+            Progress Status
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Upcoming accepted work and completed history — contact farmers, track status, rate and report.

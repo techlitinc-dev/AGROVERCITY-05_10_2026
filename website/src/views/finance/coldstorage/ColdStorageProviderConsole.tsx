@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuthStore } from '../../../stores/authStore';
 import {
   Warehouse,
   PackageOpen,
@@ -24,6 +25,7 @@ import { str, num, arr, type Row, type BookingRow, type FacilityRow, bookingId }
 
 /** Cold-storage provider console home — occupancy KPIs, pending bookings queue with inline review, facility summary. */
 export const ColdStorageProviderConsole: React.FC = () => {
+  const { user } = useAuthStore();
   const [stats, setStats] = useState<Row | null>(null);
   const [pending, setPending] = useState<BookingRow[]>([]);
   const [releaseRequests, setReleaseRequests] = useState<BookingRow[]>([]);
@@ -106,7 +108,7 @@ export const ColdStorageProviderConsole: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Warehouse className="w-7 h-7 text-emerald-600" />
-            Cold Storage Provider Console
+            Namaste{user?.name ? `, ${user.name}` : ''} — Cold Storage Owner
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             WDRA-registered warehouse operations — reservations, gate inward, e-NWR receipts, releases and fees

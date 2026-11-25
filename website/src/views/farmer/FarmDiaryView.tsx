@@ -236,7 +236,7 @@ export const FarmDiaryView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <BookOpen className="w-7 h-7 text-emerald-600" />
-            Farm Diary & P&L (Khaata-Kitaab)
+            My Diary
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Track crop-wise revenue, expenses, farm activities, and true net profit

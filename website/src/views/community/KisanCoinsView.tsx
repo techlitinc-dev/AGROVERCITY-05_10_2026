@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { apiErrorMessage, gamification, referrals } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
+import { useLocation } from 'react-router-dom';
 import { StatCard } from '../../components/common/StatCard';
 import { cn, formatDateTime, formatNumber } from '../../lib/utils';
 import { asRecord, asRecords, pickNum, pickStr } from '../shared/records';
@@ -29,6 +30,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export const KisanCoinsView: React.FC = () => {
+  const location = useLocation();
   const { user } = useAuthStore();
   const [tab, setTab] = useState<Tab>('overview');
   const [status, setStatus] = useState<Record<string, unknown>>({});
@@ -139,7 +141,7 @@ export const KisanCoinsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Coins className="w-7 h-7 text-amber-500" />
-          Coins & Rewards <span className="text-sm font-bold text-slate-500">/ Wallet & Referral Hub</span>
+          {location.pathname.startsWith('/nursery') ? 'Coin Rewards Wallet' : 'Coins & Rewards'}
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Earn Kisan Coins on every produce sale, transport trip, and neighbor referral. Redeem for farming subsidies.

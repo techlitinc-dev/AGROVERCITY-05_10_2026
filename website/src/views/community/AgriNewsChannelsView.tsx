@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Radio,
   Newspaper,
@@ -32,6 +33,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export const AgriNewsChannelsView: React.FC = () => {
+  const location = useLocation();
   const [tab, setTab] = useState<Tab>('news');
   const [news, setNews] = useState<Record<string, unknown>[]>([]);
   const [videos, setVideos] = useState<Record<string, unknown>[]>([]);
@@ -175,7 +177,7 @@ export const AgriNewsChannelsView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Radio className="w-7 h-7 text-indigo-600" />
-          Agriculture News & Audio (Gyan Hub & Live Bulletins)
+          {location.pathname.startsWith('/nursery') ? 'Agri News Feed' : 'Agriculture News & Audio'}
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Daily verified agricultural updates, mandi policy shifts, and regional vernacular radio broadcasts

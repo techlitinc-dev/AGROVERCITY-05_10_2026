@@ -66,6 +66,42 @@ export const womenHub = {
   respondEnquiry: (enquiryId: string, response: string): Promise<unknown> =>
     post<unknown>(`/women/businesses/enquiries/${enquiryId}/respond`, { response }),
 
+  // --- Business customers (Sr 2.0 add-on) ---
+  /** GET /women/businesses/{id}/customers — her customer directory; each
+   *  customer carries a khata `summary` (sales/cost/profit/paid/remaining)
+   *  and the body a business-level `totals` block. */
+  customers: (businessId: string): Promise<unknown> =>
+    readOne<Record<string, unknown>>(`/women/businesses/${businessId}/customers`),
+
+  /** POST /women/businesses/{id}/customers — add customer. */
+  addCustomer: (businessId: string, payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/women/businesses/${businessId}/customers`, payload),
+
+  /** PUT /women/businesses/{id}/customers/{cid} — edit customer. */
+  updateCustomer: (businessId: string, customerId: string, payload: Record<string, unknown>): Promise<unknown> =>
+    put<unknown>(`/women/businesses/${businessId}/customers/${customerId}`, payload),
+
+  /** DELETE /women/businesses/{id}/customers/{cid}. */
+  deleteCustomer: (businessId: string, customerId: string): Promise<unknown> =>
+    del<unknown>(`/women/businesses/${businessId}/customers/${customerId}`),
+
+  /** POST /women/businesses/{id}/customers/{cid}/records — dated ledger entry. */
+  addCustomerRecord: (businessId: string, customerId: string, payload: Record<string, unknown>): Promise<unknown> =>
+    post<unknown>(`/women/businesses/${businessId}/customers/${customerId}/records`, payload),
+
+  /** PUT .../records/{rid} — edit record (date / note / amount). */
+  updateCustomerRecord: (
+    businessId: string,
+    customerId: string,
+    recordId: string,
+    payload: Record<string, unknown>
+  ): Promise<unknown> =>
+    put<unknown>(`/women/businesses/${businessId}/customers/${customerId}/records/${recordId}`, payload),
+
+  /** DELETE .../records/{rid}. */
+  deleteCustomerRecord: (businessId: string, customerId: string, recordId: string): Promise<unknown> =>
+    del<unknown>(`/women/businesses/${businessId}/customers/${customerId}/records/${recordId}`),
+
   // --- Kitchen Garden Planner (Sr 4.0) ---
   /** GET /women/garden-templates — nutrition-tagged vegetable catalog. */
   gardenTemplates: (): Promise<unknown[]> => readItems<unknown>('/women/garden-templates'),
@@ -83,6 +119,10 @@ export const womenHub = {
   /** POST /women/garden-crops. */
   addGardenCrop: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/women/garden-crops', payload),
+
+  /** PUT /women/garden-crops/{id} — edit name/nutrition/season. */
+  updateGardenCrop: (cropId: string, payload: Record<string, unknown>): Promise<unknown> =>
+    put<unknown>(`/women/garden-crops/${cropId}`, payload),
 
   /** POST /women/garden-crops/{id}/stage — sowing→sprout→vegetative→flowering→harvest. */
   setCropStage: (cropId: string, stage: string): Promise<unknown> =>
@@ -111,16 +151,27 @@ export const womenHub = {
   createEnterpriseLine: (payload: Record<string, unknown>): Promise<unknown> =>
     post<unknown>('/women/home-enterprise', payload),
 
-  /** GET /women/home-enterprise/ledger?month — auto-calculated monthly totals. */
-  ledger: (month?: string): Promise<unknown> =>
-    readOne<Record<string, unknown>>('/women/home-enterprise/ledger', { params: { month: month || undefined } }),
+  /** GET /women/home-enterprise/ledger — auto-calculated totals for a month
+   *  or an inclusive from/to date range (month-granular). */
+  ledger: (params?: { month?: string; from?: string; to?: string }): Promise<unknown> =>
+    readOne<Record<string, unknown>>('/women/home-enterprise/ledger', {
+      params: {
+        month: params?.month || undefined,
+        from: params?.from || undefined,
+        to: params?.to || undefined,
+      },
+    }),
 
   /** GET /women/home-enterprise/graph — monthly profit series for the graph. */
   profitGraph: (): Promise<unknown> => readOne<Record<string, unknown>>('/women/home-enterprise/graph'),
 
-  /** GET /women/home-enterprise/export?month — CSV ledger download. */
-  exportLedger: (month?: string): Promise<Blob> =>
-    download('/women/home-enterprise/export', { month: month || undefined } as Params),
+  /** GET /women/home-enterprise/export — CSV ledger download (month or range). */
+  exportLedger: (params?: { month?: string; from?: string; to?: string }): Promise<Blob> =>
+    download('/women/home-enterprise/export', {
+      month: params?.month || undefined,
+      from: params?.from || undefined,
+      to: params?.to || undefined,
+    } as Params),
 
   /** POST /women/home-enterprise/{lineId}/entries — monthly revenue/cost per product. */
   upsertMonthEntry: (lineId: string, payload: Record<string, unknown>): Promise<unknown> =>

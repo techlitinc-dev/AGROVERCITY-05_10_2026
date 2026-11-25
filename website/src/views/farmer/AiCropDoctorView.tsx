@@ -411,9 +411,8 @@ export const AiCropDoctorView: React.FC = () => {
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               <span className="bg-gradient-to-r from-emerald-300 via-teal-200 to-emerald-400 bg-clip-text text-transparent">
-                AI Crop Doctor
-              </span>{' '}
-              & Leaf Clinic (रोग निदान) 🩺
+                AI Doctor
+              </span>
             </h1>
             <p className="text-xs sm:text-sm text-emerald-100/90 max-w-2xl leading-relaxed">
               Snap a photo of your crop and get an instant diagnosis with a complete treatment plan —

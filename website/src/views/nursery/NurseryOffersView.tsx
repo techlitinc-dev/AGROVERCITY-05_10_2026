@@ -83,7 +83,7 @@ export const NurseryOffersView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
             <Tag className="w-6 h-6 text-emerald-700" />
-            Offers & Seasonal Discounts
+            Offers &amp; Discounts
           </h1>
           <p className="text-xs text-slate-500">
             Create coupon codes and promotional discounts for farmers buying bulk saplings during peak planting seasons.

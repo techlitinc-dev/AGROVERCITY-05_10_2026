@@ -441,7 +441,7 @@ export const TransportBookingView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Truck className="w-7 h-7 text-emerald-600" />
-            Book a Vehicle / Transport
+            Book Vehicle
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Agrovercity connects you directly with transporters — compare quotes, pick one, and share

@@ -347,7 +347,7 @@ export const EquipmentRentalView: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
           <Wrench className="w-7 h-7 text-emerald-600" />
-          Find Equipment
+          Rent Machinery
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Find tractors, rotavators, harvesters and more near you. Send a request — after the owner accepts,

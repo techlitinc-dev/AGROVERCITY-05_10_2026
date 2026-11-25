@@ -403,7 +403,7 @@ export const MandiPricesView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Landmark className="w-7 h-7 text-emerald-600" />
-            Latest Mandi Prices <span className="text-slate-400 font-bold text-lg">/ मंडी भाव</span>
+            Mandi Prices / बाजारभाव
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Latest reported mandi prices from government open data — daily figures, not a

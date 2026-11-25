@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   TrendingUp,
   TrendingDown,
@@ -20,6 +21,7 @@ const asNum = (v: unknown, fallback = 0): number => (typeof v === 'number' && !N
 const asStr = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback);
 
 export const PnlDashboardView: React.FC = () => {
+  const location = useLocation();
   const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
   const [crops, setCrops] = useState<unknown[]>([]);
   const [diarySummary, setDiarySummary] = useState<Record<string, unknown> | null>(null);
@@ -131,7 +133,7 @@ export const PnlDashboardView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <PiggyBank className="w-7 h-7 text-emerald-600" />
-            Farm Profit & Loss
+            {location.pathname.startsWith('/nursery') ? 'Finance CEO (P&L)' : 'Profit & Loss'}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Season profit & loss, crop-wise economics, break-even price and expense tracking

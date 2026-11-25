@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Download,
@@ -12,7 +12,19 @@ import { apiErrorMessage, womenHub } from '../../lib/api';
 import { formatPaisa } from '../../lib/utils';
 import { asRecord, asRecords, pick, pickNum, pickStr, Rec } from '../shared/records';
 
-const currentMonth = () => new Date().toISOString().slice(0, 7);
+const firstOfMonth = () => `${new Date().toISOString().slice(0, 7)}-01`;
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+/** "2026-11-24" -> "24 November 2026". */
+const fullDateLabel = (ymd: string): string => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+};
 
 /**
  * Home Enterprise Income (womenhub 21nov.xlsx Sr 5.0) — pickle/papad/ghee
@@ -23,7 +35,8 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
 export const EnterpriseIncomeView: React.FC = () => {
   const [ledger, setLedger] = useState<Rec | null>(null);
   const [graph, setGraph] = useState<Rec[]>([]);
-  const [month, setMonth] = useState(currentMonth());
+  const [fromDate, setFromDate] = useState(firstOfMonth());
+  const [toDate, setToDate] = useState(todayStr());
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,18 +44,30 @@ export const EnterpriseIncomeView: React.FC = () => {
   const [entryFor, setEntryFor] = useState<Rec | null>(null);
   const [expenseFor, setExpenseFor] = useState<Rec | null>(null);
 
+  // Monthly figures & expenses are stored per month — use the From month.
+  const entryMonth = fromDate.slice(0, 7);
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    if (fromDate > toDate) {
+      setLedger(null);
+      setError('From date must be on or before To date.');
+      return;
+    }
     try {
+      setError(null);
       const [ledgerData, graphData] = await Promise.all([
-        womenHub.ledger(month),
+        womenHub.ledger({ from: fromDate, to: toDate }),
         womenHub.profitGraph(),
       ]);
+      if (seq !== loadSeq.current) return; // a newer load superseded this one
       setLedger(asRecord(ledgerData));
       setGraph(asRecords(pick(asRecord(graphData), 'series')));
     } catch (err) {
-      setError(apiErrorMessage(err));
+      if (seq === loadSeq.current) setError(apiErrorMessage(err));
     }
-  }, [month]);
+  }, [fromDate, toDate]);
 
   useEffect(() => {
     void load();
@@ -84,7 +109,7 @@ export const EnterpriseIncomeView: React.FC = () => {
     if (!form) return;
     void run(async () => {
       await womenHub.upsertMonthEntry(pickStr(form, 'lineId'), {
-        month,
+        month: entryMonth,
         revenuePaisa: Math.round((Number(pickStr(form, 'revenue')) || 0) * 100),
         costPaisa: Math.round((Number(pickStr(form, 'cost')) || 0) * 100),
       });
@@ -98,7 +123,7 @@ export const EnterpriseIncomeView: React.FC = () => {
     if (!form) return;
     void run(async () => {
       await womenHub.addExpense(pickStr(form, 'lineId'), {
-        month,
+        month: entryMonth,
         note: pickStr(form, 'note'),
         amountPaisa: Math.round((Number(pickStr(form, 'amount')) || 0) * 100),
       });
@@ -116,11 +141,11 @@ export const EnterpriseIncomeView: React.FC = () => {
   const exportLedger = async () => {
     setError(null);
     try {
-      const blob = await womenHub.exportLedger(month);
+      const blob = await womenHub.exportLedger({ from: fromDate, to: toDate });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `enterprise-ledger-${month}.csv`;
+      a.download = `enterprise-ledger-${fromDate}-to-${toDate}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -168,20 +193,34 @@ export const EnterpriseIncomeView: React.FC = () => {
       )}
 
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-5 flex flex-wrap items-center justify-between gap-3">
-        <label className="text-xs font-bold text-slate-700 flex items-center gap-2">
-          Month
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-pink-600"
-          />
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs font-bold text-slate-700 flex items-center gap-2">
+            From
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-pink-600"
+            />
+          </label>
+          <label className="text-xs font-bold text-slate-700 flex items-center gap-2">
+            To
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-pink-600"
+            />
+          </label>
+        </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-[10px] text-slate-400 font-bold uppercase">Auto-calculated total profit</p>
             <p className="text-lg font-extrabold text-emerald-700">
               {ledger ? formatPaisa(pickNum(ledger, 'totalProfitPaisa')) : '—'}
+            </p>
+            <p className="text-[10px] text-slate-400">
+              {fullDateLabel(fromDate)} – {fullDateLabel(toDate)}
             </p>
           </div>
           <button
@@ -372,7 +411,7 @@ export const EnterpriseIncomeView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-5 space-y-3">
             <h2 className="font-bold text-slate-900">
-              Monthly figures — {pickStr(entryFor, 'product')} ({month})
+              Monthly figures — {pickStr(entryFor, 'product')} ({entryMonth})
             </h2>
             <input
               className={field}
@@ -410,7 +449,7 @@ export const EnterpriseIncomeView: React.FC = () => {
       {expenseFor && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-5 space-y-3">
-            <h2 className="font-bold text-slate-900">Add Expense ({month})</h2>
+            <h2 className="font-bold text-slate-900">Add Expense ({entryMonth})</h2>
             <input
               className={field}
               placeholder="Note (jars & labels)"

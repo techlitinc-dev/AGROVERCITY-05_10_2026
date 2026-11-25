@@ -267,7 +267,7 @@ export const MyCropsView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Sprout className="w-7 h-7 text-emerald-600" />
-            My Crops & Agronomy Tools <span className="text-sm font-bold text-slate-500">/ माझी पिके</span>
+            My Crops / माझी पिके
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Crop cycles, sowing plans and fertiliser math — {activeSeason} season

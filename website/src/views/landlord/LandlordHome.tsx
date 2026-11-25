@@ -74,7 +74,7 @@ export const LandlordHome: React.FC = () => {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
             <Home className="w-7 h-7 text-emerald-600" />
-            Namaste{me.name ? `, ${me.name.split(' ')[0]}` : ''} — Farm Landlord
+            Namaste{me.name ? `, ${me.name}` : ''} — Farm Landlord
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             List farmland, review farmer interest, and connect directly. Agrovercity never holds rent or deposits.

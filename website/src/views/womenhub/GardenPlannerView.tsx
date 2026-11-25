@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
   Bell,
-  CalendarDays,
   Droplets,
   Leaf,
+  Pencil,
   Plus,
   Sprout,
   Trash2,
@@ -50,7 +50,6 @@ export const GardenPlannerView: React.FC = () => {
 
   const crops = data ? asRecords(pick(data, 'items')) : [];
   const dueReminders = data ? asRecords(pick(data, 'dueReminders')) : [];
-  const calendar = data ? asRecord(pick(data, 'calendar')) : null;
 
   const run = async (fn: () => Promise<unknown>) => {
     if (busy) return;
@@ -66,15 +65,21 @@ export const GardenPlannerView: React.FC = () => {
     }
   };
 
-  const addCrop = () => {
+  const saveCrop = () => {
     const form = cropForm;
     if (!form) return;
+    const editingId = pickStr(form, 'id');
     void run(async () => {
-      await womenHub.addGardenCrop({
+      const payload = {
         name: pickStr(form, 'name'),
         nutrition: pickStr(form, 'nutrition'),
         season: pickStr(form, 'season'),
-      });
+      };
+      if (editingId) {
+        await womenHub.updateGardenCrop(editingId, payload);
+      } else {
+        await womenHub.addGardenCrop(payload);
+      }
       setCropForm(null);
     });
   };
@@ -114,16 +119,6 @@ export const GardenPlannerView: React.FC = () => {
         <div className="rounded-2xl border p-3 text-xs flex items-start gap-2 bg-rose-50 border-rose-200 text-rose-800">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <span>{error}</span>
-        </div>
-      )}
-
-      {calendar && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3">
-          <CalendarDays className="w-5 h-5 text-emerald-600" />
-          <div>
-            <p className="text-xs font-bold text-emerald-900">Indian Calendar</p>
-            <p className="text-[11px] text-emerald-700">{pickStr(calendar, 'label')}</p>
-          </div>
         </div>
       )}
 
@@ -170,15 +165,31 @@ export const GardenPlannerView: React.FC = () => {
                       {pickStr(crop, 'sownOn') ? ` · sown ${pickStr(crop, 'sownOn')}` : ''}
                     </p>
                   </div>
-                  <button
-                    onClick={() =>
-                      void run(() => womenHub.deleteGardenCrop(pickStr(crop, 'id')))
-                    }
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600"
-                    title="Delete crop"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button
+                      onClick={() =>
+                        setCropForm({
+                          id: pickStr(crop, 'id'),
+                          name: pickStr(crop, 'name'),
+                          nutrition: pickStr(crop, 'nutrition'),
+                          season: pickStr(crop, 'season'),
+                        })
+                      }
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600"
+                      title="Edit crop"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        void run(() => womenHub.deleteGardenCrop(pickStr(crop, 'id')))
+                      }
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600"
+                      title="Delete crop"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Growth-stage tracker */}
@@ -270,7 +281,9 @@ export const GardenPlannerView: React.FC = () => {
       {cropForm && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-5 space-y-3">
-            <h2 className="font-bold text-slate-900">Add Crop</h2>
+            <h2 className="font-bold text-slate-900">
+              {pickStr(cropForm, 'id') ? 'Edit Crop' : 'Add Crop'}
+            </h2>
             <input
               className={field}
               placeholder="Crop name (spinach, methi, tomato…)"
@@ -291,11 +304,11 @@ export const GardenPlannerView: React.FC = () => {
             />
             <div className="flex gap-2 pt-1">
               <button
-                onClick={() => void addCrop()}
+                onClick={() => void saveCrop()}
                 disabled={busy || !pickStr(cropForm, 'name').trim()}
                 className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl"
               >
-                {busy ? 'Saving…' : 'Add Crop'}
+                {busy ? 'Saving…' : pickStr(cropForm, 'id') ? 'Save Changes' : 'Add Crop'}
               </button>
               <button
                 onClick={() => setCropForm(null)}

@@ -251,6 +251,33 @@ async def put_shop(body: ShopIn, uid: str = Depends(_seller)):
     return doc
 
 
+@router.get("/shops")
+async def list_shops(uid: str = Depends(current_user_id)):
+    """Public seller-shop directory for the Agri Market page — every shop a
+    seller has added. Safe fields only: bank details and documents are never
+    exposed here (they stay on the seller's own /shop endpoint)."""
+    user = await get_user(uid)
+    if user is None:
+        _error(404, "NOT_FOUND", "user not found")
+    docs = await query(SHOPS, None, limit=200)
+    docs = [d for d in docs if (d.get("shopName") or "").strip()]
+    docs.sort(key=lambda d: d.get("createdAt", ""), reverse=True)
+    items = []
+    for d in docs:
+        owner = await get_user(d.get("ownerUid") or "")
+        items.append(
+            {
+                "ownerUid": d.get("ownerUid"),
+                "shopName": d.get("shopName", ""),
+                "sellerName": (owner or {}).get("name", ""),
+                "deliveryArea": d.get("deliveryArea", ""),
+                "pickupAddress": d.get("pickupAddress", ""),
+                "createdAt": d.get("createdAt", ""),
+            }
+        )
+    return {"items": items}
+
+
 # ---------------------------------------------------------------------------
 # Sr 3/24 — My Products + pricing extensions
 # ---------------------------------------------------------------------------
