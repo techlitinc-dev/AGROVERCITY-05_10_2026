@@ -51,7 +51,7 @@ export const SellerMandiRatesPage: React.FC = () => {
   }, [load]);
 
   const [postModal, setPostModal] = useState(false);
-  const [crop, setCrop] = useState('Soybean');
+  const [crop, setCrop] = useState('');
   const [mandiName, setMandiName] = useState('');
   const [ratePerKg, setRatePerKg] = useState(47);
 

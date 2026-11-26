@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Building2, Save, AlertCircle, CheckCircle2, Landmark } from 'lucide-react';
 import { livestock, apiErrorMessage } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { formatCurrency } from '../../lib/utils';
 import { asRec, strOf } from './helpers';
 
@@ -56,6 +57,7 @@ export const GaushalaProfilePage: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nameError(form.name, true, 'Gaushala name') || mobileError(form.phone, false)) return;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -127,6 +129,9 @@ export const GaushalaProfilePage: React.FC = () => {
             <div>
               <label className={labelCls}>Gaushala Name *</label>
               <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} required />
+              {form.name.trim() !== '' && nameError(form.name, true, 'Gaushala name') && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(form.name, true, 'Gaushala name')}</p>
+              )}
             </div>
             <div>
               <label className={labelCls}>Trust Name</label>
@@ -137,6 +142,9 @@ export const GaushalaProfilePage: React.FC = () => {
             <div>
               <label className={labelCls}>Phone</label>
               <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputCls} />
+              {mobileError(form.phone, false) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(form.phone, false)}</p>
+              )}
             </div>
             <div>
               <label className={labelCls}>Shelter Capacity (heads)</label>

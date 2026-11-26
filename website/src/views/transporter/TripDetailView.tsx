@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { transport, uploads, apiClient, apiErrorMessage, ApiError } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import type { BookingRoute } from '../../lib/api/transport';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
@@ -750,6 +751,7 @@ export const TripDetailView: React.FC = () => {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (nameError(podForm.receiverName) || mobileError(podForm.receiverPhone, false)) return;
             run(
               () =>
                 transport.updateBooking(id, {
@@ -768,10 +770,16 @@ export const TripDetailView: React.FC = () => {
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Receiver name</label>
             <input type="text" value={podForm.receiverName} onChange={(e) => setPodForm({ ...podForm, receiverName: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" required />
+            {podForm.receiverName.trim() !== '' && nameError(podForm.receiverName) && (
+              <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(podForm.receiverName)}</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Receiver phone (optional)</label>
-            <input type="tel" value={podForm.receiverPhone} onChange={(e) => setPodForm({ ...podForm, receiverPhone: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" />
+            <input type="tel" value={podForm.receiverPhone} onChange={(e) => setPodForm({ ...podForm, receiverPhone: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" placeholder="10-digit mobile" />
+            {mobileError(podForm.receiverPhone, false) && (
+              <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(podForm.receiverPhone, false)}</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Delivery photos (at least one)</label>

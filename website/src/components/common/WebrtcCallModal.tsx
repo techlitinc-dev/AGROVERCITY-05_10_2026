@@ -56,11 +56,11 @@ export const WebrtcCallModal: React.FC<WebrtcCallModalProps> = ({
         <div className="relative w-full h-80 flex flex-col items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950 p-6">
           {isVideoOn ? (
             <div className="relative w-full h-full rounded-2xl overflow-hidden border border-slate-800">
-              <img
-                src="https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=600&q=80"
-                alt="Caller video stream"
-                className="w-full h-full object-cover"
-              />
+              <div className="w-full h-full flex items-center justify-center bg-slate-800">
+                <span className="w-24 h-24 rounded-full bg-emerald-600/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 text-3xl font-bold">
+                  {callerName?.charAt(0)?.toUpperCase() || '?'}
+                </span>
+              </div>
               <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg text-white text-xs">
                 {callerName} ({callerRole})
               </div>

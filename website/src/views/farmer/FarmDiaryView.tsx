@@ -78,7 +78,7 @@ export const FarmDiaryView: React.FC = () => {
   const [type, setType] = useState<DiaryEntryType>('expense');
   const [category, setCategory] = useState<string>('Fertilizers');
   const [title, setTitle] = useState('');
-  const [cropName, setCropName] = useState('Soybean');
+  const [cropName, setCropName] = useState('');
   const [party, setParty] = useState('');
   const [tradeType, setTradeType] = useState<DiaryTradeType>('buy');
   const [amount, setAmount] = useState(2500);
@@ -153,7 +153,7 @@ export const FarmDiaryView: React.FC = () => {
         : CATEGORIES_BY_TYPE[entryType][0]
     );
     setTitle(entry.title || '');
-    setCropName(entry.cropName || entry.crop || 'Soybean');
+    setCropName(entry.cropName || entry.crop || '');
     setParty(entry.party || '');
     setTradeType(entry.tradeType || (entryType === 'income' ? 'sell' : 'buy'));
     setAmount(entry.amount);

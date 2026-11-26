@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { apiErrorMessage, agriMarketSeller, post } from '../../lib/api';
 
 interface ProductRow {
@@ -19,6 +19,8 @@ interface ProductRow {
   lowStockThreshold?: number;
 }
 
+const EMPTY_ADD = { title: '', category: '', unit: '', mrp: '', price: '', stock: '0' };
+
 function str(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v);
 }
@@ -30,6 +32,9 @@ export const ProductsView: React.FC = () => {
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [form, setForm] = useState({ units: '', minOrderQty: '', maxOrderQty: '', lowStockThreshold: '', specs: '' });
   const [busy, setBusy] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState(EMPTY_ADD);
+  const [addBusy, setAddBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -81,21 +86,42 @@ export const ProductsView: React.FC = () => {
     }
   };
 
-  const quickCreate = async () => {
-    const title = window.prompt('Product title?');
-    if (!title) return;
+  const mrpNum = Number(addForm.mrp);
+  const priceNum = Number(addForm.price);
+  const stockNum = Number(addForm.stock);
+  const addInvalid =
+    !addForm.title.trim() ||
+    !addForm.category.trim() ||
+    !Number.isFinite(mrpNum) ||
+    mrpNum < 1 ||
+    !Number.isFinite(priceNum) ||
+    priceNum < 1 ||
+    priceNum > mrpNum ||
+    !Number.isInteger(stockNum) ||
+    stockNum < 0;
+
+  const submitAdd = async () => {
+    if (addInvalid) return;
+    setAddBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await post<unknown>('/my-products', {
-        title,
-        category: 'General',
-        mrp: 0,
-        discountedPrice: 0,
-        stock: 0,
+        title: addForm.title.trim(),
+        category: addForm.category.trim(),
+        unit: addForm.unit.trim(),
+        mrp: Math.round(mrpNum),
+        discountedPrice: Math.round(priceNum),
+        stock: stockNum,
       });
+      setNotice(`Product "${addForm.title.trim()}" added.`);
+      setAddForm(EMPTY_ADD);
+      setShowAdd(false);
       await load();
     } catch (e) {
       setError(apiErrorMessage(e));
+    } finally {
+      setAddBusy(false);
     }
   };
 
@@ -112,12 +138,98 @@ export const ProductsView: React.FC = () => {
           {items.length} product(s) — variants, units, specs, MOQ and slabs edit per product.
         </p>
         <button
-          onClick={() => void quickCreate()}
-          className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700"
+          onClick={() => setShowAdd((v) => !v)}
+          className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 flex items-center gap-1"
         >
-          + Add Product
+          <Plus className="w-3.5 h-3.5" /> Add Product
         </button>
       </div>
+
+      {showAdd && (
+        <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs p-5 space-y-3">
+          <p className="text-xs font-black text-slate-900">New product</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <label className="block col-span-2 sm:col-span-2">
+              <span className="text-[11px] font-bold text-slate-500">Title</span>
+              <input
+                className={field}
+                value={addForm.title}
+                onChange={(e) => setAddForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="Organic Vermicompost 5kg"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-bold text-slate-500">Category</span>
+              <input
+                className={field}
+                value={addForm.category}
+                onChange={(e) => setAddForm((f) => ({ ...f, category: e.target.value }))}
+                placeholder="Organic Inputs"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-bold text-slate-500">MRP (₹)</span>
+              <input
+                className={field}
+                type="number"
+                min={1}
+                value={addForm.mrp}
+                onChange={(e) => setAddForm((f) => ({ ...f, mrp: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-bold text-slate-500">Selling price (₹)</span>
+              <input
+                className={field}
+                type="number"
+                min={1}
+                value={addForm.price}
+                onChange={(e) => setAddForm((f) => ({ ...f, price: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-bold text-slate-500">Opening stock</span>
+              <input
+                className={field}
+                type="number"
+                min={0}
+                value={addForm.stock}
+                onChange={(e) => setAddForm((f) => ({ ...f, stock: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-bold text-slate-500">Unit</span>
+              <input
+                className={field}
+                value={addForm.unit}
+                onChange={(e) => setAddForm((f) => ({ ...f, unit: e.target.value }))}
+                placeholder="bag / kg / litre"
+              />
+            </label>
+          </div>
+          {addForm.mrp !== '' && priceNum > mrpNum && (
+            <p className="text-[11px] font-bold text-rose-600">Selling price must not exceed MRP.</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => void submitAdd()}
+              disabled={addBusy || addInvalid}
+              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50"
+            >
+              {addBusy ? 'Adding…' : 'Add product'}
+            </button>
+            <button
+              onClick={() => {
+                setShowAdd(false);
+                setAddForm(EMPTY_ADD);
+              }}
+              className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         {items.map((p) => (

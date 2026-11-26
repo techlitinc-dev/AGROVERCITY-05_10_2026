@@ -25,7 +25,7 @@ export const LoanFintechView: React.FC = () => {
   const [amount, setAmount] = useState(40000);
   const [tenure, setTenure] = useState(12);
   const [loanType, setLoanType] = useState<LoanApplication['loanType']>('Kisan Credit Card (KCC)');
-  const [landRecordId, setLandRecordId] = useState('712_MH_NSK_312');
+  const [landRecordId, setLandRecordId] = useState('');
 
   // EMI calculator
   const [calcAmount, setCalcAmount] = useState(100000);

@@ -16,6 +16,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { milkSeller, readOne, apiErrorMessage } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { StatCard } from '../../components/common/StatCard';
@@ -37,7 +38,7 @@ const EMPTY_CLIENT = {
 };
 
 const DESK_TITLE_BY_PATH: Record<string, string> = {
-  '/milkSeller': 'Punch Sheet',
+  '/milkSeller/punch': 'Punch Sheet',
   '/milkSeller/clients': 'Customer Passbook',
   '/milkSeller/bills': 'Monthly Billing and Pay',
   '/milkSeller/analytics': 'Delivery Analytics',
@@ -163,6 +164,7 @@ export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'd
 
   const saveClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nameError(clientForm.name) || mobileError(clientForm.phone, false)) return;
     setSaving(true);
     setError(null);
     try {
@@ -787,6 +789,9 @@ export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'd
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
                 required
               />
+              {clientForm.name.trim() !== '' && nameError(clientForm.name) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(clientForm.name)}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Phone</label>
@@ -796,6 +801,9 @@ export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'd
                 onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
               />
+              {mobileError(clientForm.phone, false) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(clientForm.phone, false)}</p>
+              )}
             </div>
           </div>
           <div>

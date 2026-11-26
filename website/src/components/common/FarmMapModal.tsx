@@ -57,13 +57,6 @@ export const FarmMapModal: React.FC<FarmMapModalProps> = ({
           {/* Simulated Satellite Grid Texture */}
           <div className="absolute inset-0 opacity-40 bg-[radial-gradient(#15803d_1px,transparent_1px)] [background-size:16px_16px]" />
 
-          {/* Simulated Satellite imagery backdrop */}
-          <img
-            src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80"
-            alt="Satellite farmland"
-            className="absolute inset-0 w-full h-full object-cover opacity-50 filter saturate-150 contrast-125"
-          />
-
           {/* SVG Boundary Layer */}
           <svg className="absolute inset-0 w-full h-full" viewBox="0 0 450 350">
             {/* Parcel Polygon */}

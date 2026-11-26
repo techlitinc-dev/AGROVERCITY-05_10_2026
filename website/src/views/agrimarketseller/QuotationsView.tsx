@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FileText, Plus } from 'lucide-react';
+import { FileText, Plus, Search, X } from 'lucide-react';
 import { apiErrorMessage, agriMarketSeller } from '../../lib/api';
 
 interface QuotationItem {
@@ -18,7 +18,19 @@ interface Quotation {
   taxesPaisa?: number;
   validUntil?: string;
   items?: QuotationItem[];
-  delivery?: { mode?: string };
+  delivery?: { mode?: string; chargePaisa?: number };
+  buyerUid?: string;
+  buyerName?: string;
+  enquiryId?: string;
+  createdAt?: string;
+}
+
+function fmtDateTime(iso?: string): string {
+  return iso ? iso.slice(0, 16).replace('T', ' ') : '';
+}
+
+function rupees(paisa?: number): string {
+  return `₹${((paisa ?? 0) / 100).toLocaleString('en-IN')}`;
 }
 
 export const QuotationsView: React.FC = () => {
@@ -36,6 +48,9 @@ export const QuotationsView: React.FC = () => {
     buyerUid: '',
   });
   const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -48,6 +63,33 @@ export const QuotationsView: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const needle = q.trim().toLowerCase();
+  const filtered = items.filter((qt) => {
+    if (needle) {
+      const hay = [
+        qt.id,
+        qt.number,
+        qt.buyerName,
+        qt.buyerUid,
+        ...(qt.items ?? []).map((i) => i.title),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    const day = (qt.createdAt ?? '').slice(0, 10);
+    if (fromDate && day < fromDate) return false;
+    if (toDate && day > toDate) return false;
+    return true;
+  });
+
+  const clearFilters = () => {
+    setQ('');
+    setFromDate('');
+    setToDate('');
+  };
 
   const create = async () => {
     if (!form.title || !form.unitPrice || !form.validUntil) return;
@@ -139,36 +181,95 @@ export const QuotationsView: React.FC = () => {
         </div>
       )}
 
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
+          <label className="block sm:col-span-2">
+            <span className="text-[11px] font-bold text-slate-500">Search (number / ID / buyer / item)</span>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                className={`${field} pl-8`}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="QS-202611-0001, Ramesh, Vermicompost"
+              />
+            </div>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-bold text-slate-500">From date</span>
+            <input className={field} type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-bold text-slate-500">To date</span>
+            <input className={field} type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-slate-500">
+            Showing {filtered.length} of {items.length} quotations
+          </p>
+          {(q || fromDate || toDate) && (
+            <button onClick={clearFilters} className="text-[11px] font-bold text-slate-500 hover:text-rose-600 flex items-center gap-1">
+              <X className="w-3 h-3" /> Clear filters
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="space-y-2">
-        {items.map((q) => (
-          <div key={q.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
+        {filtered.map((qt) => (
+          <div key={qt.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-1.5">
             <div className="flex items-center justify-between">
               <p className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-emerald-600" /> {q.number}
+                <FileText className="w-4 h-4 text-emerald-600" /> {qt.number}
               </p>
               <span
                 className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
-                  q.status === 'sent'
+                  qt.status === 'sent'
                     ? 'bg-amber-50 border-amber-200 text-amber-700'
-                    : q.status === 'accepted'
+                    : qt.status === 'accepted'
                       ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
                       : 'bg-slate-50 border-slate-200 text-slate-500'
                 }`}
               >
-                {q.status}
+                {qt.status}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {(q.items ?? []).map((i) => `${i.title} × ${i.quantity} @ ₹${((i.unitPricePaisa ?? 0) / 100).toFixed(0)}`).join(', ')}
+            <p className="text-[10px] text-slate-400">
+              #{qt.id.replace(/^qt_/, '').toUpperCase()}
+              {qt.createdAt ? ` · ${fmtDateTime(qt.createdAt)}` : ''}
+              {qt.buyerName ? ` · buyer ${qt.buyerName}` : qt.buyerUid ? ` · buyer ${qt.buyerUid}` : ''}
+              {qt.enquiryId ? ` · from enquiry ${qt.enquiryId}` : ''}
             </p>
-            <p className="text-[11px] text-slate-700 mt-1">
-              Subtotal ₹{((q.subtotalPaisa ?? 0) / 100).toFixed(0)} · Discount ₹{((q.discountPaisa ?? 0) / 100).toFixed(0)} · Taxes ₹
-              {((q.taxesPaisa ?? 0) / 100).toFixed(0)} ·{' '}
-              <span className="font-bold text-slate-900">Total ₹{((q.totalPaisa ?? 0) / 100).toFixed(0)}</span> · valid till {q.validUntil}
+            <div className="rounded-2xl border border-slate-100 overflow-hidden">
+              {(qt.items ?? []).map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 last:border-b-0 text-[11px]"
+                >
+                  <span className="font-bold text-slate-800">{item.title}</span>
+                  <span className="text-slate-600">
+                    {item.quantity ?? 0} × {rupees(item.unitPricePaisa)} ={' '}
+                    {rupees((item.unitPricePaisa ?? 0) * (item.quantity ?? 0))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-700">
+              Subtotal {rupees(qt.subtotalPaisa)} · Discount {rupees(qt.discountPaisa)} · Taxes {rupees(qt.taxesPaisa)} ·{' '}
+              <span className="font-bold text-slate-900">Total {rupees(qt.totalPaisa)}</span>
+            </p>
+            <p className="text-[10px] text-slate-400">
+              {qt.delivery?.mode ? `Delivery: ${qt.delivery.mode.replace(/_/g, ' ')} · ` : ''}
+              valid till {qt.validUntil}
             </p>
           </div>
         ))}
-        {items.length === 0 && <p className="text-xs text-slate-400 text-center py-6">No quotations yet.</p>}
+        {filtered.length === 0 && (
+          <p className="text-xs text-slate-400 text-center py-6">
+            {items.length === 0 ? 'No quotations yet.' : 'No quotations match the current search/filters.'}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { transport, uploads, apiClient, apiErrorMessage } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency } from '../../lib/utils';
@@ -238,6 +239,7 @@ export const FleetView: React.FC = () => {
 
   const saveDriver = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nameError(driverForm.name) || mobileError(driverForm.phone, false)) return;
     try {
       await transport.addDriver({ name: driverForm.name, phone: driverForm.phone || undefined });
       setDriverModal(false);
@@ -654,12 +656,18 @@ export const FleetView: React.FC = () => {
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Name</label>
             <input type="text" value={driverForm.name} onChange={(e) => setDriverForm({ ...driverForm, name: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" required />
+            {driverForm.name.trim() !== '' && nameError(driverForm.name) && (
+              <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(driverForm.name)}</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">Phone</label>
-            <input type="tel" value={driverForm.phone} onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" placeholder="91…" />
+            <input type="tel" value={driverForm.phone} onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })} className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300" placeholder="10-digit mobile" />
+            {mobileError(driverForm.phone, false) && (
+              <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(driverForm.phone, false)}</p>
+            )}
           </div>
-          <button type="submit" className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md">
+          <button type="submit" disabled={!!nameError(driverForm.name) || !!mobileError(driverForm.phone, false)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md disabled:opacity-50">
             Add Driver
           </button>
         </form>

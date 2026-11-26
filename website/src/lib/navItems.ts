@@ -43,7 +43,6 @@ import {
   Tag,
   TreePine,
   Bookmark,
-  ArrowLeftRight,
   ClipboardList,
   Briefcase,
   HandCoins,
@@ -98,6 +97,7 @@ const DASHBOARD_PATHS = new Set([
   '/transporter',
   '/seller',
   '/equipment',
+  '/equipmentOwner',
   '/milkSeller/dashboard',
   '/womenHub',
   '/agriMarketSeller',
@@ -120,6 +120,7 @@ const IN_PAGE_DASHBOARD_PATHS = new Set([
   '/seller',
   '/landlord',
   '/equipment',
+  '/equipmentOwner',
   '/transporter',
   '/exporter',
   '/directbuyer',
@@ -140,7 +141,7 @@ const IN_PAGE_TITLE_PATHS = new Set([
   '/farmer/transport', '/farmer/schemes', '/farmer/water', '/farmer/712', '/farmer/diary',
   '/farmer/referrals', '/farmer/pnl',
   // ecosystem hubs
-  '/mall', '/academy', '/community/news', '/payments', '/ratings', '/saved', '/community/ai',
+  '/mall', '/academy', '/community/news', '/ratings', '/saved', '/community/ai',
   '/community/scan', '/community/trees', '/ads', '/community/coins',
   // landlord
   '/landlord/listings', '/landlord/requests', '/landlord/connections',
@@ -153,7 +154,7 @@ const IN_PAGE_TITLE_PATHS = new Set([
   // exporter
   '/exporter/rfqs', '/exporter/applications', '/exporter/connections',
   // milk vendor desks
-  '/milkSeller', '/milkSeller/clients', '/milkSeller/bills', '/milkSeller/analytics',
+  '/milkSeller/punch', '/milkSeller/clients', '/milkSeller/bills', '/milkSeller/analytics',
   '/milkSeller/vendor', '/milkSeller/vendor/clients', '/milkSeller/vendor/bills', '/milkSeller/vendor/rates',
   // gaushala
   '/gaushalaManager/cattle', '/gaushalaManager/adoptions', '/gaushalaManager/receipts',
@@ -168,7 +169,7 @@ const IN_PAGE_TITLE_PATHS = new Set([
   '/directbuyer/requirements/new', '/directbuyer/requirements', '/directbuyer/applications',
   '/directbuyer/suppliers',
   // instructor
-  '/instructor', '/instructor/courses', '/instructor/enquiries',
+  '/instructor/home', '/instructor/courses', '/instructor/enquiries',
   // nursery
   '/nursery/inventory', '/nursery/batches', '/nursery/orders', '/nursery/ratings',
   '/nursery/offers', '/nursery/payouts', '/nursery/ai', '/nursery/diary', '/nursery/ads',
@@ -198,12 +199,11 @@ export function getNavSections(persona: PersonaType | string): NavSection[] {
             { to: '/mall', label: 'Agri Market', icon: ShoppingBag },
             { to: '/academy', label: 'Courses', icon: GraduationCap },
             { to: '/community/news', label: 'Agriculture News & Audio', icon: Radio },
-            { to: '/payments', label: 'Payment & Transactions', icon: ArrowLeftRight },
             { to: '/ratings', label: 'Ratings & Reviews', icon: Star },
             { to: '/saved', label: 'Saved & Following', icon: Bookmark },
             { to: '/ai-analysis', label: 'AI Analysis', icon: Sparkles },
             { to: '/farmer/schemes', label: 'Government Schemes', icon: Gift },
-            { to: '/farmer/water', label: 'Climate & Water', icon: Droplets },
+            { to: '/farmer/water', label: 'Climate', icon: Droplets },
             { to: '/farmer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet },
             { to: '/farmer/diary', label: 'My Diary', icon: BookOpen },
             { to: '/community/scan', label: 'AI Crop Scanner', icon: ScanLine },
@@ -296,7 +296,7 @@ export function getNavSections(persona: PersonaType | string): NavSection[] {
             { to: '/milkSeller/vendor/clients', label: 'Clients', icon: Users },
             { to: '/milkSeller/vendor/bills', label: 'Bills & Payments', icon: FileText },
             { to: '/milkSeller/vendor/rates', label: 'Milk and Rates', icon: Milk },
-            { to: '/milkSeller', label: 'Punch Sheet', icon: ClipboardList },
+            { to: '/milkSeller/punch', label: 'Punch Sheet', icon: ClipboardList },
             { to: '/milkSeller/clients', label: 'Customer Passbook', icon: Users },
             { to: '/milkSeller/bills', label: 'Monthly Billing and Pay', icon: DollarSign },
             { to: '/milkSeller/analytics', label: 'Delivery Analytics', icon: TrendingUp },
@@ -365,7 +365,7 @@ export function getNavSections(persona: PersonaType | string): NavSection[] {
           title: 'Gurukul Studio',
           items: [
             { to: '/instructor/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-            { to: '/instructor', label: 'Academic Studio', icon: GraduationCap },
+            { to: '/instructor/home', label: 'Academic Studio', icon: GraduationCap },
             { to: '/instructor/courses', label: 'Course Builder', icon: BookOpen },
             { to: '/instructor/enquiries', label: 'Batches & Questions', icon: Users },
           ],
@@ -440,23 +440,22 @@ export function getNavSections(persona: PersonaType | string): NavSection[] {
 /** Ecosystem shortcuts shown under every non-farmer sidebar (single source
  * for both the Sidebar rendering and the page-identity resolver). */
 export const ECOSYSTEM_ITEMS: (NavItem & { className?: string; hideForTransporter?: boolean })[] = [
+  { to: '/ai-analysis', label: 'AI Analysis', icon: Sparkles, className: 'text-teal-600' },
+  { to: '/community/scan', label: 'AI Crop Scanner', icon: ScanLine, className: 'text-rose-500' },
   { to: '/mall', label: 'Agri Market', icon: ShoppingBag, className: 'text-emerald-600' },
   { to: '/academy', label: 'Courses', icon: GraduationCap, className: 'text-sky-600' },
   { to: '/community/news', label: 'Agriculture News & Audio', icon: Radio, className: 'text-indigo-500' },
-  { to: '/payments', label: 'Payment & Transactions', icon: ArrowLeftRight, className: 'text-emerald-600' },
-  { to: '/ratings', label: 'Ratings & Reviews', icon: Star, className: 'text-amber-500', hideForTransporter: true },
-  { to: '/saved', label: 'Saved & Following', icon: Bookmark, className: 'text-rose-500' },
-  { to: '/ai-analysis', label: 'AI Analysis', icon: Sparkles, className: 'text-teal-600' },
   { to: '/farmer/schemes', label: 'Government Schemes', icon: Gift, className: 'text-emerald-600' },
-  { to: '/farmer/water', label: 'Climate & Water', icon: Droplets, className: 'text-sky-600' },
+  { to: '/farmer/water', label: 'Climate', icon: Droplets, className: 'text-sky-600' },
   { to: '/farmer/712', label: 'My Land Records (7/12)', icon: FileSpreadsheet, className: 'text-emerald-600' },
   { to: '/farmer/diary', label: 'My Diary', icon: BookOpen, className: 'text-indigo-500', hideForTransporter: true },
-  { to: '/community/scan', label: 'AI Crop Scanner', icon: ScanLine, className: 'text-rose-500' },
   { to: '/community/trees', label: 'Tree Plantation', icon: TreePine, className: 'text-emerald-600' },
-  { to: '/farmer/referrals', label: 'Invite & Earn', icon: Users, className: 'text-amber-500' },
   { to: '/ads', label: 'Ads & Promotions', icon: Megaphone, className: 'text-emerald-600', hideForTransporter: true },
   { to: '/farmer/pnl', label: 'Profit & Loss', icon: DollarSign, className: 'text-emerald-600' },
   { to: '/community/coins', label: 'Coins & Rewards', icon: Sparkles, className: 'text-amber-500' },
+  { to: '/ratings', label: 'Ratings & Reviews', icon: Star, className: 'text-amber-500', hideForTransporter: true },
+  { to: '/saved', label: 'Saved & Following', icon: Bookmark, className: 'text-rose-500' },
+  { to: '/farmer/referrals', label: 'Invite & Earn', icon: Users, className: 'text-amber-500' },
 ];
 
 export type PageIdentity = { kind: 'dashboard' } | { kind: 'page'; label: string } | null;
@@ -496,4 +495,25 @@ export function resolvePageIdentity(
     candidates.find((c) => !c.to.includes('?')) ||
     candidates[0];
   return { kind: 'page', label: exact.label };
+}
+
+/**
+ * True for persona feature pages — anything matched in the persona menu,
+ * the in-page-title set, or the ecosystem shortcuts — but never a persona
+ * dashboard. The page bar uses this to place the Back button.
+ */
+export function isPersonaFeaturePath(persona: PersonaType | string, pathname: string): boolean {
+  const cleanPath = pathname.replace(/\/+$/, '') || '/';
+  if (isDashboardPath(cleanPath)) return false;
+  if (IN_PAGE_TITLE_PATHS.has(cleanPath)) return true;
+  for (const section of getNavSections(persona)) {
+    for (const item of section.items) {
+      const itemPath = item.to.split('?')[0].replace(/\/+$/, '') || '/';
+      if (itemPath === cleanPath) return true;
+    }
+  }
+  return ECOSYSTEM_ITEMS.some((item) => {
+    const itemPath = item.to.split('?')[0].replace(/\/+$/, '') || '/';
+    return itemPath === cleanPath;
+  });
 }

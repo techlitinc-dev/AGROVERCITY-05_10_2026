@@ -81,13 +81,13 @@ export const NurseryInventoryView: React.FC = () => {
     setCat('fruit');
     setPlantAge('1-2 years');
     setPlantHeight('2-3 ft');
-    setMrp(200);
-    setPrice(160);
-    setStock(100);
+    setMrp(0);
+    setPrice(0);
+    setStock(0);
     setUnit('sapling');
-    setMinOrderQty(5);
+    setMinOrderQty(1);
     setDescription('');
-    setImageUrl('https://images.unsplash.com/photo-1553279768-865429fa0078');
+    setImageUrl('');
     setShowModal(true);
   };
 
@@ -230,9 +230,7 @@ export const NurseryInventoryView: React.FC = () => {
             const pId = String(p.id || '');
             const currentStock = Number(p.stock || 0);
             const isLowStock = currentStock <= 15;
-            const photo =
-              String(p.imageUrl || '') ||
-              'https://images.unsplash.com/photo-1553279768-865429fa0078';
+            const photo = String(p.imageUrl || '');
 
             return (
               <div
@@ -241,7 +239,13 @@ export const NurseryInventoryView: React.FC = () => {
               >
                 <div>
                   <div className="relative h-44 w-full bg-slate-100 overflow-hidden">
-                    <img src={photo} alt={String(p.title)} className="w-full h-full object-cover" />
+                    {photo ? (
+                      <img src={photo} alt={String(p.title)} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-300 text-[10px] font-bold uppercase tracking-wider">
+                        No photo
+                      </div>
+                    )}
                     <div className="absolute top-2.5 left-2.5">
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-900/80 backdrop-blur text-white">
                         {String(p.category || 'plant')}
@@ -473,7 +477,7 @@ export const NurseryInventoryView: React.FC = () => {
                   type="url"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/..."
+                  placeholder="https://…"
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>

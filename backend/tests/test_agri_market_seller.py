@@ -351,6 +351,26 @@ async def test_enquiry_convert_to_order_and_quotation_accept(client, user_store)
     assert declined.json()["status"] == "declined"
 
 
+async def test_quotations_list_includes_buyer_name(client, user_store):
+    stoken = _seed_seller(user_store)
+    _seed_farmer(user_store)
+    created = await client.post(
+        "/v1/agri-market-seller/quotations",
+        json={
+            "buyerUid": "uid-f1",
+            "items": [{"title": "Vermicompost", "unitPricePaisa": 44900, "quantity": 2}],
+            "validUntil": "2026-12-31",
+        },
+        headers=auth(stoken),
+    )
+    assert created.status_code == 201
+    listed = await client.get("/v1/agri-market-seller/quotations", headers=auth(stoken))
+    assert listed.status_code == 200
+    item = next(q for q in listed.json()["items"] if q["id"] == created.json()["id"])
+    assert item["buyerUid"] == "uid-f1"
+    assert item["buyerName"] == "Ramesh Patil"
+
+
 # ------------------------------------------------------------------ Sr 26 reviews
 
 

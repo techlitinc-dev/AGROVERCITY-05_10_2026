@@ -43,10 +43,10 @@ export const CropInsuranceView: React.FC = () => {
   const [applyingScheme, setApplyingScheme] = useState<Record<string, unknown> | null>(null);
 
   // Intimation form — field names match POST /insurance/claims/from-uploads.
-  const [cropName, setCropName] = useState('Soybean');
+  const [cropName, setCropName] = useState('');
   const [policyId, setPolicyId] = useState('');
   const [calamity, setCalamity] = useState('Excess Rainfall / Flood');
-  const [dateOfDamage, setDateOfDamage] = useState('2026-10-15');
+  const [dateOfDamage, setDateOfDamage] = useState('');
   const [cropStage, setCropStage] = useState('vegetative');
   const [damagePercent, setDamagePercent] = useState(40);
   const [gpsCoordinates, setGpsCoordinates] = useState('');

@@ -7,7 +7,7 @@ import { formatCurrency, formatDateTime } from '../../lib/utils';
 import { asRec, nameOf, numOf, recArr, strOf } from './helpers';
 
 const QUICK_LINKS = [
-  { to: '/instructor', label: 'Academic Studio', icon: GraduationCap },
+  { to: '/instructor/home', label: 'Academic Studio', icon: GraduationCap },
   { to: '/instructor/courses', label: 'Course Builder', icon: BookOpen },
   { to: '/instructor/enquiries', label: 'Batches & Questions', icon: MessagesSquare },
 ];

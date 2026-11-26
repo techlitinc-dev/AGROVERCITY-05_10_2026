@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { apiErrorMessage, uploads, womenHub } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { formatPaisa } from '../../lib/utils';
 import { asRecord, asRecords, pick, pickNum, pickStr, Rec } from '../shared/records';
 
@@ -212,6 +213,7 @@ export const MyBusinessesView: React.FC = () => {
 
   const saveCustomer = () => {
     if (!customerForm || !detail || busy) return;
+    if (nameError(pickStr(customerForm, 'name'), true, 'Customer name') || mobileError(pickStr(customerForm, 'phone'), false)) return;
     const businessId = pickStr(asRecord(pick(detail, 'business')), 'id');
     const cid = pickStr(customerForm, 'id');
     void run(async () => {
@@ -986,13 +988,26 @@ export const MyBusinessesView: React.FC = () => {
               value={pickStr(customerForm, 'name')}
               onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
             />
+            {pickStr(customerForm, 'name').trim() !== '' &&
+              nameError(pickStr(customerForm, 'name'), true, 'Customer name') && (
+                <p className="text-[11px] font-bold text-rose-600">
+                  {nameError(pickStr(customerForm, 'name'), true, 'Customer name')}
+                </p>
+              )}
             <div className="grid grid-cols-2 gap-2">
-              <input
-                className={field}
-                placeholder="Phone"
-                value={pickStr(customerForm, 'phone')}
-                onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
-              />
+              <div>
+                <input
+                  className={field}
+                  placeholder="Phone (10-digit mobile)"
+                  value={pickStr(customerForm, 'phone')}
+                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                />
+                {mobileError(pickStr(customerForm, 'phone'), false) && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">
+                    {mobileError(pickStr(customerForm, 'phone'), false)}
+                  </p>
+                )}
+              </div>
               <input
                 className={field}
                 placeholder="Village / area"
@@ -1010,7 +1025,11 @@ export const MyBusinessesView: React.FC = () => {
             <div className="flex gap-2 pt-1">
               <button
                 onClick={() => void saveCustomer()}
-                disabled={busy || !pickStr(customerForm, 'name').trim()}
+                disabled={
+                  busy ||
+                  !!nameError(pickStr(customerForm, 'name'), true, 'Customer name') ||
+                  !!mobileError(pickStr(customerForm, 'phone'), false)
+                }
                 className="px-4 py-2.5 bg-pink-600 hover:bg-pink-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl"
               >
                 {busy ? 'Saving…' : pickStr(customerForm, 'id') ? 'Save Changes' : 'Add Customer'}

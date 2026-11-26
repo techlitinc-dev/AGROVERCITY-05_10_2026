@@ -8,7 +8,6 @@ const BillingPage = lazy(() => import('./BillingPage').then((m) => ({ default: m
 const KycCasePage = lazy(() => import('./KycCasePage').then((m) => ({ default: m.KycCasePage })));
 const ChatPage = lazy(() => import('./ChatPage').then((m) => ({ default: m.ChatPage })));
 const TrackDeliveryView = lazy(() => import('./TrackDeliveryView').then((m) => ({ default: m.TrackDeliveryView })));
-const TransactionsPage = lazy(() => import('./TransactionsPage').then((m) => ({ default: m.TransactionsPage })));
 const RatingsCenterPage = lazy(() => import('./RatingsCenterPage').then((m) => ({ default: m.RatingsCenterPage })));
 const ProfilePage = lazy(() => import('./ProfilePage').then((m) => ({ default: m.ProfilePage })));
 const AddressBookPage = lazy(() => import('./AddressBookPage').then((m) => ({ default: m.AddressBookPage })));
@@ -28,7 +27,6 @@ export const SharedRouteElements = () => (
     <Route path="/bank-accounts" element={<Navigate to="/profile" replace />} />
     <Route path="/chat" element={<ChatPage />} />
     <Route path="/track/:token" element={<TrackDeliveryView />} />
-    <Route path="/payments" element={<TransactionsPage />} />
     <Route path="/ratings" element={<RatingsCenterPage />} />
     <Route path="/profile" element={<ProfilePage />} />
     <Route path="/profile/addresses" element={<AddressBookPage />} />

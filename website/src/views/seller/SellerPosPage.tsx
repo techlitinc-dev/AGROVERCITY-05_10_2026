@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { DollarSign, Plus, Receipt, RefreshCcw, HandCoins } from 'lucide-react';
 import { seller, apiErrorMessage } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatDate } from '../../lib/utils';
@@ -263,6 +264,7 @@ export const SellerPosPage: React.FC = () => {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (nameError(buyer, true, 'Buyer name') || mobileError(phone, false)) return;
             void act(() =>
               seller.recordSale({
                 buyerName: buyer,
@@ -284,10 +286,16 @@ export const SellerPosPage: React.FC = () => {
             <div>
               <label className={labelCls}>Buyer Name</label>
               <input className={inputCls} value={buyer} onChange={(e) => setBuyer(e.target.value)} required />
+              {buyer.trim() !== '' && nameError(buyer, true, 'Buyer name') && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(buyer, true, 'Buyer name')}</p>
+              )}
             </div>
             <div>
               <label className={labelCls}>Phone</label>
-              <input className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <input className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile" />
+              {mobileError(phone, false) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(phone, false)}</p>
+              )}
             </div>
           </div>
           <div>

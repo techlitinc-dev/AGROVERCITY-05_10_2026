@@ -14,6 +14,7 @@ import {
   Share2,
 } from 'lucide-react';
 import { apiErrorMessage, gamification, referrals } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { useAuthStore } from '../../stores/authStore';
 import { useLocation } from 'react-router-dom';
 import { StatCard } from '../../components/common/StatCard';
@@ -121,6 +122,7 @@ export const KisanCoinsView: React.FC = () => {
 
   const handleInvite = async () => {
     if (!invitePhone.trim() || busyId === 'invite') return;
+    if (mobileError(invitePhone) || nameError(inviteName, false, 'Farmer name')) return;
     setBusyId('invite');
     try {
       await referrals.invite({ name: inviteName.trim() || undefined, phone: invitePhone.trim() });
@@ -327,16 +329,21 @@ export const KisanCoinsView: React.FC = () => {
                 placeholder="Farmer name (optional)"
                 className="px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
               />
-              <input
-                type="tel"
-                value={invitePhone}
-                onChange={(e) => setInvitePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                placeholder="10-digit mobile number"
-                className="px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
-              />
+              <div>
+                <input
+                  type="tel"
+                  value={invitePhone}
+                  onChange={(e) => setInvitePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="10-digit mobile number"
+                  className="w-full px-3 py-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600"
+                />
+                {mobileError(invitePhone, false) && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(invitePhone, false)}</p>
+                )}
+              </div>
               <button
                 onClick={() => void handleInvite()}
-                disabled={invitePhone.length !== 10 || busyId === 'invite'}
+                disabled={!!mobileError(invitePhone) || busyId === 'invite'}
                 className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs"
               >
                 {busyId === 'invite' ? 'Sending…' : 'Send Invite'}

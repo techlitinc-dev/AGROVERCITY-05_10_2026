@@ -95,7 +95,7 @@ export const SellerStockPage: React.FC = () => {
 
   // --- modals ---
   const [addModal, setAddModal] = useState(false);
-  const [sCrop, setSCrop] = useState('Soybean');
+  const [sCrop, setSCrop] = useState('');
   const [sQty, setSQty] = useState(10);
   const [sRate, setSRate] = useState(4700);
   const [sGrade, setSGrade] = useState('A');

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Gift, Copy, Check, Send, Share2 } from 'lucide-react';
 import { referrals, apiErrorMessage } from '../../lib/api';
+import { mobileError } from '../../lib/validation';
 import { StatCard } from '../../components/common/StatCard';
 
 const asRecord = (v: unknown): Record<string, unknown> =>
@@ -54,6 +55,11 @@ export const ReferralsView: React.FC = () => {
   const handleInvite = async () => {
     if (!invitePhone.trim()) {
       setError('Enter the farmer\'s mobile number to send an invite.');
+      return;
+    }
+    const phoneErr = mobileError(invitePhone);
+    if (phoneErr) {
+      setError(phoneErr);
       return;
     }
     setInviting(true);
@@ -142,6 +148,9 @@ export const ReferralsView: React.FC = () => {
       {/* Direct invite form */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
         <h3 className="font-bold text-sm text-slate-900">Send Direct Invite</h3>
+        {mobileError(invitePhone, false) && (
+          <p className="text-[11px] font-bold text-rose-600">{mobileError(invitePhone, false)}</p>
+        )}
         <div className="flex flex-col sm:flex-row gap-3">
           <input
             type="tel"

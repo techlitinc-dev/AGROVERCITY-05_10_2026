@@ -11,6 +11,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { apiErrorMessage, nursery, uploads } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 
 const SPECIALIZATIONS = [
   { id: 'fruit', label: 'Fruit Saplings (Mango, Guava, Lemon, Pomegranate)' },
@@ -116,6 +117,7 @@ export const NurseryProfileView: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nameError(ownerName, true, 'Owner name') || mobileError(phone)) return;
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -240,6 +242,9 @@ export const NurseryProfileView: React.FC = () => {
                 placeholder="9823001122"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
               />
+              {mobileError(phone, false) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(phone, false)}</p>
+              )}
             </div>
 
             <div className="space-y-1">

@@ -35,12 +35,12 @@ export const NurseryOffersView: React.FC = () => {
   }, []);
 
   const openCreateModal = () => {
-    setCode(`GREEN${Math.floor(10 + Math.random() * 90)}`);
-    setTitle('Seasonal Plantation Discount');
-    setDiscountPct(15);
-    setMinOrderAmount(500);
-    setMaxDiscountAmount(200);
-    setBannerUrl('https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8');
+    setCode('');
+    setTitle('');
+    setDiscountPct(0);
+    setMinOrderAmount(0);
+    setMaxDiscountAmount(0);
+    setBannerUrl('');
     setShowModal(true);
   };
 

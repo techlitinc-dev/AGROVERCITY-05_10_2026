@@ -27,8 +27,8 @@ export const PolicyListView: React.FC = () => {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [applyModal, setApplyModal] = useState<Record<string, unknown> | null>(null);
-  const [applyCrop, setApplyCrop] = useState('Soybean');
-  const [applySurvey, setApplySurvey] = useState('Gat No. 312');
+  const [applyCrop, setApplyCrop] = useState('');
+  const [applySurvey, setApplySurvey] = useState('');
 
   const reload = async () => {
     const [p, s] = await Promise.all([insurance.policies(), insurance.schemes().catch(() => [])]);

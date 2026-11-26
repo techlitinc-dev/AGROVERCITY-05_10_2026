@@ -58,7 +58,8 @@ export const AcademyRouteElements = () => (
     <Route path="/dashboard/p/courses/:id/certificate" element={<LegacyCertificateRedirect />} />
     {/* Instructor console */}
     <Route path="/instructor/dashboard" element={<InstructorDashboard />} />
-    <Route path="/instructor" element={<Navigate to="/instructor/home" replace />} />
+    {/* Persona root opens the dashboard; the Academic Studio console lives at /instructor/home */}
+    <Route path="/instructor" element={<Navigate to="/instructor/dashboard" replace />} />
     <Route path="/instructor/home" element={<InstructorConsoleHome />} />
     {/* Course Builder — course list + create/publish; editing lives at /instructor/courses/:id/edit */}
     <Route path="/instructor/courses" element={<CourseBuilderHomePage />} />

@@ -102,9 +102,9 @@ export const NurseryOrdersView: React.FC = () => {
 
   const openDispatchModal = (ord: Record<string, unknown>) => {
     setDispatchOrder(ord);
-    setCourierName('AgroExpress Logistics');
-    setTrackingNumber(`TRK-${Math.floor(100000 + Math.random() * 900000)}`);
-    setDispatchNotes('Saplings packaged in ventilated cartons with root-ball moisture wrap');
+    setCourierName('');
+    setTrackingNumber('');
+    setDispatchNotes('');
   };
 
   const handleDispatchSubmit = async (e: React.FormEvent) => {

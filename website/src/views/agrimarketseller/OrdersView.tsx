@@ -9,11 +9,28 @@ interface OrderRow {
   buyerName?: string;
   status: string;
   total?: number;
-  items?: { title?: string; quantity?: number }[];
+  items?: { title?: string; quantity?: number; price?: number }[];
   createdAt?: string;
   dispatchDate?: string;
   deliveryPartner?: string;
   trackingRef?: string;
+  address?: unknown;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  events?: { status?: string; at?: string; note?: string }[];
+}
+
+function fmtAddress(a: unknown): string {
+  if (!a) return '';
+  if (typeof a === 'string') return a;
+  if (typeof a === 'object') {
+    const o = a as Record<string, unknown>;
+    const parts = ['name', 'phone', 'line1', 'line2', 'village', 'taluka', 'district', 'state', 'pincode']
+      .map((k) => o[k])
+      .filter((v): v is string => typeof v === 'string' && !!v);
+    return parts.join(', ');
+  }
+  return '';
 }
 
 const NEXT_ACTION: Record<string, string> = {
@@ -40,6 +57,7 @@ export const OrdersView: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [dispatchFor, setDispatchFor] = useState<OrderRow | null>(null);
   const [dispatchForm, setDispatchForm] = useState({ dispatchDate: '', deliveryPartner: '', trackingRef: '' });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -174,7 +192,81 @@ export const OrdersView: React.FC = () => {
               >
                 Invoice (PDF)
               </button>
+              <button
+                onClick={() => setExpandedId((v) => (v === order.id ? null : order.id))}
+                className="px-3 py-1.5 rounded-xl border border-emerald-200 text-emerald-700 text-[11px] font-bold"
+              >
+                {expandedId === order.id ? 'Hide details' : 'View details'}
+              </button>
             </div>
+            {expandedId === order.id && (
+              <div className="border-t border-slate-100 pt-3 space-y-2 text-[11px] text-slate-600">
+                {order.createdAt && (
+                  <p>
+                    <span className="font-bold text-slate-700">Ordered:</span>{' '}
+                    {order.createdAt.slice(0, 16).replace('T', ' ')}
+                  </p>
+                )}
+                <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                  {(order.items ?? []).map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 last:border-b-0"
+                    >
+                      <span className="font-bold text-slate-800">{item.title}</span>
+                      <span>
+                        {item.quantity ?? 0} × ₹{item.price ?? 0} = ₹
+                        {((item.quantity ?? 0) * (item.price ?? 0)).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 font-bold text-slate-800">
+                    <span>Total</span>
+                    <span>₹{(order.total ?? 0).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+                <p>
+                  <span className="font-bold text-slate-700">Buyer:</span> {order.buyerName || order.userId}
+                </p>
+                {fmtAddress(order.address) && (
+                  <p>
+                    <span className="font-bold text-slate-700">Delivery address:</span> {fmtAddress(order.address)}
+                  </p>
+                )}
+                {(order.paymentMethod || order.paymentStatus) && (
+                  <p>
+                    <span className="font-bold text-slate-700">Payment:</span>{' '}
+                    {[order.paymentMethod, order.paymentStatus].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {(order.dispatchDate || order.deliveryPartner || order.trackingRef) && (
+                  <p>
+                    <span className="font-bold text-slate-700">Dispatch:</span>{' '}
+                    {[
+                      order.dispatchDate ? `date ${order.dispatchDate}` : '',
+                      order.deliveryPartner ? `partner ${order.deliveryPartner}` : '',
+                      order.trackingRef ? `tracking ${order.trackingRef}` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                )}
+                {(order.events ?? []).length > 0 && (
+                  <div>
+                    <p className="font-bold text-slate-700 mb-1">Status history:</p>
+                    <ul className="space-y-0.5">
+                      {(order.events ?? []).map((ev, idx) => (
+                        <li key={idx}>
+                          • {(ev.status ?? '').replace(/_/g, ' ')}
+                          {ev.at ? ` — ${ev.at.slice(0, 16).replace('T', ' ')}` : ''}
+                          {ev.note ? ` (${ev.note})` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
         {items.length === 0 && <p className="text-xs text-slate-400 text-center py-6">No orders in this bucket.</p>}

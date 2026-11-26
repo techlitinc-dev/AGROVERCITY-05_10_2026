@@ -31,6 +31,7 @@ import {
 } from '../../lib/api';
 import { useAuthStore } from '../../stores/authStore';
 import { cn, formatDateTime, formatNumber } from '../../lib/utils';
+import { emailError, mobileError, pincodeError } from '../../lib/validation';
 import { asRecord, asRecords, pickNum, pickStr, str } from './records';
 import { AddressPicker } from '../../components/common/AddressPicker';
 import { ModalSheet } from '../../components/common/ModalSheet';
@@ -176,6 +177,7 @@ export const ProfilePage: React.FC = () => {
   // Full name is registered data — everything else here is editable.
   const saveProfile = async () => {
     if (busy) return;
+    if (emailError(form.email) || mobileError(form.whatsapp, false) || pincodeError(form.pincode)) return;
     setBusy(true);
     try {
       const updated = asRecord(
@@ -409,6 +411,9 @@ export const ProfilePage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Email">
                 <input type="email" value={form.email} onChange={setField('email')} className={inputCls} />
+                {emailError(form.email) && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{emailError(form.email)}</p>
+                )}
               </Field>
               <Field label="Date of birth">
                 <input type="date" value={form.dateOfBirth} onChange={setField('dateOfBirth')} className={inputCls} />
@@ -429,6 +434,9 @@ export const ProfilePage: React.FC = () => {
                   className={inputCls}
                   placeholder="Buyers reach you here"
                 />
+                {mobileError(form.whatsapp, false) && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(form.whatsapp, false)}</p>
+                )}
               </Field>
               <Field label="Address line">
                 <input type="text" value={form.addressLine} onChange={setField('addressLine')} className={inputCls} />
@@ -452,6 +460,9 @@ export const ProfilePage: React.FC = () => {
                   onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
                   className={inputCls}
                 />
+                {pincodeError(form.pincode) && (
+                  <p className="mt-1 text-[11px] font-bold text-rose-600">{pincodeError(form.pincode)}</p>
+                )}
               </Field>
               <Field label="Land area (acres)">
                 <input

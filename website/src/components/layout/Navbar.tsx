@@ -3,7 +3,6 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Sprout,
   Bell,
-  Coins,
   Globe,
   ChevronDown,
   User,
@@ -40,7 +39,7 @@ export const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   // Onboarding routes (registration + KYC journey) get a minimal header:
-  // no coins, cart, notifications bell, or profile menu.
+  // no cart, notifications bell, or profile menu.
   const onboardingRoute =
     pathname.startsWith('/register') ||
     pathname.startsWith('/kyc') ||
@@ -134,20 +133,11 @@ export const Navbar: React.FC = () => {
           </Link>
         </div>
 
-        {/* Persona Switcher & Direct Dashboard Link — hidden while registration
+        {/* Persona Switcher — hidden while registration
         is incomplete: switching personas hits protected activation APIs that
         reject the onboarding token by design. */}
         {isAuthenticated && !restricted && (
           <div className="flex items-center gap-2">
-            <Link
-              to={`/${activePersona || 'farmer'}`}
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all hover:scale-105"
-              title="Go to Active Dashboard Cockpit"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>My Dashboard</span>
-            </Link>
-
             <div className="relative">
               <button
                 onClick={() => setPersonaDropdownOpen(!personaDropdownOpen)}
@@ -201,7 +191,7 @@ export const Navbar: React.FC = () => {
         </div>
       )}
 
-        {/* Right Action Icons: Language, Coins, Notifications, Cart, Profile */}
+        {/* Right Action Icons: Language, Notifications, Cart, Profile */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Language Selector Dropdown */}
           <div className="relative">
@@ -262,18 +252,6 @@ export const Navbar: React.FC = () => {
               </>
             )}
           </div>
-
-          {/* Coins & Rewards Badge */}
-          {!onboardingRoute && isAuthenticated && user && (
-            <Link
-              to="/community/coins"
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100/80 transition-colors"
-              title="Coins & Rewards"
-            >
-              <Coins className="w-4 h-4 text-amber-600" />
-              <span>{user.kisanCoins}</span>
-            </Link>
-          )}
 
           {/* Notifications Bell */}
           {!onboardingRoute && isAuthenticated && (

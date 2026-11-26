@@ -1,5 +1,5 @@
 import React, { lazy } from 'react';
-import { Route } from 'react-router-dom';
+import { Navigate, Route } from 'react-router-dom';
 
 const MilkSellerDesk = lazy(() =>
   import('../dairy/MilkSellerDesk').then((m) => ({ default: m.MilkSellerDesk }))
@@ -15,7 +15,9 @@ const MilkVendorDashboard = lazy(() =>
 export const MilkSellerRouteElements = () => (
   <>
     <Route path="/milkSeller/dashboard" element={<MilkVendorDashboard />} />
-    <Route path="/milkSeller" element={<MilkSellerDesk initialTab="deliveries" />} />
+    {/* Persona root opens the dashboard; the Punch Sheet desk lives at /milkSeller/punch */}
+    <Route path="/milkSeller" element={<Navigate to="/milkSeller/dashboard" replace />} />
+    <Route path="/milkSeller/punch" element={<MilkSellerDesk initialTab="deliveries" />} />
     <Route path="/milkSeller/clients" element={<MilkSellerDesk initialTab="clients" />} />
     <Route path="/milkSeller/bills" element={<MilkSellerDesk initialTab="bills" />} />
     <Route path="/milkSeller/analytics" element={<MilkSellerDesk initialTab="analytics" />} />

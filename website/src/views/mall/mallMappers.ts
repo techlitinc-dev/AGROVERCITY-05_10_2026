@@ -36,8 +36,7 @@ export interface ApiProductDoc {
   [key: string]: unknown;
 }
 
-export const PRODUCT_PLACEHOLDER_IMAGE =
-  'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=400&q=80';
+export const PRODUCT_PLACEHOLDER_IMAGE = '/app_icon.png';
 
 export function toMallProduct(doc: ApiProductDoc): MallProduct {
   const price = Number(doc.discountedPrice ?? doc.price ?? 0);

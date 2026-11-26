@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Plus, Pencil, Trash2, FileText, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { dairy, apiErrorMessage } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { formatCurrency, formatDate } from '../../lib/utils';
@@ -71,6 +72,7 @@ export const DairyMembersPage: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nameError(form.name, true, 'Full name') || mobileError(form.phone, false)) return;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -235,6 +237,9 @@ export const DairyMembersPage: React.FC = () => {
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
                 required
               />
+              {form.name.trim() !== '' && nameError(form.name, true, 'Full name') && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(form.name, true, 'Full name')}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Phone</label>
@@ -244,6 +249,9 @@ export const DairyMembersPage: React.FC = () => {
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
               />
+              {mobileError(form.phone, false) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(form.phone, false)}</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

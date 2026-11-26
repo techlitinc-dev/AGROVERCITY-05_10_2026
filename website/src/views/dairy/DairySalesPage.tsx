@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { apiErrorMessage } from '../../lib/api';
+import { mobileError, nameError } from '../../lib/validation';
 import { ModalSheet } from '../../components/common/ModalSheet';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { StatCard } from '../../components/common/StatCard';
@@ -138,6 +139,7 @@ export const DairySalesPage: React.FC = () => {
 
   const saveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nameError(custForm.name) || mobileError(custForm.phone, false)) return;
     setSaving(true);
     setError(null);
     try {
@@ -576,6 +578,9 @@ export const DairySalesPage: React.FC = () => {
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
                 required
               />
+              {custForm.name.trim() !== '' && nameError(custForm.name) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{nameError(custForm.name)}</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Phone</label>
@@ -585,6 +590,9 @@ export const DairySalesPage: React.FC = () => {
                 onChange={(e) => setCustForm({ ...custForm, phone: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
               />
+              {mobileError(custForm.phone, false) && (
+                <p className="mt-1 text-[11px] font-bold text-rose-600">{mobileError(custForm.phone, false)}</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

@@ -45,10 +45,10 @@ export const SellerAdsView: React.FC = () => {
   // Create / Edit Campaign Modal
   const [createModal, setCreateModal] = useState(false);
   const [editingAd, setEditingAd] = useState<Rec | null>(null);
-  const [adTitle, setAdTitle] = useState('Soybean wanted - Pune APMC');
-  const [adHeadline, setAdHeadline] = useState('Vijay Traders buys soybean @ highest APMC rates');
+  const [adTitle, setAdTitle] = useState('');
+  const [adHeadline, setAdHeadline] = useState('');
   const [adDesc, setAdDesc] = useState('Immediate farmgate pickup with advance escrow. JS 335 / Kalitur Grade A.');
-  const [bannerUrl, setBannerUrl] = useState('https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?auto=format&fit=crop&w=800&q=80');
+  const [bannerUrl, setBannerUrl] = useState('');
   const [targetType, setTargetType] = useState<AdTargetType>('demand');
   const [targetId, setTargetId] = useState('');
   const [budget, setBudget] = useState(2500);
@@ -124,7 +124,7 @@ export const SellerAdsView: React.FC = () => {
     setAdTitle('Soybean wanted - Pune APMC');
     setAdHeadline('Vijay Traders buys soybean @ highest APMC rates');
     setAdDesc('Immediate farmgate pickup with advance escrow. JS 335 / Kalitur Grade A.');
-    setBannerUrl('https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?auto=format&fit=crop&w=800&q=80');
+    setBannerUrl('');
     setBudget(2500);
     setTargetType('demand');
     setTargetId('');

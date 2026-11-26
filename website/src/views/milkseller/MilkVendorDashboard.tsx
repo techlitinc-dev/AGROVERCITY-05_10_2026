@@ -17,7 +17,7 @@ const QUICK_LINKS = [
   { to: '/milkSeller/vendor/clients', label: 'Clients', icon: Users },
   { to: '/milkSeller/vendor/bills', label: 'Bills & Payments', icon: FileText },
   { to: '/milkSeller/vendor/rates', label: 'Milk and Rates', icon: Milk },
-  { to: '/milkSeller', label: 'Punch Sheet', icon: ClipboardList },
+  { to: '/milkSeller/punch', label: 'Punch Sheet', icon: ClipboardList },
   { to: '/milkSeller/analytics', label: 'Delivery Analytics', icon: TrendingUp },
 ];
 

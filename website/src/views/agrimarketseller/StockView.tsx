@@ -100,10 +100,15 @@ export const StockView: React.FC = () => {
               <option value="">Select product…</option>
               {rows.map((r) => (
                 <option key={r.productId} value={r.productId}>
-                  {r.title}
+                  {r.title} — {r.availability} in stock
                 </option>
               ))}
             </select>
+            {rows.length === 0 && (
+              <span className="block mt-1 text-[11px] text-amber-700 font-bold">
+                No products yet — add one in My Products first to record stock.
+              </span>
+            )}
           </label>
           <label className="block">
             <span className="text-[11px] font-bold text-slate-500">Kind</span>

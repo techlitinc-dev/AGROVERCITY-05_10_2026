@@ -710,6 +710,8 @@ async def my_quotations(status: str | None = None, uid: str = Depends(_seller)):
     for doc in docs:
         if doc.get("status") == "sent" and doc.get("validUntil", "") < today:
             doc["status"] = "expired"
+        buyer = await get_user(doc.get("buyerUid") or "")
+        doc["buyerName"] = (buyer or {}).get("name", "")
     if status:
         docs = [q for q in docs if q.get("status") == status]
     docs.sort(key=lambda q: q.get("createdAt", ""), reverse=True)
