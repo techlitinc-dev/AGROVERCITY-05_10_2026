@@ -443,11 +443,6 @@ export const TransportBookingView: React.FC = () => {
             <Truck className="w-7 h-7 text-emerald-600" />
             Book Vehicle
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Agrovercity connects you directly with transporters — compare quotes, pick one, and share
-            phone &amp; WhatsApp only after you confirm. Fare and payment are settled directly with the
-            transporter; Agrovercity never holds trip money.
-          </p>
         </div>
       </div>
 

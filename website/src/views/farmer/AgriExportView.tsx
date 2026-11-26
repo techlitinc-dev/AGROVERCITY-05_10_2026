@@ -46,10 +46,6 @@ export const AgriExportView: React.FC = () => {
           <Globe2 className="w-7 h-7 text-emerald-600" />
           Agri Export
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Find export opportunities, track your applications and connections, and keep your export-readiness
-          profile current — all in one place.
-        </p>
       </div>
 
       <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto no-scrollbar gap-1 self-start">

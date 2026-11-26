@@ -56,9 +56,6 @@ export const BookingsQueueView: React.FC = () => {
           <PackageOpen className="w-7 h-7 text-emerald-600" />
           Inward &amp; Release Bookings
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Review farmer reservations, approve allocations, and track inward / release progress
-        </p>
       </div>
 
       {error && (

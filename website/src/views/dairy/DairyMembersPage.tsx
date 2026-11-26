@@ -129,9 +129,6 @@ export const DairyMembersPage: React.FC = () => {
             <Users className="w-7 h-7 text-emerald-600" />
             Dairy Member Passbook
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Member registry, linked farmer profiles and passbook statements
-          </p>
         </div>
         <button
           onClick={openAdd}

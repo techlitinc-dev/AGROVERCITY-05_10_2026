@@ -107,9 +107,6 @@ export const SettingsPage: React.FC = () => {
           <Settings className="w-7 h-7 text-emerald-600" />
           Settings & Privacy
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Data export, blocked users, and sign-in security across every persona
-        </p>
       </div>
 
       {notice && (

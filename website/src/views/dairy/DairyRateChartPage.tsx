@@ -139,9 +139,6 @@ export const DairyRateChartPage: React.FC = () => {
             <Award className="w-7 h-7 text-emerald-600" />
             FAT/SNF Rate Chart
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Active procurement chart, version history and effective-date management
-          </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <div className="flex bg-slate-100 p-1 rounded-2xl">

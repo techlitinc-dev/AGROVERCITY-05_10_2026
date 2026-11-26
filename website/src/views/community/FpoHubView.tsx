@@ -79,9 +79,6 @@ export const FpoHubView: React.FC = () => {
           <Users className="w-7 h-7 text-emerald-600" />
           Farmer Producer Organizations (FPO) & Collective Buying
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Pool your input purchases for wholesale factory pricing and aggregate harvests for institutional export contracts
-        </p>
       </div>
 
       {notice && (

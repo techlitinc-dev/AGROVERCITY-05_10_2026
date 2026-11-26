@@ -251,10 +251,6 @@ export const LandlordListingsView: React.FC = () => {
             <BadgeCheck className="w-7 h-7 text-emerald-600" />
             Post Land Request
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            List farmland with rent, availability and a farm land photo (optional). "Land Docs Verified" appears only after an actual
-            document review by verification personnel — identity KYC alone never earns it.
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={openAdd} className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center gap-2">

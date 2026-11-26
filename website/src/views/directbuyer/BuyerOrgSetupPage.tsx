@@ -113,9 +113,6 @@ export const BuyerOrgSetupPage: React.FC = () => {
             <Building2 className="w-7 h-7 text-emerald-600" />
             Organisation Setup
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Company identity used on contracts, statements and escrow payouts
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

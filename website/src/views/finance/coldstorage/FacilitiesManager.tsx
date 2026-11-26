@@ -179,9 +179,6 @@ export const FacilitiesManager: React.FC = () => {
             <Building2 className="w-7 h-7 text-emerald-600" />
             Chambers &amp; Temperature
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Register WDRA facilities, tune capacity and rent rates, and expand chamber inventory
-          </p>
         </div>
         <button onClick={() => setCreateOpen(true)}
           className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs">

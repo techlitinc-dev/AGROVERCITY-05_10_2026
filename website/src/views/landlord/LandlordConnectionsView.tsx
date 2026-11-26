@@ -133,10 +133,6 @@ export const LandlordConnectionsView: React.FC = () => {
             <Handshake className="w-7 h-7 text-emerald-600" />
             My Connections
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Farmers you are in touch with, user-reported outcomes, and the controls to close a listing after
-            you finalize directly.
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           {openListings.length > 0 && (

@@ -92,9 +92,6 @@ export const BankAccountsView: React.FC = () => {
             <Landmark className="w-7 h-7 text-emerald-600" />
             Bank Accounts (DBT Settlement Accounts)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Link and verify bank accounts for purchase settlements, PM-KISAN DBT and loan disbursements
-          </p>
         </div>
 
         <button

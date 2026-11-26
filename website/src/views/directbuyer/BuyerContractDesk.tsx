@@ -131,9 +131,6 @@ export const BuyerContractDesk: React.FC = () => {
             <Handshake className="w-7 h-7 text-emerald-600" />
             Buyer Contract Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Targeted standing supply contracts with farmers — generate delivery slots that become purchases
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className={ghostBtnCls}>

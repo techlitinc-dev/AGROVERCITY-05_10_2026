@@ -144,10 +144,6 @@ export const LandlordVerificationView: React.FC = () => {
             <BadgeCheck className="w-7 h-7 text-emerald-600" />
             Land Verification
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Submit your land title documents (7/12 record, land tax receipt) for review. Once verified, the
-            "Land Docs Verified" badge appears on your listing for farmers.
-          </p>
         </div>
         <button
           onClick={() => void load()}

@@ -305,9 +305,6 @@ export const TransporterHome: React.FC = () => {
             <Truck className="w-7 h-7 text-emerald-600" />
             Namaste{user?.name ? `, ${user.name}` : ''} — Transporter / Gadi
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Freight load auction board, trip execution, digital bilty — fares settle directly with the farmer
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <Link

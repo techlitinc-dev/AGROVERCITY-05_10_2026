@@ -296,9 +296,6 @@ export const AiAgronomistView: React.FC = () => {
             <Bot className="w-7 h-7 text-emerald-600" />
             AI Advisor
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            24×7 crop advisory, disease diagnostics, and ICAR agronomist recommendations
-          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button

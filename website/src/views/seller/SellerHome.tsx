@@ -68,9 +68,6 @@ export const SellerHome: React.FC = () => {
             <Handshake className="w-7 h-7 text-emerald-600" />
             Namaste{me.name ? `, ${me.name}` : ''} — Agri Vyapari
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Find farmer produce or post a buying requirement — connect directly, deal directly.
-          </p>
         </div>
         <button onClick={() => void load()} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 self-start" title="Refresh">
           <RefreshCcw className={`w-4 h-4 text-slate-600 ${loading ? 'animate-spin' : ''}`} />

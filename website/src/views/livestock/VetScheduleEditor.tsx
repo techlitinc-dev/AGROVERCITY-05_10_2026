@@ -94,9 +94,6 @@ export const VetScheduleEditor: React.FC = () => {
           <CalendarClock className="w-7 h-7 text-emerald-600" />
           Consultation Schedule
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Weekly consultation slots, leaves, emergency & tele-consult availability
-        </p>
       </div>
 
       {error && (

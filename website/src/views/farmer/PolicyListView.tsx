@@ -98,9 +98,6 @@ export const PolicyListView: React.FC = () => {
               <FileCheck2 className="w-7 h-7 text-emerald-600" />
               My Crop Insurance Policies
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Active covers, certificates, and enrolment into PMFBY schemes
-            </p>
           </div>
         </div>
       </div>

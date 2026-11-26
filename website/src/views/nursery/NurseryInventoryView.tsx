@@ -162,9 +162,6 @@ export const NurseryInventoryView: React.FC = () => {
             <Sprout className="w-6 h-6 text-emerald-700" />
             My Plants / Inventory
           </h1>
-          <p className="text-xs text-slate-500">
-            List and manage saplings, fruit grafts, commercial timber, and ornamental plant stocks.
-          </p>
         </div>
 
         <button

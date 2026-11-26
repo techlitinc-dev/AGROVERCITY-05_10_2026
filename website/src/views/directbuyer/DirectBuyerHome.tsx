@@ -75,10 +75,6 @@ export const DirectBuyerHome: React.FC = () => {
             <Building2 className="w-7 h-7 text-emerald-600" />
             Namaste{user?.name ? `, ${user.name}` : ''} — Industrial / Direct Buyer
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Publish sourcing requirements, compare farmer applications, and unlock direct contact with the suppliers
-            you choose. Deals close directly between the parties — Agrovercity never holds payments.
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600">

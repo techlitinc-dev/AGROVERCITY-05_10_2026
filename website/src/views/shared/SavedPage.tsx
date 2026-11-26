@@ -147,9 +147,6 @@ export const SavedPage: React.FC = () => {
           <Bookmark className="w-7 h-7 text-emerald-600" />
           Saved &amp; Following
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Everything you bookmark across Agrovercity — items, people, and searches — in one place.
-        </p>
       </div>
 
       {notice && (

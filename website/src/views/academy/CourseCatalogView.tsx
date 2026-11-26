@@ -223,10 +223,6 @@ export const CourseCatalogView: React.FC = () => {
             <GraduationCap className="w-7 h-7 text-emerald-600" />
             {location.pathname.startsWith('/nursery') ? 'Gyansetu Learning' : 'Courses'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Practical farming courses by verified instructors. Free courses enrol instantly; paid
-            courses connect you directly with the instructor.
-          </p>
           <div className="flex items-center gap-3 mt-2">
             <Link
               to="/academy/my-learning"

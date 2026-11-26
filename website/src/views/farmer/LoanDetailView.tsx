@@ -164,7 +164,6 @@ export const LoanDetailView: React.FC = () => {
               <Landmark className="w-7 h-7 text-emerald-600" />
               Loan Application #{id}
             </h1>
-            <p className="text-xs text-slate-500 mt-1">Timeline, repayment schedule, documents & responses</p>
           </div>
         </div>
         {loan && <StatusBadge status={loan.status} />}

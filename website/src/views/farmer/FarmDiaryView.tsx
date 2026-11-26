@@ -238,9 +238,6 @@ export const FarmDiaryView: React.FC = () => {
             <BookOpen className="w-7 h-7 text-emerald-600" />
             My Diary
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Track crop-wise revenue, expenses, farm activities, and true net profit
-          </p>
         </div>
 
         <div className="flex gap-2 self-start sm:self-auto">

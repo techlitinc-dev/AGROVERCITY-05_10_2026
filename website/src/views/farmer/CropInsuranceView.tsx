@@ -189,9 +189,6 @@ export const CropInsuranceView: React.FC = () => {
             <ShieldAlert className="w-7 h-7 text-emerald-600" />
             PMFBY Crop Insurance & Claim Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Pradhan Mantri Fasal Bima Yojana — 72-hour crop loss intimation, surveyor tracking, and Direct Benefit Transfer (DBT)
-          </p>
         </div>
 
         <div className="flex gap-2 self-start sm:self-auto">

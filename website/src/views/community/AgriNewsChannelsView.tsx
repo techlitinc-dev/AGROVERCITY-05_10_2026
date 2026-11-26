@@ -179,9 +179,6 @@ export const AgriNewsChannelsView: React.FC = () => {
           <Radio className="w-7 h-7 text-indigo-600" />
           {location.pathname.startsWith('/nursery') ? 'Agri News Feed' : 'Agriculture News & Audio'}
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Daily verified agricultural updates, mandi policy shifts, and regional vernacular radio broadcasts
-        </p>
       </div>
 
       {notice && (

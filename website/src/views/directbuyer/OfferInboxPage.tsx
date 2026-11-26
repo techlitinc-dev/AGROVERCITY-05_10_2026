@@ -72,9 +72,6 @@ export const OfferInboxPage: React.FC = () => {
             <InboxIcon className="w-7 h-7 text-emerald-600" />
             Offer Inbox
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Farmer supply quotes against your demands — accept to convert into a purchase, or counter (one round)
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

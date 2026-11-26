@@ -113,7 +113,6 @@ export const LandlordProfitView: React.FC = () => {
             <TrendingUp className="w-7 h-7 text-emerald-600" />
             Profit & Analytics
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Lease income vs plot expenses, yield-linked analytics, and profit export</p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button

@@ -98,7 +98,7 @@ export const SellerChatbotView: React.FC = () => {
     if (lower.includes('qc') || lower.includes('dispute') || lower.includes('reject')) {
       return 'If produce quality falls below Grade A upon farmgate delivery, you can log a digital QC report with moisture readings and photos. You can accept a partial quantity or raise an escrow dispute within 24 hours.';
     }
-    return `Thank you for your inquiry about "${query}". You can manage this directly via your Vyapari Suite under Purchases or contact APMC support at 1800-AGRO-SETU.`;
+    return `Thank you for your inquiry about "${query}". You can manage this directly via your Vyapari Suite under Purchases.`;
   };
 
   return (
@@ -110,9 +110,6 @@ export const SellerChatbotView: React.FC = () => {
             <Bot className="w-7 h-7 text-emerald-600" />
             Vyapari AI Trade & Order Support
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            24/7 intelligent assistance for lot bookings, pickup scheduling, APMC mandi rates, J-Forms, and dispute rules.
-          </p>
         </div>
         <button
           type="button"

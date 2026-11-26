@@ -144,6 +144,7 @@ export const AiCropDoctorView: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const cropSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cropInputRef = useRef<HTMLInputElement>(null);
 
   const [scanMode, setScanMode] = useState<ScanMode>('disease');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -232,6 +233,12 @@ export const AiCropDoctorView: React.FC = () => {
     setCropQuery(name);
     setShowCropSuggestions(false);
   };
+
+  // Manual "Others" entry: the typed text is a valid crop even when the
+  // catalog has no match — offer it as an explicit dropdown row.
+  const canUseManualCrop =
+    cropQuery.trim().length > 0 &&
+    !cropSuggestions.some((s) => s.name.toLowerCase() === cropQuery.trim().toLowerCase());
 
   const stopScanTimers = () => {
     if (progressTimer.current) clearInterval(progressTimer.current);
@@ -548,6 +555,7 @@ export const AiCropDoctorView: React.FC = () => {
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
+                  ref={cropInputRef}
                   value={cropQuery}
                   onChange={(e) => { setCropQuery(e.target.value); setCropHint(e.target.value); setShowCropSuggestions(true); }}
                   onFocus={() => setShowCropSuggestions(true)}
@@ -556,7 +564,7 @@ export const AiCropDoctorView: React.FC = () => {
                   className="w-full pl-8 pr-8 py-2.5 text-xs rounded-xl border border-slate-300 bg-white font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                {showCropSuggestions && cropSuggestions.length > 0 && (
+                {showCropSuggestions && (cropSuggestions.length > 0 || canUseManualCrop) && (
                   <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                     {cropSuggestions.map((s) => (
                       <button
@@ -568,6 +576,15 @@ export const AiCropDoctorView: React.FC = () => {
                         {s.vernacularName && <span className="text-[10px] text-slate-400">{s.vernacularName}</span>}
                       </button>
                     ))}
+                    {canUseManualCrop && (
+                      <button
+                        onMouseDown={() => pickCropSuggestion(cropQuery.trim())}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 flex items-center justify-between gap-2 border-t border-slate-100"
+                      >
+                        <span className="font-bold text-emerald-700">+ Use &ldquo;{cropQuery.trim()}&rdquo;</span>
+                        <span className="text-[10px] text-slate-400">manual entry</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -585,6 +602,24 @@ export const AiCropDoctorView: React.FC = () => {
                     {c}
                   </button>
                 ))}
+                {/* Custom crop typed manually (not in the quick list) */}
+                {cropHint.trim() !== '' && !QUICK_CROPS.includes(cropHint) && (
+                  <span className="px-2.5 py-1 rounded-lg border bg-emerald-50 border-emerald-400 text-emerald-700 text-[10px] font-bold">
+                    {cropHint}
+                  </span>
+                )}
+                {/* Manual entry: clear the selection and type any crop/product */}
+                <button
+                  onClick={() => {
+                    setCropHint('');
+                    setCropQuery('');
+                    setShowCropSuggestions(true);
+                    cropInputRef.current?.focus();
+                  }}
+                  className="px-2.5 py-1 rounded-lg border border-dashed border-emerald-300 text-emerald-600 text-[10px] font-bold hover:bg-emerald-50 transition-colors"
+                >
+                  ✏️ Others / अन्य
+                </button>
               </div>
             </div>
 

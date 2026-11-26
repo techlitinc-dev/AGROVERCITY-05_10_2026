@@ -100,9 +100,6 @@ export const VendorDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'today
           <Milk className="h-5 w-5 text-emerald-600" />
           {DESK_TITLE_BY_PATH[location.pathname] || str(safeProfile.businessName) || 'Milk Vendor'}
         </h1>
-        <p className="text-sm text-slate-500">
-          Private client billing — your customers need no Agrovercity account.
-        </p>
       </header>
 
       {notice && (

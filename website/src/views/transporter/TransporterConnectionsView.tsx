@@ -124,10 +124,6 @@ export const TransporterConnectionsView: React.FC = () => {
             <Handshake className="w-7 h-7 text-emerald-600" />
             My Connections
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Farmers and shippers you have transported for. Call or WhatsApp them directly — contact
-            details unlock when a booking is accepted.
-          </p>
         </div>
         <button
           onClick={() => void load()}

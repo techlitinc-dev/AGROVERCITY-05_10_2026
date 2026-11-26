@@ -114,9 +114,6 @@ export const SellerPosPage: React.FC = () => {
             <DollarSign className="w-7 h-7 text-emerald-600" />
             POS Billing & Khata Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Counter sales with GST invoices, buyer credit ledger and daily cashflow
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className={ghostBtnCls}>

@@ -112,9 +112,6 @@ export const GaushalaExpensesView: React.FC = () => {
             <Wallet className="w-7 h-7 text-emerald-600" />
             Fodder &amp; Expenses
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Fodder, medical, staff and upkeep costs — published on the public transparency report
-          </p>
         </div>
         <button
           onClick={openAdd}

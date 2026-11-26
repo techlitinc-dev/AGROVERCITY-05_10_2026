@@ -111,7 +111,6 @@ export const SellerOrderDetailPage: React.FC = () => {
             <Package className="w-7 h-7 text-emerald-600" />
             Order #{id}
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">Marketplace order timeline & fulfilment control</p>
         </div>
         {order && <StatusBadge status={status} />}
       </div>

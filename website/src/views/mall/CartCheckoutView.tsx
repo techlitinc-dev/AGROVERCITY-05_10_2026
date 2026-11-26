@@ -445,7 +445,6 @@ export const CartCheckoutView: React.FC = () => {
           <ShoppingCart className="w-7 h-7 text-emerald-600" />
           Shopping Cart & Checkout
         </h1>
-        <p className="text-xs text-slate-500 mt-1">Review items, delivery address, and payment options</p>
       </div>
 
       {(cartError || error) && (

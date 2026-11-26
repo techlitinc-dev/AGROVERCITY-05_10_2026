@@ -100,9 +100,6 @@ export const DairyPaymentsPage: React.FC = () => {
             <DollarSign className="w-7 h-7 text-emerald-600" />
             Member Payout Batches
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            10-day payment cycles: generate from collections, review entries, mark paid with UTR reference
-          </p>
         </div>
         <button
           onClick={() => {

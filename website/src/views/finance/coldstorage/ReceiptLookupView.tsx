@@ -69,9 +69,6 @@ export const ReceiptLookupView: React.FC = () => {
           <ScrollText className="w-7 h-7 text-emerald-600" />
           Electronic Negotiable Warehouse Receipt
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          WDRA e-NWR — pledgeable collateral for warehouse-receipt financing
-        </p>
       </div>
 
       {error && (

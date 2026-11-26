@@ -83,9 +83,6 @@ export const AssignmentsPage: React.FC = () => {
             <FileText className="w-7 h-7 text-emerald-600" />
             Practical Assignments
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Photo-evidence field assignments — review submissions, confirm the AI suggestion, publish the grade
-          </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <select

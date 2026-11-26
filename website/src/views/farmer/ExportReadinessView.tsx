@@ -134,12 +134,6 @@ export const ExportReadinessView: React.FC<{ embedded?: boolean }> = ({ embedded
             <ClipboardCheck className="w-7 h-7 text-emerald-600" />
             Export Readiness Profile
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Keep your export capability on record so you can apply faster. Only list genuine
-            certifications — a certificate shows "verified" only after an actual document review, never
-            just because it was uploaded. This profile never guarantees export clearance or buyer
-            acceptance.
-          </p>
         </div>
       )}
 

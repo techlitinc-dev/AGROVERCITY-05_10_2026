@@ -106,10 +106,6 @@ export const MyIndustrialApplicationsView: React.FC<{ embedded?: boolean }> = ({
               <FileText className="w-7 h-7 text-emerald-600" />
               My Applications
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Applications you sent on buyer requirements. Your contact stays private until the buyer accepts
-              the connection.
-            </p>
           </div>
         )}
         <div className="flex gap-2">

@@ -64,9 +64,6 @@ export const VetNetworkCampaigns: React.FC = () => {
           <Stethoscope className="w-7 h-7 text-emerald-600" />
           Vet Network Camps
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Onboard vets into the district directory, coordinate vaccination drives and watch the appointment board
-        </p>
       </div>
 
       {error && (

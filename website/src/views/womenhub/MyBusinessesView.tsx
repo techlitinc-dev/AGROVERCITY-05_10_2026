@@ -310,10 +310,6 @@ export const MyBusinessesView: React.FC = () => {
             <Briefcase className="w-7 h-7 text-pink-600" />
             My Business &amp; Management
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Create and manage your businesses — tiffin/dabba service, tailoring, pickle-papad unit
-            and more. Each business gets its own products and customer records.
-          </p>
         </div>
         <button
           onClick={() => {

@@ -82,7 +82,6 @@ export const WishlistView: React.FC = () => {
           <Heart className="w-7 h-7 text-rose-500" />
           My Wishlist ({items.length})
         </h1>
-        <p className="text-xs text-slate-500 mt-1">Saved products — move them to your cart when you are ready to order</p>
       </div>
 
       {error && (

@@ -75,9 +75,6 @@ export const SellerAnalyticsPage: React.FC = () => {
             <BarChart3 className="w-7 h-7 text-emerald-600" />
             Seller Analytics & Intelligence
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Storefront performance, AI-generated trade intelligence, mandi price alerts and buyer network
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

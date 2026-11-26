@@ -103,9 +103,6 @@ export const NotificationsInbox: React.FC = () => {
             <Bell className="w-7 h-7 text-emerald-600" />
             Notifications Inbox
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Every trade, payment, transport, and advisory update across all your personas
-          </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button

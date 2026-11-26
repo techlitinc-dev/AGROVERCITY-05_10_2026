@@ -105,9 +105,6 @@ export const EquipmentAvailabilityView: React.FC = () => {
             <CalendarDays className="w-7 h-7 text-emerald-600" />
             Equipment Schedule
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            The next 7 days per machine — available windows, requested/accepted bookings.
-          </p>
         </div>
         <button onClick={() => void load()} className="p-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 self-start" title="Refresh">
           <RefreshCw className={`w-4 h-4 text-slate-600 ${loading ? 'animate-spin' : ''}`} />

@@ -102,9 +102,6 @@ export const BankAccountsPage: React.FC = () => {
           <Landmark className="w-7 h-7 text-emerald-600" />
           Bank Accounts
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Linked accounts receive crop sale settlements, loan disbursements, and subsidy DBT credits
-        </p>
       </div>
 
       {notice && (

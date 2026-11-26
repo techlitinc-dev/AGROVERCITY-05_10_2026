@@ -93,9 +93,6 @@ export const SellerRatingsView: React.FC = () => {
             <Star className="w-7 h-7 text-amber-500 fill-amber-500" />
             Two-Way Trade Reputation & Farmer Ratings
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Build Vyapari trust through transparent farmer feedback, verified quality tags, and prompt dispute settlements.
-          </p>
         </div>
         <button
           type="button"

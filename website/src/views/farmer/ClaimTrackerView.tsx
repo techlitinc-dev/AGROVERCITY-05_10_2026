@@ -78,7 +78,6 @@ export const ClaimTrackerView: React.FC = () => {
               <ShieldAlert className="w-7 h-7 text-emerald-600" />
               Claim Tracker #{id}
             </h1>
-            <p className="text-xs text-slate-500 mt-1">PMFBY claim lifecycle, surveyor visits and DBT status</p>
           </div>
         </div>
         {claim && <StatusBadge status={claim.status} />}

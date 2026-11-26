@@ -87,9 +87,6 @@ export const NurseryChatbotView: React.FC = () => {
           <Bot className="w-6 h-6 text-emerald-700" />
           Chatbot Support
         </h1>
-        <p className="text-xs text-slate-500">
-          24/7 technical advice on sapling nutrition, grafting success, pest management, and horticulture subsidies.
-        </p>
       </div>
 
       {/* Suggestion Chips */}

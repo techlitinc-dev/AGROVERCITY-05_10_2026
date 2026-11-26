@@ -116,9 +116,6 @@ export const DairyReportsPage: React.FC = () => {
             <BarChart3 className="w-7 h-7 text-emerald-600" />
             Dairy Reports & Analytics
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Daily closing report, monthly profit & loss, procurement analytics and AI demand forecast
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           {(tab === 'daily' || tab === 'analytics') && tab === 'daily' && (

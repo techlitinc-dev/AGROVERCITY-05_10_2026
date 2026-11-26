@@ -86,9 +86,6 @@ export const NurseryDiaryView: React.FC = () => {
             <BookOpen className="w-6 h-6 text-emerald-700" />
             Nursery Care Diary
           </h1>
-          <p className="text-xs text-slate-500">
-            Log daily watering schedules, foliar spray applications, grafting batches, labor expenses, and sapling income.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

@@ -84,9 +84,6 @@ export const SellerAiInsightsView: React.FC = () => {
             <Sparkles className="w-7 h-7 text-emerald-600" />
             AI Intelligence & Sourcing Desk for Vyaparis
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Smart algorithmic sourcing matches, APMC price band predictions, and transport-adjusted mandi arbitrage.
-          </p>
         </div>
         <button
           type="button"

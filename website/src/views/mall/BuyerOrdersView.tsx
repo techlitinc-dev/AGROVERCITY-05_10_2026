@@ -129,7 +129,6 @@ export const BuyerOrdersView: React.FC = () => {
           <Package className="w-7 h-7 text-emerald-600" />
           My Orders
         </h1>
-        <p className="text-xs text-slate-500 mt-1">Track, cancel, return, and rate your Agri Market purchases</p>
       </div>
 
       {error && (

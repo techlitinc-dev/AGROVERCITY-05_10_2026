@@ -254,9 +254,6 @@ export const DairySalesPage: React.FC = () => {
             <ShoppingCart className="w-7 h-7 text-emerald-600" />
             Milk Sales, Orders & Stock
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Delivery customers, daily sale orders, dairy stock register and sales summary
-          </p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto overflow-x-auto no-scrollbar">
           {(

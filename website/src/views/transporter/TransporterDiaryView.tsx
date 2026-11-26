@@ -206,9 +206,6 @@ export const TransporterDiaryView: React.FC = () => {
             <BookOpen className="w-7 h-7 text-emerald-600" />
             Transporter Trade Diary (Vyapaar Khata)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Track every freight buy/sell — fuel, tolls, maintenance, and freight earnings for the month
-          </p>
         </div>
         <button
           onClick={() => {

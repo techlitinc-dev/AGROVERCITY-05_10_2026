@@ -91,9 +91,6 @@ export const LandRecordsView: React.FC = () => {
           <FileSpreadsheet className="w-7 h-7 text-emerald-600" />
           My Land Records (7/12)
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Instant digital verification of land ownership, cadastral boundaries, and crop registration from state revenue registries
-        </p>
       </div>
 
       {/* Search Bar */}

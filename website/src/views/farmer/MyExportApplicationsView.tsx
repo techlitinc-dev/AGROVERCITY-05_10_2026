@@ -82,10 +82,6 @@ export const MyExportApplicationsView: React.FC<{ embedded?: boolean }> = ({ emb
               <FileText className="w-7 h-7 text-emerald-600" />
               My Export Applications
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Track what you applied for. When an exporter unlocks your contact, Call, WhatsApp, and Chat
-              open here.
-            </p>
           </>
         )}
         <div className="flex flex-wrap gap-2 mt-3">

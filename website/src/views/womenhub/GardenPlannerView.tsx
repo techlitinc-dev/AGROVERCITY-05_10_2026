@@ -102,10 +102,6 @@ export const GardenPlannerView: React.FC = () => {
             <Sprout className="w-7 h-7 text-emerald-600" />
             Kitchen Garden Planner
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Track each crop from sowing to harvest, plan by season, and stay on top of
-            water &amp; fertilizer reminders.
-          </p>
         </div>
         <button
           onClick={() => setCropForm({ name: '', nutrition: '', season: '' })}

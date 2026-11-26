@@ -143,9 +143,6 @@ export const BuyerFeedPage: React.FC = () => {
             <ShoppingBag className="w-7 h-7 text-emerald-600" />
             Farm-gate Buying Feed
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Matched lots from your saved farmers and demanded crops, plus every live farmer post
-          </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <div className="relative">

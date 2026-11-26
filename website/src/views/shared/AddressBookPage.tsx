@@ -92,9 +92,6 @@ export const AddressBookPage: React.FC = () => {
         </button>
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900">My Addresses</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            One address book for all your roles — select by label wherever an address is needed.
-          </p>
         </div>
         <button
           onClick={() => {

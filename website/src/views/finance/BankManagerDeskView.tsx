@@ -138,9 +138,6 @@ export const BankManagerDeskView: React.FC = () => {
             <Landmark className="w-7 h-7 text-emerald-600" />
             Bank Manager & Credit Underwriting Console
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            KCC appraisal, 7/12 land revenue cross-checks, credit scoring, DBT disbursals and EMI collection
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link

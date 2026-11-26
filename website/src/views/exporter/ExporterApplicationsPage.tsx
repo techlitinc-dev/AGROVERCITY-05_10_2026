@@ -110,12 +110,6 @@ export const ExporterApplicationsPage: React.FC = () => {
           <Inbox className="w-7 h-7 text-emerald-600" />
           Applications Received
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Compare farmers on quantity, location, quality information, certification evidence,
-          availability, packaging, supply basis, and price. Contact unlocks details after terms and
-          MPIN — it never accepts an application or creates an order. Original units and currencies
-          are shown as quoted (no conversion).
-        </p>
         <div className="flex flex-wrap gap-2 mt-3">
           {FILTERS.map((f) => (
             <button

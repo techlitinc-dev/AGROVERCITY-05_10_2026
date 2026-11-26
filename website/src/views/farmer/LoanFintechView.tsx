@@ -114,9 +114,6 @@ export const LoanFintechView: React.FC = () => {
             <Landmark className="w-7 h-7 text-emerald-600" />
             KCC & Agri Loans (Fintech Desk)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Apply for concessional KCC crop loans and equipment credit linked to your verified 7/12 land records
-          </p>
         </div>
 
         <button

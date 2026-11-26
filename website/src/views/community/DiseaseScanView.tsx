@@ -109,9 +109,6 @@ export const DiseaseScanView: React.FC = () => {
           <ScanLine className="w-7 h-7 text-rose-500" />
           AI Crop Scanner
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Take a photo of an infected leaf or crop to identify pathogens and receive immediate organic and chemical remedies
-        </p>
       </div>
 
       {error && (

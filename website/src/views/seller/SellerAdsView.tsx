@@ -215,9 +215,6 @@ export const SellerAdsView: React.FC = () => {
             <Megaphone className="w-7 h-7 text-emerald-600" />
             {location.pathname.startsWith('/nursery') ? 'Ad Manager' : 'Ads & Promotions'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Broadcast purchase requirements and procurement ads directly to farmer feeds and APMC ticker boards.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <button

@@ -135,9 +135,6 @@ export const PnlDashboardView: React.FC = () => {
             <PiggyBank className="w-7 h-7 text-emerald-600" />
             {location.pathname.startsWith('/nursery') ? 'Finance CEO (P&L)' : 'Profit & Loss'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Season profit & loss, crop-wise economics, break-even price and expense tracking
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button

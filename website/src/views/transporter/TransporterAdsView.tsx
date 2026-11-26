@@ -218,7 +218,6 @@ export const TransporterAdsView: React.FC = () => {
             <Megaphone className="w-7 h-7 text-emerald-600" />
             Ads & Promotions
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Promote your fleet and track impressions, clicks, and spend</p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={openCreate} className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md">

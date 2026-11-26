@@ -139,9 +139,6 @@ export const StandingOrdersPage: React.FC = () => {
             <Repeat className="w-7 h-7 text-emerald-600" />
             Standing Orders
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Recurring crop requirements with a price band — farmers fulfil slot-by-slot
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className={ghostBtnCls}>

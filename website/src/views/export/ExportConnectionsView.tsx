@@ -83,11 +83,6 @@ export const ExportConnectionsView: React.FC<{ persona: 'farmer' | 'exporter'; e
             <Handshake className="w-7 h-7 text-emerald-600" />
             My Connections
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Exporters you are in touch with. Sampling, quality, price, payment, packaging, transport,
-            customs, freight, and insurance are settled directly between you and the exporter —
-            Agrovercity never holds export payments.
-          </p>
         </div>
       )}
 

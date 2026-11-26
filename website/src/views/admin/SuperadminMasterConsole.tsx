@@ -85,9 +85,6 @@ export const SuperadminMasterConsole: React.FC = () => {
             <Sparkles className="w-7 h-7 text-amber-500" />
             Superadmin Master Operations Console (SOP Console)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Platform-wide governance, escrow releases, and automated financial settlements
-          </p>
         </div>
 
         <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-2xl border border-emerald-200 flex items-center gap-1.5 self-start sm:self-auto">

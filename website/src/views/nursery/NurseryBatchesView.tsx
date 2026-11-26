@@ -131,9 +131,6 @@ export const NurseryBatchesView: React.FC = () => {
             <Package className="w-6 h-6 text-emerald-700" />
             Batches &amp; Stock In/Out
           </h1>
-          <p className="text-xs text-slate-500">
-            Track propagation batches, polyhouse bed locations, nursery mortality write-offs, and stock thresholds.
-          </p>
         </div>
 
         <button

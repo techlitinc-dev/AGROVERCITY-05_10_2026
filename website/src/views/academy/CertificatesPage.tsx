@@ -104,9 +104,6 @@ export const CertificatesPage: React.FC = () => {
             <Award className="w-7 h-7 text-emerald-600" />
             Certificates
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Issue completion certificates, download the tamper-evident payload, verify & revoke
-          </p>
         </div>
         <button
           onClick={reload}

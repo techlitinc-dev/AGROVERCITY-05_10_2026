@@ -260,9 +260,6 @@ export const LivestockHubView: React.FC = () => {
             <PawPrint className="w-7 h-7 text-emerald-600" />
             Pashu Dhan — Livestock Hub <span className="text-sm font-bold text-slate-500">/ पशुधन केंद्र</span>
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Herd registry, gaushala manure, vet appointments and pure dairy products
-          </p>
         </div>
         <button
           onClick={loadAll}

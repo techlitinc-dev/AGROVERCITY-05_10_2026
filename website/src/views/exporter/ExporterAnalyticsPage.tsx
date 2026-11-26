@@ -66,9 +66,6 @@ export const ExporterAnalyticsPage: React.FC = () => {
             <TrendingUp className="w-7 h-7 text-blue-600" />
             Global Trade & Forex Settlement Intelligence
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Real-time analytics for export volumes, foreign exchange realisations, port departures, and destination clearances
-          </p>
         </div>
 
         <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto">

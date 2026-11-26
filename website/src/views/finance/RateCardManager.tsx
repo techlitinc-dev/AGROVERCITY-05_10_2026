@@ -111,9 +111,6 @@ export const RateCardManager: React.FC = () => {
           <Scale className="w-7 h-7 text-emerald-600" />
           Premium Rate Card Manager
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Publish crop × season actuarial rates — sum insured per acre and the PMFBY premium split
-        </p>
       </div>
 
       {error && (

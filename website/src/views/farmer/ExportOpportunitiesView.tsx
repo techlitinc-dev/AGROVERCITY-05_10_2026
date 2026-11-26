@@ -155,12 +155,6 @@ export const ExportOpportunitiesView: React.FC<{ embedded?: boolean }> = ({ embe
               <Globe2 className="w-7 h-7 text-emerald-600" />
               Export Opportunities
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              International exporters post crop requirements. Apply with your available quantity, price,
-              quality, and supply details. When an exporter selects you, contacts unlock after their
-              verification so you can negotiate and settle directly. Agrovercity never holds export
-              payments and is not part of your deal.
-            </p>
           </>
         )}
         <div className="flex flex-wrap gap-2 mt-3">

@@ -128,9 +128,6 @@ export const SupportCenter: React.FC = () => {
           <LifeBuoy className="w-7 h-7 text-sky-600" />
           Help & Support Center
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          FAQs, support tickets, and direct handoff to human agronomists — in your language
-        </p>
       </div>
 
       {notice && (

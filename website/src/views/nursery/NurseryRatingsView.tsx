@@ -73,9 +73,6 @@ export const NurseryRatingsView: React.FC = () => {
             <Star className="w-6 h-6 text-amber-500" />
             Reviews &amp; Ratings
           </h1>
-          <p className="text-xs text-slate-500">
-            Reviews received from farmers & landscapers for your nursery orders. Reply to build trust with buyers.
-          </p>
         </div>
       </div>
 

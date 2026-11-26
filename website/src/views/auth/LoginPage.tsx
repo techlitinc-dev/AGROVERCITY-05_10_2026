@@ -1,14 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
-  Phone,
-  Lock,
   ArrowRight,
-  ShieldCheck,
   AlertCircle,
   CheckCircle2,
-  KeyRound,
-  PhoneCall,
 } from 'lucide-react';
 import { OtpField } from '../../components/common/OtpField';
 import { MpinPad } from '../../components/common/MpinPad';
@@ -54,27 +49,16 @@ export const LoginPage: React.FC = () => {
     setError(null);
     setMessage(null);
     try {
-      // 1. Check registration status, then always send an OTP to the number:
-      // registered accounts sign in with the code sent to their registered
-      // mobile number; brand-new numbers verify the same way and continue
-      // into registration. MPIN login stays reachable via "Direct 4-Digit
-      // MPIN" for accounts that prefer it.
+      // Registered accounts with an MPIN go straight to the MPIN pad — no
+      // OTP. OTP verification remains only for brand-new numbers (account
+      // setup) and registered numbers that never set an MPIN.
       const check = await auth.checkPhone(phone);
-      if (check.exists) {
+      setUserName(check.name || null);
+      if (check.exists && check.hasMpin) {
         setAccountState('existing');
-        setUserName(check.name || null);
-        const res = await auth.requestOtp(phone);
-        if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
-        if (res.devOtp) {
-          setDevOtp(res.devOtp);
-          setMessage(`OTP sent to your registered number. (Dev Auto-OTP: ${res.devOtp})`);
-        } else {
-          setMessage(res.message || `OTP sent to your registered number +91 ${phone}.`);
-        }
-        setStep('otp');
+        setStep('mpin');
       } else {
-        setAccountState('new');
-        setUserName(null);
+        setAccountState(check.exists ? 'existingNoMpin' : 'new');
         const res = await auth.requestOtp(phone);
         if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
         if (res.devOtp) {
@@ -98,9 +82,9 @@ export const LoginPage: React.FC = () => {
     setMessage(null);
     try {
       // Re-check so the OTP screen can tell a brand-new number apart from an
-      // existing account without an MPIN, whichever button started the flow.
+      // existing account, whichever button started the flow.
       const check = await auth.checkPhone(phone);
-      setAccountState(check.exists ? 'existingNoMpin' : 'new');
+      setAccountState(check.exists ? (check.hasMpin ? 'existing' : 'existingNoMpin') : 'new');
       setUserName(check.name || null);
       const res = await auth.requestOtp(phone);
       if (res.otpSessionId) setOtpSessionId(res.otpSessionId);
@@ -235,9 +219,6 @@ export const LoginPage: React.FC = () => {
                     Digital Agri OS
                   </span>
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Enter your registered mobile number to continue securely.
-                </p>
               </div>
 
             </div>
@@ -275,15 +256,11 @@ export const LoginPage: React.FC = () => {
                           maxLength={10}
                           value={phone}
                           onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                          placeholder="98765 43210"
+                          placeholder="Enter Registered Mobile Number"
                           className="w-full pl-20 pr-4 py-3.5 text-sm font-bold tracking-wider rounded-2xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/15 shadow-xs transition-all"
                           required
                         />
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-emerald-600" />
-                        <span>A 6-digit OTP will be sent to this number for secure sign-in.</span>
-                      </p>
                     </div>
 
                     <button
@@ -294,19 +271,6 @@ export const LoginPage: React.FC = () => {
                       <span>{loading ? 'Verifying Account...' : 'Continue / आगे बढ़ें'}</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
-
-                    <div className="flex items-center justify-start pt-1 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setError(null);
-                          setStep('mpin');
-                        }}
-                        className="font-bold text-emerald-700 hover:underline inline-flex items-center gap-1"
-                      >
-                        <Lock className="w-3.5 h-3.5" /> Direct 4-Digit MPIN
-                      </button>
-                    </div>
                   </form>
                 )}
 
@@ -365,38 +329,13 @@ export const LoginPage: React.FC = () => {
                 {/* Step 3: Fast MPIN Pad Mode */}
                 {step === 'mpin' && (
                   <div className="space-y-4">
-                    <div className="text-center">
-                      <p className="text-xs text-slate-600">
-                        Logging into account: <strong className="font-mono">+91 {phone}</strong>
-                      </p>
-                    </div>
-
                     <MpinPad
                       onSuccess={handleVerifyMpin}
                       title={userName ? `Welcome back, ${userName}!` : 'Enter 4-Digit Security MPIN'}
                       subtitle="Instant 1-second access to your workspace"
                     />
 
-                    {/* Quick Dev MPIN Shortcut */}
-                    <div className="flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => handleVerifyMpin('1234')}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5 transition-colors shadow-xs"
-                      >
-                        <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Quick Dev MPIN (1234)</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs px-2 pt-1 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => setStep('phone')}
-                        className="text-slate-500 font-semibold hover:underline"
-                      >
-                        Change Number
-                      </button>
+                    <div className="flex items-center justify-center text-xs px-2 pt-1 border-t border-slate-100">
                       <button
                         type="button"
                         onClick={handleSendOtpFallback}
@@ -419,17 +358,6 @@ export const LoginPage: React.FC = () => {
                 <span>Register New Farm Account</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-50">
-              <span className="flex items-center gap-1.5 font-medium">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>256-Bit Escrow Security Vault</span>
-              </span>
-              <a href="tel:180024767388" className="hover:text-slate-600 flex items-center gap-1 font-medium">
-                <PhoneCall className="w-3 h-3 text-slate-400" />
-                <span>Helpline: 1800-AGRO-SETU</span>
-              </a>
             </div>
           </div>
         </div>

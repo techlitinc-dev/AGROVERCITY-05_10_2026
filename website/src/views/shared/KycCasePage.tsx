@@ -134,9 +134,6 @@ export const KycCasePage: React.FC = () => {
           <FileCheck2 className="w-7 h-7 text-emerald-600" />
           KYC Verification Cases
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          One case per persona. Verified KYC unlocks payments, credit, and insurance claim settlements.
-        </p>
       </div>
 
       <input ref={fileRef} type="file" accept="image/jpeg,image/png,application/pdf" className="hidden" onChange={(e) => void handleFile(e)} />

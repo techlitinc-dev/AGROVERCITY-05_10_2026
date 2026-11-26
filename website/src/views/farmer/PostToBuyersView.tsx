@@ -110,10 +110,6 @@ export const PostToBuyersView: React.FC = () => {
             <Store className="w-7 h-7 text-emerald-600" />
             Post to Buyers
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Offer your produce to industrial buyers, processors and exporters. Your post appears in their farm-gate
-            feed instantly — they contact you directly, no middleman.
-          </p>
         </div>
         <button
           onClick={() => setModalOpen(true)}

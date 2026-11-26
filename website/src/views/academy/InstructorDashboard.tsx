@@ -121,7 +121,6 @@ export const InstructorDashboard: React.FC = () => {
           <GraduationCap className="h-5 w-5 text-emerald-600" />
           Namaste{user?.name ? `, ${user.name}` : ''} — Gurukul Instructor
         </h1>
-        <p className="text-sm text-slate-500">Gurukul Dashboard — your teaching at a glance.</p>
       </header>
 
       {state.error && (

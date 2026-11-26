@@ -145,9 +145,6 @@ export const KisanCoinsView: React.FC = () => {
           <Coins className="w-7 h-7 text-amber-500" />
           {location.pathname.startsWith('/nursery') ? 'Coin Rewards Wallet' : 'Coins & Rewards'}
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Earn Kisan Coins on every produce sale, transport trip, and neighbor referral. Redeem for farming subsidies.
-        </p>
       </div>
 
       {notice && (

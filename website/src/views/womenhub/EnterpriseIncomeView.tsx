@@ -167,10 +167,6 @@ export const EnterpriseIncomeView: React.FC = () => {
             <HandCoins className="w-7 h-7 text-pink-600" />
             Home Enterprise Income
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Pickle, papad, ghee and more — track each product's monthly revenue, cost and
-            profit, log expenses, and export your ledger.
-          </p>
         </div>
         <button
           onClick={() => setLineForm({ product: '', quantity: '', pricePaisa: '', monthlyProfit: '' })}

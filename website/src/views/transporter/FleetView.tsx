@@ -298,7 +298,6 @@ export const FleetView: React.FC = () => {
             <Truck className="w-7 h-7 text-emerald-600" />
             Vehicles and Drivers
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Manage vehicles, document status, and driver assignments</p>
         </div>
         <button
           onClick={load}

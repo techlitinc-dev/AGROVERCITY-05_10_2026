@@ -76,9 +76,6 @@ export const SellerSettlementsView: React.FC = () => {
             <Wallet className="w-7 h-7 text-emerald-600" />
             Weekly Settlements
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Marketplace trade gross minus platform commission and TDS 194-O — paid out every Monday
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

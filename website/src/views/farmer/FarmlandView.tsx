@@ -352,10 +352,6 @@ export const FarmlandView: React.FC = () => {
           <Mountain className="w-7 h-7 text-emerald-600" />
           Rent Land
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Browse farmland for lease. Send interest — after the landlord accepts your contact request, you inspect the
-          land and settle everything directly. Agrovercity never holds rent or deposits.
-        </p>
       </div>
 
       {!kycVerified && (

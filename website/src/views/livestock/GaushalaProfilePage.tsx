@@ -106,9 +106,6 @@ export const GaushalaProfilePage: React.FC = () => {
           <Building2 className="w-7 h-7 text-emerald-600" />
           {exists ? 'Gaushala Trust Profile' : 'Create Gaushala Profile'}
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Trust identity, 80G certification and bank details used on receipts and transparency reports
-        </p>
       </div>
 
       {error && (

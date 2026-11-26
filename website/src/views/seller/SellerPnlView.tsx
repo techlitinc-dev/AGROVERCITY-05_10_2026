@@ -155,9 +155,6 @@ export const SellerPnlView: React.FC = () => {
             <TrendingUp className="w-7 h-7 text-emerald-600" />
             P&amp;L — Buy vs Sell
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Per-crop margins across J-form procurement, POS sales and resale listings
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

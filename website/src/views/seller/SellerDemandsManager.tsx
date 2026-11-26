@@ -249,10 +249,6 @@ export const SellerDemandsManager: React.FC = () => {
             <Megaphone className="w-7 h-7 text-emerald-600" />
             Post Requirement
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Tell farmers what you want to buy. Farmers apply with their quantity and price — you contact them
-            directly and settle the deal between yourselves.
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={openPostModal} className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center gap-2">

@@ -158,7 +158,6 @@ export const TransporterProfileView: React.FC = () => {
             <User className="w-7 h-7 text-emerald-600" />
             Transporter Profile
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Identity, KYC standing, received ratings, and saved items</p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={openEdit} className="px-3.5 py-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5">

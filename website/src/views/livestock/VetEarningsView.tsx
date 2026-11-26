@@ -119,9 +119,6 @@ export const VetEarningsView: React.FC = () => {
             <IndianRupee className="w-7 h-7 text-emerald-600" />
             Vet Earnings & Payouts
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Consultation fees, platform commission, monthly settlements and bank payouts
-          </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <input

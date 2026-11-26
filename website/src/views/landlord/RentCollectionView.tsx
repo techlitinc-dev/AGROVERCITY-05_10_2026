@@ -107,7 +107,6 @@ export const RentCollectionView: React.FC = () => {
             <HandCoins className="w-7 h-7 text-emerald-600" />
             Rent Collection
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Track dues, record payments, download receipts, and export lease ledgers</p>
         </div>
         <button
           onClick={load}

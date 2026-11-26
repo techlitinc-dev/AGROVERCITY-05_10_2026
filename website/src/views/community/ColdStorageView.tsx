@@ -128,9 +128,6 @@ export const ColdStorageView: React.FC = () => {
           <Snowflake className="w-7 h-7 text-sky-600" />
           Cold Storage & e-NWR Warehouse Receipts
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Locate certified cold storage facilities, monitor live chamber temperatures, and get pledge financing via electronic Negotiable Warehouse Receipts (e-NWR)
-        </p>
       </div>
 
       {notice && (

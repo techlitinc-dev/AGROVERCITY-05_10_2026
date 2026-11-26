@@ -102,10 +102,6 @@ export const MyRequirementsPage: React.FC = () => {
             <ClipboardList className="w-7 h-7 text-emerald-600" />
             My Requirements
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Open, pause, fulfil or duplicate your sourcing requirements. Applications appear on the Applications
-            Received page.
-          </p>
         </div>
         <div className="flex gap-2">
           <button

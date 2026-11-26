@@ -116,10 +116,6 @@ export const EnrollmentRequestsPage: React.FC = () => {
             <Inbox className="w-7 h-7 text-emerald-600" />
             Enrollment Requests
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Learners who contacted you about a paid course. Grant access after they pay you directly —
-            Agrovercity never holds or verifies the payment.
-          </p>
         </div>
         <button
           onClick={reload}

@@ -77,9 +77,6 @@ export const BuyerIntelPage: React.FC = () => {
             <BrainCircuit className="w-7 h-7 text-emerald-600" />
             Market Intelligence Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Procurement analytics, AI intelligence, mandi outlook and price alerts for sourcing decisions
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

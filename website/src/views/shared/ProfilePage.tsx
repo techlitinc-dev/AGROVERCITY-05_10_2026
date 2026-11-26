@@ -293,9 +293,6 @@ export const ProfilePage: React.FC = () => {
           <UserRound className="w-7 h-7 text-emerald-600" />
           My Profile
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Your identity across every persona, KYC standing, and reputation
-        </p>
       </div>
 
       {notice && (

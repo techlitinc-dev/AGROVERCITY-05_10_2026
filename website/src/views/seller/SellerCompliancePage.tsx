@@ -101,9 +101,6 @@ export const SellerCompliancePage: React.FC = () => {
             <ShieldCheck className="w-7 h-7 text-emerald-600" />
             Compliance & Tax Centre
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            TDS 194-O statements, GSTR-style sales register, platform commission invoices and referrals
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

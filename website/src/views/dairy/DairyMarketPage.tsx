@@ -44,9 +44,6 @@ export const DairyMarketPage: React.FC = () => {
             <Store className="w-7 h-7 text-emerald-600" />
             Dairy Procurement Market
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Post milk demands, run standing orders, discover farmer offers and close supply bids
-          </p>
         </div>
       </div>
 

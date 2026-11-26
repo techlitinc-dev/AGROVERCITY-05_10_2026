@@ -366,10 +366,6 @@ export const ProduceLotsView: React.FC = () => {
             <Package className="w-7 h-7 text-emerald-600" />
             My Produce / माझे उत्पादन
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Post your produce — verified Vyaparis find it and contact you directly (call / WhatsApp / chat).
-            You negotiate and close the deal yourselves; Agrovercity never holds money.
-          </p>
         </div>
 
         <button

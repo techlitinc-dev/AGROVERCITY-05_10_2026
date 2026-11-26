@@ -360,9 +360,6 @@ export const MilkSellerDesk: React.FC<{ initialTab?: Tab }> = ({ initialTab = 'd
             <Milk className="w-7 h-7 text-emerald-600" />
             {DESK_TITLE_BY_PATH[location.pathname] || 'Milk Seller Desk'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Doorstep milk delivery business — clients, daily entries, punch-card calendars, monthly bills & collections
-          </p>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto overflow-x-auto no-scrollbar">
           {(

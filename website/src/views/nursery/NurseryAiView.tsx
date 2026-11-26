@@ -50,9 +50,6 @@ export const NurseryAiView: React.FC = () => {
           <Sparkles className="w-6 h-6 text-teal-600" />
           AI Analysis &amp; Forecast
         </h1>
-        <p className="text-xs text-slate-500">
-          Machine-learning forecasts for seasonal demand spikes, dynamic plant pricing, and propagation planning.
-        </p>
       </div>
 
       {/* Seasonal Demand Banner */}

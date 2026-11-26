@@ -148,9 +148,6 @@ export const InstructorsView: React.FC = () => {
           <Users className="w-7 h-7 text-emerald-600" />
           Gurukul Instructors
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Follow agronomists and progressive farmers, browse their masterclasses and keep track of what you saved
-        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Instructor sections">

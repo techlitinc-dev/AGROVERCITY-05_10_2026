@@ -405,10 +405,6 @@ export const MandiPricesView: React.FC = () => {
             <Landmark className="w-7 h-7 text-emerald-600" />
             Mandi Prices / बाजारभाव
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Latest reported mandi prices from government open data — daily figures, not a
-            real-time stream.
-          </p>
         </div>
         <button
           onClick={() => openAlertFor(detailCommodity || commodityQuery.trim())}

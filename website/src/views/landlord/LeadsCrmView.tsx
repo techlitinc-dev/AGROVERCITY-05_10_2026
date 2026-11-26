@@ -91,7 +91,6 @@ export const LeadsCrmView: React.FC = () => {
             <Users className="w-7 h-7 text-emerald-600" />
             Leads CRM
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Track tenant-farmer interest, notes, and conversion pipeline</p>
         </div>
         <button
           onClick={load}

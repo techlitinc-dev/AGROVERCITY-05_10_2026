@@ -277,11 +277,6 @@ export const ExporterRfqsPage: React.FC = () => {
             <Ship className="w-7 h-7 text-emerald-600" />
             My Export Requirements
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Structured sourcing requirements. Partial-quantity and multi-farmer fulfilment are
-            supported — you decide when sourcing is complete. Contacts unlock per application after
-            terms and MPIN verification; no order or payment is created on this platform.
-          </p>
         </div>
         <button
           type="button"

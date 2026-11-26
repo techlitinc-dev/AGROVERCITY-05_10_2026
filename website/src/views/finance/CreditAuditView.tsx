@@ -95,9 +95,6 @@ export const CreditAuditView: React.FC = () => {
           <FileSearch className="w-7 h-7 text-emerald-600" />
           Credit Audit Trail
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Every lending decision, disbursement and repayment is audit-logged; platform credit-score distribution below
-        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

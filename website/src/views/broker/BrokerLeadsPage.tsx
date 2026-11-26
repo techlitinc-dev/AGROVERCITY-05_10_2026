@@ -187,9 +187,6 @@ export const BrokerLeadsPage: React.FC = () => {
               <Users className="w-7 h-7 text-emerald-600" />
               Lead CRM
             </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Farmer & buyer contacts — track the pipeline from first namaste to converted deal
-            </p>
           </div>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">

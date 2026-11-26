@@ -62,9 +62,6 @@ export const BillingPage: React.FC = () => {
           <CreditCard className="w-7 h-7 text-emerald-600" />
           Billing & Subscription Plans
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Agrovercity Pro unlocks AI intelligence packs, priority logistics, and zero-commission limits
-        </p>
       </div>
 
       {notice && (

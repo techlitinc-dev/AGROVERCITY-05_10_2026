@@ -163,9 +163,6 @@ export const SellerProfileView: React.FC = () => {
             <Building2 className="w-7 h-7 text-emerald-600" />
             Vyapari Business Profile & APMC Mandi Registration
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Manage your B2B trade credentials, APMC mandi operating jurisdictions, buying capacity, and verified tax identity.
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <button

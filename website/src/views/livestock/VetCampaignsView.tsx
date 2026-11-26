@@ -111,9 +111,6 @@ export const VetCampaignsView: React.FC = () => {
             <Syringe className="w-7 h-7 text-emerald-600" />
             Vaccination Campaigns
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            FMD / HS / BQ drives — schedule campaigns, track enrolment and mark coverage
-          </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <select

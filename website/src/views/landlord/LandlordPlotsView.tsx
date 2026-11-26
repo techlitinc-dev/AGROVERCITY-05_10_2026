@@ -176,7 +176,6 @@ export const LandlordPlotsView: React.FC = () => {
             <FileSpreadsheet className="w-7 h-7 text-emerald-600" />
             My Land Plots
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Register plots, track area/records, and log plot-level expenses</p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <Link

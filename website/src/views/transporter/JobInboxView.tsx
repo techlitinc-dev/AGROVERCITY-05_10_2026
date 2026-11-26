@@ -429,7 +429,6 @@ export const JobInboxView: React.FC = () => {
             <Inbox className="w-7 h-7 text-emerald-600" />
             Booking Requests
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Direct booking requests from farmers/shippers — negotiate the fare, accept, or reject</p>
         </div>
         <button
           onClick={load}

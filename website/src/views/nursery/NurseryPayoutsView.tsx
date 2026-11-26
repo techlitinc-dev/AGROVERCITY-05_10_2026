@@ -78,9 +78,6 @@ export const NurseryPayoutsView: React.FC = () => {
             <DollarSign className="w-6 h-6 text-emerald-700" />
             Earnings &amp; Payouts
           </h1>
-          <p className="text-xs text-slate-500">
-            Track gross sales, 5% platform commission deductions, and withdraw net earnings to your bank account or UPI.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

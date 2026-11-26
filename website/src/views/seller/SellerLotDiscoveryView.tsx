@@ -156,10 +156,6 @@ export const SellerLotDiscoveryView: React.FC = () => {
           <Search className="w-7 h-7 text-emerald-600" />
           Find Produce
         </h1>
-        <p className="text-xs text-slate-500 mt-1 font-medium">
-          Browse farmer lots and contact the farmer directly — price, payment, pickup and quality are settled
-          between you two. Agrovercity never holds money.
-        </p>
       </div>
 
       {error && (

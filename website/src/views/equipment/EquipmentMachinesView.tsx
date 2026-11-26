@@ -219,10 +219,6 @@ export const EquipmentMachinesView: React.FC = () => {
             <BadgeCheck className="w-7 h-7 text-emerald-600" />
             My Equipment
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            List machines with pricing, operator option and photos. "Equipment Verified" appears only after the
-            document review — identity KYC alone never earns it.
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={openAdd} className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center gap-2">

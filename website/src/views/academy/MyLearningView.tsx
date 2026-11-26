@@ -203,7 +203,6 @@ export const MyLearningView: React.FC = () => {
             <GraduationCap className="w-7 h-7 text-emerald-600" />
             My Learning
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Your courses, live sessions and questions</p>
         </div>
         <Link
           to="/academy"

@@ -61,10 +61,6 @@ export const BuyerSuppliersPage: React.FC = () => {
             <Handshake className="w-7 h-7 text-emerald-600" />
             My Suppliers
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Farmers you are connected with. Call, WhatsApp or chat to reconnect — continuing an existing conversation
-            never needs a new application.
-          </p>
         </div>
         <button
           onClick={() => void load()}

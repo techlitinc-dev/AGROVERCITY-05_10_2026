@@ -144,9 +144,6 @@ export const TeacherChatPage: React.FC = () => {
             <MessageSquare className="w-7 h-7 text-emerald-600" />
             Student Doubt Chat
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            1:1 doubt-solving windows — unlocked only for students with a paid enrollment
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button

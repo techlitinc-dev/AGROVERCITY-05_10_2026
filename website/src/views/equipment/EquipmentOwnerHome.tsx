@@ -11,7 +11,7 @@ import {
   ArrowRight,
   RefreshCcw,
 } from 'lucide-react';
-import { equipmentOwner, users } from '../../lib/api';
+import { equipment, equipmentOwner, users } from '../../lib/api';
 import { formatDateTime } from '../../lib/utils';
 
 interface RequestRow {
@@ -38,21 +38,26 @@ export const EquipmentOwnerHome: React.FC = () => {
   const [pending, setPending] = useState<RequestRow[]>([]);
   const [upcoming, setUpcoming] = useState<RequestRow[]>([]);
   const [fleet, setFleet] = useState<FleetRow[]>([]);
+  // Open farmer "Request Equipment" demand posts — pending work for the owner
+  // just like slot bookings, so they count on the dashboard too.
+  const [demandPosts, setDemandPosts] = useState<{ id: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [profile, pendingRows, upcomingRows, fleetRows] = await Promise.all([
+      const [profile, pendingRows, upcomingRows, fleetRows, demandRows] = await Promise.all([
         users.getMe().catch(() => ({})),
         equipmentOwner.ownerRequests('pending').catch(() => []),
         equipmentOwner.ownerRequests('upcoming').catch(() => []),
         equipmentOwner.fleet().catch(() => []),
+        equipment.demandPosts().catch(() => []),
       ]);
       setMe(profile as typeof me);
       setPending(pendingRows as unknown as RequestRow[]);
       setUpcoming(upcomingRows as unknown as RequestRow[]);
       setFleet(fleetRows as unknown as FleetRow[]);
+      setDemandPosts(demandRows as unknown as { id: string }[]);
     } finally {
       setLoading(false);
     }
@@ -75,9 +80,6 @@ export const EquipmentOwnerHome: React.FC = () => {
             <Wrench className="w-7 h-7 text-emerald-600" />
             Namaste{me.name ? `, ${me.name}` : ''} — Equipment Owner
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            List your machines, accept farmer requests, and connect directly. No platform payments.
-          </p>
         </div>
         <button onClick={() => void load()} className="p-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 self-start" title="Refresh">
           <RefreshCcw className={`w-4 h-4 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
@@ -116,7 +118,10 @@ export const EquipmentOwnerHome: React.FC = () => {
           <FileCheck className="w-8 h-8 mb-3" />
           <h3 className="text-lg font-black">View Requests</h3>
           <p className="text-xs text-slate-500 mt-1">
-            {loading ? '…' : `${pending.length} pending`} — accept with your MPIN to share contacts.
+            {loading
+              ? '…'
+              : `${pending.length + demandPosts.length} pending — ${pending.length} bookings · ${demandPosts.length} equipment requests`}{' '}
+            — accept with your MPIN to share contacts.
           </p>
           <span className="inline-flex items-center gap-1 text-xs font-bold mt-4 group-hover:gap-2 transition-all">
             Booking Requests <ArrowRight className="w-3.5 h-3.5" />
@@ -126,7 +131,7 @@ export const EquipmentOwnerHome: React.FC = () => {
 
       <div className="grid grid-cols-3 gap-4">
         <Link to="/equipment/requests" className="p-4 rounded-2xl bg-white border border-slate-200/80 text-center hover:border-emerald-300 transition-all">
-          <span className="block text-2xl font-black text-slate-900">{loading ? '—' : pending.length}</span>
+          <span className="block text-2xl font-black text-slate-900">{loading ? '—' : pending.length + demandPosts.length}</span>
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Pending Requests</span>
         </Link>
         <Link to="/equipment/jobs" className="p-4 rounded-2xl bg-white border border-slate-200/80 text-center hover:border-emerald-300 transition-all">
@@ -167,12 +172,22 @@ export const EquipmentOwnerHome: React.FC = () => {
         </div>
         {loading ? (
           <div className="py-6 text-center text-xs font-bold text-slate-400 animate-pulse">Loading…</div>
-        ) : pending.length === 0 ? (
+        ) : pending.length === 0 && demandPosts.length === 0 ? (
           <div className="py-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-3xl border border-slate-200/80">
             No pending requests right now.
           </div>
         ) : (
           <div className="space-y-2">
+            {demandPosts.length > 0 && (
+              <Link to="/equipment/requests" className="flex items-center justify-between p-3.5 bg-emerald-50/60 rounded-2xl border border-emerald-200 hover:border-emerald-400 transition-all text-xs">
+                <p className="font-bold text-emerald-900">
+                  {demandPosts.length} farmer equipment request{demandPosts.length === 1 ? '' : 's'} waiting for your quote
+                </p>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shrink-0">
+                  Quote
+                </span>
+              </Link>
+            )}
             {pending.slice(0, 5).map((r) => (
               <Link key={r.id} to="/equipment/requests" className="flex items-center justify-between p-3.5 bg-white rounded-2xl border border-slate-200/80 hover:border-emerald-300 transition-all text-xs">
                 <div className="min-w-0">

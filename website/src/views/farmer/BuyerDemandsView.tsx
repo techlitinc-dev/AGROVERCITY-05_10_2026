@@ -443,11 +443,6 @@ export const BuyerDemandsView: React.FC = () => {
           <Layers className="w-7 h-7 text-emerald-600" />
           Vyapari Requirements <span className="text-sm font-bold text-slate-500">/ व्यापारी मागण्या</span>
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Vyaparis and industrial buyers post what they need to source. Apply with your quantity, price, availability and supply
-          basis — your contact stays private until the buyer reviews and accepts the connection. Sampling, quality,
-          price, transport, payment and delivery are settled directly between you two; Agrovercity never holds money.
-        </p>
         <div className="flex items-center gap-2 mt-3">
           {(
             [

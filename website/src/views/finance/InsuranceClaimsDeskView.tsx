@@ -128,9 +128,6 @@ export const InsuranceClaimsDeskView: React.FC = () => {
             <ShieldAlert className="w-7 h-7 text-emerald-600" />
             PMFBY Crop Insurance & Claims Settlement Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Review 72-hour crop damage intimations, assign village loss surveyors, and trigger Direct Benefit Transfer (DBT)
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link

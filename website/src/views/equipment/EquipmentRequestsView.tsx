@@ -169,10 +169,6 @@ export const EquipmentRequestsView: React.FC = () => {
             <FileCheck className="w-7 h-7 text-emerald-600" />
             Booking Request
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Accept with your MPIN to share contacts, or decline with a reason. Everything after that is
-            settled directly between you and the farmer.
-          </p>
         </div>
         <button onClick={() => void load()} disabled={loading} className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 self-start sm:self-auto">
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh

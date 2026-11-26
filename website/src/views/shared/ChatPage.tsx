@@ -426,9 +426,6 @@ export const ChatPage: React.FC = () => {
             <MessageCircle className="w-7 h-7 text-emerald-600" />
             Chats
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Conversations grouped by persona — trade, transport, land, academy and more
-          </p>
         </div>
       </div>
 

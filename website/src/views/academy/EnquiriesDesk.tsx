@@ -89,9 +89,6 @@ export const EnquiriesDesk: React.FC = () => {
             <Mail className="w-7 h-7 text-emerald-600" />
             Batches &amp; Questions
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Structured fee enquiries from farmers — quote your fee or send a TTL counter-offer
-          </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <select

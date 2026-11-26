@@ -110,9 +110,6 @@ export const SellerDirectBuyersView: React.FC = () => {
             <Building className="w-7 h-7 text-emerald-600" />
             Industrial Buyers Network — Hotel & Bulk Buyer Connect
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Connect directly with verified hotel chains, bulk institutional buyers, food processors, and supermarket groups.
-          </p>
         </div>
         <button
           type="button"

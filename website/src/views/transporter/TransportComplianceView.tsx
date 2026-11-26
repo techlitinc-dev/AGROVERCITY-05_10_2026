@@ -56,9 +56,6 @@ export const TransportComplianceView: React.FC = () => {
             <ShieldAlert className="w-7 h-7 text-emerald-600" />
             Compliance & Ratings
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Strike ledger, active restrictions, the enforced penalty matrix, and ratings received from shippers
-          </p>
         </div>
         <button
           onClick={load}

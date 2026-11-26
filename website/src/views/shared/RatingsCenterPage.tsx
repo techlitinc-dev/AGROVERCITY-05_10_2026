@@ -148,9 +148,6 @@ export const RatingsCenterPage: React.FC = () => {
             <Award className="w-7 h-7 text-emerald-600" />
             Ratings & Reviews
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Rate transporters, equipment owners, instructors and trading partners — and reply to what they say about you
-          </p>
         </div>
         <button
           onClick={load}

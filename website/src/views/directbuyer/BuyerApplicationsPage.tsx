@@ -115,10 +115,6 @@ export const BuyerApplicationsPage: React.FC = () => {
             <Inbox className="w-7 h-7 text-emerald-600" />
             Applications Received
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Farmers who applied to your requirements. Compare quantity, price, location, availability, quality and
-            packaging — then contact the farmers you choose. Contacts unlock both ways only after your acceptance.
-          </p>
         </div>
         <button
           onClick={() => void load()}

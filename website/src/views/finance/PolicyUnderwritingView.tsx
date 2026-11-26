@@ -130,9 +130,6 @@ export const PolicyUnderwritingView: React.FC = () => {
           <FileCheck className="w-7 h-7 text-emerald-600" />
           Crop Policy Underwriting
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Endorse PMFBY applications, issue e-certificates, and reference the actuarial rate card
-        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

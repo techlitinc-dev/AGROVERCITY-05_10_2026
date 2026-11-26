@@ -125,9 +125,6 @@ export const SellerStockPage: React.FC = () => {
             <Package className="w-7 h-7 text-emerald-600" />
             Stock Room & Resale Exchange
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Track procured produce by crop, intake from purchases, adjust for shrinkage, list surplus for resale
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className={ghostBtnCls}>

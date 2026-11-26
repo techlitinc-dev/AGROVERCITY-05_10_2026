@@ -34,9 +34,6 @@ export const WaterClimateView: React.FC = () => {
           <Wind className="w-7 h-7 text-sky-600" />
           Climate
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Micro-climate spray windows and foliar spray advisory for your crops
-        </p>
       </div>
 
       {error && (

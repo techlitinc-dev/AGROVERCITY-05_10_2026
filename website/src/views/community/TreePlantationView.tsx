@@ -158,9 +158,6 @@ export const TreePlantationView: React.FC = () => {
           <TreePine className="w-7 h-7 text-emerald-600" />
           Tree Plantation
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Learn agroforestry models, request free saplings from partner NGOs, explore biofuel plantations, and keep every tree alive with care guides
-        </p>
       </div>
 
       {notice && (

@@ -152,9 +152,6 @@ export const ExporterSuppliersPage: React.FC = () => {
             <Building2 className="w-7 h-7 text-blue-600" />
             APEDA Certified FPOs & Aggregators
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Verified Indian Farmer Producer Organisations compliant with global MRL (Maximum Residue Limit) standards
-          </p>
         </div>
 
         <button

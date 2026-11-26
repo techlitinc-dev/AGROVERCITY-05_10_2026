@@ -63,11 +63,6 @@ export const ExporterHome: React.FC = () => {
             <Globe2 className="w-7 h-7 text-emerald-600" />
             Namaste{user?.name ? `, ${user.name}` : ''} — Agri Exporter
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Post structured crop requirements, compare farmer applications, and connect directly.
-            Sampling, contracts, payments, customs, freight, and insurance stay between you and the
-            farmer — Agrovercity only connects you.
-          </p>
         </div>
         <button
           type="button"

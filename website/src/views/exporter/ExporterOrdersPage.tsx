@@ -146,9 +146,6 @@ export const ExporterOrdersPage: React.FC = () => {
             <Anchor className="w-7 h-7 text-blue-600" />
             Export Orders & Logistics Tracking
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Follow the 8-stage export pipeline from farm packaging to port customs clearance and ocean bill of lading (BL)
-          </p>
         </div>
 
         <button

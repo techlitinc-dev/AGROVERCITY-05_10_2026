@@ -339,10 +339,6 @@ export const RegisterPage: React.FC = () => {
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Welcome to Agrovercity
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
-            Verify your mobile, tell us who you are, and confirm your identity — registration takes
-            about two minutes.
-          </p>
         </div>
 
         {/* Progress: Mobile → Profile → Identity Verification → Complete */}
@@ -396,10 +392,6 @@ export const RegisterPage: React.FC = () => {
                 <Phone className="w-4 h-4 text-emerald-700" />
                 <span>Step 1 — Verify your mobile number</span>
               </h4>
-              <p className="text-xs text-emerald-800">
-                We send a one-time password by SMS. Already registered? Your existing account is
-                used — we never create duplicates.
-              </p>
             </div>
 
             <div>
@@ -483,9 +475,6 @@ export const RegisterPage: React.FC = () => {
           <form onSubmit={handleSubmitProfile} className="space-y-5">
             <div className="text-center space-y-1">
               <h4 className="font-bold text-sm text-slate-900">Step 2 — Basic profile</h4>
-              <p className="text-xs text-slate-500">
-                Name or business name, your primary persona, and your operating location.
-              </p>
             </div>
 
             <div>
@@ -759,7 +748,11 @@ export const RegisterPage: React.FC = () => {
         {/* Footer */}
         <div className="text-center text-xs text-slate-500 pt-3 border-t border-slate-100">
           Already registered?{' '}
-          <Link to="/login" className="font-bold text-emerald-700 hover:underline">
+          <Link
+            to="/login"
+            onClick={() => logout()}
+            className="font-bold text-emerald-700 hover:underline"
+          >
             Login directly with 4-Digit MPIN
           </Link>
         </div>

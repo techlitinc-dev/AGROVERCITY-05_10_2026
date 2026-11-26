@@ -142,9 +142,6 @@ export const ProfileSwitchPage: React.FC = () => {
     <div className="max-w-4xl mx-auto py-6 space-y-6">
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-2xl font-extrabold text-slate-900">Multi-Profile & Persona Switcher</h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Switch between your activated roles without logging out. All data remains strictly isolated.
-        </p>
       </div>
 
       {error && (

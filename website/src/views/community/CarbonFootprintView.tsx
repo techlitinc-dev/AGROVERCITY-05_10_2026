@@ -166,9 +166,6 @@ export const CarbonFootprintView: React.FC = () => {
           <Leaf className="w-7 h-7 text-emerald-600" />
           Carbon Footprint & Eco Impact
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Estimate your farm's carbon potential, calculate tree sequestration, and track every plantation you grow
-        </p>
       </div>
 
       {notice && (

@@ -160,9 +160,6 @@ export const StudentsRosterPage: React.FC = () => {
             <Users className="w-7 h-7 text-emerald-600" />
             Students Roster
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            All enrolments across your courses — progress, completion, certificates and access control
-          </p>
         </div>
         <button
           onClick={reload}

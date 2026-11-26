@@ -110,9 +110,6 @@ export const ColdStorageProviderConsole: React.FC = () => {
             <Warehouse className="w-7 h-7 text-emerald-600" />
             Namaste{user?.name ? `, ${user.name}` : ''} — Cold Storage Owner
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            WDRA-registered warehouse operations — reservations, gate inward, e-NWR receipts, releases and fees
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link to="/coldStorageProvider/facilities"

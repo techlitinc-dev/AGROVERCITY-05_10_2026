@@ -157,9 +157,6 @@ export const SellerProcurementPage: React.FC = () => {
             <FileSpreadsheet className="w-7 h-7 text-emerald-600" />
             Farmer Produce Procurement Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Browse farmer lots, negotiate by offer or book outright, then run escrow, pickup, handover OTP and QC
-          </p>
         </div>
         <button onClick={() => void load()} className={ghostBtnCls}>
           <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh

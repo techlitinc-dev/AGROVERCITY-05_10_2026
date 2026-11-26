@@ -63,9 +63,6 @@ export const DairyHome: React.FC = () => {
             <Milk className="w-7 h-7 text-emerald-600" />
             Dudh Dairy Manager Console
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Automated FAT/SNF chart pricing, member passbook payouts, sales & stock, and dairy analytics
-          </p>
         </div>
 
         <div className="flex bg-slate-100 p-1 rounded-2xl self-start sm:self-auto overflow-x-auto no-scrollbar">

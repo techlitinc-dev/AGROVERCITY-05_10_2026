@@ -166,9 +166,6 @@ export const BatchesPage: React.FC = () => {
             <Layers className="w-7 h-7 text-emerald-600" />
             Batches & Sessions
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            On-farm training batches, session schedule with QR check-in, and attendance
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button

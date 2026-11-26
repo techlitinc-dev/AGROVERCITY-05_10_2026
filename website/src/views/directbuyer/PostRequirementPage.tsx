@@ -51,10 +51,6 @@ export const PostRequirementPage: React.FC = () => {
           <Megaphone className="w-7 h-7 text-emerald-600" />
           Post Requirement
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Publish what you need to source. Farmers apply with quantity, price, availability and supply basis — you
-          compare applications and unlock contact only with the farmers you choose.
-        </p>
       </div>
 
       {!kycVerified && (

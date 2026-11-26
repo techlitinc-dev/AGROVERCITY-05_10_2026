@@ -183,9 +183,6 @@ export const BrokerHome: React.FC = () => {
             <HeartHandshake className="w-7 h-7 text-emerald-600" />
             Agri Broker & Dalal Deal Desk
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Bridge farm produce with institutional buyers, draft tripartite deals, track escrow-protected brokerage
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className={ghostBtnCls}>

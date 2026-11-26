@@ -55,9 +55,6 @@ export const GovtSchemesView: React.FC = () => {
             <Gift className="w-7 h-7 text-emerald-600" />
             Government Schemes
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Personalized DBT subsidy recommendations for your profile
-          </p>
         </div>
       </div>
 

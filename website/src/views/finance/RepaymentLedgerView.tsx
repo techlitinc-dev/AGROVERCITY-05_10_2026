@@ -122,9 +122,6 @@ export const RepaymentLedgerView: React.FC = () => {
           <Wallet className="w-7 h-7 text-emerald-600" />
           Repayment Collection Ledger
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Record EMI / principal collections against disbursed loans and track the running paid balance
-        </p>
       </div>
 
       {error && (

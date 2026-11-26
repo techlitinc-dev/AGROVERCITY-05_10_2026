@@ -65,9 +65,6 @@ export const SellerMandiRatesPage: React.FC = () => {
             <Landmark className="w-7 h-7 text-emerald-600" />
             Mandi Prices
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Post daily vyapari rates — validated against the APMC modal price band (±25%)
-          </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={() => void load()} className={ghostBtnCls}>

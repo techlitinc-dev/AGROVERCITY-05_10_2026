@@ -101,9 +101,6 @@ export const VaultView: React.FC = () => {
             <Lock className="w-7 h-7 text-emerald-600" />
             Document Vault (Digital Tijori)
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            AES-256 encrypted, digitally-signed documents for 1-click DBT, loan and insurance applications
-          </p>
         </div>
 
         <button

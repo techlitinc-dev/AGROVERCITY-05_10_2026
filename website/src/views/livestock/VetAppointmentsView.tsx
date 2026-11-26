@@ -187,9 +187,6 @@ export const VetAppointmentsView: React.FC = () => {
             <Stethoscope className="w-7 h-7 text-emerald-600" />
             Appointment Inbox
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Confirm bookings, run visits and complete consultations with digital prescriptions
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <input

@@ -866,7 +866,7 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <p className="text-[11px] text-emerald-200/70 pt-2 font-medium">
-              Free to get started • Instant Aadhaar/OTP verification • 24x7 Helpline: 1800-AGRO-SETU
+              Free to get started • Instant Aadhaar/OTP verification
             </p>
           </div>
         </div>

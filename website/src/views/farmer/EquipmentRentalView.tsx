@@ -349,10 +349,6 @@ export const EquipmentRentalView: React.FC = () => {
           <Wrench className="w-7 h-7 text-emerald-600" />
           Rent Machinery
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Find tractors, rotavators, harvesters and more near you. Send a request — after the owner accepts,
-          contacts unlock and you coordinate directly. Agrovercity never holds money.
-        </p>
       </div>
 
       {!kycVerified && (

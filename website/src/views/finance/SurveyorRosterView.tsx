@@ -88,9 +88,6 @@ export const SurveyorRosterView: React.FC = () => {
           <Users className="w-7 h-7 text-emerald-600" />
           Field Surveyor Roster
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Village-level loss assessors assigned to claims from the claim case file
-        </p>
       </div>
 
       {error && (

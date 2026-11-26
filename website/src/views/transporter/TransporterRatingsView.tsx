@@ -135,7 +135,6 @@ export const TransporterRatingsView: React.FC = () => {
             <Award className="w-7 h-7 text-emerald-600" />
             Ratings & Reputation
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Two-way feedback — what farmers say about you and what you reported back</p>
         </div>
         <button onClick={load} className="p-2.5 rounded-2xl border border-slate-200 text-slate-500 hover:bg-slate-50 self-start sm:self-auto" title="Refresh">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

@@ -164,9 +164,6 @@ export const NurseryProfileView: React.FC = () => {
             <Building2 className="w-6 h-6 text-emerald-700" />
             Nursery Profile & Shop KYC
           </h1>
-          <p className="text-xs text-slate-500">
-            Configure your shop credentials, National Horticulture Board (NHB) registration, and bank details.
-          </p>
         </div>
 
         {/* KYC Badge */}

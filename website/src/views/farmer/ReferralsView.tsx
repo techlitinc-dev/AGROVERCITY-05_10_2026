@@ -82,9 +82,6 @@ export const ReferralsView: React.FC = () => {
           <Users className="w-7 h-7 text-emerald-600" />
           Invite &amp; Earn
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Invite neighbouring farmers. When they verify their 7/12 record, you both earn Kisan Coins.
-        </p>
       </div>
 
       {error && (
