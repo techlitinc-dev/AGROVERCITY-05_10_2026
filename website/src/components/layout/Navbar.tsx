@@ -44,6 +44,8 @@ export const Navbar: React.FC = () => {
     pathname.startsWith('/register') ||
     pathname.startsWith('/kyc') ||
     pathname.startsWith('/mock-digilocker');
+  // Home/landing page: the header stays clean — no persona switcher listing.
+  const isHomePage = pathname === '/';
 
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -131,12 +133,11 @@ export const Navbar: React.FC = () => {
               </p>
             </div>
           </Link>
-        </div>
 
-        {/* Persona Switcher — hidden while registration
-        is incomplete: switching personas hits protected activation APIs that
-        reject the onboarding token by design. */}
-        {isAuthenticated && !restricted && (
+          {/* Persona Switcher — right of the logo; hidden while registration
+          is incomplete: switching personas hits protected activation APIs that
+          reject the onboarding token by design. Also hidden on the home page. */}
+          {isAuthenticated && !restricted && !isHomePage && (
           <div className="flex items-center gap-2">
             <div className="relative">
               <button
@@ -158,7 +159,7 @@ export const Navbar: React.FC = () => {
                   className="fixed inset-0 z-30"
                   onClick={() => setPersonaDropdownOpen(false)}
                 />
-                <div className="absolute left-1/2 sm:left-0 -translate-x-1/2 sm:translate-x-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-40 max-h-96 overflow-y-auto animate-in fade-in duration-150">
+                <div className="absolute left-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-40 max-h-96 overflow-y-auto animate-in fade-in duration-150">
                   <div className="px-4 py-2 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                     Switch Active Persona ({visiblePersonaOptions.length} Roles)
                   </div>
@@ -188,8 +189,9 @@ export const Navbar: React.FC = () => {
               </>
             )}
           </div>
+          </div>
+          )}
         </div>
-      )}
 
         {/* Right Action Icons: Language, Notifications, Cart, Profile */}
         <div className="flex items-center gap-2 sm:gap-3">
