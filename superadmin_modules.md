@@ -2,7 +2,8 @@
 
 > **Purpose**: Module list and navigation blueprint for the Superadmin web application.
 > **Role model**: The superadmin works as a **Data Analyst** — every page is built for viewing, filtering, sorting, comparing, and exporting data. No page changes user-side business flows.
-> **Source of truth**: Finalized persona & feature structure as implemented in the production web app (`website/src/lib/navItems.ts` — 14 personas, persona-specific menus + 16 common Ecosystem features).
+> **Source of truth**: Finalized persona & feature structure as implemented in the production web app (`website/src/lib/navItems.ts` — persona-specific menus + 16 common Ecosystem features).
+> **Scope**: 9 selected personas (finalized 2026-11-27): Farmer, Farm Landlord, Transporter, Agri Vyapari, Equipment Owner, Milk Vendor, Women Hub, Agri Market Seller, Gurukul Instructor. The other implemented personas (Agri Exporter, Cold Storage Owner, Direct Buyer, Gaushala & Sanctuary, Nursery) are **out of superadmin scope**.
 > **Note**: `superadmin finalized features.xlsx` could not be used — the file on disk contains browser network data (not a spreadsheet). This document therefore mirrors the finalized structure live in the application. If a corrected Excel is shared, this document will be reconciled against it.
 
 ---
@@ -25,7 +26,7 @@
 |------|------|-----------|
 | 1 | **Agrovercity Superadmin** (logo) | Click → Dashboard |
 | 2 | **Dashboard** | Global KPI wall (Module 2) |
-| 3 | **Personas ▾** | Dropdown listing all 14 personas A–Z (see 2.2) |
+| 3 | **Personas ▾** | Dropdown listing the 9 selected personas A–Z (see 2.2) |
 | 4 | **Common Features ▾** | Dropdown of the 16 shared features (Module 5) |
 | 5 | **Users & KYC** | User directory + KYC queue (Module 3) |
 | 6 | **Reports & Exports** | Analyst report builder (Module 6) |
@@ -36,18 +37,13 @@
 
 ```
 Personas ▾
- ├── Agri Exporter
  ├── Agri Market Seller
  ├── Agri Vyapari
- ├── Cold Storage Owner
- ├── Direct Buyer (Industrial)
  ├── Equipment Owner
  ├── Farm Landlord
  ├── Farmer
- ├── Gaushala & Sanctuary
  ├── Gurukul Instructor
  ├── Milk Vendor (Doodhwala)
- ├── Nursery
  ├── Transporter
  └── Women Hub
 ```
@@ -79,7 +75,7 @@ Each dropdown entry opens the data-analyst view of that feature, pre-filtered to
 | 1 | Admin Auth & Profile | 2 | §4.1 |
 | 2 | Dashboard (Global KPIs) | 1 | §4.2 |
 | 3 | Users & KYC | 3 | §4.3 |
-| 4 | Persona Modules (14 personas) | 14 overviews + feature views | §4.4 |
+| 4 | Persona Modules (9 personas) | 9 overviews + feature views | §4.4 |
 | 5 | Common Features (16 hubs) | 16 | §4.5 |
 | 6 | Reports & Exports | 1 | §4.6 |
 | 7 | Audit Log | 1 | §4.7 |
@@ -104,38 +100,28 @@ Single page: users per persona (bar), registrations trend (line), pending KYC co
 | User 360° Detail | One user's complete cross-persona footprint: profile, KYC docs, activity in every feature they use, coins, referrals, ratings; suspend/reactivate; MPIN reset |
 | KYC Queue | All submitted KYC documents: view → approve / reject with remark |
 
-### 4.4 Module 4 — Persona Modules (14)
+### 4.4 Module 4 — Persona Modules (9)
 
 Each persona module = **1 Persona Overview page** (KPIs, trends, recent records) **+ one data view per persona-specific feature** (listed A–Z below) **+ inherited Common Features views (§4.5) filtered to that persona**.
 
-#### 4.4.1 Agri Exporter
-- Persona-specific: Applications Received · My Connections · My Export Requirements · Post Export Requirement
-#### 4.4.2 Agri Market Seller
+#### 4.4.1 Agri Market Seller
 - Persona-specific: Enquiry Management · My Products · Offers & Discounts · Orders Received · Quotation Management · Shop Profile · Stock Management
-#### 4.4.3 Agri Vyapari
+#### 4.4.2 Agri Vyapari
 - Persona-specific: Find Produce · Mandi Prices · My Connections · Post Requirement
-#### 4.4.4 Cold Storage Owner
-- Persona-specific: Chambers & Temperature · Inward & Release Bookings · Rent Ledger & e-NWR Fees
-#### 4.4.5 Direct Buyer (Industrial)
-- Persona-specific: Applications Received · My Requirements · My Suppliers · Post Requirement
-#### 4.4.6 Equipment Owner
+#### 4.4.3 Equipment Owner
 - Persona-specific: Booking Request · Equipment Schedule · My Equipment · Progress Status
-#### 4.4.7 Farm Landlord
+#### 4.4.4 Farm Landlord
 - Persona-specific: My Connections · Post Land Request · Requirement Requests
-#### 4.4.8 Farmer
+#### 4.4.5 Farmer
 - Persona-specific: AI Crop Plan · AI Doctor · Book Vehicle · Mandi Prices · My Connections · My Crops · My Produce · Rent Land · Rent Machinery · Vyapari Requirements
-#### 4.4.9 Gaushala & Sanctuary
-- Persona-specific: 80G Donations & Adoptions · Cattle Herd Registry · Fodder & Expenses · Receipts Register · Vet Network Camps
-#### 4.4.10 Gurukul Instructor
+#### 4.4.6 Gurukul Instructor
 - Persona-specific: Academic Studio · Batches & Questions · Course Builder
-#### 4.4.11 Milk Vendor (Doodhwala)
+#### 4.4.7 Milk Vendor (Doodhwala)
 - Persona-specific: Bills & Payments · Clients · Customer Passbook · Delivery Analytics · Milk and Rates · Monthly Billing and Pay · Punch Sheet · Todays Schedule
-#### 4.4.12 Nursery
-- Persona-specific: Ad Manager · Batches & Stock In/Out · Chatbot Support · Earnings & Payouts · Finance CEO (P&L) · My Plants / Inventory · Nursery Care Diary · Offers & Discounts · Orders Received · Reviews & Ratings
-#### 4.4.13 Transporter
+#### 4.4.8 Transporter
 - Persona-specific: Bilty · Booking Requests · Load Board · Live Trips · My Connections · Trip P&L · Vehicles and Drivers
 - *Common-feature exceptions (hidden in the app for this persona): My Diary, Ads & Promotions, Ratings & Reviews*
-#### 4.4.14 Women Hub
+#### 4.4.9 Women Hub
 - Persona-specific: Home Enterprise Income · Kitchen Garden Planner · My Business & Management (incl. customer profit/loss, remaining-payment and cash-payment ledgers)
 
 ### 4.5 Module 5 — Common Features (16 shared hubs, sorted)
@@ -176,12 +162,12 @@ Every admin action: timestamp, operator, module, target record, action, mandator
 | Auth & Profile | 2 |
 | Dashboard | 1 |
 | Users & KYC | 3 |
-| Persona overviews | 14 |
-| Persona-specific feature views | 75 |
+| Persona overviews | 9 |
+| Persona-specific feature views | 49 |
 | Common feature views | 16 |
 | Reports & Exports | 1 |
 | Audit Log | 1 |
-| **Total** | **113** |
+| **Total** | **82** |
 
 *(Feature views are one reusable table+detail template instantiated per feature — the build effort is far smaller than the page count suggests.)*
 
